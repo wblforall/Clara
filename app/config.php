@@ -4,7 +4,7 @@ require_once __DIR__ . '/env.php';
 
 return [
     'app_name'      => env_value('APP_NAME', 'CLARA Unified'),
-    'app_version'   => env_value('APP_VERSION', '3.1'),
+    'app_version'   => env_value('APP_VERSION', '3.2'),
     'app_env'       => env_value('APP_ENV', 'production'),
     'app_debug'     => env_value('APP_DEBUG', 'false') === 'true',
     'timezone'      => env_value('APP_TIMEZONE', 'Asia/Makassar'),

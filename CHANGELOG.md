@@ -11,6 +11,36 @@
 
 ---
 
+## Version 3.2 — 15 Mei 2026
+
+### UX & Animasi
+
+- **Animasi halaman login** — Background login kini menampilkan gradient animasi yang bergeser secara dinamis (teal–biru) dengan tiga floating blob yang bergerak lambat. Panel login tetap tampak bersih dengan efek glassmorphism.
+
+- **Welcome popup setelah login** — Popup muncul 1 kali setelah login berhasil dan menutup otomatis dalam 3 detik. Menampilkan achievement pribadi untuk user yang terdaftar sebagai PIC Sales (Aktual vs Target vs persentase). Untuk user non-PIC, menampilkan achievement per-properti masing-masing secara terpisah (bukan gabungan) sehingga user multi-properti dapat melihat persentase tiap properti sekaligus.
+
+- **Animasi halaman Executive Summary** — KPI cards (Combined Strip) slide-up berurutan dengan stagger 70ms. Per-properti cards muncul dengan delay berdasarkan posisi kartu. Section titles fade-in. Segment bars (Exhibition/Media/Gudang) dan mini bars occupancy table animate dari lebar 0 ke nilai aktual saat halaman dimuat.
+
+### Performa
+
+- **PDO persistent connections** — Koneksi database di-reuse antar request sehingga overhead koneksi MySQL berkurang.
+
+- **Hapus reverse DNS lookup** — `gethostbyaddr()` dihapus dari audit log. Delay 1–10 detik saat simpan transaksi (akibat timeout DNS) teratasi.
+
+- **Logo dikompresi** — `clara-logo.png` diubah ukuran dari 1254×1254 px (416 KB) menjadi 256×256 px (49 KB), menghemat ~370 KB per load.
+
+- **CSS version constant** — `CSS_VER` dihitung sekali saat boot dari `filemtime()`, bukan per-request, menghilangkan overhead file stat pada setiap render halaman.
+
+- **Session optimization** — `session.lazy_write` aktif; `last_activity` hanya di-update tiap 60 detik; refresh nama properti di-cache 5 menit (TTL) di session.
+
+- **Audit log efisien** — Logging GET request (view biasa) dihapus; hanya login, logout, insert, update, delete yang dicatat. Volume tabel `audit_logs` berkurang drastis.
+
+### Perbaikan Bug
+
+- **Tab properti topbar kembali ke Master Media** — Setiap pindah properti via tab, halaman selalu kembali ke Master Media. Diperbaiki dengan menggunakan `$_SERVER['QUERY_STRING']` lengkap sebagai URL balik, bukan hanya `?r=<route>`.
+
+---
+
 ## Version 3.1 — 15 Mei 2026
 
 ### Fitur Baru
