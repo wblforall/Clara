@@ -1,0 +1,11 @@
+# Environment & secrets
+.env
+.env.*
+
+# Runtime / temp
+tmp/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

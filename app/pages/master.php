@@ -1,0 +1,346 @@
+<?php
+declare(strict_types=1);
+
+function master_page(PDO $pdo, array $masterConfig): void
+{
+    $type = getv('type', 'media');
+    $cfg = $masterConfig[$type] ?? $masterConfig['media'];
+    $orderBy = isset($cfg['order']) ? $cfg['order'] : 'id DESC';
+    $pid = current_property_id();
+    $picStatus = ($type === 'pic') ? getv('pic_status', 'active') : '';
+    if ($type === 'pic' && in_array($picStatus, ['active', 'inactive', 'archived', ''], true)) {
+        $statusWhere = $picStatus !== '' ? ' AND p.status = ' . $pdo->quote($picStatus) : '';
+        $stmt = $pdo->prepare(
+            "SELECT p.*, u.name AS user_name FROM master_pic p
+             LEFT JOIN users u ON u.id = p.user_id
+             WHERE p.property_id = ? $statusWhere ORDER BY p.$orderBy LIMIT 300"
+        );
+        $stmt->execute([$pid]);
+        $rows = $stmt->fetchAll();
+    } else {
+        $stmt = $pdo->prepare('SELECT * FROM ' . $cfg['table'] . ' WHERE property_id = ? ORDER BY ' . $orderBy . ' LIMIT 300');
+        $stmt->execute([$pid]);
+        $rows = $stmt->fetchAll();
+    }
+    layout($cfg['title'], function () use ($type, $cfg, $rows, $picStatus) {
+        ?>
+        <div class="toolbar">
+            <?php if (can('manage_master')): ?><a class="btn" href="?r=master_form&type=<?= h($type) ?>">Tambah Data</a><?php endif; ?>
+            <?php if ($type === 'target' && can('manage_master')): ?>
+                <form method="post" action="?r=generate_periods" style="display:inline-flex;align-items:center;gap:6px">
+                    <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                    <select name="gen_year" style="width:auto">
+                        <?php foreach (range((int)date('Y') - 1, (int)date('Y') + 2) as $gy): ?>
+                            <option value="<?= $gy ?>" <?= $gy == (int)date('Y') ? 'selected' : '' ?>><?= $gy ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <button type="submit" class="btn light">Generate 12 Periode</button>
+                </form>
+            <?php endif; ?>
+            <?php if ($type === 'media' && can('import_master')): ?>
+                <a class="btn light" href="?r=import_media">Import CSV Media</a>
+                <a class="btn" style="background:#28a745" href="?r=import_template">Import Master Template (Excel)</a>
+            <?php endif; ?>
+        </div>
+        <?php if ($type === 'pic'): ?>
+        <div style="display:flex;gap:6px;margin-bottom:12px">
+            <?php foreach (['active' => 'Aktif', 'inactive' => 'Tidak Aktif', 'archived' => 'Arsip', '' => 'Semua'] as $sv => $sl): ?>
+                <a class="btn <?= $picStatus === $sv ? '' : 'light' ?>" href="?r=master&type=pic&pic_status=<?= h($sv) ?>"><?= $sl ?></a>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><?php foreach ($cfg['columns'] as $col): ?><th><?= h($cfg['column_labels'][$col] ?? $col) ?></th><?php endforeach; ?><th>Aksi</th></tr></thead>
+                <tbody>
+                <?php foreach ($rows as $row): ?>
+                    <tr>
+                        <?php foreach ($cfg['columns'] as $col): ?>
+                            <?php $isMoney = is_numeric($row[$col] ?? null) && (str_contains($col, 'amount') || str_contains($col, 'rate') || str_contains($col, 'projection')); ?>
+                            <?php $isShare = $col === 'target_share'; ?>
+                            <?php $isUserId = $col === 'user_id'; ?>
+                            <td><?php
+                                if ($isUserId) {
+                                    echo $row['user_name'] ? '<span class="badge" style="background:#e0f2fe;color:#0369a1">' . h($row['user_name']) . '</span>' : '<span style="color:var(--muted)">—</span>';
+                                } elseif ($isShare) {
+                                    echo pct((float)($row[$col] ?? 0));
+                                } elseif ($isMoney) {
+                                    echo money($row[$col]);
+                                } else {
+                                    echo h((string)($row[$col] ?? ''));
+                                }
+                            ?></td>
+                        <?php endforeach; ?>
+                        <td><?php if (can('manage_master')): ?><a class="btn light" href="?r=master_form&type=<?= h($type) ?>&id=<?= h((string) $row['id']) ?>">Edit</a><?php else: ?><span class="muted">Read only</span><?php endif; ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php
+    });
+}
+
+function master_form(PDO $pdo, array $masterConfig): void
+{
+    $type = getv('type', 'media');
+    $cfg = $masterConfig[$type] ?? $masterConfig['media'];
+    $pid = current_property_id();
+    $id = getv('id');
+    $row = [];
+    if ($id) {
+        $stmt = $pdo->prepare('SELECT * FROM ' . $cfg['table'] . ' WHERE id = ? AND property_id = ?');
+        $stmt->execute([$id, $pid]);
+        $row = $stmt->fetch() ?: [];
+    }
+    $periodYears = [];
+    if ($type === 'target') {
+        $stmt = $pdo->prepare("SELECT DISTINCT substr(period_key,1,4) y FROM periods WHERE property_id = ? ORDER BY y");
+        $stmt->execute([$pid]);
+        $existingYears = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        $curYear = (int) date('Y');
+        $allYears = array_unique(array_merge($existingYears, [
+            (string)($curYear - 1), (string)$curYear, (string)($curYear + 1), (string)($curYear + 2),
+        ]));
+        sort($allYears);
+        $periodYears = $allYears;
+    }
+    $periodMonthNames = ['01'=>'Januari','02'=>'Februari','03'=>'Maret','04'=>'April','05'=>'Mei','06'=>'Juni','07'=>'Juli','08'=>'Agustus','09'=>'September','10'=>'Oktober','11'=>'November','12'=>'Desember'];
+    $users = $type === 'pic'
+        ? $pdo->query("SELECT id, name FROM users WHERE status='active' ORDER BY name")->fetchAll()
+        : [];
+
+    layout(($id ? 'Edit ' : 'Tambah ') . $cfg['title'], function () use ($type, $cfg, $row, $id, $periodYears, $periodMonthNames, $users) {
+        ?>
+        <form class="panel" method="post" action="?r=master_save&type=<?= h($type) ?>" id="master-form">
+            <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+            <input type="hidden" name="id" value="<?= h((string) $id) ?>">
+            <div class="form-grid">
+                <?php foreach ($cfg['fields'] as $name => $label): ?>
+                    <div>
+                        <label><?= h($label) ?></label>
+                        <?php if ($name === 'period_key' && $type === 'target'): ?>
+                            <?php
+                                $pkVal  = $row['period_key'] ?? date('Y-m');
+                                $pkYear = substr($pkVal, 0, 4);
+                                $pkMonth = substr($pkVal, 5, 2);
+                            ?>
+                            <input type="hidden" name="period_key" id="period_key_hidden" value="<?= h($pkVal) ?>">
+                            <div style="display:flex;gap:8px">
+                                <select id="pk-year" onchange="syncPeriodKey()" style="flex:1">
+                                    <?php foreach ($periodYears as $y): ?>
+                                        <option value="<?= h($y) ?>" <?= $pkYear === $y ? 'selected' : '' ?>><?= h($y) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <select id="pk-month" onchange="syncPeriodKey()" style="flex:1">
+                                    <?php foreach ($periodMonthNames as $m => $mLabel): ?>
+                                        <?php $mStr = sprintf('%02d', $m); ?>
+                                        <option value="<?= h($mStr) ?>" <?= $pkMonth === $mStr ? 'selected' : '' ?>><?= h($mLabel) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <script>
+                            function syncPeriodKey() {
+                                var y = document.getElementById('pk-year').value;
+                                var m = document.getElementById('pk-month').value;
+                                document.getElementById('period_key_hidden').value = y + '-' + m;
+                            }
+                            </script>
+                        <?php elseif ($name === 'pricing_type'): ?>
+                            <select name="<?= h($name) ?>">
+                                <?php foreach (['daily_point', 'daily_slot', 'daily_area', 'monthly', 'fixed'] as $opt): ?>
+                                    <option value="<?= h($opt) ?>" <?= ($row[$name] ?? '') === $opt ? 'selected' : '' ?>><?= h($opt) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        <?php elseif ($name === 'user_id'): ?>
+                            <select name="user_id">
+                                <option value="">— Tidak ada —</option>
+                                <?php foreach ($users as $u): ?>
+                                    <option value="<?= h((string)$u['id']) ?>" <?= (string)($row['user_id'] ?? '') === (string)$u['id'] ? 'selected' : '' ?>>
+                                        <?= h($u['name']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <div class="help">Hubungkan ke akun login untuk auto-select saat input transaksi.</div>
+                        <?php elseif ($name === 'status'): ?>
+                            <select name="<?= h($name) ?>">
+                                <?php foreach (['active', 'inactive', 'archived'] as $opt): ?>
+                                    <option value="<?= h($opt) ?>" <?= ($row[$name] ?? 'active') === $opt ? 'selected' : '' ?>><?= h($opt) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        <?php elseif ($name === 'target_share'): ?>
+                            <div style="display:flex;align-items:center;gap:6px">
+                                <input type="number" step="0.01" min="0" max="100" name="target_share_pct" value="<?= h((string) round((float)($row['target_share'] ?? 0) * 100, 2)) ?>">
+                                <span>%</span>
+                            </div>
+                            <input type="hidden" name="target_share" id="target_share_hidden" value="<?= h((string) ($row['target_share'] ?? 0)) ?>">
+                            <script>
+                            document.querySelector('[name=target_share_pct]').addEventListener('input', function() {
+                                document.getElementById('target_share_hidden').value = (parseFloat(this.value) || 0) / 100;
+                            });
+                            </script>
+                        <?php elseif ($name === 'target_amount'): ?>
+                            <?php $taRaw = (string) ($row['target_amount'] ?? ''); ?>
+                            <input type="text" inputmode="numeric" id="target_amount_fmt" value="<?= $taRaw !== '' ? number_format((float)$taRaw, 0, ',', '.') : '' ?>" placeholder="0">
+                            <input type="hidden" name="target_amount" id="target_amount_hidden" value="<?= h($taRaw) ?>">
+                            <script>
+                            document.getElementById('target_amount_fmt').addEventListener('input', function() {
+                                var raw = this.value.replace(/\D/g, '');
+                                this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                                document.getElementById('target_amount_hidden').value = raw;
+                            });
+                            </script>
+                        <?php elseif (in_array($name, ['rate', 'monthly_rate', 'projection_monthly'], true)): ?>
+                            <?php $rawVal = (string) ($row[$name] ?? ''); $rawInt = $rawVal !== '' ? (string)(int)(float)$rawVal : ''; ?>
+                            <input type="text" inputmode="numeric" id="<?= h($name) ?>_fmt" autocomplete="off"
+                                   value="<?= $rawInt !== '' && $rawInt !== '0' ? number_format((int)$rawInt, 0, ',', '.') : '' ?>"
+                                   placeholder="0">
+                            <input type="hidden" name="<?= h($name) ?>" id="<?= h($name) ?>_hidden" value="<?= h($rawInt) ?>">
+                            <script>
+                            (function() {
+                                var fmt = document.getElementById('<?= h($name) ?>_fmt');
+                                var hid = document.getElementById('<?= h($name) ?>_hidden');
+                                fmt.addEventListener('input', function() {
+                                    var raw = this.value.replace(/\D/g, '');
+                                    this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                                    hid.value = raw;
+                                });
+                            })();
+                            </script>
+                        <?php else: ?>
+                            <input name="<?= h($name) ?>" value="<?= field($row, $name) ?>">
+                        <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+            <p>
+                <?php if (array_key_exists('projection_monthly', $cfg['fields'])): ?>
+                <button type="button" onclick="hitungPotensi()" class="btn light" style="background:#0ea5e9;color:#fff">Hitung Potensi</button>
+                <?php endif; ?>
+                <button type="submit">Simpan</button>
+                <a class="btn secondary" href="?r=master&type=<?= h($type) ?>">Kembali</a>
+            </p>
+        </form>
+        <?php if (array_key_exists('projection_monthly', $cfg['fields'])): ?>
+        <script>
+        function hitungPotensi() {
+            const rate        = parseFloat(document.querySelector('[name=rate]')?.value) || 0;
+            const monthlyRate = parseFloat(document.querySelector('[name=monthly_rate]')?.value) || 0;
+            const pricing     = document.querySelector('[name=pricing_type]')?.value || '';
+            const slots       = parseFloat(document.querySelector('[name=slots]')?.value) || 1;
+            const areaSqm     = parseFloat(document.querySelector('[name=area_sqm]')?.value) || 0;
+            const sizeVal     = document.querySelector('[name=size]')?.value || '';
+
+            let area = areaSqm;
+            if (!area && sizeVal) {
+                const m = sizeVal.replace(/[mM²]/g, '').match(/(\d+\.?\d*)\s*[×xX×]\s*(\d+\.?\d*)/);
+                if (m) area = parseFloat(m[1]) * parseFloat(m[2]);
+            }
+
+            let projection = 0;
+            if (monthlyRate > 0) {
+                projection = monthlyRate; // gudang: monthly_rate sudah per bulan
+            } else if (pricing) {
+                switch (pricing) {
+                    case 'daily_slot': projection = rate * slots * 30; break;
+                    case 'daily_area': projection = rate * Math.max(1, area) * 30; break;
+                    case 'monthly':    projection = rate; break;
+                    case 'fixed':      projection = rate; break;
+                    default:           projection = rate * 30; break;
+                }
+            } else {
+                // cl: rate harian/m² × area × 30
+                projection = rate * Math.max(1, area) * 30;
+            }
+
+            const rounded   = Math.round(projection);
+            const hiddenFld = document.getElementById('projection_monthly_hidden');
+            const fmtFld    = document.getElementById('projection_monthly_fmt');
+            if (hiddenFld) {
+                hiddenFld.value = rounded || '';
+                fmtFld.value    = rounded ? rounded.toLocaleString('id-ID') : '';
+                fmtFld.style.background = '#fef9c3';
+                setTimeout(() => fmtFld.style.background = '', 900);
+            }
+        }
+        </script>
+        <?php endif; ?>
+        <?php
+    });
+}
+
+function master_save(PDO $pdo, array $masterConfig): void
+{
+    verify_csrf();
+    $type = getv('type', 'media');
+    $cfg = $masterConfig[$type] ?? $masterConfig['media'];
+    $id = post('id');
+    $data = [];
+    foreach (array_keys($cfg['fields']) as $field) {
+        $data[$field] = post($field, '');
+    }
+    if ($type === 'pic' && isset($data['target_share'])) {
+        $pct = (float) post('target_share_pct', '0');
+        $data['target_share'] = $pct / 100;
+    }
+    if ($type === 'pic' && array_key_exists('user_id', $data)) {
+        $data['user_id'] = $data['user_id'] !== '' ? (int)$data['user_id'] : null;
+    }
+    $data['updated_at'] = date('Y-m-d H:i:s');
+    $pid = current_property_id();
+
+    if ($id) {
+        $sets = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($data)));
+        $stmt = $pdo->prepare('UPDATE ' . $cfg['table'] . " SET $sets WHERE id = :id AND property_id = :property_id");
+        $data['id'] = $id;
+        $data['property_id'] = $pid;
+        $stmt->execute($data);
+        audit($pdo, 'update', $cfg['table'], (string) $id, $data);
+    } else {
+        $data['property_id'] = $pid;
+        $cols   = implode(', ', array_keys($data));
+        $params = ':' . implode(', :', array_keys($data));
+        $stmt = $pdo->prepare('INSERT INTO ' . $cfg['table'] . " ($cols) VALUES ($params)");
+        $stmt->execute($data);
+        audit($pdo, 'create', $cfg['table'], (string) $pdo->lastInsertId(), $data);
+    }
+    // Auto-register period ke tabel periods saat simpan target
+    if ($type === 'target' && !empty($data['period_key'])) {
+        $pk = $data['period_key'];
+        $lbl = period_label($pk);
+        $first = $pk . '-01';
+        $last  = (new DateTimeImmutable($first))->modify('last day of this month')->format('Y-m-d');
+        $pdo->prepare(
+            'INSERT INTO periods (property_id, period_key, label, starts_on, ends_on) VALUES (?,?,?,?,?)
+             ON DUPLICATE KEY UPDATE label=VALUES(label), starts_on=VALUES(starts_on), ends_on=VALUES(ends_on)'
+        )->execute([$pid, $pk, $lbl, $first, $last]);
+    }
+
+    flash('Data master tersimpan.');
+    redirect_to('master', ['type' => $type]);
+}
+
+function generate_periods(PDO $pdo): void
+{
+    verify_csrf();
+    require_permission('manage_master');
+    $year = (int) post('gen_year', date('Y'));
+    if ($year < 2000 || $year > 2100) {
+        flash('Tahun tidak valid.');
+        redirect_to('master', ['type' => 'target']);
+    }
+    $pid  = current_property_id();
+    $stmt = $pdo->prepare(
+        'INSERT INTO periods (property_id, period_key, label, starts_on, ends_on) VALUES (?,?,?,?,?)
+         ON DUPLICATE KEY UPDATE label=VALUES(label), starts_on=VALUES(starts_on), ends_on=VALUES(ends_on)'
+    );
+    for ($m = 1; $m <= 12; $m++) {
+        $pk    = sprintf('%04d-%02d', $year, $m);
+        $lbl   = period_label($pk);
+        $first = $pk . '-01';
+        $last  = (new DateTimeImmutable($first))->modify('last day of this month')->format('Y-m-d');
+        $stmt->execute([$pid, $pk, $lbl, $first, $last]);
+    }
+    flash("12 periode tahun $year berhasil di-generate.");
+    redirect_to('master', ['type' => 'target']);
+}

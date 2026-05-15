@@ -1,0 +1,570 @@
+<?php
+declare(strict_types=1);
+
+function exec_dashboard(PDO $pdo): void
+{
+    require_permission('view_exec_summary');
+
+    $period = getv('period', date('Y-m'));
+
+    // Load all active properties
+    $properties = $pdo->query("SELECT id, name FROM properties WHERE status='active' ORDER BY id")->fetchAll();
+    if (count($properties) < 1) {
+        flash('Tidak ada properti aktif.');
+        redirect_to('dashboard');
+    }
+
+    $monthNames = ['01'=>'Januari','02'=>'Februari','03'=>'Maret','04'=>'April',
+                   '05'=>'Mei','06'=>'Juni','07'=>'Juli','08'=>'Agustus',
+                   '09'=>'September','10'=>'Oktober','11'=>'November','12'=>'Desember'];
+    $periodLabel = ($monthNames[substr($period,5,2)] ?? substr($period,5,2)) . ' ' . substr($period,0,4);
+    $periodDays  = (int) date('t', strtotime($period.'-01'));
+
+    // Collect per-property data
+    $propData = [];
+    foreach ($properties as $prop) {
+        $pid = (int) $prop['id'];
+        $propData[$pid] = _exec_fetch_prop_data($pdo, $pid, $period, $periodDays);
+        $propData[$pid]['name'] = $prop['name'];
+        $propData[$pid]['id']   = $pid;
+    }
+
+    // Combined totals
+    $combined = _exec_combine($propData);
+
+    // Period list for selector
+    $allPeriods = $pdo->query(
+        "SELECT DISTINCT period_key FROM transaction_allocations ORDER BY period_key DESC LIMIT 36"
+    )->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array($period, $allPeriods, true)) array_unshift($allPeriods, $period);
+
+    audit($pdo, 'view', 'exec_dashboard', $period, ['period' => $period], [], 'reporting');
+
+    layout('Executive Summary', function () use ($period, $periodLabel, $periodDays, $propData, $combined, $allPeriods, $monthNames) {
+        ?>
+        <style>
+            .exec-toolbar { position:sticky;top:0;z-index:50;background:var(--bg,#f8fafc);box-shadow:0 1px 0 var(--line,#e2e8f0);padding:10px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap; }
+            .exec-badge-label { display:inline-block;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:#fef3c7;color:#92400e;margin-bottom:12px; }
+            .prop-col-grid { display:grid;grid-template-columns:repeat(<?= count($propData) ?>,1fr);gap:16px;margin-bottom:16px; }
+            .prop-card { background:#fff;border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:18px 20px;position:relative;overflow:hidden; }
+            .prop-card::before { content:'';position:absolute;top:0;left:0;right:0;height:4px; }
+            .prop-card.p1::before { background:#0d9488; }
+            .prop-card.p2::before { background:#7c3aed; }
+            .prop-card.p3::before { background:#0891b2; }
+            .prop-card.p4::before { background:#d97706; }
+            .prop-name { font-size:13px;font-weight:700;color:var(--muted,#64748b);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px; }
+            .prop-kpi-row { display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px; }
+            .prop-kpi { background:#f8fafc;border-radius:8px;padding:10px 12px; }
+            .prop-kpi-label { font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted,#64748b);letter-spacing:.05em; }
+            .prop-kpi-value { font-size:16px;font-weight:800;margin-top:3px;color:var(--ink,#0f172a); }
+            .prop-kpi-value.red { color:#dc2626; }
+            .prop-kpi-value.green { color:#16a34a; }
+            .seg-bars { margin-top:8px; }
+            .seg-bar-row { margin-bottom:8px; }
+            .seg-bar-label { display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px; }
+            .seg-bar-track { height:8px;border-radius:999px;background:#f1f5f9;overflow:hidden; }
+            .seg-bar-fill { height:100%;border-radius:999px;transition:width .5s ease; }
+            .combined-strip { display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px; }
+            .combined-kpi { background:#fff;border:1px solid var(--line,#e2e8f0);border-radius:10px;padding:14px 16px; }
+            .combined-kpi:first-child { border-top:3px solid #0d9488; }
+            .combined-kpi:nth-child(2) { border-top:3px solid #3b82f6; }
+            .combined-kpi:nth-child(3) { border-top:3px solid #10b981; }
+            .combined-kpi:nth-child(4) { border-top:3px solid #f59e0b; }
+            .combined-kpi:nth-child(5) { border-top:3px solid #8b5cf6; }
+            .combined-kpi-label { font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted,#64748b);letter-spacing:.05em; }
+            .combined-kpi-value { font-size:20px;font-weight:800;margin-top:4px;color:var(--ink,#0f172a); }
+            .section-title { font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted,#64748b);margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--line,#e2e8f0); }
+            .pic-table th, .pic-table td { font-size:12px; }
+            .prop-tag { display:inline-block;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:700; }
+            .prop-tag-1 { background:#ccfbf1;color:#0f766e; }
+            .prop-tag-2 { background:#ede9fe;color:#6d28d9; }
+            .prop-tag-3 { background:#dbeafe;color:#1d4ed8; }
+            .prop-tag-4 { background:#fef3c7;color:#92400e; }
+            .ach-pill { display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700; }
+            .ach-good { background:#dcfce7;color:#15803d; }
+            .ach-warn { background:#fef3c7;color:#92400e; }
+            .ach-bad  { background:#fee2e2;color:#b91c1c; }
+            .seg-compare-grid { display:grid;grid-template-columns:auto <?= implode(' ', array_fill(0, count($propData), '1fr')) ?> 1fr;gap:0; }
+        </style>
+
+        <!-- Toolbar -->
+        <div class="exec-toolbar">
+            <form method="get" style="display:flex;align-items:center;gap:10px">
+                <input type="hidden" name="r" value="exec_dashboard">
+                <div><label style="font-size:11px;font-weight:600;color:var(--muted)">Periode</label>
+                <select name="period" onchange="this.form.submit()" style="min-width:160px">
+                    <?php foreach ($allPeriods as $pk):
+                        $py = substr($pk,0,4); $pm = substr($pk,5,2);
+                        $lbl = ($monthNames[$pm] ?? $pm) . ' ' . $py;
+                    ?>
+                    <option value="<?= h($pk) ?>" <?= $pk === $period ? 'selected' : '' ?>><?= h($lbl) ?></option>
+                    <?php endforeach; ?>
+                </select></div>
+            </form>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+                <a href="?r=print_exec_summary&period=<?= urlencode($period) ?>" target="_blank"
+                   style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:#0d9488;color:#fff;border-radius:7px;font-size:12px;font-weight:700;text-decoration:none">
+                    🖨 Cetak / PDF
+                </a>
+                <span class="exec-badge-label">Executive Summary</span>
+                <div style="font-size:13px;color:var(--muted)"><?= h($periodLabel) ?></div>
+            </div>
+        </div>
+
+        <!-- Combined KPI Strip -->
+        <div style="padding:16px 20px 0">
+            <div class="section-title">Ringkasan Gabungan — <?= h($periodLabel) ?></div>
+            <?php
+            $totalAch = $combined['target'] > 0 ? $combined['actual'] / $combined['target'] : 0;
+            $totalPotAch = $combined['projection'] > 0 ? $combined['actual'] / $combined['projection'] : 0;
+            $achColor = $totalAch >= 1 ? 'green' : ($totalAch >= 0.8 ? '' : 'red');
+            ?>
+            <div class="combined-strip">
+                <div class="combined-kpi">
+                    <div class="combined-kpi-label">Total Potensi</div>
+                    <div class="combined-kpi-value"><?= money($combined['projection']) ?></div>
+                </div>
+                <div class="combined-kpi">
+                    <div class="combined-kpi-label">Total Target</div>
+                    <div class="combined-kpi-value"><?= money($combined['target']) ?></div>
+                </div>
+                <div class="combined-kpi">
+                    <div class="combined-kpi-label">Total Aktual</div>
+                    <div class="combined-kpi-value <?= $achColor ?>"><?= money($combined['actual']) ?></div>
+                </div>
+                <div class="combined-kpi">
+                    <div class="combined-kpi-label">Achievement vs Target</div>
+                    <?php $a=$totalAch; $cls=$a>=1?'ach-good':($a>=.8?'ach-warn':'ach-bad'); ?>
+                    <div class="combined-kpi-value"><span class="ach-pill <?= $cls ?>" style="font-size:18px"><?= pct($totalAch) ?></span></div>
+                </div>
+                <div class="combined-kpi">
+                    <div class="combined-kpi-label">Achievement vs Potensi</div>
+                    <div class="combined-kpi-value"><?= pct($totalPotAch) ?></div>
+                </div>
+            </div>
+
+            <!-- Per-Property Cards -->
+            <div class="section-title" style="margin-top:4px">Per Properti</div>
+            <div class="prop-col-grid">
+            <?php foreach ($propData as $idx => $d):
+                $cardClass = 'p' . (array_search($idx, array_keys($propData)) + 1);
+                $ach = $d['target'] > 0 ? $d['actual'] / $d['target'] : 0;
+                $achClass = $ach >= 1 ? 'green' : ($ach >= 0.8 ? '' : 'red');
+                $achPillClass = $ach >= 1 ? 'ach-good' : ($ach >= 0.8 ? 'ach-warn' : 'ach-bad');
+                $moduleColors = ['cl'=>'#0d9488','media'=>'#0891b2','gudang'=>'#f59e0b'];
+                $moduleLabels = ['cl'=>'Exhibition','media'=>'Media','gudang'=>'Gudang'];
+            ?>
+            <div class="prop-card <?= $cardClass ?>">
+                <div class="prop-name"><?= h($d['name']) ?></div>
+                <div class="prop-kpi-row">
+                    <div class="prop-kpi">
+                        <div class="prop-kpi-label">Potensi</div>
+                        <div class="prop-kpi-value"><?= money(array_sum($d['projection'])) ?></div>
+                    </div>
+                    <div class="prop-kpi">
+                        <div class="prop-kpi-label">Target</div>
+                        <div class="prop-kpi-value"><?= money($d['target']) ?></div>
+                    </div>
+                    <div class="prop-kpi">
+                        <div class="prop-kpi-label">Aktual</div>
+                        <div class="prop-kpi-value <?= $achClass ?>"><?= money($d['actual']) ?></div>
+                    </div>
+                    <div class="prop-kpi">
+                        <div class="prop-kpi-label">Achievement</div>
+                        <div class="prop-kpi-value"><span class="ach-pill <?= $achPillClass ?>"><?= pct($ach) ?></span></div>
+                    </div>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:6px">
+                    <span>Sisa: <strong style="color:<?= $d['actual'] >= $d['target'] ? '#16a34a' : '#c2410c' ?>"><?= money(abs($d['target'] - $d['actual'])) ?></strong></span>
+                    <span>Client Baru: <strong><?= $d['new_clients'] ?></strong></span>
+                </div>
+                <div class="seg-bars">
+                    <?php foreach (['cl','media','gudang'] as $seg):
+                        $segPct = $d['projection'][$seg] > 0 ? min($d['actual_seg'][$seg] / $d['projection'][$seg], 1) : 0;
+                    ?>
+                    <div class="seg-bar-row">
+                        <div class="seg-bar-label">
+                            <span style="font-weight:600"><?= $moduleLabels[$seg] ?></span>
+                            <span><?= money($d['actual_seg'][$seg]) ?> <span style="color:var(--muted);font-size:10px"><?= pct($segPct) ?></span></span>
+                        </div>
+                        <div class="seg-bar-track">
+                            <div class="seg-bar-fill" style="width:<?= number_format(min($segPct*100,100),1,'.','.') ?>%;background:<?= $moduleColors[$seg] ?>"></div>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+            </div>
+
+            <!-- Segment Comparison Table -->
+            <div class="section-title" style="margin-top:4px">Perbandingan Segment</div>
+            <div class="panel" style="padding:0;overflow:hidden;margin-bottom:16px">
+                <table class="pic-table" style="width:100%;border-collapse:collapse;font-size:12px">
+                    <thead>
+                        <tr style="background:#f8fafc">
+                            <th style="padding:10px 14px;text-align:left;border-bottom:1px solid var(--line,#e2e8f0);width:120px">Segment</th>
+                            <?php foreach ($propData as $d): ?>
+                            <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">
+                                <?= h($d['name']) ?><br>
+                                <span style="font-size:10px;font-weight:400;color:var(--muted)">Potensi / Aktual / %</span>
+                            </th>
+                            <?php endforeach; ?>
+                            <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0);background:#f0fdf4">
+                                Gabungan<br>
+                                <span style="font-size:10px;font-weight:400;color:var(--muted)">Aktual / %</span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php
+                    $segRows = [
+                        'cl'     => 'Exhibition',
+                        'media'  => 'Media Promo',
+                        'gudang' => 'Gudang / Storage',
+                    ];
+                    foreach ($segRows as $seg => $segLabel):
+                        $combSegAct  = array_sum(array_map(fn($d) => $d['actual_seg'][$seg], $propData));
+                        $combSegProj = array_sum(array_map(fn($d) => $d['projection'][$seg], $propData));
+                        $combSegPct  = $combSegProj > 0 ? $combSegAct / $combSegProj : 0;
+                    ?>
+                    <tr style="border-bottom:1px solid var(--line,#f1f5f9)">
+                        <td style="padding:10px 14px;font-weight:700"><?= $segLabel ?></td>
+                        <?php foreach ($propData as $d):
+                            $sp = $d['projection'][$seg] > 0 ? $d['actual_seg'][$seg] / $d['projection'][$seg] : 0;
+                            $spCls = $sp >= 1 ? 'ach-good' : ($sp >= .8 ? 'ach-warn' : 'ach-bad');
+                        ?>
+                        <td style="padding:10px 14px;text-align:right">
+                            <span style="color:var(--muted)"><?= money($d['projection'][$seg]) ?></span><br>
+                            <strong><?= money($d['actual_seg'][$seg]) ?></strong>
+                            <span class="ach-pill <?= $spCls ?>" style="margin-left:4px"><?= pct($sp) ?></span>
+                        </td>
+                        <?php endforeach; ?>
+                        <td style="padding:10px 14px;text-align:right;background:#f0fdf4">
+                            <strong><?= money($combSegAct) ?></strong>
+                            <?php $cCls = $combSegPct>=1?'ach-good':($combSegPct>=.8?'ach-warn':'ach-bad'); ?>
+                            <span class="ach-pill <?= $cCls ?>" style="margin-left:4px"><?= pct($combSegPct) ?></span>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    <tr style="background:#f8fafc;font-weight:800;border-top:2px solid var(--line,#e2e8f0)">
+                        <td style="padding:10px 14px">Total</td>
+                        <?php foreach ($propData as $d):
+                            $dp = $d['target'] > 0 ? $d['actual'] / $d['target'] : 0;
+                            $dpCls = $dp>=1?'ach-good':($dp>=.8?'ach-warn':'ach-bad');
+                        ?>
+                        <td style="padding:10px 14px;text-align:right">
+                            <span style="color:var(--muted)"><?= money($d['target']) ?></span><br>
+                            <strong><?= money($d['actual']) ?></strong>
+                            <span class="ach-pill <?= $dpCls ?>" style="margin-left:4px"><?= pct($dp) ?></span>
+                        </td>
+                        <?php endforeach; ?>
+                        <td style="padding:10px 14px;text-align:right;background:#f0fdf4">
+                            <?php $tp = $combined['target']>0?$combined['actual']/$combined['target']:0; $tCls=$tp>=1?'ach-good':($tp>=.8?'ach-warn':'ach-bad'); ?>
+                            <strong><?= money($combined['actual']) ?></strong>
+                            <span class="ach-pill <?= $tCls ?>" style="margin-left:4px"><?= pct($tp) ?></span>
+                        </td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <?php
+            $floorOrder = ['LG'=>1,'GF'=>2,'UG'=>3,'FF'=>4,'SF'=>5];
+
+            // useUnion=true → baris seragam lintas properti (Exhibition); false → tiap properti hanya tampilkan datanya sendiri
+            $renderOccSection = function(string $title, string $occKey, string $groupLabel, ?callable $sorter = null, bool $useUnion = false) use ($propData, $periodDays) {
+                // Untuk union mode: hitung semua key dari semua properti
+                $unionKeys = [];
+                if ($useUnion) {
+                    foreach ($propData as $d) {
+                        foreach ($d[$occKey] as $row) {
+                            $k = (string)($row['group_key'] ?? '');
+                            if (!in_array($k, $unionKeys, true)) $unionKeys[] = $k;
+                        }
+                    }
+                    if ($sorter) usort($unionKeys, $sorter); else sort($unionKeys);
+                }
+                // Index data per properti: group_key → row
+                $indexed = [];
+                foreach ($propData as $d) {
+                    $indexed[$d['id']] = [];
+                    foreach ($d[$occKey] as $row) {
+                        $indexed[$d['id']][(string)($row['group_key'] ?? '')] = $row;
+                    }
+                }
+            ?>
+            <div class="section-title" style="margin-top:4px"><?= $title ?></div>
+            <div class="prop-col-grid" style="margin-bottom:16px">
+            <?php foreach ($propData as $cardIdx => $d):
+                $ci = array_search($d['id'], array_column(array_values($propData), 'id')) + 1;
+                // Tentukan baris yang ditampilkan untuk properti ini
+                if ($useUnion) {
+                    $displayKeys = $unionKeys;
+                } else {
+                    $displayKeys = array_map(fn($r) => (string)($r['group_key'] ?? ''), $d[$occKey]);
+                    if ($sorter) usort($displayKeys, $sorter); else sort($displayKeys);
+                }
+            ?>
+            <div class="prop-card p<?= $ci ?>">
+                <div class="prop-name"><?= h($d['name']) ?></div>
+                <?php if (empty($displayKeys)): ?>
+                    <div style="color:var(--muted);font-size:12px;padding:8px 0">Tidak ada data.</div>
+                <?php else: ?>
+                <table style="width:100%;border-collapse:collapse;font-size:12px">
+                    <thead>
+                        <tr style="border-bottom:1px solid var(--line,#e2e8f0)">
+                            <th style="padding:5px 8px;text-align:left;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px"><?= $groupLabel ?></th>
+                            <th style="padding:5px 8px;text-align:center;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px">Unit</th>
+                            <th style="padding:5px 8px;text-align:right;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px">Occ %</th>
+                            <th style="padding:5px 8px;text-align:right;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px">Aktual</th>
+                            <th style="padding:5px 8px"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php
+                    $tU = $tD = $tA = 0;
+                    foreach ($displayKeys as $key):
+                        $row = $indexed[$d['id']][$key] ?? null;
+                        $units    = $row ? (int)$row['unit_count']   : 0;
+                        $daysTot  = $row ? (float)$row['days_total'] : 0.0;
+                        $actTot   = $row ? (float)$row['actual_total'] : 0.0;
+                        $maxDays  = $units * $periodDays;
+                        $occ      = $maxDays > 0 ? $daysTot / $maxDays : 0;
+                        $occColor = $occ >= 0.8 ? '#16a34a' : ($occ >= 0.5 ? '#d97706' : '#dc2626');
+                        $dimmed   = $row ? '' : 'color:var(--muted)';
+                        $tU += $units; $tD += $daysTot; $tA += $actTot;
+                    ?>
+                    <tr style="border-bottom:1px solid #f1f5f9;<?= $dimmed ?>">
+                        <td style="padding:6px 8px;font-weight:600;<?= $dimmed ?>"><?= h($key ?: '—') ?></td>
+                        <td style="padding:6px 8px;text-align:center"><?= $units ?: '<span style="color:var(--muted)">—</span>' ?></td>
+                        <td style="padding:6px 8px;text-align:right;font-weight:800;color:<?= $row ? $occColor : 'var(--muted)' ?>"><?= $row ? number_format($occ*100,1,',','.').'%' : '—' ?></td>
+                        <td style="padding:6px 8px;text-align:right"><?= $row ? money($actTot) : '<span style="color:var(--muted)">—</span>' ?></td>
+                        <td style="padding:6px 8px;min-width:56px">
+                            <?php if ($row): ?>
+                            <div style="height:6px;background:#f1f5f9;border-radius:999px;overflow:hidden">
+                                <div style="height:100%;width:<?= number_format(min($occ*100,100),1,'.','.') ?>%;background:<?= $occColor ?>;border-radius:999px"></div>
+                            </div>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endforeach;
+                    $totalMaxDays  = $tU * $periodDays;
+                    $totalOcc      = $totalMaxDays > 0 ? $tD / $totalMaxDays : 0;
+                    $totalOccColor = $totalOcc >= 0.8 ? '#16a34a' : ($totalOcc >= 0.5 ? '#d97706' : '#dc2626');
+                    ?>
+                    <tr style="background:#f8fafc;font-weight:800;border-top:2px solid var(--line,#e2e8f0)">
+                        <td style="padding:6px 8px">Total</td>
+                        <td style="padding:6px 8px;text-align:center"><?= $tU ?></td>
+                        <td style="padding:6px 8px;text-align:right;color:<?= $totalOccColor ?>"><?= number_format($totalOcc*100,1,',','.') ?>%</td>
+                        <td style="padding:6px 8px;text-align:right"><?= money($tA) ?></td>
+                        <td style="padding:6px 8px">
+                            <div style="height:6px;background:#f1f5f9;border-radius:999px;overflow:hidden">
+                                <div style="height:100%;width:<?= number_format(min($totalOcc*100,100),1,'.','.') ?>%;background:<?= $totalOccColor ?>;border-radius:999px"></div>
+                            </div>
+                        </td>
+                    </tr>
+                    </tbody>
+                </table>
+                <?php endif; ?>
+            </div>
+            <?php endforeach; ?>
+            </div>
+            <?php };
+
+            $renderOccSection('Occupancy Exhibition per Lantai', 'floor_occ', 'Lantai',
+                fn($a,$b) => ($floorOrder[$a] ?? 99) <=> ($floorOrder[$b] ?? 99), true
+            );
+            $renderOccSection('Occupancy Media Promo per Jenis',       'media_occ',  'Jenis');
+            $renderOccSection('Occupancy Gudang / Storage per Lokasi', 'gudang_occ', 'Lokasi',
+                fn($a,$b) => ($floorOrder[$a] ?? 99) <=> ($floorOrder[$b] ?? 99)
+            );
+            ?>
+
+            <!-- PIC Achievement — All Properties -->
+            <div class="section-title">Achievement PIC — Semua Properti</div>
+            <div class="panel" style="padding:0;overflow:hidden;margin-bottom:24px">
+                <table class="pic-table" style="width:100%;border-collapse:collapse">
+                    <thead>
+                        <tr style="background:#f8fafc">
+                            <th style="padding:10px 14px;text-align:center;width:40px;border-bottom:1px solid var(--line,#e2e8f0)">#</th>
+                            <th style="padding:10px 14px;border-bottom:1px solid var(--line,#e2e8f0)">PIC</th>
+                            <th style="padding:10px 14px;border-bottom:1px solid var(--line,#e2e8f0)">Properti</th>
+                            <th style="padding:10px 14px;border-bottom:1px solid var(--line,#e2e8f0)">Jabatan</th>
+                            <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Target Posisi</th>
+                            <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Aktual</th>
+                            <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Achievement</th>
+                            <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Client Baru</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php
+                    // Merge all PICs sorted by actual desc
+                    $allPics = [];
+                    foreach ($propData as $d) {
+                        foreach ($d['pics'] as $pic) {
+                            $allPics[] = array_merge($pic, [
+                                '_prop_name' => $d['name'],
+                                '_prop_id'   => $d['id'],
+                                '_target'    => $d['target'],
+                            ]);
+                        }
+                    }
+                    usort($allPics, fn($a,$b) => $b['actual'] <=> $a['actual']);
+                    $rank = 0;
+                    $prevActual = -1;
+                    foreach ($allPics as $row):
+                        $rank++;
+                        $picTarget   = (float)$row['target_share'] * (float)$row['_target'];
+                        $ach         = $picTarget > 0 ? (float)$row['actual'] / $picTarget : 0;
+                        $achPillCls  = $ach >= 1 ? 'ach-good' : ($ach >= .8 ? 'ach-warn' : 'ach-bad');
+                        $rankEmoji   = $rank === 1 ? ' 👑' : ($rank === count($allPics) && count($allPics) > 1 ? ' 😢' : '');
+                        $propTagCls  = 'prop-tag-' . $row['_prop_id'];
+                        $highlight   = $ach >= 1 ? ' style="background:#f0fdf4"' : '';
+                    ?>
+                    <tr<?= $highlight ?> style="border-bottom:1px solid var(--line,#f1f5f9)">
+                        <td style="padding:8px 14px;text-align:center;font-weight:800;font-size:14px;color:<?= $rank===1?'#f59e0b':($rank===2?'#94a3b8':($rank===3?'#b87333':'#cbd5e1')) ?>"><?= $rank ?></td>
+                        <td style="padding:8px 14px;font-weight:600"><?= h($row['pic_name']) ?><?= $rankEmoji ?></td>
+                        <td style="padding:8px 14px"><span class="prop-tag <?= $propTagCls ?>"><?= h($row['_prop_name']) ?></span></td>
+                        <td style="padding:8px 14px;color:var(--muted)"><?= h($row['role_name']) ?></td>
+                        <td style="padding:8px 14px;text-align:right"><?= $picTarget > 0 ? money($picTarget) : '<span style="color:var(--muted)">—</span>' ?></td>
+                        <td style="padding:8px 14px;text-align:right;font-weight:700"><?= money($row['actual']) ?></td>
+                        <td style="padding:8px 14px;text-align:right"><?= $picTarget > 0 ? '<span class="ach-pill '.$achPillCls.'">'.pct($ach).'</span>' : '<span style="color:var(--muted)">—</span>' ?></td>
+                        <td style="padding:8px 14px;text-align:right;font-weight:700"><?= (int)$row['new_clients'] ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    <?php if (empty($allPics)): ?>
+                    <tr><td colspan="8" style="padding:24px;text-align:center;color:var(--muted)">Belum ada data PIC untuk periode ini.</td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <?php
+    }, ['hide_prop_tabs' => true]);
+}
+
+function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDays): array
+{
+    // Target
+    $s = $pdo->prepare("SELECT target_amount FROM targets_monthly WHERE period_key=? AND property_id=?");
+    $s->execute([$period, $pid]);
+    $target = (float)($s->fetchColumn() ?: 0);
+
+    // Projection per segment
+    $projection = [];
+    foreach (['cl' => 'master_cl_units', 'media' => 'master_media', 'gudang' => 'master_gudang'] as $seg => $tbl) {
+        $s = $pdo->prepare("SELECT COALESCE(SUM(projection_monthly),0) FROM $tbl WHERE status='active' AND property_id=?");
+        $s->execute([$pid]);
+        $projection[$seg] = (float)$s->fetchColumn();
+    }
+
+    // Actual per segment
+    $s = $pdo->prepare("SELECT module, COALESCE(SUM(amount),0) actual FROM transaction_allocations WHERE period_key=? AND property_id=? GROUP BY module");
+    $s->execute([$period, $pid]);
+    $actualSeg = ['cl'=>0,'media'=>0,'gudang'=>0];
+    foreach ($s->fetchAll() as $r) { $actualSeg[$r['module']] = (float)$r['actual']; }
+    $actual = array_sum($actualSeg);
+
+    // New clients
+    $s = $pdo->prepare(
+        "SELECT COUNT(DISTINCT t.client_id) FROM transaction_allocations a
+         JOIN transactions t ON t.id=a.transaction_id
+         WHERE a.period_key=? AND a.property_id=? AND t.client_id IS NOT NULL AND t.deleted_at IS NULL
+           AND t.client_id NOT IN (
+               SELECT DISTINCT t2.client_id FROM transaction_allocations ta2
+               JOIN transactions t2 ON t2.id=ta2.transaction_id
+               WHERE ta2.period_key < ? AND ta2.property_id=? AND t2.client_id IS NOT NULL AND t2.deleted_at IS NULL
+           )"
+    );
+    $s->execute([$period, $pid, $period, $pid]);
+    $newClients = (int)$s->fetchColumn();
+
+    // PIC
+    $s = $pdo->prepare(
+        "SELECT p.name pic_name, COALESCE(p.role_name,'-') role_name, COALESCE(p.target_share,0) target_share,
+                COALESCE(SUM(a.amount),0) actual,
+                COUNT(DISTINCT CASE WHEN t.client_id IS NOT NULL AND prev.client_id IS NULL THEN t.client_id END) AS new_clients
+         FROM master_pic p
+         LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
+         LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
+         LEFT JOIN (
+             SELECT DISTINCT t2.client_id FROM transaction_allocations ta2
+             JOIN transactions t2 ON t2.id=ta2.transaction_id
+             WHERE ta2.period_key < ? AND ta2.property_id=? AND t2.client_id IS NOT NULL AND t2.deleted_at IS NULL
+         ) prev ON prev.client_id=t.client_id
+         WHERE p.status='active' AND p.property_id=?
+         GROUP BY p.id ORDER BY actual DESC"
+    );
+    $s->execute([$period, $pid, $period, $pid, $pid]);
+    $pics = $s->fetchAll();
+
+    // Occupancy per lantai (CL)
+    $s = $pdo->prepare(
+        "SELECT m.floor AS group_key,
+                COUNT(*) unit_count,
+                COALESCE(SUM(a.allocated_days),0) days_total,
+                COALESCE(SUM(m.projection_monthly),0) proj_total,
+                COALESCE(SUM(a.amount),0) actual_total
+         FROM master_cl_units m
+         LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='cl' AND a.period_key=? AND a.property_id=?
+         WHERE m.property_id=? AND m.status='active'
+         GROUP BY m.floor
+         ORDER BY CASE m.floor WHEN 'LG' THEN 1 WHEN 'GF' THEN 2 WHEN 'UG' THEN 3 WHEN 'FF' THEN 4 WHEN 'SF' THEN 5 ELSE 6 END"
+    );
+    $s->execute([$period, $pid, $pid]);
+    $floorOcc = $s->fetchAll();
+
+    // Occupancy per jenis (Media)
+    $s = $pdo->prepare(
+        "SELECT m.media_type AS group_key,
+                COUNT(*) unit_count,
+                COALESCE(SUM(a.allocated_days),0) days_total,
+                COALESCE(SUM(m.projection_monthly),0) proj_total,
+                COALESCE(SUM(a.amount),0) actual_total
+         FROM master_media m
+         LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='media' AND a.period_key=? AND a.property_id=?
+         WHERE m.property_id=? AND m.status='active'
+         GROUP BY m.media_type ORDER BY m.media_type"
+    );
+    $s->execute([$period, $pid, $pid]);
+    $mediaOcc = $s->fetchAll();
+
+    // Occupancy per lokasi (Gudang)
+    $s = $pdo->prepare(
+        "SELECT m.location AS group_key,
+                COUNT(*) unit_count,
+                COALESCE(SUM(a.allocated_days),0) days_total,
+                COALESCE(SUM(m.projection_monthly),0) proj_total,
+                COALESCE(SUM(a.amount),0) actual_total
+         FROM master_gudang m
+         LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='gudang' AND a.period_key=? AND a.property_id=?
+         WHERE m.property_id=? AND m.status='active'
+         GROUP BY m.location ORDER BY m.location"
+    );
+    $s->execute([$period, $pid, $pid]);
+    $gudangOcc = $s->fetchAll();
+
+    return [
+        'target'      => $target,
+        'projection'  => $projection,
+        'actual_seg'  => $actualSeg,
+        'actual'      => $actual,
+        'new_clients' => $newClients,
+        'pics'        => $pics,
+        'floor_occ'   => $floorOcc,
+        'media_occ'   => $mediaOcc,
+        'gudang_occ'  => $gudangOcc,
+    ];
+}
+
+function _exec_combine(array $propData): array
+{
+    $target = $projection = $actual = 0;
+    foreach ($propData as $d) {
+        $target     += $d['target'];
+        $projection += array_sum($d['projection']);
+        $actual     += $d['actual'];
+    }
+    return compact('target', 'projection', 'actual');
+}
