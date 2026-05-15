@@ -36,17 +36,16 @@ function login_page(PDO $pdo): void
                 }
                 $_SESSION['allowed_properties'] = $allowed;
 
-                if (count($allowed) === 1) {
+                // Selalu set ke properti pertama — user ganti via tab di topbar
+                if (!empty($allowed)) {
                     $_SESSION['current_property_id'] = (int)$allowed[0]['id'];
                 }
 
                 $pdo->prepare('UPDATE users SET last_login_at = ?, session_last_active = ? WHERE id = ?')
                     ->execute([date('Y-m-d H:i:s'), date('Y-m-d H:i:s'), $user['id']]);
                 audit($pdo, 'login_success', 'users', (string) $user['id'], ['email' => $user['email']], [], 'auth');
+                $_SESSION['_show_welcome'] = true;
 
-                if (count($allowed) > 1 && empty($_SESSION['current_property_id'])) {
-                    redirect_to('select_property');
-                }
                 redirect_to('dashboard');
             } else {
                 $attempts = ($_SESSION['_login_attempts'] ?? 0) + 1;
@@ -75,11 +74,58 @@ function login_page(PDO $pdo): void
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Login — <?= h(env_value('APP_NAME', 'CLARA')) ?></title>
         <link rel="icon" type="image/png" href="assets/clara-logo.png">
-        <link rel="stylesheet" href="assets/app.css?v=<?= filemtime(APP_PUBLIC . '/assets/app.css') ?>">
+        <link rel="stylesheet" href="assets/app.css?v=<?= CSS_VER ?>">
         <style>
             @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
             @keyframes shake{0%,100%{transform:translateX(0)}15%,45%,75%{transform:translateX(-7px)}30%,60%,90%{transform:translateX(7px)}}
             @keyframes spin{to{transform:rotate(360deg)}}
+            @keyframes bgShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+            @keyframes blob1{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(60px,-40px) scale(1.12)}66%{transform:translate(-30px,50px) scale(0.92)}}
+            @keyframes blob2{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(-70px,30px) scale(1.08)}66%{transform:translate(40px,-60px) scale(1.15)}}
+            @keyframes blob3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(50px,40px) scale(0.9)}}
+
+            .login{
+                background:linear-gradient(-45deg,#115E59,#0D9488,#0891B2,#0369A1,#0D9488,#115E59) !important;
+                background-size:400% 400% !important;
+                animation:bgShift 18s ease infinite;
+                position:relative;
+                overflow:hidden;
+            }
+            .login::before,.login::after,.login-blob3{
+                content:'';
+                position:absolute;
+                border-radius:50%;
+                filter:blur(90px);
+                opacity:.22;
+                pointer-events:none;
+                z-index:0;
+            }
+            .login::before{
+                width:520px;height:520px;
+                background:radial-gradient(circle,#99F6E4,#2DD4BF);
+                top:-140px;left:-160px;
+                animation:blob1 20s ease-in-out infinite;
+            }
+            .login::after{
+                width:440px;height:440px;
+                background:radial-gradient(circle,#BAE6FD,#38BDF8);
+                bottom:-120px;right:-120px;
+                animation:blob2 25s ease-in-out infinite;
+            }
+            .login-blob3{
+                width:360px;height:360px;
+                background:radial-gradient(circle,#A7F3D0,#6EE7B7);
+                top:45%;left:55%;
+                animation:blob3 30s ease-in-out infinite;
+            }
+            .login .panel{
+                position:relative;
+                z-index:1;
+                background:rgba(255,255,255,.97) !important;
+                box-shadow:0 24px 64px rgba(0,0,0,.22),0 2px 8px rgba(0,0,0,.12),inset 0 1px 0 rgba(255,255,255,.9) !important;
+                border:1px solid rgba(255,255,255,.6);
+                backdrop-filter:blur(4px);
+            }
             .login-spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .65s linear infinite;vertical-align:middle;margin-right:8px}
             #submit-btn:disabled{opacity:.75;cursor:not-allowed}
             #lock-countdown{font-variant-numeric:tabular-nums;font-weight:700}
@@ -87,6 +133,7 @@ function login_page(PDO $pdo): void
     </head>
     <body>
     <div class="login">
+        <div class="login-blob3"></div>
         <form class="panel" method="post" id="login-form">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
             <img class="login-logo" src="assets/clara-logo.png" alt="CLARA" onerror="this.hidden=true;this.nextElementSibling.style.display='flex'">
@@ -165,7 +212,7 @@ function select_property_page(): void
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Pilih Properti — <?= h(env_value('APP_NAME', 'CLARA')) ?></title>
         <link rel="icon" type="image/png" href="assets/clara-logo.png">
-        <link rel="stylesheet" href="assets/app.css?v=<?= filemtime(APP_PUBLIC . '/assets/app.css') ?>">
+        <link rel="stylesheet" href="assets/app.css?v=<?= CSS_VER ?>">
         <style>
             @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
             .prop-cards{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:24px}

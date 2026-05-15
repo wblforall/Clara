@@ -55,7 +55,7 @@ function xlsx_download(string $filename, array $headers, array $rows): void
 
 function layout(string $title, callable $body, array $opts = []): void
 {
-    global $route, $config;
+    global $route, $config, $pdo;
     $appName = $config['app_name'] ?? 'CLARA';
     $flash   = flash();
     $nav     = [
@@ -93,7 +93,7 @@ function layout(string $title, callable $body, array $opts = []): void
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title><?= h($title) ?> — <?= h($appName) ?></title>
         <link rel="icon" type="image/png" href="assets/clara-logo.png">
-        <link rel="stylesheet" href="assets/app.css?v=<?= filemtime(APP_PUBLIC . '/assets/app.css') ?>">
+        <link rel="stylesheet" href="assets/app.css?v=<?= CSS_VER ?>">
         <?php if ($isMulti): ?>
         <style>
             .prop-tabs{display:flex;gap:4px;align-items:center}
@@ -165,7 +165,7 @@ function layout(string $title, callable $body, array $opts = []): void
                     <?php if ($isMulti && empty($opts['hide_prop_tabs'])): ?>
                     <div class="prop-tabs">
                         <?php foreach ($allowedProps as $ap): ?>
-                        <a href="?r=switch_property&to=<?= (int)$ap['id'] ?>&back=<?= urlencode('?r=' . $route) ?>"
+                        <a href="?r=switch_property&to=<?= (int)$ap['id'] ?>&back=<?= urlencode('?' . $_SERVER['QUERY_STRING']) ?>"
                            class="prop-tab <?= ((int)$ap['id'] === $currentPid) ? 'active' : '' ?>">
                             <?= h($ap['name']) ?>
                         </a>
@@ -179,6 +179,138 @@ function layout(string $title, callable $body, array $opts = []): void
             <?php $body(); ?>
         </main>
     </div>
+    <?php if (!empty($_SESSION['_show_welcome']) && isset($pdo)):
+        unset($_SESSION['_show_welcome']);
+        $wpPeriod = date('Y-m');
+        $wpPid    = current_property_id();
+        $wpUser   = $_SESSION['user'] ?? [];
+        $wpProp   = current_property();
+        $wpName   = $wpUser['name'] ?? 'User';
+
+        // Semua property_id yang boleh diakses user ini
+        $wpPids = array_map('intval', array_column($allowedProps, 'id'));
+        $wpPh   = implode(',', $wpPids);
+
+        // Cek apakah user adalah PIC sales (cari di semua properti yang diakses)
+        $wpPic = null;
+        if (!empty($wpUser['id'])) {
+            $s = $pdo->prepare(
+                'SELECT p.name AS pic_name, p.target_share, p.property_id,
+                        COALESCE(SUM(a.amount),0) AS actual
+                 FROM master_pic p
+                 LEFT JOIN transaction_allocations a
+                        ON a.pic_name=p.name AND a.period_key=? AND a.property_id=p.property_id
+                 WHERE p.user_id=? AND p.status=\'active\'
+                 GROUP BY p.id LIMIT 1'
+            );
+            $s->execute([$wpPeriod, $wpUser['id']]);
+            $wpPic = $s->fetch() ?: null;
+        }
+
+        // Target: gabungkan semua properti yang diakses
+        $s = $pdo->query("SELECT COALESCE(SUM(target_amount),0) FROM targets_monthly WHERE period_key='$wpPeriod' AND property_id IN ($wpPh)");
+        $wpTarget = (float)($s->fetchColumn() ?: 0);
+
+        if ($wpPic) {
+            // PIC: pakai target properti spesifik milik PIC tersebut
+            $sPicTarget = $pdo->prepare('SELECT COALESCE(target_amount,0) FROM targets_monthly WHERE period_key=? AND property_id=?');
+            $sPicTarget->execute([$wpPeriod, (int)$wpPic['property_id']]);
+            $wpPicPropTarget = (float)($sPicTarget->fetchColumn() ?: 0);
+            $wpActual     = (float)$wpPic['actual'];
+            $wpMyTarget   = $wpPicPropTarget * ((float)$wpPic['target_share'] / 100);
+            $wpAchieve    = $wpMyTarget > 0 ? round($wpActual / $wpMyTarget * 100) : 0;
+            $wpSubject    = $wpPic['pic_name'];
+            $wpHeading    = 'Achievement Pribadi';
+            $wpTargetShow = $wpMyTarget;
+        } else {
+            // Non-PIC: per-property achievement breakdown
+            $wpHeading = 'Ringkasan Properti';
+            $wpProps   = [];
+            foreach ($allowedProps as $_ap) {
+                $_apId  = (int)$_ap['id'];
+                $_sT    = $pdo->prepare('SELECT COALESCE(target_amount,0) FROM targets_monthly WHERE period_key=? AND property_id=?');
+                $_sT->execute([$wpPeriod, $_apId]);
+                $_apTarget  = (float)($_sT->fetchColumn() ?: 0);
+                $_sA    = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM transaction_allocations WHERE period_key=? AND property_id=?');
+                $_sA->execute([$wpPeriod, $_apId]);
+                $_apActual  = (float)$_sA->fetchColumn();
+                $_apAchieve = $_apTarget > 0 ? round($_apActual / $_apTarget * 100) : 0;
+                $wpProps[]  = [
+                    'name'    => $_ap['name'],
+                    'actual'  => $_apActual,
+                    'target'  => $_apTarget,
+                    'achieve' => $_apAchieve,
+                    'color'   => $_apAchieve >= 100 ? '#10B981' : ($_apAchieve >= 80 ? '#F59E0B' : '#EF4444'),
+                ];
+            }
+            $wpActual     = array_sum(array_column($wpProps, 'actual'));
+            $wpAchieve    = count($wpProps) === 1 ? $wpProps[0]['achieve'] : 0;
+            $wpSubject    = count($wpProps) === 1 ? ($allowedProps[0]['name'] ?? '') : '';
+            $wpTargetShow = $wpTarget;
+        }
+
+        $wpColor  = $wpAchieve >= 100 ? '#10B981' : ($wpAchieve >= 80 ? '#F59E0B' : '#EF4444');
+        $wpMonth  = period_label($wpPeriod);
+    ?>
+    <style>
+    @keyframes wpFadeIn{from{opacity:0}to{opacity:1}}
+    @keyframes wpSlideUp{from{opacity:0;transform:translateY(20px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+    @keyframes wpBar{from{width:100%}to{width:0%}}
+    #wp-overlay{position:fixed;inset:0;background:rgba(10,18,30,.5);z-index:9000;display:flex;align-items:center;justify-content:center;animation:wpFadeIn .2s ease;backdrop-filter:blur(2px)}
+    #wp-card{background:#fff;border-radius:16px;width:min(380px,92vw);box-shadow:0 28px 70px rgba(0,0,0,.25);animation:wpSlideUp .35s cubic-bezier(.22,.68,0,1.2);overflow:hidden;position:relative}
+    #wp-close{position:absolute;top:11px;right:12px;width:26px;height:26px;border:none;background:rgba(255,255,255,.2);border-radius:50%;cursor:pointer;font-size:17px;color:#fff;line-height:1;z-index:1;display:flex;align-items:center;justify-content:center}
+    #wp-close:hover{background:rgba(255,255,255,.35)}
+    #wp-head{background:linear-gradient(-45deg,#115E59,#0D9488,#0891B2);background-size:200% 200%;animation:bgShift 8s ease infinite;padding:22px 24px 18px;color:#fff}
+    #wp-head h2{font-size:17px;font-weight:800;margin:0 0 3px}
+    #wp-head p{font-size:12px;opacity:.82;margin:0}
+    #wp-body{padding:18px 24px 14px}
+    .wp-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+    .wp-lbl{font-size:11px;color:#7B8A9C;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+    .wp-val{font-size:14px;font-weight:700;color:#0F1623}
+    .wp-pct{font-size:32px;font-weight:900;text-align:center;padding:6px 0 14px;letter-spacing:-.5px}
+    .wp-pct small{font-size:14px;opacity:.6;font-weight:700}
+    .wp-prop-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #F1F5F9}
+    .wp-prop-row:last-child{border-bottom:none;padding-bottom:4px}
+    .wp-prop-name{font-size:13px;font-weight:700;color:#0F1623}
+    .wp-prop-pct{font-size:24px;font-weight:900;letter-spacing:-.5px}
+    #wp-bar-wrap{height:3px;background:#F1F5F9;overflow:hidden}
+    #wp-bar{height:100%;background:linear-gradient(90deg,#0D9488,#0891B2);animation:wpBar 3s linear forwards}
+    </style>
+    <div id="wp-overlay" onclick="if(event.target===this)wpClose()">
+        <div id="wp-card">
+            <button id="wp-close" onclick="wpClose()">&#x2715;</button>
+            <div id="wp-head">
+                <h2>Selamat datang, <?= h($wpName) ?>! &nbsp;&#128075;</h2>
+                <p><?= h($wpHeading) ?> &middot; <?= h($wpMonth) ?><?= $wpSubject !== '' ? ' &middot; ' . h($wpSubject) : '' ?></p>
+            </div>
+            <div id="wp-body">
+                <?php if (!empty($wpProps) && count($wpProps) > 1): ?>
+                    <?php foreach ($wpProps as $_wp): ?>
+                    <div class="wp-prop-row">
+                        <span class="wp-prop-name"><?= h($_wp['name']) ?></span>
+                        <span class="wp-prop-pct" style="color:<?= $_wp['color'] ?>"><?= $_wp['achieve'] ?><small style="font-size:13px;font-weight:700;opacity:.65">%</small></span>
+                    </div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                <div class="wp-row">
+                    <span class="wp-lbl">Aktual</span>
+                    <span class="wp-val">Rp&nbsp;<?= number_format($wpActual, 0, ',', '.') ?></span>
+                </div>
+                <div class="wp-row">
+                    <span class="wp-lbl">Target</span>
+                    <span class="wp-val">Rp&nbsp;<?= number_format($wpTargetShow, 0, ',', '.') ?></span>
+                </div>
+                <div class="wp-pct" style="color:<?= $wpColor ?>"><?= $wpAchieve ?><small>%</small></div>
+                <?php endif; ?>
+            </div>
+            <div id="wp-bar-wrap"><div id="wp-bar"></div></div>
+        </div>
+    </div>
+    <script>
+    function wpClose(){var o=document.getElementById('wp-overlay');if(!o)return;o.style.transition='opacity .18s';o.style.opacity='0';setTimeout(function(){o.remove();},200);}
+    setTimeout(wpClose, 3000);
+    </script>
+    <?php endif; ?>
     <script>
     function openSidebar(){document.getElementById('sidebar').classList.add('open');document.getElementById('sidebar-overlay').classList.add('active');document.body.style.overflow='hidden';}
     function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebar-overlay').classList.remove('active');document.body.style.overflow='';}

@@ -229,7 +229,6 @@ function period_label(string $periodKey): string
 function audit(PDO $pdo, string $action, string $table, ?string $id, array $after = [], array $before = [], ?string $module = null): void
 {
     $ip   = $_SERVER['REMOTE_ADDR'] ?? null;
-    $host = $ip ? @gethostbyaddr($ip) : null;
     $stmt = $pdo->prepare(
         'INSERT INTO audit_logs
          (property_id, user_id, actor, user_name, user_role, action, module, table_name, record_id,
@@ -252,7 +251,7 @@ function audit(PDO $pdo, string $action, string $table, ?string $id, array $afte
         ':route'         => getv('r', 'system'),
         ':method'        => $_SERVER['REQUEST_METHOD'] ?? 'CLI',
         ':ip_address'    => $ip,
-        ':computer_name' => ($host && $host !== $ip) ? substr($host, 0, 255) : null,
+        ':computer_name' => null,
         ':user_agent'    => substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255),
         ':before_json'   => $before ? json_encode($before) : null,
         ':after_json'    => $after  ? json_encode($after)  : null,

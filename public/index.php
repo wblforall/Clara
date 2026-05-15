@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 define('APP_PUBLIC', __DIR__);
 define('APP_ROOT',   dirname(__DIR__));
+define('CSS_VER',    filemtime(__DIR__ . '/assets/app.css'));
 
 require_once __DIR__ . '/../app/helpers.php';
 require_once __DIR__ . '/../app/Database.php';
@@ -40,7 +41,9 @@ if (!$isDisplayRoute && isset($_SESSION['user'])) {
         header('Location: ?r=login');
         exit;
     }
-    $_SESSION['last_activity'] = time();
+    if (!isset($_SESSION['last_activity']) || (time() - $_SESSION['last_activity']) > 60) {
+        $_SESSION['last_activity'] = time();
+    }
 }
 
 try {
@@ -56,7 +59,8 @@ try {
 }
 
 // ─── Refresh nama properti dari DB (supaya perubahan nama langsung efektif tanpa re-login) ──
-if (!$isDisplayRoute && !empty($_SESSION['allowed_properties'])) {
+if (!$isDisplayRoute && !empty($_SESSION['allowed_properties'])
+    && (time() - ($_SESSION['_prop_refresh_at'] ?? 0)) > 300) {
     try {
         $ids   = array_map('intval', array_column($_SESSION['allowed_properties'], 'id'));
         $ph    = implode(',', $ids);
@@ -64,6 +68,7 @@ if (!$isDisplayRoute && !empty($_SESSION['allowed_properties'])) {
         foreach ($_SESSION['allowed_properties'] as &$_ap) {
             if (isset($fresh[(int)$_ap['id']])) $_ap['name'] = $fresh[(int)$_ap['id']];
         }
+        $_SESSION['_prop_refresh_at'] = time();
         unset($_ap, $fresh, $ids, $ph);
     } catch (Throwable $_e) {}
 }
@@ -201,9 +206,6 @@ if (!can($permission)) {
     require_permission($permission);
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    log_activity($pdo, 'view_' . $route, module_from_request($route), getv('id'));
-}
 
 $pageFiles = [
     'dashboard'                   => 'dashboard.php',

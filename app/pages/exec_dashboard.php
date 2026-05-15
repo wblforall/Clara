@@ -85,6 +85,15 @@ function exec_dashboard(PDO $pdo): void
             .ach-warn { background:#fef3c7;color:#92400e; }
             .ach-bad  { background:#fee2e2;color:#b91c1c; }
             .seg-compare-grid { display:grid;grid-template-columns:auto <?= implode(' ', array_fill(0, count($propData), '1fr')) ?> 1fr;gap:0; }
+            @keyframes exSlideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+            @keyframes exFadeIn{from{opacity:0}to{opacity:1}}
+            .combined-strip>.combined-kpi{animation:exSlideUp .4s ease both}
+            .combined-strip>.combined-kpi:nth-child(1){animation-delay:.05s}
+            .combined-strip>.combined-kpi:nth-child(2){animation-delay:.12s}
+            .combined-strip>.combined-kpi:nth-child(3){animation-delay:.19s}
+            .combined-strip>.combined-kpi:nth-child(4){animation-delay:.26s}
+            .combined-strip>.combined-kpi:nth-child(5){animation-delay:.33s}
+            .section-title{animation:exFadeIn .5s ease both}
         </style>
 
         <!-- Toolbar -->
@@ -154,7 +163,8 @@ function exec_dashboard(PDO $pdo): void
                 $moduleColors = ['cl'=>'#0d9488','media'=>'#0891b2','gudang'=>'#f59e0b'];
                 $moduleLabels = ['cl'=>'Exhibition','media'=>'Media','gudang'=>'Gudang'];
             ?>
-            <div class="prop-card <?= $cardClass ?>">
+            <?php $cardPos = array_search($idx, array_keys($propData)); ?>
+            <div class="prop-card <?= $cardClass ?>" style="animation:exSlideUp .4s <?= number_format(0.15 + $cardPos * 0.1, 2, '.', '') ?>s ease both">
                 <div class="prop-name"><?= h($d['name']) ?></div>
                 <div class="prop-kpi-row">
                     <div class="prop-kpi">
@@ -188,7 +198,7 @@ function exec_dashboard(PDO $pdo): void
                             <span><?= money($d['actual_seg'][$seg]) ?> <span style="color:var(--muted);font-size:10px"><?= pct($segPct) ?></span></span>
                         </div>
                         <div class="seg-bar-track">
-                            <div class="seg-bar-fill" style="width:<?= number_format(min($segPct*100,100),1,'.','.') ?>%;background:<?= $moduleColors[$seg] ?>"></div>
+                            <div class="seg-bar-fill" data-w="<?= number_format(min($segPct*100,100),1,'.','.') ?>" style="width:0;background:<?= $moduleColors[$seg] ?>"></div>
                         </div>
                     </div>
                     <?php endforeach; ?>
@@ -343,7 +353,7 @@ function exec_dashboard(PDO $pdo): void
                         <td style="padding:6px 8px;min-width:56px">
                             <?php if ($row): ?>
                             <div style="height:6px;background:#f1f5f9;border-radius:999px;overflow:hidden">
-                                <div style="height:100%;width:<?= number_format(min($occ*100,100),1,'.','.') ?>%;background:<?= $occColor ?>;border-radius:999px"></div>
+                                <div class="exec-bar" data-w="<?= number_format(min($occ*100,100),1,'.','.') ?>" style="height:100%;width:0;background:<?= $occColor ?>;border-radius:999px"></div>
                             </div>
                             <?php endif; ?>
                         </td>
@@ -360,7 +370,7 @@ function exec_dashboard(PDO $pdo): void
                         <td style="padding:6px 8px;text-align:right"><?= money($tA) ?></td>
                         <td style="padding:6px 8px">
                             <div style="height:6px;background:#f1f5f9;border-radius:999px;overflow:hidden">
-                                <div style="height:100%;width:<?= number_format(min($totalOcc*100,100),1,'.','.') ?>%;background:<?= $totalOccColor ?>;border-radius:999px"></div>
+                                <div class="exec-bar" data-w="<?= number_format(min($totalOcc*100,100),1,'.','.') ?>" style="height:100%;width:0;background:<?= $totalOccColor ?>;border-radius:999px"></div>
                             </div>
                         </td>
                     </tr>
@@ -439,6 +449,14 @@ function exec_dashboard(PDO $pdo): void
                     </tbody>
                 </table>
             </div>
+        <script>
+        setTimeout(function(){
+            document.querySelectorAll('.seg-bar-fill[data-w],.exec-bar[data-w]').forEach(function(b){
+                b.style.transition='width .7s ease';
+                b.style.width=b.getAttribute('data-w')+'%';
+            });
+        },300);
+        </script>
         </div>
         <?php
     }, ['hide_prop_tabs' => true]);

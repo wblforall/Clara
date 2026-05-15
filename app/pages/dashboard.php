@@ -657,7 +657,7 @@ function display_page(PDO $pdo, array $config): void
         <meta name="viewport" content="width=1280">
         <title>Display TV — <?= h($config['app_name'] ?? 'CLARA') ?></title>
         <link rel="icon" type="image/png" href="assets/clara-logo.png">
-        <link rel="stylesheet" href="assets/app.css?v=<?= filemtime(APP_PUBLIC . '/assets/app.css') ?>">
+        <link rel="stylesheet" href="assets/app.css?v=<?= CSS_VER ?>">
     </head>
     <body class="tv-body">
     <main class="tv-shell">
