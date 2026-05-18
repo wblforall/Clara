@@ -406,6 +406,7 @@ function client_analysis_page(PDO $pdo): void
     $byScale    = $dist('business_scale');
     $byOrigin   = $dist('brand_origin');
     $byProvince = $dist('province');
+    $byCity     = $dist('city');
     $currentYear = substr($period, 0, 4);
     $prevYear = (string)((int)$currentYear - 1);
 
@@ -619,7 +620,7 @@ function client_analysis_page(PDO $pdo): void
     $periods = $pdo->query("SELECT period_key, label FROM periods ORDER BY period_key DESC")->fetchAll();
     $hasFilter = $filterType || $filterScale || $filterSegment || $filterProvince;
 
-    layout('Analisa Market Client', function () use ($byType, $byScale, $byOrigin, $bySegment, $byProvince, $total, $filled, $revRows, $topClients, $activityByType, $actSummary, $currentYear, $period, $periods, $opts, $filterType, $filterScale, $filterSegment, $filterProvince, $hasFilter, $prevYear, $newReturn, $retention, $freqDist, $atRiskClients, $byFloor, $byModule, $floorTypes, $geoProvinces) {
+    layout('Analisa Market Client', function () use ($byType, $byScale, $byOrigin, $bySegment, $byProvince, $byCity, $total, $filled, $revRows, $topClients, $activityByType, $actSummary, $currentYear, $period, $periods, $opts, $filterType, $filterScale, $filterSegment, $filterProvince, $hasFilter, $prevYear, $newReturn, $retention, $freqDist, $atRiskClients, $byFloor, $byModule, $floorTypes, $geoProvinces) {
         $pct = fn($n) => $total > 0 ? round($n / $total * 100) : 0;
         $colors = ['#0D9488','#0891B2','#7C3AED','#F59E0B','#EF4444','#10B981','#F97316','#6366F1','#EC4899','#84CC16','#14B8A6','#8B5CF6'];
         ?>
@@ -773,8 +774,11 @@ function client_analysis_page(PDO $pdo): void
         </div>
 
 
+        <?php if ($byProvince || $byCity): ?>
+        <div style="display:grid;grid-template-columns:<?= ($byProvince && $byCity) ? '1fr 1fr' : '1fr' ?>;gap:16px;margin-bottom:16px">
+
         <?php if ($byProvince): ?>
-        <div class="panel" style="margin-bottom:16px">
+        <div class="panel" style="margin:0">
             <div style="font-weight:700;margin-bottom:12px">Distribusi per Provinsi</div>
             <?php foreach ($byProvince as $i => $r): ?>
             <div style="margin-bottom:8px">
@@ -787,6 +791,30 @@ function client_analysis_page(PDO $pdo): void
                 </div>
             </div>
             <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($byCity): ?>
+        <div class="panel" style="margin:0">
+            <div style="font-weight:700;margin-bottom:12px">Sebaran per Kota</div>
+            <?php
+            $cityMax = (int)($byCity[0]['n'] ?? 1);
+            foreach ($byCity as $i => $r):
+                $barPct = $cityMax > 0 ? round($r['n'] / $cityMax * 100) : 0;
+            ?>
+            <div style="margin-bottom:8px">
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+                    <span style="font-weight:600"><?= h($r['k']) ?></span>
+                    <span style="color:var(--muted)"><?= $r['n'] ?> client (<?= $pct($r['n']) ?>%)</span>
+                </div>
+                <div style="background:#F1F5F9;border-radius:4px;height:8px">
+                    <div style="background:<?= $colors[$i % count($colors)] ?>;width:<?= $barPct ?>%;height:8px;border-radius:4px;transition:.3s"></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+
         </div>
         <?php endif; ?>
 
