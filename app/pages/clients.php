@@ -1,6 +1,50 @@
 <?php
 declare(strict_types=1);
 
+function clients_geo_data(): array
+{
+    return [
+        'Aceh'                       => ['Banda Aceh','Lhokseumawe','Langsa','Sabang','Subulussalam','Aceh Besar','Pidie','Bireuen'],
+        'Sumatera Utara'             => ['Medan','Binjai','Pematang Siantar','Tebing Tinggi','Deli Serdang','Asahan','Simalungun','Tapanuli Utara','Karo','Dairi'],
+        'Sumatera Barat'             => ['Padang','Bukittinggi','Solok','Payakumbuh','Padang Panjang','Pariaman','Sawahlunto'],
+        'Riau'                       => ['Pekanbaru','Dumai','Siak','Bengkalis','Kampar','Rokan Hulu','Rokan Hilir'],
+        'Kepulauan Riau'             => ['Batam','Tanjung Pinang','Karimun','Bintan','Natuna'],
+        'Jambi'                      => ['Jambi','Sungai Penuh','Muaro Jambi','Bungo','Merangin','Sarolangun'],
+        'Sumatera Selatan'           => ['Palembang','Prabumulih','Lubuklinggau','Pagaralam','Banyuasin','Ogan Ilir','Muara Enim'],
+        'Kepulauan Bangka Belitung'  => ['Pangkal Pinang','Belitung','Bangka Barat','Bangka Tengah','Bangka Selatan'],
+        'Bengkulu'                   => ['Bengkulu','Rejang Lebong','Kepahiang','Muko-Muko'],
+        'Lampung'                    => ['Bandar Lampung','Metro','Pringsewu','Tulang Bawang','Pesawaran','Lampung Selatan'],
+        'Banten'                     => ['Tangerang','Serang','Cilegon','Tangerang Selatan','Pandeglang','Lebak'],
+        'DKI Jakarta'                => ['Jakarta Pusat','Jakarta Utara','Jakarta Barat','Jakarta Selatan','Jakarta Timur','Kepulauan Seribu'],
+        'Jawa Barat'                 => ['Bandung','Bekasi','Depok','Bogor','Cimahi','Tasikmalaya','Sukabumi','Cirebon','Karawang','Garut','Purwakarta','Subang'],
+        'Jawa Tengah'                => ['Semarang','Solo','Surakarta','Salatiga','Magelang','Pekalongan','Tegal','Kudus','Klaten','Purwokerto','Cilacap','Kebumen'],
+        'DI Yogyakarta'              => ['Yogyakarta','Sleman','Bantul','Gunung Kidul','Kulon Progo'],
+        'Jawa Timur'                 => ['Surabaya','Malang','Sidoarjo','Gresik','Banyuwangi','Kediri','Mojokerto','Pasuruan','Jombang','Madiun','Jember','Lumajang'],
+        'Bali'                       => ['Denpasar','Badung','Gianyar','Tabanan','Buleleng','Klungkung','Bangli','Karangasem','Jembrana'],
+        'Nusa Tenggara Barat'        => ['Mataram','Bima','Sumbawa','Praya','Lombok Barat','Lombok Tengah','Lombok Timur'],
+        'Nusa Tenggara Timur'        => ['Kupang','Ende','Maumere','Waingapu','Labuan Bajo','Atambua'],
+        'Kalimantan Barat'           => ['Pontianak','Singkawang','Ketapang','Sanggau','Sintang','Mempawah'],
+        'Kalimantan Tengah'          => ['Palangka Raya','Kotawaringin Barat','Kotawaringin Timur','Kapuas','Barito Utara'],
+        'Kalimantan Selatan'         => ['Banjarmasin','Banjarbaru','Martapura','Barabai','Amuntai','Tanjung'],
+        'Kalimantan Timur'           => ['Samarinda','Balikpapan','Bontang','Kutai Kartanegara','Berau','Penajam Paser Utara'],
+        'Kalimantan Utara'           => ['Tarakan','Bulungan','Nunukan','Malinau','Tana Tidung'],
+        'Sulawesi Utara'             => ['Manado','Bitung','Tomohon','Kotamobagu','Minahasa','Bolaang Mongondow'],
+        'Gorontalo'                  => ['Gorontalo','Bone Bolango','Pohuwato','Boalemo','Gorontalo Utara'],
+        'Sulawesi Tengah'            => ['Palu','Poso','Tolitoli','Banggai','Donggala','Parigi Moutong','Morowali'],
+        'Sulawesi Barat'             => ['Mamuju','Polewali Mandar','Majene','Pasangkayu','Mamasa'],
+        'Sulawesi Selatan'           => ['Makassar','Parepare','Palopo','Maros','Gowa','Takalar','Jeneponto','Bulukumba','Selayar','Bantaeng','Sinjai','Bone','Soppeng','Wajo','Sidrap','Pinrang','Enrekang','Tana Toraja','Toraja Utara','Luwu','Luwu Utara','Luwu Timur','Barru'],
+        'Sulawesi Tenggara'          => ['Kendari','Bau-Bau','Konawe','Kolaka','Muna','Buton','Konawe Selatan'],
+        'Maluku'                     => ['Ambon','Tual','Maluku Tengah','Seram Bagian Barat','Seram Bagian Timur','Buru'],
+        'Maluku Utara'               => ['Ternate','Tidore Kepulauan','Halmahera Utara','Halmahera Selatan'],
+        'Papua Barat'                => ['Manokwari','Sorong','Fakfak','Kaimana','Teluk Bintuni'],
+        'Papua Barat Daya'           => ['Sorong Kota','Raja Ampat','Sorong','Maybrat','Tambrauw'],
+        'Papua'                      => ['Jayapura','Biak','Merauke','Sarmi','Keerom','Jayawijaya'],
+        'Papua Selatan'              => ['Merauke','Boven Digoel','Mappi','Asmat'],
+        'Papua Tengah'               => ['Timika','Nabire','Paniai','Dogiyai','Deiyai'],
+        'Papua Pegunungan'           => ['Wamena','Tolikara','Lanny Jaya','Nduga','Pegunungan Bintang'],
+    ];
+}
+
 function clients_page(PDO $pdo): void
 {
     require_permission('view_master');
@@ -42,12 +86,16 @@ function clients_page(PDO $pdo): void
         </div>
         <div class="table-wrap">
             <table>
-                <thead><tr><th>Nama Perusahaan</th><th>Nama Brand</th><th>Jenis Usaha</th><th>Skala</th><th>Asal Brand</th><th>Segmen</th><th>Channel</th><th>PIC Client</th><th>Status</th><th>Aksi</th></tr></thead>
+                <thead><tr><th>Nama Perusahaan</th><th>Nama Brand</th><th>Kota / Provinsi</th><th>Jenis Usaha</th><th>Skala</th><th>Asal Brand</th><th>Segmen</th><th>Channel</th><th>PIC Client</th><th>Status</th><th>Aksi</th></tr></thead>
                 <tbody>
                 <?php foreach ($clients as $row): ?>
                     <tr>
                         <td><?= h($row['company_name']) ?></td>
                         <td><?= h($row['brand_name'] ?? '-') ?></td>
+                        <td>
+                            <?php if ($row['city'] ?? ''): ?><span style="font-weight:600"><?= h($row['city']) ?></span><?php else: ?><span class="muted">—</span><?php endif; ?>
+                            <?php if ($row['province'] ?? ''): ?><br><small class="muted"><?= h($row['province']) ?></small><?php endif; ?>
+                        </td>
                         <td><?= h($row['business_type'] ?? '-') ?></td>
                         <td><?= h($row['business_scale'] ?? '-') ?></td>
                         <td><?= h($row['brand_origin'] ?? '-') ?></td>
@@ -58,7 +106,7 @@ function clients_page(PDO $pdo): void
                         <td><?php if (can('manage_master')): ?><a class="btn light" href="?r=client_form&id=<?= h((string) $row['id']) ?>">Edit</a><?php endif; ?></td>
                     </tr>
                 <?php endforeach; ?>
-                <?php if (!$clients): ?><tr><td colspan="9" class="muted" style="text-align:center">Tidak ada data.</td></tr><?php endif; ?>
+                <?php if (!$clients): ?><tr><td colspan="11" class="muted" style="text-align:center">Tidak ada data.</td></tr><?php endif; ?>
                 </tbody>
             </table>
         </div>
@@ -81,7 +129,10 @@ function client_form(PDO $pdo): void
         $contacts = $cStmt->fetchAll();
     }
     $opts = client_options($pdo);
-    layout(($id ? 'Edit' : 'Tambah') . ' Client', function () use ($row, $id, $contacts, $opts, $pdo) {
+    $geoData = clients_geo_data();
+    layout(($id ? 'Edit' : 'Tambah') . ' Client', function () use ($row, $id, $contacts, $opts, $pdo, $geoData) {
+        $curProvince = $row['province'] ?? '';
+        $curCity     = $row['city'] ?? '';
         ?>
         <form class="panel" method="post" action="?r=client_save">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
@@ -92,7 +143,47 @@ function client_form(PDO $pdo): void
                 <div><label>Nama Brand</label><input name="brand_name" value="<?= field($row, 'brand_name') ?>" placeholder="Nama brand jika berbeda dari perusahaan"></div>
                 <div><label>NPWP</label><input name="npwp" value="<?= field($row, 'npwp') ?>"></div>
                 <div class="wide"><label>Alamat</label><textarea name="address"><?= h($row['address'] ?? '') ?></textarea></div>
+                <div>
+                    <label>Provinsi</label>
+                    <select name="province" id="province-select" onchange="updateCities(this.value,'')">
+                        <option value="">— Pilih Provinsi —</option>
+                        <?php foreach (array_keys($geoData) as $prov): ?>
+                        <option value="<?= h($prov) ?>" <?= $curProvince === $prov ? 'selected' : '' ?>><?= h($prov) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div>
+                    <label>Kota / Kabupaten</label>
+                    <select name="city" id="city-select">
+                        <option value="">— Pilih Provinsi dulu —</option>
+                        <?php if ($curProvince && isset($geoData[$curProvince])): ?>
+                            <?php foreach ($geoData[$curProvince] as $c): ?>
+                            <option value="<?= h($c) ?>" <?= $curCity === $c ? 'selected' : '' ?>><?= h($c) ?></option>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </select>
+                </div>
             </div>
+            <script>
+            var geoData = <?= json_encode($geoData, JSON_UNESCAPED_UNICODE) ?>;
+            function updateCities(prov, preselect) {
+                var sel = document.getElementById('city-select');
+                sel.innerHTML = '<option value="">— Pilih Kota —</option>';
+                var cities = geoData[prov] || [];
+                cities.forEach(function(c) {
+                    var opt = document.createElement('option');
+                    opt.value = c; opt.textContent = c;
+                    if (c === preselect) opt.selected = true;
+                    sel.appendChild(opt);
+                });
+                sel.disabled = cities.length === 0;
+            }
+            // Init on load for edit mode
+            (function(){
+                var prov = document.getElementById('province-select').value;
+                if (prov) updateCities(prov, <?= json_encode($curCity) ?>);
+            })();
+            </script>
             <h3>Profil Bisnis & Target Market</h3>
             <div class="form-grid">
                 <?php foreach ([
@@ -233,12 +324,17 @@ function client_save(PDO $pdo): void
         redirect_to('client_form', ['id' => $id]);
     }
 
-    $opts = client_options($pdo);
+    $opts    = client_options($pdo);
+    $geoData = clients_geo_data();
+    $postProv = trim((string) post('province'));
+    $postCity = trim((string) post('city'));
     $data = [
         'company_name'   => trim((string) post('company_name')),
         'brand_name'     => trim((string) post('brand_name')) ?: null,
         'npwp'           => trim((string) post('npwp')) ?: null,
         'address'        => trim((string) post('address')) ?: null,
+        'province'       => isset($geoData[$postProv]) ? $postProv : null,
+        'city'           => ($postCity && isset($geoData[$postProv]) && in_array($postCity, $geoData[$postProv], true)) ? $postCity : null,
         'business_type'  => in_array(post('business_type'), $opts['business_type'], true) ? post('business_type') : null,
         'business_scale' => in_array(post('business_scale'), $opts['business_scale'], true) ? post('business_scale') : null,
         'brand_origin'   => in_array(post('brand_origin'), $opts['brand_origin'], true) ? post('brand_origin') : null,
@@ -254,11 +350,11 @@ function client_save(PDO $pdo): void
     ];
 
     if ($id) {
-        $pdo->prepare('UPDATE master_clients SET company_name=:company_name, brand_name=:brand_name, npwp=:npwp, address=:address, business_type=:business_type, business_scale=:business_scale, brand_origin=:brand_origin, target_segment=:target_segment, channel=:channel, tags=:tags, status=:status WHERE id=:id')
+        $pdo->prepare('UPDATE master_clients SET company_name=:company_name, brand_name=:brand_name, npwp=:npwp, address=:address, province=:province, city=:city, business_type=:business_type, business_scale=:business_scale, brand_origin=:brand_origin, target_segment=:target_segment, channel=:channel, tags=:tags, status=:status WHERE id=:id')
             ->execute(array_merge($data, [':id' => $id]));
         audit($pdo, 'update', 'master_clients', (string) $id, $data);
     } else {
-        $pdo->prepare('INSERT INTO master_clients (company_name, brand_name, npwp, address, business_type, business_scale, brand_origin, target_segment, channel, tags, status) VALUES (:company_name, :brand_name, :npwp, :address, :business_type, :business_scale, :brand_origin, :target_segment, :channel, :tags, :status)')
+        $pdo->prepare('INSERT INTO master_clients (company_name, brand_name, npwp, address, province, city, business_type, business_scale, brand_origin, target_segment, channel, tags, status) VALUES (:company_name, :brand_name, :npwp, :address, :province, :city, :business_type, :business_scale, :brand_origin, :target_segment, :channel, :tags, :status)')
             ->execute($data);
         $id = $pdo->lastInsertId();
         audit($pdo, 'create', 'master_clients', (string) $id, $data);

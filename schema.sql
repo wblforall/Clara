@@ -89,6 +89,8 @@ CREATE TABLE `master_clients` (
   `brand_name` varchar(190) DEFAULT NULL,
   `npwp` varchar(30) DEFAULT NULL,
   `address` text DEFAULT NULL,
+  `city` varchar(80) DEFAULT NULL,
+  `province` varchar(60) DEFAULT NULL,
   `business_type` varchar(60) DEFAULT NULL,
   `business_scale` varchar(30) DEFAULT NULL,
   `brand_origin` varchar(30) DEFAULT NULL,
