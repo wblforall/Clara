@@ -144,8 +144,8 @@ function client_form(PDO $pdo): void
                 <div><label>NPWP</label><input name="npwp" value="<?= field($row, 'npwp') ?>"></div>
                 <div class="wide"><label>Alamat</label><textarea name="address"><?= h($row['address'] ?? '') ?></textarea></div>
                 <div>
-                    <label>Provinsi</label>
-                    <select name="province" id="province-select" onchange="updateCities(this.value,'')">
+                    <label>Provinsi <span style="color:#EF4444">*</span></label>
+                    <select name="province" id="province-select" required onchange="updateCities(this.value,'')">
                         <option value="">— Pilih Provinsi —</option>
                         <?php foreach (array_keys($geoData) as $prov): ?>
                         <option value="<?= h($prov) ?>" <?= $curProvince === $prov ? 'selected' : '' ?>><?= h($prov) ?></option>
@@ -153,8 +153,8 @@ function client_form(PDO $pdo): void
                     </select>
                 </div>
                 <div>
-                    <label>Kota / Kabupaten</label>
-                    <select name="city" id="city-select">
+                    <label>Kota / Kabupaten <span style="color:#EF4444">*</span></label>
+                    <select name="city" id="city-select" required>
                         <option value="">— Pilih Provinsi dulu —</option>
                         <?php if ($curProvince && isset($geoData[$curProvince])): ?>
                             <?php foreach ($geoData[$curProvince] as $c): ?>
@@ -328,6 +328,11 @@ function client_save(PDO $pdo): void
     $geoData = clients_geo_data();
     $postProv = trim((string) post('province'));
     $postCity = trim((string) post('city'));
+    if (!isset($geoData[$postProv]) || !$postCity) {
+        flash('Provinsi dan Kota wajib dipilih.');
+        $back = $id ? ['id' => $id] : [];
+        redirect_to('client_form', $back);
+    }
     $data = [
         'company_name'   => trim((string) post('company_name')),
         'brand_name'     => trim((string) post('brand_name')) ?: null,
