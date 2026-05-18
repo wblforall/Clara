@@ -11,6 +11,22 @@
 
 ---
 
+## Version 3.3 — 18 Mei 2026
+
+### Fitur Baru — Master Client
+
+- **Field Kota & Provinsi** — Ditambahkan dua field baru pada data client: Provinsi (dropdown 38 provinsi Indonesia) dan Kota/Kabupaten (dropdown cascading, isi otomatis mengikuti provinsi yang dipilih). Kedua field wajib diisi saat membuat atau mengedit client.
+
+- **Kolom Kota/Provinsi di list Master Client** — Tabel daftar client kini menampilkan kota dan provinsi pada kolom tersendiri setelah Nama Brand.
+
+- **Filter Provinsi di Analisa Market Client** — Dropdown filter provinsi ditambahkan di toolbar halaman analisa, berfungsi bersama filter Jenis Usaha, Skala, dan Segmen.
+
+- **Grafik Sebaran per Provinsi & Kota** — Dua panel baru ditampilkan berdampingan: distribusi jumlah client per provinsi dan sebaran per kota (bar chart horizontal dengan skala relatif). Hanya muncul jika data tersedia.
+
+- **Kolom Kota di tabel At-Risk Clients & Top 10** — Informasi kota dan provinsi ditambahkan pada kedua tabel tersebut untuk memudahkan identifikasi asal client.
+
+---
+
 ## Version 3.2 — 15 Mei 2026
 
 ### UX & Animasi
