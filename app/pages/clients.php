@@ -372,24 +372,28 @@ function client_analysis_page(PDO $pdo): void
 {
     require_permission('view_master');
 
-    $opts          = client_options($pdo);
-    $period        = getv('period', date('Y-m'));
-    $filterType    = getv('business_type', '');
-    $filterScale   = getv('business_scale', '');
-    $filterSegment = getv('target_segment', '');
+    $opts           = client_options($pdo);
+    $geoProvinces   = array_keys(clients_geo_data());
+    $period         = getv('period', date('Y-m'));
+    $filterType     = getv('business_type', '');
+    $filterScale    = getv('business_scale', '');
+    $filterSegment  = getv('target_segment', '');
+    $filterProvince = getv('province', '');
 
     // Build WHERE for simple queries (no table alias)
     $sw = ["status='active'"]; $sp = [];
-    if ($filterType)    { $sw[] = 'business_type = ?';       $sp[] = $filterType; }
-    if ($filterScale)   { $sw[] = 'business_scale = ?';      $sp[] = $filterScale; }
-    if ($filterSegment) { $sw[] = 'target_segment LIKE ?';   $sp[] = '%' . $filterSegment . '%'; }
+    if ($filterType)     { $sw[] = 'business_type = ?';       $sp[] = $filterType; }
+    if ($filterScale)    { $sw[] = 'business_scale = ?';      $sp[] = $filterScale; }
+    if ($filterSegment)  { $sw[] = 'target_segment LIKE ?';   $sp[] = '%' . $filterSegment . '%'; }
+    if ($filterProvince) { $sw[] = 'province = ?';            $sp[] = $filterProvince; }
     $simpleWhere = implode(' AND ', $sw);
 
     // Build WHERE for join queries (with c. alias)
     $jw = ["c.status='active'"]; $jp = [];
-    if ($filterType)    { $jw[] = 'c.business_type = ?';     $jp[] = $filterType; }
-    if ($filterScale)   { $jw[] = 'c.business_scale = ?';    $jp[] = $filterScale; }
-    if ($filterSegment) { $jw[] = 'c.target_segment LIKE ?'; $jp[] = '%' . $filterSegment . '%'; }
+    if ($filterType)     { $jw[] = 'c.business_type = ?';     $jp[] = $filterType; }
+    if ($filterScale)    { $jw[] = 'c.business_scale = ?';    $jp[] = $filterScale; }
+    if ($filterSegment)  { $jw[] = 'c.target_segment LIKE ?'; $jp[] = '%' . $filterSegment . '%'; }
+    if ($filterProvince) { $jw[] = 'c.province = ?';          $jp[] = $filterProvince; }
     $joinWhere = implode(' AND ', $jw);
 
     $dist = function(string $col) use ($pdo, $simpleWhere, $sp): array {
@@ -398,9 +402,10 @@ function client_analysis_page(PDO $pdo): void
         return $stmt->fetchAll();
     };
 
-    $byType    = $dist('business_type');
-    $byScale   = $dist('business_scale');
-    $byOrigin  = $dist('brand_origin');
+    $byType     = $dist('business_type');
+    $byScale    = $dist('business_scale');
+    $byOrigin   = $dist('brand_origin');
+    $byProvince = $dist('province');
     $currentYear = substr($period, 0, 4);
     $prevYear = (string)((int)$currentYear - 1);
 
@@ -498,7 +503,7 @@ function client_analysis_page(PDO $pdo): void
 
     // At-risk clients: active last year, no transaction this year
     $atRiskStmt = $pdo->prepare(
-        "SELECT c.company_name, c.brand_name, c.business_type,
+        "SELECT c.company_name, c.brand_name, c.business_type, c.city, c.province,
                 COALESCE(SUM(a_prev.amount),0) prev_revenue,
                 MAX(a_prev.period_key) last_period
          FROM master_clients c
@@ -511,7 +516,7 @@ function client_analysis_page(PDO $pdo): void
              WHERE a2.period_key BETWEEN ? AND ? AND t2.deleted_at IS NULL AND t2.client_id IS NOT NULL AND t2.property_id = ? AND a2.property_id = ?
          ) curr ON curr.client_id = c.id
          WHERE $joinWhere AND curr.client_id IS NULL
-         GROUP BY c.id, c.company_name, c.brand_name, c.business_type
+         GROUP BY c.id, c.company_name, c.brand_name, c.business_type, c.city, c.province
          ORDER BY prev_revenue DESC
          LIMIT 15"
     );
@@ -520,13 +525,13 @@ function client_analysis_page(PDO $pdo): void
 
     // Top 10 clients by revenue
     $topStmt = $pdo->prepare(
-        "SELECT c.company_name, c.brand_name, c.business_type, c.business_scale,
+        "SELECT c.company_name, c.brand_name, c.business_type, c.business_scale, c.city, c.province,
                 COALESCE(SUM(a.amount),0) revenue, COUNT(DISTINCT t.id) trx_count
          FROM master_clients c
          JOIN transactions t ON t.client_id = c.id AND t.deleted_at IS NULL AND t.property_id = ?
          JOIN transaction_allocations a ON a.transaction_id = t.id AND a.period_key = ? AND a.property_id = ?
          WHERE $joinWhere
-         GROUP BY c.id, c.company_name, c.brand_name, c.business_type, c.business_scale
+         GROUP BY c.id, c.company_name, c.brand_name, c.business_type, c.business_scale, c.city, c.province
          ORDER BY revenue DESC LIMIT 10"
     );
     $topStmt->execute(array_merge([$pid, $period, $pid], $jp));
@@ -612,9 +617,9 @@ function client_analysis_page(PDO $pdo): void
     $byModule = $byModuleStmt->fetchAll();
 
     $periods = $pdo->query("SELECT period_key, label FROM periods ORDER BY period_key DESC")->fetchAll();
-    $hasFilter = $filterType || $filterScale || $filterSegment;
+    $hasFilter = $filterType || $filterScale || $filterSegment || $filterProvince;
 
-    layout('Analisa Market Client', function () use ($byType, $byScale, $byOrigin, $bySegment, $total, $filled, $revRows, $topClients, $activityByType, $actSummary, $currentYear, $period, $periods, $opts, $filterType, $filterScale, $filterSegment, $hasFilter, $prevYear, $newReturn, $retention, $freqDist, $atRiskClients, $byFloor, $byModule, $floorTypes) {
+    layout('Analisa Market Client', function () use ($byType, $byScale, $byOrigin, $bySegment, $byProvince, $total, $filled, $revRows, $topClients, $activityByType, $actSummary, $currentYear, $period, $periods, $opts, $filterType, $filterScale, $filterSegment, $filterProvince, $hasFilter, $prevYear, $newReturn, $retention, $freqDist, $atRiskClients, $byFloor, $byModule, $floorTypes, $geoProvinces) {
         $pct = fn($n) => $total > 0 ? round($n / $total * 100) : 0;
         $colors = ['#0D9488','#0891B2','#7C3AED','#F59E0B','#EF4444','#10B981','#F97316','#6366F1','#EC4899','#84CC16','#14B8A6','#8B5CF6'];
         ?>
@@ -638,6 +643,12 @@ function client_analysis_page(PDO $pdo): void
                     <option value="<?= h($o) ?>" <?= $filterSegment === $o ? 'selected' : '' ?>><?= h($o) ?></option>
                 <?php endforeach; ?>
             </select>
+            <select name="province" onchange="this.form.submit()" style="font-size:12px">
+                <option value="">— Semua Provinsi —</option>
+                <?php foreach ($geoProvinces as $prov): ?>
+                    <option value="<?= h($prov) ?>" <?= $filterProvince === $prov ? 'selected' : '' ?>><?= h($prov) ?></option>
+                <?php endforeach; ?>
+            </select>
             <?php if ($hasFilter): ?><a href="?r=client_analysis" class="btn light" style="font-size:12px">Reset Filter</a><?php endif; ?>
             <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
                 <label style="font-size:12px;color:var(--muted)">Periode Revenue:</label>
@@ -655,6 +666,7 @@ function client_analysis_page(PDO $pdo): void
             <?php if ($filterType): ?><strong><?= h($filterType) ?></strong><?php endif; ?>
             <?php if ($filterScale): ?><?= $filterType ? ' · ' : '' ?><strong><?= h($filterScale) ?></strong><?php endif; ?>
             <?php if ($filterSegment): ?><?= ($filterType||$filterScale) ? ' · ' : '' ?>Segmen <strong><?= h($filterSegment) ?></strong><?php endif; ?>
+            <?php if ($filterProvince): ?><?= ($filterType||$filterScale||$filterSegment) ? ' · ' : '' ?>Provinsi <strong><?= h($filterProvince) ?></strong><?php endif; ?>
             — menampilkan <strong><?= $total ?></strong> client
         </div>
         <?php endif; ?>
@@ -760,6 +772,23 @@ function client_analysis_page(PDO $pdo): void
             <?php else: ?><p class="muted">Belum ada data.</p><?php endif; ?>
         </div>
 
+
+        <?php if ($byProvince): ?>
+        <div class="panel" style="margin-bottom:16px">
+            <div style="font-weight:700;margin-bottom:12px">Distribusi per Provinsi</div>
+            <?php foreach ($byProvince as $i => $r): ?>
+            <div style="margin-bottom:8px">
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+                    <span style="font-weight:600"><?= h($r['k']) ?></span>
+                    <span style="color:var(--muted)"><?= $r['n'] ?> client (<?= $pct($r['n']) ?>%)</span>
+                </div>
+                <div style="background:#F1F5F9;border-radius:4px;height:8px">
+                    <div style="background:<?= $colors[$i % count($colors)] ?>;width:<?= $pct($r['n']) ?>%;height:8px;border-radius:4px;transition:.3s"></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
 
         <?php if (!empty($floorTypes)):
             $floorColors = ['LG' => '#0D9488', 'GF' => '#0891B2', 'UG' => '#7C3AED', 'FF' => '#F59E0B', 'SF' => '#F97316'];
@@ -976,13 +1005,14 @@ function client_analysis_page(PDO $pdo): void
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>#</th><th>Nama Perusahaan</th><th>Brand</th><th>Jenis Usaha</th><th class="r">Revenue <?= h($prevYear) ?></th><th class="r">Terakhir Aktif</th></tr></thead>
+                    <thead><tr><th>#</th><th>Nama Perusahaan</th><th>Brand</th><th>Kota</th><th>Jenis Usaha</th><th class="r">Revenue <?= h($prevYear) ?></th><th class="r">Terakhir Aktif</th></tr></thead>
                     <tbody>
                     <?php foreach ($atRiskClients as $i => $r): ?>
                     <tr>
                         <td style="color:var(--muted);font-size:12px"><?= $i + 1 ?></td>
                         <td style="font-weight:600"><?= h($r['company_name']) ?></td>
                         <td><?= h($r['brand_name'] ?? '-') ?></td>
+                        <td style="font-size:12px"><?= h($r['city'] ?? '-') ?><?php if ($r['province'] ?? ''): ?><br><span class="muted"><?= h($r['province']) ?></span><?php endif; ?></td>
                         <td><?= h($r['business_type'] ?? '-') ?></td>
                         <td class="r money"><?= money($r['prev_revenue']) ?></td>
                         <td class="r" style="font-size:12px"><?= h($r['last_period']) ?></td>
@@ -999,13 +1029,14 @@ function client_analysis_page(PDO $pdo): void
             <div style="font-weight:700;margin-bottom:12px">Top 10 Client by Revenue — <?= h($period) ?></div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>#</th><th>Nama Perusahaan</th><th>Brand</th><th>Jenis Usaha</th><th>Skala</th><th class="r">Jml Transaksi</th><th class="r">Revenue</th></tr></thead>
+                    <thead><tr><th>#</th><th>Nama Perusahaan</th><th>Brand</th><th>Kota</th><th>Jenis Usaha</th><th>Skala</th><th class="r">Jml Transaksi</th><th class="r">Revenue</th></tr></thead>
                     <tbody>
                     <?php foreach ($topClients as $i => $r): ?>
                     <tr>
                         <td style="color:var(--muted);font-size:12px"><?= $i + 1 ?></td>
                         <td style="font-weight:600"><?= h($r['company_name']) ?></td>
                         <td><?= h($r['brand_name'] ?? '-') ?></td>
+                        <td style="font-size:12px"><?= h($r['city'] ?? '-') ?><?php if ($r['province'] ?? ''): ?><br><span class="muted"><?= h($r['province']) ?></span><?php endif; ?></td>
                         <td><?= h($r['business_type'] ?? '-') ?></td>
                         <td><?= h($r['business_scale'] ?? '-') ?></td>
                         <td class="r"><?= $r['trx_count'] ?></td>
