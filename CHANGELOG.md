@@ -11,6 +11,30 @@
 
 ---
 
+## Version 3.4 — 23 Mei 2026
+
+### Executive Summary (Dashboard & Print)
+
+- **KPI Pemenuhan Occupancy Rate per Properti** — Setiap property card di Executive Summary Dashboard dan Print kini menampilkan 3 KPI box OCC: Exhibition, Media Promo, dan Gudang. Masing-masing dilengkapi label "Occupancy Rate" agar tidak terbaca sebagai angka achievement. Color-coding hijau (≥100%), kuning (≥80%), merah (<80%).
+
+- **Tabel Achievement PIC dipisah per Properti** — Sebelumnya satu tabel gabungan semua properti. Sekarang masing-masing properti memiliki tabelnya sendiri, baik di dashboard maupun di print. Kolom "Properti" dihapus karena sudah terwakili oleh judul tabel.
+
+- **Kolom HARI diganti Avg Hari** — Pada tabel occupancy (Exhibition per Lantai, Media per Jenis, Gudang per Lokasi) di print Executive Summary, kolom "Hari" kini menampilkan rata-rata hari terisi per unit (`days_total ÷ unit_count`), lebih mudah dibaca dan nyambung logis ke kolom OCC%.
+
+### Display TV
+
+- **OCC% per Segmen** — Di setiap panel properti, bawah angka achievement per segmen kini muncul "Occ X%" dengan color-coding yang sama (hijau/kuning/merah). Data diambil dari `allocated_days ÷ (unit_count × hari bulan)`.
+
+### Transaksi
+
+- **Warning Overlap Tanggal** — Form tambah dan edit transaksi kini mendeteksi secara real-time apakah unit yang dipilih sudah memiliki transaksi lain dengan tanggal yang overlap di periode yang sama. Muncul kotak peringatan kuning dengan detail transaksi yang bentrok (nama client, tanggal, PIC). Input tetap bisa disimpan — peringatan hanya informatif, karena satu unit bisa sah diisi dua client sekaligus jika dibagi per slot atau luasan.
+
+### Lain-lain
+
+- **Nama aplikasi dipersingkat** — Dari "CLARA Unified" menjadi "CLARA" di konfigurasi default, title bar, dan session name.
+
+---
+
 ## Version 3.3 — 18 Mei 2026
 
 ### Fitur Baru — Master Client
