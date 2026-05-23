@@ -832,9 +832,10 @@ function print_exec_summary(PDO $pdo): void
                     COALESCE(SUM(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.area_sqm ELSE 0 END),0) area_total,
                     COALESCE(SUM(m.projection_monthly),0) proj_total,
                     COALESCE(SUM(a.amount),0) actual_total,
-                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.rate ELSE NULL END) avg_rate
+                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN t.unit_rate ELSE NULL END) avg_rate
              FROM master_cl_units m
              LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='cl' AND a.period_key=? AND a.property_id=?
+             LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
              WHERE m.property_id=? AND m.status='active' GROUP BY m.floor"
         );
         $s->execute([$period, $pid, $pid]);
@@ -847,9 +848,10 @@ function print_exec_summary(PDO $pdo): void
                     0 AS area_total,
                     COALESCE(SUM(m.projection_monthly),0) proj_total,
                     COALESCE(SUM(a.amount),0) actual_total,
-                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.rate ELSE NULL END) avg_rate
+                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN t.unit_rate ELSE NULL END) avg_rate
              FROM master_media m
              LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='media' AND a.period_key=? AND a.property_id=?
+             LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
              WHERE m.property_id=? AND m.status='active' GROUP BY m.media_type ORDER BY m.media_type"
         );
         $s->execute([$period, $pid, $pid]);
@@ -862,9 +864,10 @@ function print_exec_summary(PDO $pdo): void
                     COALESCE(SUM(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.area_sqm ELSE 0 END),0) area_total,
                     COALESCE(SUM(m.projection_monthly),0) proj_total,
                     COALESCE(SUM(a.amount),0) actual_total,
-                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.monthly_rate ELSE NULL END) avg_rate
+                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN t.unit_rate ELSE NULL END) avg_rate
              FROM master_gudang m
              LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='gudang' AND a.period_key=? AND a.property_id=?
+             LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
              WHERE m.property_id=? AND m.status='active' GROUP BY m.location ORDER BY m.location"
         );
         $s->execute([$period, $pid, $pid]);
