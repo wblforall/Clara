@@ -345,6 +345,7 @@ function exec_dashboard(PDO $pdo): void
                             <th style="padding:5px 8px;text-align:left;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px"><?= $groupLabel ?></th>
                             <th style="padding:5px 8px;text-align:center;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px">Unit</th>
                             <th style="padding:5px 8px;text-align:right;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px">Occ %</th>
+                            <th style="padding:5px 8px;text-align:right;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px">Avg Rate</th>
                             <th style="padding:5px 8px;text-align:right;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px">Aktual</th>
                             <th style="padding:5px 8px"></th>
                         </tr>
@@ -353,10 +354,11 @@ function exec_dashboard(PDO $pdo): void
                     <?php
                     $tU = $tD = $tA = 0;
                     foreach ($displayKeys as $key):
-                        $row = $indexed[$d['id']][$key] ?? null;
-                        $units    = $row ? (int)$row['unit_count']   : 0;
-                        $daysTot  = $row ? (float)$row['days_total'] : 0.0;
-                        $actTot   = $row ? (float)$row['actual_total'] : 0.0;
+                        $row     = $indexed[$d['id']][$key] ?? null;
+                        $units   = $row ? (int)$row['unit_count']    : 0;
+                        $daysTot = $row ? (float)$row['days_total']  : 0.0;
+                        $actTot  = $row ? (float)$row['actual_total']: 0.0;
+                        $avgRate = $row ? ($row['avg_rate'] !== null ? (float)$row['avg_rate'] : null) : null;
                         $maxDays  = $units * $periodDays;
                         $occ      = $maxDays > 0 ? $daysTot / $maxDays : 0;
                         $occColor = $occ >= 0.8 ? '#16a34a' : ($occ >= 0.5 ? '#d97706' : '#dc2626');
@@ -367,6 +369,7 @@ function exec_dashboard(PDO $pdo): void
                         <td style="padding:6px 8px;font-weight:600;<?= $dimmed ?>"><?= h($key ?: '—') ?></td>
                         <td style="padding:6px 8px;text-align:center"><?= $units ?: '<span style="color:var(--muted)">—</span>' ?></td>
                         <td style="padding:6px 8px;text-align:right;font-weight:800;color:<?= $row ? $occColor : 'var(--muted)' ?>"><?= $row ? number_format($occ*100,1,',','.').'%' : '—' ?></td>
+                        <td style="padding:6px 8px;text-align:right;color:var(--muted)"><?= $avgRate !== null ? money($avgRate) : '<span style="color:var(--muted)">—</span>' ?></td>
                         <td style="padding:6px 8px;text-align:right"><?= $row ? money($actTot) : '<span style="color:var(--muted)">—</span>' ?></td>
                         <td style="padding:6px 8px;min-width:56px">
                             <?php if ($row): ?>
@@ -385,6 +388,7 @@ function exec_dashboard(PDO $pdo): void
                         <td style="padding:6px 8px">Total</td>
                         <td style="padding:6px 8px;text-align:center"><?= $tU ?></td>
                         <td style="padding:6px 8px;text-align:right;color:<?= $totalOccColor ?>"><?= number_format($totalOcc*100,1,',','.') ?>%</td>
+                        <td style="padding:6px 8px;text-align:right;color:var(--muted)">—</td>
                         <td style="padding:6px 8px;text-align:right"><?= money($tA) ?></td>
                         <td style="padding:6px 8px">
                             <div style="height:6px;background:#f1f5f9;border-radius:999px;overflow:hidden">
@@ -528,7 +532,8 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
                 COUNT(*) unit_count,
                 COALESCE(SUM(a.allocated_days),0) days_total,
                 COALESCE(SUM(m.projection_monthly),0) proj_total,
-                COALESCE(SUM(a.amount),0) actual_total
+                COALESCE(SUM(a.amount),0) actual_total,
+                AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.rate ELSE NULL END) avg_rate
          FROM master_cl_units m
          LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='cl' AND a.period_key=? AND a.property_id=?
          WHERE m.property_id=? AND m.status='active'
@@ -544,7 +549,8 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
                 COUNT(*) unit_count,
                 COALESCE(SUM(a.allocated_days),0) days_total,
                 COALESCE(SUM(m.projection_monthly),0) proj_total,
-                COALESCE(SUM(a.amount),0) actual_total
+                COALESCE(SUM(a.amount),0) actual_total,
+                AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.rate ELSE NULL END) avg_rate
          FROM master_media m
          LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='media' AND a.period_key=? AND a.property_id=?
          WHERE m.property_id=? AND m.status='active'
@@ -559,7 +565,8 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
                 COUNT(*) unit_count,
                 COALESCE(SUM(a.allocated_days),0) days_total,
                 COALESCE(SUM(m.projection_monthly),0) proj_total,
-                COALESCE(SUM(a.amount),0) actual_total
+                COALESCE(SUM(a.amount),0) actual_total,
+                AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.monthly_rate ELSE NULL END) avg_rate
          FROM master_gudang m
          LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='gudang' AND a.period_key=? AND a.property_id=?
          WHERE m.property_id=? AND m.status='active'

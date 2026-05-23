@@ -831,7 +831,8 @@ function print_exec_summary(PDO $pdo): void
                     COALESCE(SUM(a.allocated_days),0) days_total,
                     COALESCE(SUM(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.area_sqm ELSE 0 END),0) area_total,
                     COALESCE(SUM(m.projection_monthly),0) proj_total,
-                    COALESCE(SUM(a.amount),0) actual_total
+                    COALESCE(SUM(a.amount),0) actual_total,
+                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.rate ELSE NULL END) avg_rate
              FROM master_cl_units m
              LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='cl' AND a.period_key=? AND a.property_id=?
              WHERE m.property_id=? AND m.status='active' GROUP BY m.floor"
@@ -845,7 +846,8 @@ function print_exec_summary(PDO $pdo): void
                     COALESCE(SUM(a.allocated_days),0) days_total,
                     0 AS area_total,
                     COALESCE(SUM(m.projection_monthly),0) proj_total,
-                    COALESCE(SUM(a.amount),0) actual_total
+                    COALESCE(SUM(a.amount),0) actual_total,
+                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.rate ELSE NULL END) avg_rate
              FROM master_media m
              LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='media' AND a.period_key=? AND a.property_id=?
              WHERE m.property_id=? AND m.status='active' GROUP BY m.media_type ORDER BY m.media_type"
@@ -859,7 +861,8 @@ function print_exec_summary(PDO $pdo): void
                     COALESCE(SUM(a.allocated_days),0) days_total,
                     COALESCE(SUM(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.area_sqm ELSE 0 END),0) area_total,
                     COALESCE(SUM(m.projection_monthly),0) proj_total,
-                    COALESCE(SUM(a.amount),0) actual_total
+                    COALESCE(SUM(a.amount),0) actual_total,
+                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.monthly_rate ELSE NULL END) avg_rate
              FROM master_gudang m
              LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='gudang' AND a.period_key=? AND a.property_id=?
              WHERE m.property_id=? AND m.status='active' GROUP BY m.location ORDER BY m.location"
@@ -1176,6 +1179,7 @@ $renderOccPrint = function(string $title, string $occKey, string $groupLabel, ?c
                     <th class="r">Unit</th>
                     <th class="r">Avg Hari</th>
                     <th class="r">Occ%</th>
+                    <th class="r">Avg Rate</th>
                     <th class="r">Aktual</th>
                 </tr>
             </thead>
@@ -1190,6 +1194,7 @@ $renderOccPrint = function(string $title, string $occKey, string $groupLabel, ?c
                 $act   = $row?(float)$row['actual_total']:0;
                 $max   = $units*$periodDays;
                 $occ   = $max>0?$days/$max:0;
+                $avgRate = $row ? ($row['avg_rate'] !== null ? (float)$row['avg_rate'] : null) : null;
                 $tU+=$units;$tD+=$days;$tAreaSum+=$area;$tA+=$act;
                 $avgDays = $units>0 ? $days/$units : 0;
             ?>
@@ -1198,6 +1203,7 @@ $renderOccPrint = function(string $title, string $occKey, string $groupLabel, ?c
                 <td class="r"><?= $units?:'' ?></td>
                 <td class="r"><?= $row?number_format($avgDays,1,',','.'):'' ?></td>
                 <td class="r" style="<?= $row?$occStyle($occ):'' ?>"><?= $row?number_format($occ*100,1,',','.').'%':'—' ?></td>
+                <td class="r" style="color:#7b8a9c"><?= $avgRate!==null?money($avgRate):'—' ?></td>
                 <td class="money"><?= $row?money($act):'—' ?></td>
             </tr>
             <?php endforeach;
@@ -1208,6 +1214,7 @@ $renderOccPrint = function(string $title, string $occKey, string $groupLabel, ?c
                 <td class="r"><?= $tU ?></td>
                 <td class="r"><?= number_format($totAvg,1,',','.') ?></td>
                 <td class="r" style="<?= $occStyle($totOcc) ?>"><?= number_format($totOcc*100,1,',','.').'%' ?></td>
+                <td class="r" style="color:#7b8a9c">—</td>
                 <td class="money"><?= money($tA) ?></td>
             </tr>
             </tbody>
