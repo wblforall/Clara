@@ -1000,6 +1000,17 @@ tr.row-dimmed td{color:#94a3b8}
 <?php
 $combAch    = $combTarget > 0 ? $combActual / $combTarget : 0;
 $combPotAch = $combProjection > 0 ? $combActual / $combProjection : 0;
+
+// Combined OCC per segment (gabungan semua properti)
+$combOcc = ['cl'=>[0,0],'media'=>[0,0],'gudang'=>[0,0]];
+foreach ($propData as $d) {
+    foreach ($d['floor_occ']  as $r) { $combOcc['cl'][0]    += $r['days_total']; $combOcc['cl'][1]    += $r['unit_count']; }
+    foreach ($d['media_occ']  as $r) { $combOcc['media'][0] += $r['days_total']; $combOcc['media'][1] += $r['unit_count']; }
+    foreach ($d['gudang_occ'] as $r) { $combOcc['gudang'][0]+= $r['days_total']; $combOcc['gudang'][1]+= $r['unit_count']; }
+}
+$occCl     = $combOcc['cl'][1]*$periodDays    > 0 ? $combOcc['cl'][0]    / ($combOcc['cl'][1]*$periodDays)    : 0;
+$occMedia  = $combOcc['media'][1]*$periodDays > 0 ? $combOcc['media'][0] / ($combOcc['media'][1]*$periodDays) : 0;
+$occGudang = $combOcc['gudang'][1]*$periodDays> 0 ? $combOcc['gudang'][0]/ ($combOcc['gudang'][1]*$periodDays): 0;
 ?>
 <div class="kpi-row">
     <div class="kpi-box"><div class="kpi-box-label">Total Potensi</div><div class="kpi-box-value"><?= money($combProjection) ?></div></div>
@@ -1015,6 +1026,23 @@ $combPotAch = $combProjection > 0 ? $combActual / $combProjection : 0;
     <div class="kpi-box"><div class="kpi-box-label">Achievement vs Potensi</div>
         <div class="kpi-box-value"><?= pct($combPotAch) ?></div>
     </div>
+</div>
+<?php
+$occBoxes = [
+    ['Pemenuhan Occ Exhibition', $occCl,     '#0d9488'],
+    ['Pemenuhan Occ Media Promo',$occMedia,  '#0891b2'],
+    ['Pemenuhan Occ Gudang',     $occGudang, '#f59e0b'],
+];
+?>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+<?php foreach($occBoxes as [$lbl,$occ,$color]):
+    $cls = $occ>=1?'#16a34a':($occ>=.8?'#d97706':'#dc2626');
+?>
+    <div class="kpi-box" style="border-top:3px solid <?= $color ?>">
+        <div class="kpi-box-label"><?= $lbl ?></div>
+        <div class="kpi-box-value" style="color:<?= $cls ?>"><?= number_format($occ*100,1,',','.').'%' ?></div>
+    </div>
+<?php endforeach; ?>
 </div>
 
 <!-- PER-PROPERTY CARDS -->
@@ -1042,13 +1070,22 @@ $combPotAch = $combProjection > 0 ? $combActual / $combProjection : 0;
             <span>Client Baru: <strong style="color:#0f1623"><?= $d['new_clients'] ?></strong></span>
         </div>
         <!-- Segment bars -->
-        <?php foreach(['cl'=>['Exhibition','#0d9488'],'media'=>['Media','#0891b2'],'gudang'=>['Gudang','#f59e0b']] as $seg=>[$lbl,$col]):
+        <?php
+        $segOccMap = ['cl'=>'floor_occ','media'=>'media_occ','gudang'=>'gudang_occ'];
+        foreach(['cl'=>['Exhibition','#0d9488'],'media'=>['Media','#0891b2'],'gudang'=>['Gudang','#f59e0b']] as $seg=>[$lbl,$col]):
             $sp = $d['projection'][$seg] > 0 ? min($d['actual_seg'][$seg]/$d['projection'][$seg],1) : 0;
+            $segDays = $segUnits = 0;
+            foreach ($d[$segOccMap[$seg]] as $r) { $segDays += $r['days_total']; $segUnits += $r['unit_count']; }
+            $segOcc = $segUnits*$periodDays > 0 ? $segDays/($segUnits*$periodDays) : 0;
+            $occClr = $segOcc>=1?'#16a34a':($segOcc>=.8?'#d97706':'#dc2626');
         ?>
         <div style="margin-top:5px">
             <div style="display:flex;justify-content:space-between;font-size:8px;margin-bottom:2px">
                 <span style="font-weight:700;color:#344054"><?= $lbl ?></span>
-                <span style="color:#7b8a9c"><?= money($d['actual_seg'][$seg]) ?> <?= pct($sp) ?></span>
+                <span style="color:#7b8a9c">
+                    <?= money($d['actual_seg'][$seg]) ?> <?= pct($sp) ?>
+                    &nbsp;<span style="color:<?= $occClr ?>;font-weight:700">Occ <?= number_format($segOcc*100,1,',','.').'%' ?></span>
+                </span>
             </div>
             <div style="height:4px;background:#f1f5f9;border-radius:999px;overflow:hidden">
                 <div style="height:100%;width:<?= number_format($sp*100,1,'.','.') ?>%;background:<?= $col ?>;border-radius:999px"></div>
