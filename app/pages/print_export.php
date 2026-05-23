@@ -1055,6 +1055,7 @@ $combPotAch = $combProjection > 0 ? $combActual / $combProjection : 0;
             <div style="background:#f8fafc;border-radius:5px;padding:5px 6px;border-top:2px solid <?= $col ?>">
                 <div style="font-size:7px;font-weight:700;text-transform:uppercase;color:#94a3b8;letter-spacing:.04em"><?= $lbl ?></div>
                 <div style="font-size:12px;font-weight:800;color:<?= $occClr ?>;margin-top:2px"><?= number_format($segOcc*100,1,',','.').'%' ?></div>
+                <div style="font-size:7px;color:#94a3b8;margin-top:1px">Occupancy Rate</div>
             </div>
         <?php endforeach; ?>
         </div>
