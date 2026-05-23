@@ -765,8 +765,10 @@ function display_page(PDO $pdo, array $config): void
             ring.style.setProperty('--ring-color', ringColor);
 
             q('.p-segments').innerHTML = d.segments.map(s => {
-                const w = Math.max(0, Math.min(100, Number(s.achievement || 0) * 100));
-                const c = cls(w);
+                const w   = Math.max(0, Math.min(100, Number(s.achievement || 0) * 100));
+                const c   = cls(w);
+                const occ = Number(s.occ || 0) * 100;
+                const co  = occ >= 100 ? 'good' : occ >= 80 ? 'warn' : 'bad';
                 return `<div class="tv-seg">
                     <div class="tv-seg-side s-${esc(s.key)}"></div>
                     <div class="tv-seg-body">
@@ -774,7 +776,10 @@ function display_page(PDO $pdo, array $config): void
                         <div class="tv-seg-sub">${esc(s.actual_formatted)} <em>/ ${esc(s.projection_formatted)}</em></div>
                         <div class="tv-seg-bar"><div class="tv-seg-fill ${c}" style="width:${w}%"></div></div>
                     </div>
-                    <div class="tv-seg-pct ${c}">${esc(s.achievement_formatted)}</div>
+                    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+                        <div class="tv-seg-pct ${c}">${esc(s.achievement_formatted)}</div>
+                        <div style="font-size:.65em;font-weight:600;color:var(--tv-${co},${co==='good'?'#16a34a':co==='warn'?'#d97706':'#dc2626'})">Occ ${esc(s.occ_formatted)}</div>
+                    </div>
                 </div>`;
             }).join('');
 

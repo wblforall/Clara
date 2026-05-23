@@ -4,7 +4,8 @@ final class DashboardService
 {
     public static function data(PDO $pdo, string $period, ?int $pid = null): array
     {
-        $pid = $pid ?? current_property_id();
+        $pid        = $pid ?? current_property_id();
+        $periodDays = (int) date('t', strtotime($period . '-01'));
 
         $periodRowStmt = $pdo->prepare('SELECT * FROM periods WHERE period_key = ? AND property_id = ?');
         $periodRowStmt->execute([$period, $pid]);
@@ -75,15 +76,38 @@ final class DashboardService
         );
         $latestStmt->execute([$pid, $period, $pid]);
 
+        // OCC per segment
+        $occMeta = [
+            'cl'     => ['master_cl_units', 'cl'],
+            'media'  => ['master_media',    'media'],
+            'gudang' => ['master_gudang',   'gudang'],
+        ];
+        $occ = [];
+        foreach ($occMeta as $seg => [$tbl, $mod]) {
+            $s = $pdo->prepare(
+                "SELECT COUNT(*) unit_count, COALESCE(SUM(a.allocated_days),0) days_total
+                 FROM $tbl m
+                 LEFT JOIN transaction_allocations a
+                   ON a.master_code=m.code AND a.module=? AND a.period_key=? AND a.property_id=?
+                 WHERE m.property_id=? AND m.status='active'"
+            );
+            $s->execute([$mod, $period, $pid, $pid]);
+            $r = $s->fetch();
+            $units = (int)$r['unit_count'];
+            $days  = (float)$r['days_total'];
+            $occ[$seg] = $units * $periodDays > 0 ? $days / ($units * $periodDays) : 0;
+        }
+
         $segmentRows = [];
         foreach (['cl' => 'Exhibition', 'media' => 'Media Promo & Wall Sign', 'gudang' => 'Gudang / Storage'] as $key => $label) {
             $segmentRows[] = [
-                'key' => $key,
-                'label' => $label,
-                'projection' => $projection[$key],
-                'actual' => $actual[$key],
-                'achievement' => $projection[$key] > 0 ? $actual[$key] / $projection[$key] : 0,
+                'key'           => $key,
+                'label'         => $label,
+                'projection'    => $projection[$key],
+                'actual'        => $actual[$key],
+                'achievement'   => $projection[$key] > 0 ? $actual[$key] / $projection[$key] : 0,
                 'capacity_days' => $capacity[$key],
+                'occ'           => $occ[$key],
             ];
         }
 
@@ -114,9 +138,10 @@ final class DashboardService
         $data['achievement_projection_formatted'] = pct($data['achievement_projection']);
         $data['achievement_target_formatted'] = pct($data['achievement_target']);
         foreach ($data['segments'] as &$segment) {
-            $segment['projection_formatted'] = money($segment['projection']);
-            $segment['actual_formatted'] = money($segment['actual']);
+            $segment['projection_formatted']  = money($segment['projection']);
+            $segment['actual_formatted']      = money($segment['actual']);
             $segment['achievement_formatted'] = pct($segment['achievement']);
+            $segment['occ_formatted']         = number_format(($segment['occ'] ?? 0) * 100, 1, ',', '.') . '%';
         }
         foreach ($data['pics'] as &$pic) {
             $pic['actual_formatted'] = money($pic['actual']);
