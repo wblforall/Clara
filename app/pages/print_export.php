@@ -1134,7 +1134,7 @@ $buildOccKeys = function(string $occKey, ?callable $sorter=null) use ($propData)
     return $keys;
 };
 // useUnion=true → baris seragam lintas properti; false → tiap properti hanya datanya sendiri
-$renderOccPrint = function(string $title, string $occKey, string $groupLabel, ?callable $sorter=null, bool $useUnion=false, bool $showArea=false)
+$renderOccPrint = function(string $title, string $occKey, string $groupLabel, ?callable $sorter=null, bool $useUnion=false)
     use ($propData, $periodDays, $buildOccKeys, $occStyle): void {
     $unionKeys = $useUnion ? $buildOccKeys($occKey, $sorter) : [];
     // Index per property
@@ -1165,7 +1165,7 @@ $renderOccPrint = function(string $title, string $occKey, string $groupLabel, ?c
                 <tr>
                     <th><?= $groupLabel ?></th>
                     <th class="r">Unit</th>
-                    <th class="r"><?= $showArea ? 'Luas (m²)' : 'Hari' ?></th>
+                    <th class="r">Avg Hari</th>
                     <th class="r">Occ%</th>
                     <th class="r">Aktual</th>
                 </tr>
@@ -1182,28 +1182,22 @@ $renderOccPrint = function(string $title, string $occKey, string $groupLabel, ?c
                 $max   = $units*$periodDays;
                 $occ   = $max>0?$days/$max:0;
                 $tU+=$units;$tD+=$days;$tAreaSum+=$area;$tA+=$act;
+                $avgDays = $units>0 ? $days/$units : 0;
             ?>
             <tr class="<?= $row?'':'row-dimmed' ?>">
                 <td><?= h($key?:'—') ?></td>
                 <td class="r"><?= $units?:'' ?></td>
-                <?php if($showArea): ?>
-                <td class="r"><?= ($row && $area>0)?number_format($area,1,',','.'):($row?'—':'') ?></td>
-                <?php else: ?>
-                <td class="r"><?= $row?(int)$days:'' ?></td>
-                <?php endif; ?>
+                <td class="r"><?= $row?number_format($avgDays,1,',','.'):'' ?></td>
                 <td class="r" style="<?= $row?$occStyle($occ):'' ?>"><?= $row?number_format($occ*100,1,',','.').'%':'—' ?></td>
                 <td class="money"><?= $row?money($act):'—' ?></td>
             </tr>
             <?php endforeach;
-            $totOcc = $tU*$periodDays>0?$tD/($tU*$periodDays):0; ?>
+            $totOcc = $tU*$periodDays>0?$tD/($tU*$periodDays):0;
+            $totAvg = $tU>0 ? $tD/$tU : 0; ?>
             <tr class="grand-total">
                 <td>Total</td>
                 <td class="r"><?= $tU ?></td>
-                <?php if($showArea): ?>
-                <td class="r"><?= $tAreaSum>0?number_format($tAreaSum,1,',','.'):'—' ?></td>
-                <?php else: ?>
-                <td class="r"><?= (int)$tD ?></td>
-                <?php endif; ?>
+                <td class="r"><?= number_format($totAvg,1,',','.') ?></td>
                 <td class="r" style="<?= $occStyle($totOcc) ?>"><?= number_format($totOcc*100,1,',','.').'%' ?></td>
                 <td class="money"><?= money($tA) ?></td>
             </tr>
@@ -1217,10 +1211,10 @@ $renderOccPrint = function(string $title, string $occKey, string $groupLabel, ?c
 };
 
 $renderOccPrint('Occupancy Exhibition per Lantai', 'floor_occ', 'Lantai',
-    fn($a,$b)=>($floorOrder[$a]??99)<=>($floorOrder[$b]??99), true, true);
-$renderOccPrint('Occupancy Media Promo per Jenis',       'media_occ',  'Jenis', null, false, false);
+    fn($a,$b)=>($floorOrder[$a]??99)<=>($floorOrder[$b]??99), true);
+$renderOccPrint('Occupancy Media Promo per Jenis',       'media_occ',  'Jenis');
 $renderOccPrint('Occupancy Gudang / Storage per Lokasi', 'gudang_occ', 'Lokasi',
-    fn($a,$b)=>($floorOrder[$a]??99)<=>($floorOrder[$b]??99), false, true);
+    fn($a,$b)=>($floorOrder[$a]??99)<=>($floorOrder[$b]??99));
 ?>
 
 <!-- PIC ACHIEVEMENT — ALL PROPERTIES -->
