@@ -320,6 +320,7 @@ function transaction_form(PDO $pdo): void
                     <span style="color:#166534">Total: <strong id="kalkulasi-nilai">-</strong> &nbsp;|&nbsp; <span id="kalkulasi-hari">-</span></span>
                 </div>
             </div>
+            <div id="overlap-warn" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:13px;color:#92400e"></div>
             <p style="margin-top:14px;animation:_fadeUp .35s cubic-bezier(.22,.68,0,1.2) both;animation-delay:.72s"><button type="submit">Simpan & Hitung Alokasi</button> <a class="btn secondary" href="?r=transactions&module=<?= h($module) ?>">Kembali</a></p>
         </form>
         <script>
@@ -384,6 +385,34 @@ function transaction_form(PDO $pdo): void
             }
             document.querySelector('[name=start_date]').addEventListener('change', checkRecognitionMonth);
             document.querySelector('[name=end_date]').addEventListener('change', checkRecognitionMonth);
+
+            const overlapWarn = document.getElementById('overlap-warn');
+            let overlapTimer = null;
+            function checkOverlap() {
+                clearTimeout(overlapTimer);
+                overlapTimer = setTimeout(async () => {
+                    const code  = document.getElementById('master_code').value;
+                    const start = document.querySelector('[name=start_date]').value;
+                    const end   = document.querySelector('[name=end_date]').value;
+                    if (!code || !start || !end) { overlapWarn.style.display = 'none'; return; }
+                    try {
+                        const r = await fetch(`?r=transaction_overlap_check&master_code=${encodeURIComponent(code)}&start_date=${encodeURIComponent(start)}&end_date=${encodeURIComponent(end)}`, { cache: 'no-store' });
+                        const data = await r.json();
+                        if (data.overlaps && data.overlaps.length) {
+                            const rows = data.overlaps.map(o =>
+                                `<li><strong>${o.company_name}</strong> · ${o.start_date} s/d ${o.end_date} · PIC: ${o.pic_name}</li>`
+                            ).join('');
+                            overlapWarn.innerHTML = `⚠ Unit ini sudah memiliki <strong>${data.overlaps.length}</strong> transaksi dengan tanggal yang overlap. Tetap bisa disimpan jika memang dibagi per slot/luasan.<ul style="margin:6px 0 0 16px">${rows}</ul>`;
+                            overlapWarn.style.display = '';
+                        } else {
+                            overlapWarn.style.display = 'none';
+                        }
+                    } catch (_) {}
+                }, 400);
+            }
+            document.getElementById('master_code').addEventListener('change', checkOverlap);
+            document.querySelector('[name=start_date]').addEventListener('change', checkOverlap);
+            document.querySelector('[name=end_date]').addEventListener('change', checkOverlap);
 
             function kalkulasiTotal() {
                 const startVal = document.querySelector('[name=start_date]').value;
@@ -638,6 +667,7 @@ function transaction_edit(PDO $pdo): void
                     <span style="color:#166534">Total: <strong id="kalkulasi-nilai">-</strong> &nbsp;|&nbsp; <span id="kalkulasi-hari">-</span></span>
                 </div>
             </div>
+            <div id="overlap-warn" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:13px;color:#92400e"></div>
             <p style="margin-top:14px"><button type="submit">Simpan & Hitung Ulang Alokasi</button> <a class="btn secondary" href="?r=allocation_detail&id=<?= h((string) $id) ?>">Kembali</a></p>
         </form>
         <script>
@@ -703,6 +733,35 @@ function transaction_edit(PDO $pdo): void
             }
             document.getElementById('start_date').addEventListener('change', checkRecognitionMonth);
             document.getElementById('end_date').addEventListener('change', checkRecognitionMonth);
+
+            const overlapWarn = document.getElementById('overlap-warn');
+            let overlapTimer = null;
+            function checkOverlap() {
+                clearTimeout(overlapTimer);
+                overlapTimer = setTimeout(async () => {
+                    const code  = document.getElementById('master_code').value;
+                    const start = document.getElementById('start_date').value;
+                    const end   = document.getElementById('end_date').value;
+                    if (!code || !start || !end) { overlapWarn.style.display = 'none'; return; }
+                    try {
+                        const r = await fetch(`?r=transaction_overlap_check&master_code=${encodeURIComponent(code)}&start_date=${encodeURIComponent(start)}&end_date=${encodeURIComponent(end)}&exclude_id=<?= $id ?>`, { cache: 'no-store' });
+                        const data = await r.json();
+                        if (data.overlaps && data.overlaps.length) {
+                            const rows = data.overlaps.map(o =>
+                                `<li><strong>${o.company_name}</strong> · ${o.start_date} s/d ${o.end_date} · PIC: ${o.pic_name}</li>`
+                            ).join('');
+                            overlapWarn.innerHTML = `⚠ Unit ini sudah memiliki <strong>${data.overlaps.length}</strong> transaksi dengan tanggal yang overlap. Tetap bisa disimpan jika memang dibagi per slot/luasan.<ul style="margin:6px 0 0 16px">${rows}</ul>`;
+                            overlapWarn.style.display = '';
+                        } else {
+                            overlapWarn.style.display = 'none';
+                        }
+                    } catch (_) {}
+                }, 400);
+            }
+            document.getElementById('master_code').addEventListener('change', checkOverlap);
+            document.getElementById('start_date').addEventListener('change', checkOverlap);
+            document.getElementById('end_date').addEventListener('change', checkOverlap);
+            checkOverlap();
 
             function kalkulasiTotal() {
                 const startVal = document.getElementById('start_date').value;
@@ -1029,4 +1088,36 @@ function transaction_history_page(PDO $pdo): void
         <?php endif; ?>
         <?php
     });
+}
+
+function transaction_overlap_check(PDO $pdo): void
+{
+    header('Content-Type: application/json; charset=utf-8');
+    $masterCode = (string) getv('master_code', '');
+    $startDate  = (string) getv('start_date', '');
+    $endDate    = (string) getv('end_date', '');
+    $excludeId  = (int)   getv('exclude_id', 0);
+    $pid        = current_property_id();
+
+    if (!$masterCode || !$startDate || !$endDate) {
+        echo json_encode(['overlaps' => []]);
+        exit;
+    }
+
+    $stmt = $pdo->prepare(
+        "SELECT t.id, t.start_date, t.end_date, COALESCE(c.company_name, '-') company_name, COALESCE(t.pic_name, '-') pic_name
+         FROM transactions t
+         LEFT JOIN master_clients c ON c.id = t.client_id
+         WHERE t.master_code = ?
+           AND t.property_id = ?
+           AND t.deleted_at IS NULL
+           AND t.start_date <= ?
+           AND t.end_date   >= ?
+           AND (? = 0 OR t.id != ?)
+         ORDER BY t.start_date
+         LIMIT 10"
+    );
+    $stmt->execute([$masterCode, $pid, $endDate, $startDate, $excludeId, $excludeId]);
+    echo json_encode(['overlaps' => $stmt->fetchAll()]);
+    exit;
 }
