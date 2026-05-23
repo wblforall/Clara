@@ -23,11 +23,11 @@ $route          = getv('r', 'dashboard');
 $isDisplayRoute = in_array($route, ['display', 'display_data'], true);
 
 if (!$isDisplayRoute && session_status() !== PHP_SESSION_ACTIVE) {
-    $sessionPath = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'clara-sessions-unified';
+    $sessionPath = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'clara-sessions';
     if ((is_dir($sessionPath) || @mkdir($sessionPath, 0775, true)) && is_writable($sessionPath)) {
         ini_set('session.save_path', $sessionPath);
     }
-    session_name('CLARA_UNIFIED');
+    session_name('CLARA');
     session_start();
 }
 

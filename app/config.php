@@ -3,7 +3,7 @@
 require_once __DIR__ . '/env.php';
 
 return [
-    'app_name'      => env_value('APP_NAME', 'CLARA Unified'),
+    'app_name'      => env_value('APP_NAME', 'CLARA'),
     'app_version'   => env_value('APP_VERSION', '3.3'),
     'app_env'       => env_value('APP_ENV', 'production'),
     'app_debug'     => env_value('APP_DEBUG', 'false') === 'true',
