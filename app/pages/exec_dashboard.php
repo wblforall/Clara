@@ -409,64 +409,51 @@ function exec_dashboard(PDO $pdo): void
             );
             ?>
 
-            <!-- PIC Achievement — All Properties -->
-            <div class="section-title">Achievement PIC — Semua Properti</div>
-            <div class="panel" style="padding:0;overflow:hidden;margin-bottom:24px">
-                <table class="pic-table" style="width:100%;border-collapse:collapse">
-                    <thead>
-                        <tr style="background:#f8fafc">
-                            <th style="padding:10px 14px;text-align:center;width:40px;border-bottom:1px solid var(--line,#e2e8f0)">#</th>
-                            <th style="padding:10px 14px;border-bottom:1px solid var(--line,#e2e8f0)">PIC</th>
-                            <th style="padding:10px 14px;border-bottom:1px solid var(--line,#e2e8f0)">Properti</th>
-                            <th style="padding:10px 14px;border-bottom:1px solid var(--line,#e2e8f0)">Jabatan</th>
-                            <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Target Posisi</th>
-                            <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Aktual</th>
-                            <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Achievement</th>
-                            <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Client Baru</th>
+            <!-- PIC Achievement — Per Properti -->
+            <div class="section-title">Achievement PIC</div>
+            <?php foreach ($propData as $d): ?>
+            <div style="margin-bottom:16px">
+                <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--brand,#0d9488);margin-bottom:6px"><?= h($d['name']) ?></div>
+                <div class="panel" style="padding:0;overflow:hidden">
+                    <table class="pic-table" style="width:100%;border-collapse:collapse">
+                        <thead>
+                            <tr style="background:#f8fafc">
+                                <th style="padding:10px 14px;text-align:center;width:40px;border-bottom:1px solid var(--line,#e2e8f0)">#</th>
+                                <th style="padding:10px 14px;border-bottom:1px solid var(--line,#e2e8f0)">PIC</th>
+                                <th style="padding:10px 14px;border-bottom:1px solid var(--line,#e2e8f0)">Jabatan</th>
+                                <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Target Posisi</th>
+                                <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Aktual</th>
+                                <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Achievement</th>
+                                <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Client Baru</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($d['pics'] as $i => $row):
+                            $picTarget  = (float)$row['target_share'] * (float)$d['target'];
+                            $ach        = $picTarget > 0 ? (float)$row['actual'] / $picTarget : 0;
+                            $achPillCls = $ach >= 1 ? 'ach-good' : ($ach >= .8 ? 'ach-warn' : 'ach-bad');
+                            $rankEmoji  = $i === 0 ? ' 👑' : ($i === count($d['pics'])-1 && count($d['pics']) > 1 ? ' 😢' : '');
+                            $highlight  = $ach >= 1 ? ' style="background:#f0fdf4"' : '';
+                            $rankColor  = $i===0?'#f59e0b':($i===1?'#94a3b8':($i===2?'#b87333':'#cbd5e1'));
+                        ?>
+                        <tr<?= $highlight ?> style="border-bottom:1px solid var(--line,#f1f5f9)">
+                            <td style="padding:8px 14px;text-align:center;font-weight:800;font-size:14px;color:<?= $rankColor ?>"><?= $i+1 ?></td>
+                            <td style="padding:8px 14px;font-weight:600"><?= h($row['pic_name']) ?><?= $rankEmoji ?></td>
+                            <td style="padding:8px 14px;color:var(--muted)"><?= h($row['role_name']) ?></td>
+                            <td style="padding:8px 14px;text-align:right"><?= $picTarget > 0 ? money($picTarget) : '<span style="color:var(--muted)">—</span>' ?></td>
+                            <td style="padding:8px 14px;text-align:right;font-weight:700"><?= money($row['actual']) ?></td>
+                            <td style="padding:8px 14px;text-align:right"><?= $picTarget > 0 ? '<span class="ach-pill '.$achPillCls.'">'.pct($ach).'</span>' : '<span style="color:var(--muted)">—</span>' ?></td>
+                            <td style="padding:8px 14px;text-align:right;font-weight:700"><?= (int)$row['new_clients'] ?></td>
                         </tr>
-                    </thead>
-                    <tbody>
-                    <?php
-                    // Merge all PICs sorted by actual desc
-                    $allPics = [];
-                    foreach ($propData as $d) {
-                        foreach ($d['pics'] as $pic) {
-                            $allPics[] = array_merge($pic, [
-                                '_prop_name' => $d['name'],
-                                '_prop_id'   => $d['id'],
-                                '_target'    => $d['target'],
-                            ]);
-                        }
-                    }
-                    usort($allPics, fn($a,$b) => $b['actual'] <=> $a['actual']);
-                    $rank = 0;
-                    $prevActual = -1;
-                    foreach ($allPics as $row):
-                        $rank++;
-                        $picTarget   = (float)$row['target_share'] * (float)$row['_target'];
-                        $ach         = $picTarget > 0 ? (float)$row['actual'] / $picTarget : 0;
-                        $achPillCls  = $ach >= 1 ? 'ach-good' : ($ach >= .8 ? 'ach-warn' : 'ach-bad');
-                        $rankEmoji   = $rank === 1 ? ' 👑' : ($rank === count($allPics) && count($allPics) > 1 ? ' 😢' : '');
-                        $propTagCls  = 'prop-tag-' . $row['_prop_id'];
-                        $highlight   = $ach >= 1 ? ' style="background:#f0fdf4"' : '';
-                    ?>
-                    <tr<?= $highlight ?> style="border-bottom:1px solid var(--line,#f1f5f9)">
-                        <td style="padding:8px 14px;text-align:center;font-weight:800;font-size:14px;color:<?= $rank===1?'#f59e0b':($rank===2?'#94a3b8':($rank===3?'#b87333':'#cbd5e1')) ?>"><?= $rank ?></td>
-                        <td style="padding:8px 14px;font-weight:600"><?= h($row['pic_name']) ?><?= $rankEmoji ?></td>
-                        <td style="padding:8px 14px"><span class="prop-tag <?= $propTagCls ?>"><?= h($row['_prop_name']) ?></span></td>
-                        <td style="padding:8px 14px;color:var(--muted)"><?= h($row['role_name']) ?></td>
-                        <td style="padding:8px 14px;text-align:right"><?= $picTarget > 0 ? money($picTarget) : '<span style="color:var(--muted)">—</span>' ?></td>
-                        <td style="padding:8px 14px;text-align:right;font-weight:700"><?= money($row['actual']) ?></td>
-                        <td style="padding:8px 14px;text-align:right"><?= $picTarget > 0 ? '<span class="ach-pill '.$achPillCls.'">'.pct($ach).'</span>' : '<span style="color:var(--muted)">—</span>' ?></td>
-                        <td style="padding:8px 14px;text-align:right;font-weight:700"><?= (int)$row['new_clients'] ?></td>
-                    </tr>
-                    <?php endforeach; ?>
-                    <?php if (empty($allPics)): ?>
-                    <tr><td colspan="8" style="padding:24px;text-align:center;color:var(--muted)">Belum ada data PIC untuk periode ini.</td></tr>
-                    <?php endif; ?>
-                    </tbody>
-                </table>
+                        <?php endforeach; ?>
+                        <?php if (empty($d['pics'])): ?>
+                        <tr><td colspan="7" style="padding:24px;text-align:center;color:var(--muted)">Belum ada data PIC untuk periode ini.</td></tr>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
             </div>
+            <?php endforeach; ?>
         <script>
         setTimeout(function(){
             document.querySelectorAll('.seg-bar-fill[data-w],.exec-bar[data-w]').forEach(function(b){

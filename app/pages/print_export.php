@@ -880,15 +880,6 @@ function print_exec_summary(PDO $pdo): void
         $combActual     += $d['actual'];
     }
 
-    // All PICs merged, sorted by actual desc
-    $allPics = [];
-    foreach ($propData as $d) {
-        foreach ($d['pics'] as $pic) {
-            $allPics[] = array_merge($pic, ['_prop_name'=>$d['name'],'_prop_id'=>$d['id'],'_target'=>$d['target']]);
-        }
-    }
-    usort($allPics, fn($a,$b) => $b['actual'] <=> $a['actual']);
-
     // Floor canonical sort
     $floorOrder = ['LG'=>1,'GF'=>2,'UG'=>3,'FF'=>4,'SF'=>5];
     $floorSorter = fn($a,$b) => ($floorOrder[$a]??99) <=> ($floorOrder[$b]??99);
@@ -1235,49 +1226,53 @@ $renderOccPrint('Occupancy Gudang / Storage per Lokasi', 'gudang_occ', 'Lokasi',
     fn($a,$b)=>($floorOrder[$a]??99)<=>($floorOrder[$b]??99));
 ?>
 
-<!-- PIC ACHIEVEMENT — ALL PROPERTIES -->
+<!-- PIC ACHIEVEMENT — PER PROPERTI -->
 <div class="section">
-    <div class="section-title">Achievement PIC — Semua Properti</div>
-    <table>
-        <thead>
-            <tr>
-                <th style="width:28px;text-align:center">#</th>
-                <th>PIC</th>
-                <th>Properti</th>
-                <th>Jabatan</th>
-                <th class="r">Target Posisi</th>
-                <th class="r">Aktual</th>
-                <th class="r">Achievement</th>
-                <th class="r">Client Baru</th>
+    <div class="section-title">Achievement PIC</div>
+    <div style="display:grid;grid-template-columns:repeat(<?= count($propData) ?>,1fr);gap:10px">
+    <?php foreach($propData as $d): ?>
+    <div>
+        <div style="font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#0d9488;margin-bottom:5px"><?= h($d['name']) ?></div>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:18px;text-align:center">#</th>
+                    <th>PIC</th>
+                    <th>Jabatan</th>
+                    <th class="r">Target</th>
+                    <th class="r">Aktual</th>
+                    <th class="r">Ach%</th>
+                    <th class="r">Baru</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach($d['pics'] as $i=>$row):
+                $pt   = (float)$row['target_share']*(float)$d['target'];
+                $ach  = $pt>0?(float)$row['actual']/$pt:0;
+                $aCls = $ach>=1?'ach-good':($ach>=.8?'ach-warn':'ach-bad');
+                $bg   = $ach>=1?' style="background:#f0fdf4"':'';
+                $rankColor = $i===0?'#f59e0b':($i===1?'#94a3b8':($i===2?'#b87333':'#cbd5e1'));
+                $rankEmoji = $i===0&&(float)$row['actual']>0?' 👑':'';
+                $rankEmoji.= $i===count($d['pics'])-1&&count($d['pics'])>1?' 😢':'';
+            ?>
+            <tr<?= $bg ?>>
+                <td style="text-align:center;font-weight:800;color:<?= $rankColor ?>"><?= $i+1 ?></td>
+                <td style="font-weight:600"><?= h($row['pic_name']) ?><?= $rankEmoji ?></td>
+                <td style="color:#7b8a9c"><?= h($row['role_name']) ?></td>
+                <td class="money"><?= $pt>0?money($pt):'<span style="color:#94a3b8">—</span>' ?></td>
+                <td class="money"><?= money($row['actual']) ?></td>
+                <td class="r"><?= $pt>0?'<span class="ach-pill '.$aCls.'">'.pct($ach).'</span>':'<span style="color:#94a3b8">—</span>' ?></td>
+                <td class="r" style="font-weight:700"><?= (int)$row['new_clients'] ?></td>
             </tr>
-        </thead>
-        <tbody>
-        <?php foreach($allPics as $i=>$row):
-            $pt   = (float)$row['target_share']*(float)$row['_target'];
-            $ach  = $pt>0?(float)$row['actual']/$pt:0;
-            $aCls = $ach>=1?'ach-good':($ach>=.8?'ach-warn':'ach-bad');
-            $bg   = $ach>=1?' style="background:#f0fdf4"':'';
-            $ci   = 1;
-            foreach($propData as $pidKey=>$pd) { if($pd['id']===$row['_prop_id']){$ci=array_search($pidKey,array_keys($propData))+1;break;} }
-            $tagColors=[['#ccfbf1','#0f766e'],['#ede9fe','#6d28d9'],['#dbeafe','#1d4ed8'],['#fef3c7','#92400e']];
-            [$tagBg,$tagFg]=$tagColors[min($ci-1,3)];
-        ?>
-        <tr<?= $bg ?>>
-            <td style="text-align:center;font-weight:800;color:<?= $i===0?'#f59e0b':($i===1?'#94a3b8':($i===2?'#b87333':'#cbd5e1')) ?>"><?= $i+1 ?></td>
-            <td style="font-weight:600"><?= h($row['pic_name']) ?><?= $i===0&&(float)$row['actual']>0?' 👑':'' ?><?= ($i===count($allPics)-1&&count($allPics)>1)?' 😢':'' ?></td>
-            <td><span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:8px;font-weight:700;background:<?= $tagBg ?>;color:<?= $tagFg ?>"><?= h($row['_prop_name']) ?></span></td>
-            <td style="color:#7b8a9c"><?= h($row['role_name']) ?></td>
-            <td class="money"><?= $pt>0?money($pt):'<span style="color:#94a3b8">—</span>' ?></td>
-            <td class="money"><?= money($row['actual']) ?></td>
-            <td class="r"><?= $pt>0?'<span class="ach-pill '.$aCls.'">'.pct($ach).'</span>':'<span style="color:#94a3b8">—</span>' ?></td>
-            <td class="r" style="font-weight:700"><?= (int)$row['new_clients'] ?></td>
-        </tr>
-        <?php endforeach; ?>
-        <?php if(empty($allPics)): ?>
-        <tr><td colspan="8" style="padding:16px;text-align:center;color:#94a3b8">Belum ada data PIC untuk periode ini.</td></tr>
-        <?php endif; ?>
-        </tbody>
-    </table>
+            <?php endforeach; ?>
+            <?php if(empty($d['pics'])): ?>
+            <tr><td colspan="7" style="padding:8px;text-align:center;color:#94a3b8">Belum ada data PIC.</td></tr>
+            <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endforeach; ?>
+    </div>
 </div>
 
 <div class="rpt-footer">
