@@ -301,7 +301,7 @@ function exec_dashboard(PDO $pdo): void
             $floorOrder = ['LG'=>1,'GF'=>2,'UG'=>3,'FF'=>4,'SF'=>5];
 
             // useUnion=true → baris seragam lintas properti (Exhibition); false → tiap properti hanya tampilkan datanya sendiri
-            $renderOccSection = function(string $title, string $occKey, string $groupLabel, ?callable $sorter = null, bool $useUnion = false) use ($propData, $periodDays) {
+            $renderOccSection = function(string $title, string $occKey, string $groupLabel, ?callable $sorter = null, bool $useUnion = false, string $rateLabel = 'Avg Rate') use ($propData, $periodDays) {
                 // Untuk union mode: hitung semua key dari semua properti
                 $unionKeys = [];
                 if ($useUnion) {
@@ -345,7 +345,7 @@ function exec_dashboard(PDO $pdo): void
                             <th style="padding:5px 8px;text-align:left;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px"><?= $groupLabel ?></th>
                             <th style="padding:5px 8px;text-align:center;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px">Unit</th>
                             <th style="padding:5px 8px;text-align:right;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px">Occ %</th>
-                            <th style="padding:5px 8px;text-align:right;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px">Avg Rate</th>
+                            <th style="padding:5px 8px;text-align:right;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px"><?= h($rateLabel) ?></th>
                             <th style="padding:5px 8px;text-align:right;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px">Aktual</th>
                             <th style="padding:5px 8px"></th>
                         </tr>
@@ -405,11 +405,11 @@ function exec_dashboard(PDO $pdo): void
             <?php };
 
             $renderOccSection('Occupancy Exhibition per Lantai', 'floor_occ', 'Lantai',
-                fn($a,$b) => ($floorOrder[$a] ?? 99) <=> ($floorOrder[$b] ?? 99), true
+                fn($a,$b) => ($floorOrder[$a] ?? 99) <=> ($floorOrder[$b] ?? 99), true, 'Avg Rate/Hari/m²'
             );
-            $renderOccSection('Occupancy Media Promo per Jenis',       'media_occ',  'Jenis');
+            $renderOccSection('Occupancy Media Promo per Jenis',       'media_occ',  'Jenis', null, false, 'Avg Rate/Hari');
             $renderOccSection('Occupancy Gudang / Storage per Lokasi', 'gudang_occ', 'Lokasi',
-                fn($a,$b) => ($floorOrder[$a] ?? 99) <=> ($floorOrder[$b] ?? 99)
+                fn($a,$b) => ($floorOrder[$a] ?? 99) <=> ($floorOrder[$b] ?? 99), false, 'Avg Rate/m²/Bln'
             );
             ?>
 
@@ -533,7 +533,8 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
                 COALESCE(SUM(a.allocated_days),0) days_total,
                 COALESCE(SUM(m.projection_monthly),0) proj_total,
                 COALESCE(SUM(a.amount),0) actual_total,
-                AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN t.unit_rate ELSE NULL END) avg_rate
+                AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
+                         THEN a.amount/a.allocated_days/m.area_sqm ELSE NULL END) avg_rate
          FROM master_cl_units m
          LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='cl' AND a.period_key=? AND a.property_id=?
          LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
@@ -551,7 +552,8 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
                 COALESCE(SUM(a.allocated_days),0) days_total,
                 COALESCE(SUM(m.projection_monthly),0) proj_total,
                 COALESCE(SUM(a.amount),0) actual_total,
-                AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN t.unit_rate ELSE NULL END) avg_rate
+                AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
+                         THEN a.amount/a.allocated_days ELSE NULL END) avg_rate
          FROM master_media m
          LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='media' AND a.period_key=? AND a.property_id=?
          LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
@@ -568,7 +570,8 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
                 COALESCE(SUM(a.allocated_days),0) days_total,
                 COALESCE(SUM(m.projection_monthly),0) proj_total,
                 COALESCE(SUM(a.amount),0) actual_total,
-                AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN t.unit_rate ELSE NULL END) avg_rate
+                AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
+                         THEN a.amount/m.area_sqm ELSE NULL END) avg_rate
          FROM master_gudang m
          LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='gudang' AND a.period_key=? AND a.property_id=?
          LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL

@@ -21,6 +21,11 @@
 
 - **Kolom HARI diganti Avg Hari** — Pada tabel occupancy (Exhibition per Lantai, Media per Jenis, Gudang per Lokasi) di print Executive Summary, kolom "Hari" kini menampilkan rata-rata hari terisi per unit (`days_total ÷ unit_count`), lebih mudah dibaca dan nyambung logis ke kolom OCC%.
 
+- **Kolom Avg Rate per Segmen** — Tabel occupancy Exhibition, Media Promo, dan Gudang kini memiliki kolom rate rata-rata dari transaksi yang sudah ter-deal di bulan berjalan. Formula berbasis `amount` aktual alokasi (bukan master rate), sehingga mencerminkan harga dealing yang sebenarnya:
+  - Exhibition → `Avg Rate/Hari/m²` (`amount ÷ allocated_days ÷ area_sqm`)
+  - Media Promo → `Avg Rate/Hari` (`amount ÷ allocated_days`)
+  - Gudang → `Avg Rate/m²/Bln` (`amount ÷ area_sqm`)
+
 ### Display TV
 
 - **OCC% per Segmen** — Di setiap panel properti, bawah angka achievement per segmen kini muncul "Occ X%" dengan color-coding yang sama (hijau/kuning/merah). Data diambil dari `allocated_days ÷ (unit_count × hari bulan)`.

@@ -832,7 +832,8 @@ function print_exec_summary(PDO $pdo): void
                     COALESCE(SUM(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.area_sqm ELSE 0 END),0) area_total,
                     COALESCE(SUM(m.projection_monthly),0) proj_total,
                     COALESCE(SUM(a.amount),0) actual_total,
-                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN t.unit_rate ELSE NULL END) avg_rate
+                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
+                             THEN a.amount/a.allocated_days/m.area_sqm ELSE NULL END) avg_rate
              FROM master_cl_units m
              LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='cl' AND a.period_key=? AND a.property_id=?
              LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
@@ -848,7 +849,8 @@ function print_exec_summary(PDO $pdo): void
                     0 AS area_total,
                     COALESCE(SUM(m.projection_monthly),0) proj_total,
                     COALESCE(SUM(a.amount),0) actual_total,
-                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN t.unit_rate ELSE NULL END) avg_rate
+                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
+                             THEN a.amount/a.allocated_days ELSE NULL END) avg_rate
              FROM master_media m
              LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='media' AND a.period_key=? AND a.property_id=?
              LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
@@ -864,7 +866,8 @@ function print_exec_summary(PDO $pdo): void
                     COALESCE(SUM(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.area_sqm ELSE 0 END),0) area_total,
                     COALESCE(SUM(m.projection_monthly),0) proj_total,
                     COALESCE(SUM(a.amount),0) actual_total,
-                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN t.unit_rate ELSE NULL END) avg_rate
+                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
+                             THEN a.amount/m.area_sqm ELSE NULL END) avg_rate
              FROM master_gudang m
              LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='gudang' AND a.period_key=? AND a.property_id=?
              LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
@@ -965,6 +968,7 @@ tr.row-dimmed td{color:#94a3b8}
 .occ-wrap{display:grid;grid-template-columns:repeat(<?= count($propData) ?>,1fr);gap:10px;margin-bottom:12px}
 .occ-card{border:1px solid #e4e9f0;border-radius:7px;padding:8px 10px}
 .occ-prop-name{font-size:9px;font-weight:800;text-transform:uppercase;color:#7b8a9c;margin-bottom:5px;letter-spacing:.04em}
+.occ-card table{table-layout:fixed;font-size:8px}
 .rpt-footer{margin-top:12px;padding-top:6px;border-top:1px solid #e4e9f0;display:flex;justify-content:space-between;font-size:8px;color:#7b8a9c}
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 </style>
@@ -1149,7 +1153,7 @@ $buildOccKeys = function(string $occKey, ?callable $sorter=null) use ($propData)
     return $keys;
 };
 // useUnion=true → baris seragam lintas properti; false → tiap properti hanya datanya sendiri
-$renderOccPrint = function(string $title, string $occKey, string $groupLabel, ?callable $sorter=null, bool $useUnion=false)
+$renderOccPrint = function(string $title, string $occKey, string $groupLabel, ?callable $sorter=null, bool $useUnion=false, string $rateLabel='Avg Rate')
     use ($propData, $periodDays, $buildOccKeys, $occStyle): void {
     $unionKeys = $useUnion ? $buildOccKeys($occKey, $sorter) : [];
     // Index per property
@@ -1182,7 +1186,7 @@ $renderOccPrint = function(string $title, string $occKey, string $groupLabel, ?c
                     <th class="r">Unit</th>
                     <th class="r">Avg Hari</th>
                     <th class="r">Occ%</th>
-                    <th class="r">Avg Rate</th>
+                    <th class="r"><?= $rateLabel ?></th>
                     <th class="r">Aktual</th>
                 </tr>
             </thead>
@@ -1230,10 +1234,10 @@ $renderOccPrint = function(string $title, string $occKey, string $groupLabel, ?c
 };
 
 $renderOccPrint('Occupancy Exhibition per Lantai', 'floor_occ', 'Lantai',
-    fn($a,$b)=>($floorOrder[$a]??99)<=>($floorOrder[$b]??99), true);
-$renderOccPrint('Occupancy Media Promo per Jenis',       'media_occ',  'Jenis');
+    fn($a,$b)=>($floorOrder[$a]??99)<=>($floorOrder[$b]??99), true, 'Avg Rate/Hari/m²');
+$renderOccPrint('Occupancy Media Promo per Jenis',       'media_occ',  'Jenis', null, false, 'Avg Rate/Hari');
 $renderOccPrint('Occupancy Gudang / Storage per Lokasi', 'gudang_occ', 'Lokasi',
-    fn($a,$b)=>($floorOrder[$a]??99)<=>($floorOrder[$b]??99));
+    fn($a,$b)=>($floorOrder[$a]??99)<=>($floorOrder[$b]??99), false, 'Avg Rate/m²/Bln');
 ?>
 
 <!-- PIC ACHIEVEMENT — PER PROPERTI -->
