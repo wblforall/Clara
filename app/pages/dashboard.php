@@ -635,8 +635,9 @@ function dashboard(PDO $pdo): void
 function display_json(PDO $pdo): void
 {
     $period = getv('period', date('Y-m'));
-    $data = DashboardService::jsonReady(DashboardService::data($pdo, $period));
-    audit($pdo, 'display_ajax_refresh', 'dashboard_display', $period, ['period' => $period], [], 'display_tv');
+    $pid    = (int) getv('pid', 0) ?: null;
+    $data   = DashboardService::jsonReady(DashboardService::data($pdo, $period, $pid));
+    audit($pdo, 'display_ajax_refresh', 'dashboard_display', $period, ['period' => $period, 'pid' => $pid], [], 'display_tv');
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
     echo json_encode($data);
@@ -645,22 +646,23 @@ function display_json(PDO $pdo): void
 
 function display_page(PDO $pdo, array $config): void
 {
-    $period = getv('period', date('Y-m'));
-    $token  = getv('token', '');
-    $periods = periods($pdo);
+    $period     = getv('period', date('Y-m'));
+    $token      = getv('token', '');
+    $periods    = periods($pdo);
+    $properties = $pdo->query("SELECT id, name FROM properties WHERE status='active' ORDER BY id")->fetchAll();
     audit($pdo, 'display_open', 'dashboard_display', $period, ['period' => $period], [], 'display_tv');
     ?>
     <!doctype html>
     <html lang="id">
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=1280">
+        <meta name="viewport" content="width=1920">
         <title>Display TV — <?= h($config['app_name'] ?? 'CLARA') ?></title>
         <link rel="icon" type="image/png" href="assets/clara-logo.png">
         <link rel="stylesheet" href="assets/app.css?v=<?= CSS_VER ?>">
     </head>
     <body class="tv-body">
-    <main class="tv-shell">
+    <main class="tv-shell tv-shell--split">
 
         <!-- HEADER -->
         <header class="tv-hdr">
@@ -668,8 +670,6 @@ function display_page(PDO $pdo, array $config): void
                 <img class="tv-logo" src="assets/clara-logo.png" alt="CLARA" onerror="this.style.display='none'">
                 <div>
                     <div class="tv-kicker">Casual Leasing Achievement &amp; Revenue Analytics</div>
-                    <div class="tv-location">eWalk Simply FUNtastic</div>
-
                     <h1 id="tv-period">Loading...</h1>
                 </div>
             </div>
@@ -687,49 +687,48 @@ function display_page(PDO $pdo, array $config): void
             </div>
         </header>
 
-        <!-- KPI STRIP -->
-        <section class="tv-strip">
-            <div class="tv-kpi k-target"><span>Target Bulanan</span><strong id="target">Rp 0</strong></div>
-            <div class="tv-kpi k-actual"><span>Aktual</span><strong id="actual">Rp 0</strong></div>
-            <div class="tv-kpi k-pot"   ><span>Potensi</span><strong id="projection">Rp 0</strong></div>
-            <div class="tv-kpi k-pct"   ><span>% vs Potensi</span><strong id="achievement-projection">0%</strong></div>
-        </section>
-
-        <!-- MAIN 3-COLUMN -->
-        <section class="tv-main">
-
-            <div class="tv-card tv-ach">
-                <div class="tv-card-title">Achievement Target</div>
-                <div class="tv-ring-wrap">
-                    <div class="tv-ring" id="target-ring">
-                        <div class="tv-ring-inner">
-                            <strong id="achievement-target">0%</strong>
-                            <small>vs Target</small>
+        <!-- SPLIT: dua panel berdampingan -->
+        <div class="tv-split">
+            <?php foreach ($properties as $prop): ?>
+            <div class="tv-panel" data-pid="<?= (int)$prop['id'] ?>">
+                <div class="tv-panel-hdr"><?= h($prop['name']) ?></div>
+                <div class="tv-panel-strip">
+                    <div class="tv-kpi k-target"><span>Target</span><strong class="p-target">Rp 0</strong></div>
+                    <div class="tv-kpi k-actual"><span>Aktual</span><strong class="p-actual">Rp 0</strong></div>
+                </div>
+                <div class="tv-panel-main">
+                    <div class="tv-card tv-ach">
+                        <div class="tv-card-title">Achievement</div>
+                        <div class="tv-ring-wrap">
+                            <div class="tv-ring p-target-ring">
+                                <div class="tv-ring-inner">
+                                    <strong class="p-achievement-target">0%</strong>
+                                    <small>vs Target</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tv-ach-foot">
+                            <div class="tv-bar"><div class="p-target-progress"></div></div>
+                            <div class="tv-gap p-gap-target">Gap Rp 0</div>
                         </div>
                     </div>
+                    <div class="tv-card tv-segs">
+                        <div class="tv-card-title">Segment</div>
+                        <div class="tv-seg-list p-segments"></div>
+                    </div>
+                    <div class="tv-card tv-pics">
+                        <div class="tv-card-title">Ranking PIC</div>
+                        <div class="tv-pic-list p-pics"></div>
+                    </div>
                 </div>
-                <div class="tv-ach-foot">
-                    <div class="tv-bar"><div id="target-progress"></div></div>
-                    <div class="tv-gap" id="gap-target">Gap Rp 0</div>
-                </div>
             </div>
-
-            <div class="tv-card tv-segs">
-                <div class="tv-card-title">Segment Summary</div>
-                <div class="tv-seg-list" id="segments"></div>
-            </div>
-
-            <div class="tv-card tv-pics">
-                <div class="tv-card-title">Ranking PIC</div>
-                <div class="tv-pic-list" id="pics"></div>
-            </div>
-
-        </section>
+            <?php endforeach; ?>
+        </div>
 
     </main>
     <script>
         const token    = <?= json_encode($token) ?>;
-        const endpoint = '?r=display_data&token=' + encodeURIComponent(token);
+        const baseUrl  = '?r=display_data&token=' + encodeURIComponent(token);
         const sel      = document.getElementById('period-select');
         const statusEl = document.getElementById('tv-status');
 
@@ -737,82 +736,82 @@ function display_page(PDO $pdo, array $config): void
             return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
         }
         function cls(w) { return w >= 100 ? 'good' : w >= 80 ? 'warn' : 'bad'; }
-
         function setClock() {
             document.getElementById('clock-now').textContent =
                 new Date().toLocaleTimeString('id-ID', { hour12: false });
         }
 
+        function renderPanel(panel, d) {
+            const q = s => panel.querySelector(s);
+
+            q('.p-target').textContent = d.target_formatted;
+            const elActual = q('.p-actual');
+            elActual.textContent  = d.total_actual_formatted;
+            elActual.style.color  = (d.target > 0 && d.total_actual < d.target) ? '#dc2626' : '';
+            const elAchKpi = q('.p-achievement-target-kpi'); if (elAchKpi) elAchKpi.textContent = d.achievement_target_formatted;
+            q('.p-achievement-target').textContent     = d.achievement_target_formatted;
+            q('.p-gap-target').textContent             = 'Gap target ' + d.gap_target_formatted;
+
+            document.getElementById('tv-period').textContent    = d.period.label;
+            document.getElementById('last-update').textContent  = (d.updated_at.split(' ')[1] || d.updated_at).substring(0, 5);
+
+            const pct = Math.max(0, Math.min(100, d.achievement_target * 100));
+            const ringColor = pct >= 100 ? '#16a34a' : pct >= 80 ? '#d97706' : '#dc2626';
+            const bar = q('.p-target-progress');
+            bar.style.width = pct + '%';
+            bar.className   = cls(pct);
+            const ring = q('.p-target-ring');
+            ring.style.setProperty('--p', pct + '%');
+            ring.style.setProperty('--ring-color', ringColor);
+
+            q('.p-segments').innerHTML = d.segments.map(s => {
+                const w = Math.max(0, Math.min(100, Number(s.achievement || 0) * 100));
+                const c = cls(w);
+                return `<div class="tv-seg">
+                    <div class="tv-seg-side s-${esc(s.key)}"></div>
+                    <div class="tv-seg-body">
+                        <div class="tv-seg-name">${esc(s.label)}</div>
+                        <div class="tv-seg-sub">${esc(s.actual_formatted)} <em>/ ${esc(s.projection_formatted)}</em></div>
+                        <div class="tv-seg-bar"><div class="tv-seg-fill ${c}" style="width:${w}%"></div></div>
+                    </div>
+                    <div class="tv-seg-pct ${c}">${esc(s.achievement_formatted)}</div>
+                </div>`;
+            }).join('');
+
+            q('.p-pics').innerHTML = d.pics.length
+                ? d.pics.slice(0, 5).map((p, i, arr) => {
+                    const c = cls(Number(p.achievement || 0) * 100);
+                    const hasTarget = p.target_posisi > 0;
+                    const badge = arr.length > 1 && i === 0 ? ' 👑' : (arr.length > 1 && i === arr.length - 1 ? ' 😢' : '');
+                    return `<div class="tv-pic r${i + 1}">
+                        <div class="tv-pic-num">${i + 1}</div>
+                        <div class="tv-pic-info">
+                            <div class="tv-pic-name">${esc(p.pic_name)}${badge}</div>
+                            <div class="tv-pic-sub">${esc(p.role_name !== '-' ? p.role_name : 'PIC')}</div>
+                        </div>
+                        <div class="tv-pic-right">
+                            <div class="tv-pic-amt">${esc(p.actual_formatted)}</div>
+                            ${hasTarget ? `<div class="tv-pic-ach ${c}">${esc(p.achievement_formatted)}</div>` : ''}
+                        </div>
+                    </div>`;
+                }).join('')
+                : '<div class="tv-empty">Belum ada data PIC.</div>';
+        }
+
         async function refresh() {
-            statusEl.className = 'tv-dot';
+            statusEl.className   = 'tv-dot';
             statusEl.textContent = 'Memperbarui...';
+            const period = sel.value;
             try {
-                const res = await fetch(endpoint + '&period=' + encodeURIComponent(sel.value), { cache: 'no-store' });
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                const d = await res.json();
-
-                document.getElementById('tv-period').textContent            = d.period.label;
-                document.getElementById('target').textContent               = d.target_formatted;
-                document.getElementById('actual').textContent               = d.total_actual_formatted;
-                document.getElementById('actual').style.color               = (d.target > 0 && d.total_actual < d.target) ? '#dc2626' : '';
-                document.getElementById('projection').textContent           = d.total_projection_formatted;
-                document.getElementById('achievement-target').textContent   = d.achievement_target_formatted;
-                document.getElementById('achievement-projection').textContent = d.achievement_projection_formatted;
-                document.getElementById('gap-target').textContent          = 'Gap target ' + d.gap_target_formatted;
-                document.getElementById('last-update').textContent         = (d.updated_at.split(' ')[1] || d.updated_at).substring(0, 5);
-
-                const pct = Math.max(0, Math.min(100, d.achievement_target * 100));
-                const ringColor = pct >= 100 ? '#16a34a' : pct >= 80 ? '#d97706' : '#dc2626';
-                const bar = document.getElementById('target-progress');
-                bar.style.width = pct + '%';
-                bar.className   = cls(pct);
-                const ring = document.getElementById('target-ring');
-                ring.style.setProperty('--p', pct + '%');
-                ring.style.setProperty('--ring-color', ringColor);
-
+                const panels = [...document.querySelectorAll('.tv-panel')];
+                const results = await Promise.all(panels.map(panel =>
+                    fetch(baseUrl + '&period=' + encodeURIComponent(period) + '&pid=' + panel.dataset.pid, { cache: 'no-store' })
+                        .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
+                        .then(d => ({ panel, d }))
+                ));
+                results.forEach(({ panel, d }) => renderPanel(panel, d));
                 statusEl.className   = 'tv-dot is-online';
                 statusEl.textContent = 'Online';
-
-                document.getElementById('segments').innerHTML = d.segments.map(s => {
-                    const w = Math.max(0, Math.min(100, Number(s.achievement || 0) * 100));
-                    const c = cls(w);
-                    return `<div class="tv-seg">
-                        <div class="tv-seg-side s-${esc(s.key)}"></div>
-                        <div class="tv-seg-body">
-                            <div class="tv-seg-name">${esc(s.label)}</div>
-                            <div class="tv-seg-sub">${esc(s.actual_formatted)} <em>/ ${esc(s.projection_formatted)}</em></div>
-                            <div class="tv-seg-bar"><div class="tv-seg-fill ${c}" style="width:${w}%"></div></div>
-                        </div>
-                        <div class="tv-seg-pct ${c}">${esc(s.achievement_formatted)}</div>
-                    </div>`;
-                }).join('');
-
-                document.getElementById('pics').innerHTML = d.pics.length
-                    ? d.pics.slice(0, 5).map((p, i, arr) => {
-                        const ach = Number(p.achievement || 0);
-                        const c = cls(ach * 100);
-                        const hasTarget = p.target_posisi > 0;
-                        const isTop    = arr.length > 1 && i === 0;
-                        const isBottom = arr.length > 1 && i === arr.length - 1;
-                        const badge = isTop ? ' 👑' : (isBottom ? ' 😢' : '');
-                        return `<div class="tv-pic r${i + 1}">
-                            <div class="tv-pic-num">${i + 1}</div>
-                            <div class="tv-pic-info">
-                                <div class="tv-pic-name">${esc(p.pic_name)}${badge}</div>
-                                <div class="tv-pic-sub">${esc(p.role_name !== '-' ? p.role_name : 'PIC')}</div>
-                                <div class="tv-pic-meta">
-                                    <span>Target: ${hasTarget ? esc(p.target_posisi_formatted) : '—'}</span>
-                                    <span>Aktual: ${esc(p.actual_formatted)}</span>
-                                </div>
-                            </div>
-                            <div class="tv-pic-right">
-                                <div class="tv-pic-amt">${esc(p.actual_formatted)}</div>
-                                ${hasTarget ? `<div class="tv-pic-ach ${c}">${esc(p.achievement_formatted)}</div>` : ''}
-                            </div>
-                        </div>`;
-                    }).join('')
-                    : '<div class="tv-empty">Belum ada data PIC.</div>';
-
             } catch (e) {
                 statusEl.className   = 'tv-dot is-error';
                 statusEl.textContent = 'Koneksi terputus';

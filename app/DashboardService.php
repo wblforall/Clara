@@ -2,9 +2,9 @@
 
 final class DashboardService
 {
-    public static function data(PDO $pdo, string $period): array
+    public static function data(PDO $pdo, string $period, ?int $pid = null): array
     {
-        $pid = current_property_id();
+        $pid = $pid ?? current_property_id();
 
         $periodRowStmt = $pdo->prepare('SELECT * FROM periods WHERE period_key = ? AND property_id = ?');
         $periodRowStmt->execute([$period, $pid]);
