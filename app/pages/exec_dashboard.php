@@ -188,6 +188,24 @@ function exec_dashboard(PDO $pdo): void
                     <span>Sisa: <strong style="color:<?= $d['actual'] >= $d['target'] ? '#16a34a' : '#c2410c' ?>"><?= money(abs($d['target'] - $d['actual'])) ?></strong></span>
                     <span>Client Baru: <strong><?= $d['new_clients'] ?></strong></span>
                 </div>
+                <!-- OCC KPI per segmen -->
+                <?php
+                $segOccMap = ['cl'=>['floor_occ','Exhibition','#0d9488'],'media'=>['media_occ','Media Promo','#0891b2'],'gudang'=>['gudang_occ','Gudang','#f59e0b']];
+                ?>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px">
+                <?php foreach($segOccMap as $seg=>[$occKey,$lbl,$col]):
+                    $segDays = $segUnits = 0;
+                    foreach ($d[$occKey] as $r) { $segDays += $r['days_total']; $segUnits += $r['unit_count']; }
+                    $segOcc = $segUnits*$periodDays > 0 ? $segDays/($segUnits*$periodDays) : 0;
+                    $occClr = $segOcc>=1?'#16a34a':($segOcc>=.8?'#d97706':'#dc2626');
+                ?>
+                    <div style="background:#f8fafc;border-radius:7px;padding:8px 10px;border-top:2px solid <?= $col ?>">
+                        <div class="prop-kpi-label"><?= $lbl ?></div>
+                        <div style="font-size:15px;font-weight:800;color:<?= $occClr ?>;margin-top:3px"><?= number_format($segOcc*100,1,',','.').'%' ?></div>
+                        <div style="font-size:9px;color:var(--muted,#64748b);margin-top:1px">Occupancy Rate</div>
+                    </div>
+                <?php endforeach; ?>
+                </div>
                 <div class="seg-bars">
                     <?php foreach (['cl','media','gudang'] as $seg):
                         $segPct = $d['projection'][$seg] > 0 ? min($d['actual_seg'][$seg] / $d['projection'][$seg], 1) : 0;
