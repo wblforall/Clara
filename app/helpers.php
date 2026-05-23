@@ -266,3 +266,14 @@ function log_activity(PDO $pdo, string $action, ?string $module = null, ?string 
 {
     audit($pdo, $action, $module ?? module_from_request(getv('r', 'system')), $recordId, $context, [], $module);
 }
+
+function validate_password(string $pw): ?string
+{
+    if (strlen($pw) < 8)                          return 'Password minimal 8 karakter.';
+    if (!preg_match('/[A-Z]/', $pw))              return 'Password harus mengandung minimal 1 huruf besar.';
+    if (!preg_match('/[a-z]/', $pw))              return 'Password harus mengandung minimal 1 huruf kecil.';
+    if (!preg_match('/[0-9]/', $pw))              return 'Password harus mengandung minimal 1 angka.';
+    if (!preg_match('/[^A-Za-z0-9]/', $pw))       return 'Password harus mengandung minimal 1 karakter spesial (!@#$%^&* dll).';
+    if ($pw === '123456')                          return 'Gunakan password selain password default.';
+    return null;
+}

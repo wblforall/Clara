@@ -110,13 +110,11 @@ function exec_dashboard(PDO $pdo): void
                     <?php endforeach; ?>
                 </select></div>
             </form>
-            <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+            <div style="margin-left:auto">
                 <a href="?r=print_exec_summary&period=<?= urlencode($period) ?>" target="_blank"
                    style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:#0d9488;color:#fff;border-radius:7px;font-size:12px;font-weight:700;text-decoration:none">
                     🖨 Cetak / PDF
                 </a>
-                <span class="exec-badge-label">Executive Summary</span>
-                <div style="font-size:13px;color:var(--muted)"><?= h($periodLabel) ?></div>
             </div>
         </div>
 

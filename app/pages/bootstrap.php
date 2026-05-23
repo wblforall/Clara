@@ -94,6 +94,43 @@ function layout(string $title, callable $body, array $opts = []): void
         <title><?= h($title) ?> — <?= h($appName) ?></title>
         <link rel="icon" type="image/png" href="assets/clara-logo.png">
         <link rel="stylesheet" href="assets/app.css?v=<?= CSS_VER ?>">
+        <link rel="stylesheet" href="assets/flatpickr.min.css">
+        <style>
+        /* Flatpickr custom theme — compact */
+        .flatpickr-input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:32px!important;cursor:pointer}
+        .flatpickr-calendar{border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.14);border:1px solid #E2E8F0;font-family:inherit;overflow:hidden;width:252px!important}
+        .flatpickr-rContainer{width:252px}
+        .dayContainer{width:238px;min-width:238px;max-width:238px}
+        .flatpickr-months{background:#0D9488;padding:4px 0;border-radius:0}
+        .flatpickr-month{color:#fff;height:34px}
+        .flatpickr-current-month{color:#fff;font-weight:700;font-size:13px;padding-top:8px;width:75%;left:12.5%}
+        .flatpickr-current-month .flatpickr-monthDropdown-months{background:transparent;color:#fff;font-weight:700;font-size:13px}
+        .flatpickr-current-month .numInputWrapper span{border-color:rgba(255,255,255,.3)}
+        .flatpickr-current-month input.cur-year{color:#fff;font-weight:700;font-size:13px}
+        .flatpickr-prev-month,.flatpickr-next-month{color:#fff!important;fill:#fff!important;padding:6px 10px;top:2px}
+        .flatpickr-prev-month:hover svg,.flatpickr-next-month:hover svg{fill:rgba(255,255,255,.7)!important}
+        .flatpickr-weekdays{background:#F0FDF4;border-bottom:1px solid #D1FAE5;height:28px}
+        .flatpickr-weekday{color:#0D9488;font-weight:700;font-size:10px;line-height:28px}
+        .flatpickr-days{width:252px}
+        .flatpickr-day{border-radius:6px;font-size:12px;height:28px;line-height:28px;max-width:28px;margin:1.5px}
+        .flatpickr-day:hover:not(.selected):not(.today){background:#F0FDF4;border-color:#D1FAE5}
+        .flatpickr-day.selected,.flatpickr-day.selected:hover{background:#0D9488;border-color:#0D9488;color:#fff;font-weight:700}
+        .flatpickr-day.today:not(.selected){border-color:#0D9488;color:#0D9488;font-weight:700}
+        .flatpickr-day.flatpickr-disabled,.flatpickr-day.flatpickr-disabled:hover{color:#CBD5E1}
+        /* Weekend */
+        .flatpickr-day.fp-sat,.flatpickr-day.fp-sun{color:#EF4444}
+        .flatpickr-day.fp-sat.selected,.flatpickr-day.fp-sun.selected,.flatpickr-day.fp-sat.today,.flatpickr-day.fp-sun.today{color:#fff;background:#EF4444;border-color:#EF4444}
+        /* Libur nasional */
+        .flatpickr-day.fp-holiday{color:#EF4444;font-weight:700}
+        .flatpickr-day.fp-holiday::after{content:'';display:block;width:4px;height:4px;background:#EF4444;border-radius:50%;margin:-3px auto 0;position:relative;top:-2px}
+        .flatpickr-day.fp-holiday.selected{color:#fff;background:#EF4444;border-color:#EF4444}
+        .flatpickr-day.fp-holiday.selected::after{background:#fff}
+        /* Cuti bersama */
+        .flatpickr-day.fp-cuti{color:#F97316;font-weight:700}
+        .flatpickr-day.fp-cuti::after{content:'';display:block;width:4px;height:4px;background:#F97316;border-radius:50%;margin:-3px auto 0;position:relative;top:-2px}
+        .flatpickr-day.fp-cuti.selected{color:#fff;background:#F97316;border-color:#F97316}
+        .flatpickr-day.fp-cuti.selected::after{background:#fff}
+        </style>
         <?php if ($isMulti): ?>
         <style>
             .prop-tabs{display:flex;gap:4px;align-items:center}
@@ -314,7 +351,7 @@ function layout(string $title, callable $body, array $opts = []): void
     <script>
     function openSidebar(){document.getElementById('sidebar').classList.add('open');document.getElementById('sidebar-overlay').classList.add('active');document.body.style.overflow='hidden';}
     function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebar-overlay').classList.remove('active');document.body.style.overflow='';}
-    document.querySelectorAll('.nav a').forEach(function(a){a.addEventListener('click',closeSidebar);});
+    (function(){var sb=document.getElementById('sidebar');var ss=sessionStorage.getItem('_sb_scroll');if(ss)sb.scrollTop=parseInt(ss,10);document.querySelectorAll('.nav a').forEach(function(a){a.addEventListener('click',function(){sessionStorage.setItem('_sb_scroll',sb.scrollTop);closeSidebar();});});})();
     (function(){
         var timeout=<?= SESSION_TIMEOUT ?>,warnBefore=120,warnAt=(timeout-warnBefore)*1000,logoutAt=timeout*1000;
         var overlay=document.createElement('div');
@@ -326,6 +363,82 @@ function layout(string $title, callable $body, array $opts = []): void
         setTimeout(function(){window.location.href='?r=logout';},logoutAt);
     })();
     document.addEventListener('submit',function(e){var form=e.target;if(form.dataset.submitted){e.preventDefault();return;}form.dataset.submitted='1';form.querySelectorAll('button[type=submit]').forEach(function(btn){btn.disabled=true;btn.dataset.orig=btn.textContent;btn.textContent='Menyimpan...';});});
+    </script>
+    <script src="assets/flatpickr.min.js"></script>
+    <script>
+    (function(){
+        if(typeof flatpickr==='undefined') return;
+        var _fpHolidays = {};
+
+        /* custom tooltip */
+        var _tip = document.createElement('div');
+        _tip.style.cssText = 'display:none;position:fixed;z-index:9999999;background:#1E293B;color:#fff;font-size:11px;line-height:1.4;padding:5px 9px;border-radius:6px;pointer-events:none;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.25);max-width:200px;white-space:normal';
+        document.body.appendChild(_tip);
+        function _tipShow(text, el) {
+            _tip.textContent = text;
+            _tip.style.display = 'block';
+            var r = el.getBoundingClientRect();
+            var tx = r.left + r.width / 2 - _tip.offsetWidth / 2;
+            var ty = r.top - _tip.offsetHeight - 6;
+            if (tx < 4) tx = 4;
+            if (ty < 4) ty = r.bottom + 6;
+            _tip.style.left = tx + 'px';
+            _tip.style.top  = ty + 'px';
+        }
+        function _tipHide() { _tip.style.display = 'none'; }
+
+        function _fpFetch(year, cb) {
+            var yr = String(year);
+            if (_fpHolidays[yr] !== undefined) { cb(_fpHolidays[yr]); return; }
+            _fpHolidays[yr] = {};
+            fetch('https://libur.deno.dev/api?year=' + yr, {cache:'force-cache'})
+                .then(function(r){ return r.json(); })
+                .then(function(data){
+                    data.forEach(function(h){
+                        _fpHolidays[yr][h.date] = { n: h.name, c: !h.is_national_holiday };
+                    });
+                    cb(_fpHolidays[yr]);
+                })
+                .catch(function(){ cb({}); });
+        }
+
+        function _fpMark(fp) {
+            _fpFetch(fp.currentYear, function(){ fp.redraw(); });
+        }
+
+        var curYear = new Date().getFullYear();
+        _fpFetch(curYear, function(){});
+        _fpFetch(curYear + 1, function(){});
+
+        var fpCfg = {
+            dateFormat: 'Y-m-d',
+            locale: { firstDayOfWeek: 1 },
+            disableMobile: true,
+            onDayCreate: function(_d, _s, _fp, day) {
+                var wd  = day.dateObj.getDay();
+                var yr  = day.dateObj.getFullYear();
+                var mm  = String(day.dateObj.getMonth() + 1).padStart(2, '0');
+                var dd  = String(day.dateObj.getDate()).padStart(2, '0');
+                var ds  = yr + '-' + mm + '-' + dd;
+                var hl  = (_fpHolidays[yr] || {})[ds];
+                if (wd === 6) day.classList.add('fp-sat');
+                if (wd === 0) day.classList.add('fp-sun');
+                if (hl) {
+                    day.classList.add(hl.c ? 'fp-cuti' : 'fp-holiday');
+                    day.addEventListener('mouseenter', function(){ _tipShow(hl.n, day); });
+                    day.addEventListener('mouseleave', _tipHide);
+                }
+            },
+            onOpen:        function(_d, _s, fp){ _fpMark(fp); },
+            onClose:       function(){ _tipHide(); },
+            onMonthChange: function(_d, _s, fp){ _fpMark(fp); },
+            onYearChange:  function(_d, _s, fp){ _fpMark(fp); }
+        };
+
+        document.querySelectorAll('input[type=date]').forEach(function(el){
+            flatpickr(el, Object.assign({}, fpCfg));
+        });
+    })();
     </script>
     </body>
     </html>

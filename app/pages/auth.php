@@ -46,6 +46,10 @@ function login_page(PDO $pdo): void
                 audit($pdo, 'login_success', 'users', (string) $user['id'], ['email' => $user['email']], [], 'auth');
                 $_SESSION['_show_welcome'] = true;
 
+                if ($user['must_change_password']) {
+                    $_SESSION['_must_change_pw'] = true;
+                    redirect_to('change_password');
+                }
                 redirect_to('dashboard');
             } else {
                 $attempts = ($_SESSION['_login_attempts'] ?? 0) + 1;
@@ -246,6 +250,78 @@ function select_property_page(): void
                 <a href="?r=logout" style="color:var(--muted);font-size:13px">↩ Logout</a>
             </p>
         </div>
+    </div>
+    </body>
+    </html>
+    <?php
+}
+
+function change_password_page(PDO $pdo): void
+{
+    $userId = (int) ($_SESSION['user']['id'] ?? 0);
+    $error  = null;
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        verify_csrf();
+        $pw  = (string) post('password');
+        $pw2 = (string) post('password_confirm');
+
+        if ($pw !== $pw2) {
+            $error = 'Konfirmasi password tidak cocok.';
+        } elseif ($err = validate_password($pw)) {
+            $error = $err;
+        } else {
+            $pdo->prepare('UPDATE users SET password_hash=?, must_change_password=0, updated_at=? WHERE id=?')
+                ->execute([password_hash($pw, PASSWORD_DEFAULT), date('Y-m-d H:i:s'), $userId]);
+            audit($pdo, 'change_password', 'users', (string) $userId, [], [], 'auth');
+            unset($_SESSION['_must_change_pw']);
+            flash('Password berhasil diubah. Selamat datang!');
+            redirect_to('dashboard');
+        }
+    }
+    ?>
+    <!doctype html>
+    <html lang="id">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Ganti Password — <?= h(env_value('APP_NAME', 'CLARA')) ?></title>
+        <link rel="icon" type="image/png" href="assets/clara-logo.png">
+        <link rel="stylesheet" href="assets/app.css?v=<?= CSS_VER ?>">
+        <style>
+            @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+            .login{background:linear-gradient(-45deg,#115E59,#0D9488,#0891B2,#0369A1,#0D9488,#115E59)!important;background-size:400% 400%!important}
+        </style>
+    </head>
+    <body>
+    <div class="login">
+        <form class="panel" method="post" style="animation:fadeInUp .35s ease both">
+            <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+            <img class="login-logo" src="assets/clara-logo.png" alt="CLARA" onerror="this.hidden=true">
+            <h1 style="margin-bottom:4px">Ganti Password</h1>
+            <p class="muted" style="margin-bottom:20px">
+                Halo, <strong><?= h($_SESSION['user']['name'] ?? '') ?></strong>. Akun Anda menggunakan password default.<br>
+                Silakan buat password baru sebelum melanjutkan.
+            </p>
+            <?php if ($error): ?>
+                <div class="flash"><?= h($error) ?></div>
+            <?php endif; ?>
+            <p style="margin-bottom:4px">
+                <label>Password Baru</label>
+                <input name="password" type="password" required minlength="8" autofocus autocomplete="new-password">
+            </p>
+            <p style="margin-bottom:14px;font-size:12px;color:var(--muted);line-height:1.6">
+                Minimal 8 karakter, mengandung huruf besar, huruf kecil, angka, dan karakter spesial (!@#$%^&* dll).
+            </p>
+            <p style="margin-bottom:20px">
+                <label>Konfirmasi Password</label>
+                <input name="password_confirm" type="password" required minlength="8" autocomplete="new-password">
+            </p>
+            <button type="submit" style="width:100%;justify-content:center">Simpan Password</button>
+            <p style="text-align:center;margin-top:16px">
+                <a href="?r=logout" style="color:var(--muted);font-size:13px">↩ Logout</a>
+            </p>
+        </form>
     </div>
     </body>
     </html>

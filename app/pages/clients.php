@@ -617,7 +617,9 @@ function client_analysis_page(PDO $pdo): void
     $byModuleStmt->execute(array_merge([$pid, $period, $pid], $jp));
     $byModule = $byModuleStmt->fetchAll();
 
-    $periods = $pdo->query("SELECT period_key, label FROM periods ORDER BY period_key DESC")->fetchAll();
+    $periodsStmt = $pdo->prepare("SELECT period_key, label FROM periods WHERE property_id = ? ORDER BY period_key DESC");
+    $periodsStmt->execute([$pid]);
+    $periods = $periodsStmt->fetchAll();
     $hasFilter = $filterType || $filterScale || $filterSegment || $filterProvince;
 
     layout('Analisa Market Client', function () use ($byType, $byScale, $byOrigin, $bySegment, $byProvince, $byCity, $total, $filled, $revRows, $topClients, $activityByType, $actSummary, $currentYear, $period, $periods, $opts, $filterType, $filterScale, $filterSegment, $filterProvince, $hasFilter, $prevYear, $newReturn, $retention, $freqDist, $atRiskClients, $byFloor, $byModule, $floorTypes, $geoProvinces) {

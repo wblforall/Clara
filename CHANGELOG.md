@@ -11,6 +11,60 @@
 
 ---
 
+## Version 3.6 — 24 Mei 2026
+
+### UX — Input Transaksi
+
+- **Datepicker Modern (Flatpickr)** — Semua field tanggal di seluruh halaman kini menggunakan Flatpickr menggantikan datepicker bawaan browser. Tampilan lebih rapi dan konsisten: tema teal, kalender kompak (252px), ikon kalender di dalam field, minggu dimulai dari Senin.
+
+- **Tanggal Merah Otomatis** — Sabtu dan Minggu tampil merah di kalender. Hari libur nasional Indonesia ditandai merah dengan dot indikator di bawah tanggal. Cuti bersama ditandai oranye dengan dot indikator. Data diambil otomatis dari API `libur.deno.dev` yang mencakup semua jenis libur nasional termasuk Idul Fitri, Nyepi, dan Waisak.
+
+- **Tooltip Keterangan Libur** — Saat kursor diarahkan ke tanggal merah atau oranye, muncul popup keterangan nama hari libur (misal: "Hari Raya Idul Fitri 1447 Hijriyah").
+
+- **Urutan Field Form** — Urutan field di form input transaksi diubah menjadi: Luas m² → Tanggal Mulai → Tanggal Selesai, sesuai alur pengisian yang lebih natural.
+
+- **Autocomplete Client** — Dropdown client diganti dengan field autocomplete yang bisa dicari berdasarkan nama perusahaan atau brand. Hasil muncul sebagai daftar floating yang tidak terhalang elemen lain di form.
+
+### UX — Daftar Transaksi
+
+- **Pagination** — Daftar transaksi dibatasi 50 baris per halaman dengan navigasi Prev/Next. Filter aktif tetap terjaga saat pindah halaman.
+
+- **Tabel Lebih Ringkas** — Kolom dikurangi dari 11 menjadi 9: No. Invoice ditampilkan di bawah nama client (font kecil), kolom Waktu Input digabung ke kolom Input. Menghilangkan scroll horizontal di layar standar.
+
+### Perbaikan Bug
+
+- **Analisa Market Client per-Properti** — Query daftar periode sebelumnya tidak difilter per properti, menyebabkan periode dari properti lain ikut muncul. Sudah diperbaiki.
+
+- **Sidebar Scroll Reset** — Posisi scroll sidebar kembali ke atas setiap kali navigasi halaman. Diperbaiki dengan menyimpan posisi scroll ke `sessionStorage` dan memulihkannya saat halaman dimuat.
+
+---
+
+## Version 3.5 — 24 Mei 2026
+
+### Manajemen User
+
+- **Password Default & Paksa Ganti** — Saat admin membuat akun baru, password otomatis diset ke `123456` dan user diwajibkan mengganti password sebelum bisa mengakses sistem. Seluruh route diblokir hingga password baru disimpan. Halaman ganti password tidak bisa dilewati.
+
+- **Reset Password oleh Admin** — Di form edit user, admin dapat mencentang "Reset password ke default 123456" untuk mereset akun yang lupa password. User akan diminta ganti saat login berikutnya.
+
+- **Template WA Setelah Buat Akun** — Setelah admin membuat user baru, muncul halaman sukses dengan template pesan WhatsApp siap salin, berisi link akses, email, dan password default. Tombol "Salin Teks WA" mengcopy ke clipboard.
+
+- **Indikator Status Password** — Kolom "Password" di daftar user menampilkan badge kuning "Harus Ganti" untuk akun yang belum mengganti password default.
+
+- **Form Edit User Didesain Ulang** — Dibagi menjadi 3 panel terpisah: Informasi Dasar, Password, dan Akses Property. Lebih rapi dan mudah dibaca.
+
+### Keamanan
+
+- **Password Complexity Policy** — Password baru wajib memenuhi: minimal 8 karakter, ada huruf besar, huruf kecil, angka, dan karakter spesial. Berlaku saat ganti password pertama kali maupun setelah reset.
+
+- **Session Timeout** — Dipersingkat dari 2 jam menjadi 30 menit tidak aktif.
+
+### Konfigurasi
+
+- **APP_URL** — Tambah variabel `APP_URL` di `.env` untuk URL publik aplikasi (digunakan di template WA dan notifikasi).
+
+---
+
 ## Version 3.4 — 23 Mei 2026
 
 ### Executive Summary (Dashboard & Print)

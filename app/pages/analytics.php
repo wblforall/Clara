@@ -401,8 +401,18 @@ function comparison_page(PDO $pdo): void
 
     layout('Perbandingan Periode', function () use ($allPeriods, $p1, $p2, $p3, $label1, $label2, $label3, $d1, $d2, $d3, $segments, $delta) {
         ?>
+        <style>
+        @keyframes _cpFadeUp {
+            from { opacity:0; transform:translateY(14px); }
+            to   { opacity:1; transform:translateY(0); }
+        }
+        @keyframes _cpFadeIn { from { opacity:0; } to { opacity:1; } }
+        .cp-anim  { animation: _cpFadeUp .45s cubic-bezier(.22,.68,0,1.2) both; }
+        .cp-panim { animation: _cpFadeUp .4s ease both; }
+        </style>
+
         <!-- Selector -->
-        <form method="get" class="panel" style="margin-bottom:20px">
+        <form method="get" class="panel cp-panim" style="margin-bottom:20px;animation-delay:.01s">
             <input type="hidden" name="r" value="comparison">
             <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end">
                 <?php foreach ([['p1',$p1,'Periode 1'],['p2',$p2,'Periode 2'],['p3',$p3,'Periode 3']] as [$name,$val,$lbl]): ?>
@@ -421,14 +431,16 @@ function comparison_page(PDO $pdo): void
         <!-- KPI Cards -->
         <div class="grid grid-4" style="margin-bottom:20px">
             <?php
+            $cpIdx = 0;
             foreach ([
                 [$label1, $d1['total'], null,            null],
                 [$label2, $d2['total'], null,            null],
                 [$label3, $d3['total'], null,            null],
                 ['VS P1 vs P2', null,  $delta($d1['total'],$d2['total']), $delta($d1['total'],$d3['total'])],
             ] as [$lbl, $amt, $vs12, $vs13]):
+            $cpDelay = round(.06 + $cpIdx++ * .08, 2);
             ?>
-            <div class="card">
+            <div class="card cp-anim" style="animation-delay:<?= $cpDelay ?>s">
                 <div class="kpi-label"><?= h($lbl) ?></div>
                 <?php if ($amt !== null): ?>
                     <div class="kpi-value"><?= money($amt) ?></div>
@@ -452,7 +464,7 @@ function comparison_page(PDO $pdo): void
         </div>
 
         <!-- Tabel Perbandingan -->
-        <div class="panel" style="padding:0;overflow:hidden">
+        <div class="panel cp-panim" style="padding:0;overflow:hidden;animation-delay:.38s">
             <table style="width:100%;border-collapse:collapse">
                 <thead>
                 <tr style="background:var(--sidebar-bg);color:#fff">
@@ -476,8 +488,9 @@ function comparison_page(PDO $pdo): void
                     $dv12 = $delta((float)$v1, (float)$v2);
                     $dv13 = $delta((float)$v1, (float)$v3);
                     $isBold = in_array($key, ['total']);
+                    $rowDelay = round(.42 + $i * .05, 2);
                 ?>
-                <tr style="<?= $bg ?>;border-top:1px solid #e2e8f0">
+                <tr style="<?= $bg ?>;border-top:1px solid #e2e8f0;animation:_cpFadeIn .3s ease both;animation-delay:<?= $rowDelay ?>s">
                     <td style="padding:11px 16px;font-size:14px;<?= $isBold ? 'font-weight:700' : '' ?>"><?= h($segLabel) ?></td>
                     <?php foreach ([$v1,$v2,$v3] as $v): ?>
                     <td style="padding:11px 16px;text-align:right;font-size:14px;<?= $isBold ? 'font-weight:700' : '' ?>;border-left:1px solid #e2e8f0">

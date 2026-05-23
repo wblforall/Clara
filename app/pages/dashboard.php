@@ -204,7 +204,6 @@ function dashboard(PDO $pdo): void
             <div style="display:flex;align-items:center;gap:12px">
                 <?php if (can('export_reports')): ?><a class="btn light" href="?r=export_summary&period=<?= h($period) ?>">Export CSV</a><?php endif; ?>
                 <a class="btn light" href="?r=print_dashboard&period=<?= h($period) ?>" target="_blank" style="background:#f1f5f9;color:var(--ink2);border:1px solid var(--line)">🖨 Print / PDF</a>
-                <a class="btn light" href="?r=print_exec&period=<?= h($period) ?>" target="_blank" style="background:#FEF3C7;color:#92400E;border:1px solid #FCD34D">🖨 Print Direksi</a>
                 <div style="text-align:right;line-height:1.35">
                     <div style="font-weight:700;color:var(--ink);font-size:14px"><?= date('l, d F Y') ?></div>
                     <div style="font-size:12px;color:var(--muted)" id="dash-time"></div>

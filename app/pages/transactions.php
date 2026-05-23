@@ -9,6 +9,9 @@ function transactions_page(PDO $pdo): void
     $dateFrom   = getv('date_from', '');
     $dateTo     = getv('date_to', '');
 
+    $page    = max(1, (int) getv('page', 1));
+    $perPage = 50;
+
     $where  = ['t.module = :module', 't.deleted_at IS NULL', 't.property_id = :property_id'];
     $params = [':module' => $module, ':property_id' => current_property_id()];
 
@@ -30,10 +33,19 @@ function transactions_page(PDO $pdo): void
         $params[':date_to'] = $dateTo;
     }
 
+    $whereStr = implode(' AND ', $where);
+
+    $countStmt = $pdo->prepare('SELECT COUNT(*) FROM transactions t LEFT JOIN master_clients c ON c.id = t.client_id WHERE ' . $whereStr);
+    $countStmt->execute($params);
+    $totalRows = (int) $countStmt->fetchColumn();
+    $totalPages = max(1, (int) ceil($totalRows / $perPage));
+    $page = min($page, $totalPages);
+    $offset = ($page - 1) * $perPage;
+
     $sql  = 'SELECT t.*, c.company_name, c.brand_name FROM transactions t
              LEFT JOIN master_clients c ON c.id = t.client_id
-             WHERE ' . implode(' AND ', $where) . '
-             ORDER BY t.id DESC LIMIT 500';
+             WHERE ' . $whereStr . '
+             ORDER BY t.id DESC LIMIT ' . $perPage . ' OFFSET ' . $offset;
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
@@ -44,7 +56,13 @@ function transactions_page(PDO $pdo): void
     $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
     $isFiltered  = $search !== '' || $filterPic !== '' || $dateFrom !== '' || $dateTo !== '';
 
-    layout('Input Transaksi ' . ($moduleLabel[$module] ?? strtoupper($module)), function () use ($module, $rows, $pics, $search, $filterPic, $dateFrom, $dateTo, $isFiltered) {
+    $paginationBase = '?r=transactions&module=' . urlencode($module)
+        . ($search !== '' ? '&search=' . urlencode($search) : '')
+        . ($filterPic !== '' ? '&pic=' . urlencode($filterPic) : '')
+        . ($dateFrom !== '' ? '&date_from=' . urlencode($dateFrom) : '')
+        . ($dateTo !== '' ? '&date_to=' . urlencode($dateTo) : '');
+
+    layout('Input Transaksi ' . ($moduleLabel[$module] ?? strtoupper($module)), function () use ($module, $rows, $pics, $search, $filterPic, $dateFrom, $dateTo, $isFiltered, $page, $totalPages, $totalRows, $perPage, $paginationBase) {
         ?>
         <div class="toolbar">
             <?php if (can('manage_transactions')): ?>
@@ -91,37 +109,46 @@ function transactions_page(PDO $pdo): void
         <!-- RESULT COUNT -->
         <div style="margin-bottom:10px;font-size:13px;color:var(--muted)">
             <?php if ($isFiltered): ?>
-                Menampilkan <strong style="color:var(--ink)"><?= count($rows) ?></strong> hasil filter
+                Menampilkan <strong style="color:var(--ink)"><?= $totalRows ?></strong> hasil filter
             <?php else: ?>
-                <strong style="color:var(--ink)"><?= count($rows) ?></strong> transaksi terakhir
+                Total <strong style="color:var(--ink)"><?= $totalRows ?></strong> transaksi
+            <?php endif; ?>
+            <?php if ($totalPages > 1): ?>
+                &nbsp;&middot;&nbsp; Halaman <strong style="color:var(--ink)"><?= $page ?></strong> dari <strong style="color:var(--ink)"><?= $totalPages ?></strong>
             <?php endif; ?>
         </div>
 
         <div class="table-wrap">
-            <table>
+            <table style="font-size:12px">
                 <thead>
                     <tr>
                         <th>ID</th><th>Kode</th><th>Client</th><th>Tanggal</th>
-                        <th>Pricing</th><th>Total</th><th>No. Invoice</th><th>PIC</th>
-                        <th>Diinput Oleh</th><th>Waktu Input</th><th>Aksi</th>
+                        <th>Pricing</th><th>Total</th><th>PIC</th>
+                        <th>Input</th><th>Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
                 <?php if (empty($rows)): ?>
-                    <tr><td colspan="11" style="text-align:center;color:var(--muted);padding:24px">Tidak ada data yang sesuai filter.</td></tr>
+                    <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px">Tidak ada data yang sesuai filter.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($rows as $row): ?>
                     <tr>
                         <td>#<?= h((string) $row['id']) ?></td>
                         <td><?= h($row['master_code']) ?></td>
-                        <td><?= h($row['company_name'] ?? '-') ?><?= !empty($row['brand_name']) ? '<br><span style="font-size:11px;color:var(--muted)">' . h($row['brand_name']) . '</span>' : '' ?></td>
+                        <td>
+                            <?= h($row['company_name'] ?? '-') ?>
+                            <?= !empty($row['brand_name']) ? '<br><span style="font-size:11px;color:var(--muted)">' . h($row['brand_name']) . '</span>' : '' ?>
+                            <?= !empty($row['invoice_no']) ? '<br><span style="font-size:10px;color:var(--muted)">' . h($row['invoice_no']) . '</span>' : '' ?>
+                        </td>
                         <td style="white-space:nowrap"><?= h($row['start_date'] . ' s/d ' . $row['end_date']) ?></td>
                         <td><?= h($row['pricing_type']) ?></td>
                         <td><?= money($row['final_amount']) ?></td>
-                        <td style="font-size:12px;color:var(--muted)"><?= h($row['invoice_no'] ?? '-') ?></td>
                         <td><?= h($row['pic_name'] ?? '-') ?></td>
-                        <td><?= h($row['created_by'] ?? '-') ?><?= $row['updated_by'] ? '<br><span style="font-size:11px;color:var(--muted)">Edit: ' . h($row['updated_by']) . '</span>' : '' ?></td>
-                        <td style="white-space:nowrap;font-size:12px;color:var(--muted)"><?= h($row['created_at'] ?? '-') ?><?= $row['updated_at'] ? '<br><span title="Terakhir diedit">↻ ' . h($row['updated_at']) . '</span>' : '' ?></td>
+                        <td style="font-size:11px;color:var(--muted)">
+                            <?= h($row['created_by'] ?? '-') ?>
+                            <?= $row['updated_by'] ? '<br><span title="Terakhir diedit">↻ ' . h($row['updated_by']) . '</span>' : '' ?>
+                            <br><?= h(substr($row['created_at'] ?? '', 0, 16)) ?>
+                        </td>
                         <td style="white-space:nowrap">
                             <?php if (can('manage_transactions')): ?><a class="btn light" href="?r=transaction_edit&id=<?= h((string) $row['id']) ?>">Edit</a> <?php endif; ?>
                             <a class="btn light" href="?r=allocation_detail&id=<?= h((string) $row['id']) ?>">Alokasi</a>
@@ -139,6 +166,29 @@ function transactions_page(PDO $pdo): void
                 </tbody>
             </table>
         </div>
+
+        <?php if ($totalPages > 1): ?>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;flex-wrap:wrap;gap:10px">
+            <div>
+                <?php if ($page > 1): ?>
+                    <a class="btn light" href="<?= $paginationBase ?>&page=<?= $page - 1 ?>">← Sebelumnya</a>
+                <?php else: ?>
+                    <span class="btn light" style="opacity:.4;cursor:default">← Sebelumnya</span>
+                <?php endif; ?>
+            </div>
+            <div style="font-size:13px;color:var(--muted);text-align:center">
+                Halaman <strong style="color:var(--ink)"><?= $page ?></strong> dari <strong style="color:var(--ink)"><?= $totalPages ?></strong>
+                &nbsp;&middot;&nbsp; <span style="color:var(--ink)"><?= number_format($totalRows, 0, ',', '.') ?></span> data
+            </div>
+            <div>
+                <?php if ($page < $totalPages): ?>
+                    <a class="btn light" href="<?= $paginationBase ?>&page=<?= $page + 1 ?>">Selanjutnya →</a>
+                <?php else: ?>
+                    <span class="btn light" style="opacity:.4;cursor:default">Selanjutnya →</span>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
         <?php
     });
 }
@@ -261,12 +311,12 @@ function transaction_form(PDO $pdo): void
                 </div>
                 <div>
                     <label>Client / Perusahaan</label>
-                    <select name="client_id" id="client_id" required onchange="filterContacts()">
-                        <option value="">- Pilih Client -</option>
-                        <?php foreach ($clients as $c): ?>
-                            <option value="<?= h((string) $c['id']) ?>"><?= h($c['company_name']) ?><?= $c['brand_name'] ? ' (' . h($c['brand_name']) . ')' : '' ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <div style="position:relative" id="cliPicker">
+                        <input type="text" id="cliSearch" autocomplete="off" placeholder="Ketik nama client...">
+                        <input type="hidden" name="client_id" id="client_id">
+                        <div id="cliDrop" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:500;max-height:220px;overflow-y:auto"></div>
+                    </div>
+                    <div class="help">Ketik nama atau brand untuk mencari, lalu pilih dari daftar.</div>
                 </div>
                 <div>
                     <label>Contact Person</label>
@@ -274,9 +324,9 @@ function transaction_form(PDO $pdo): void
                         <option value="">- Pilih Client dulu -</option>
                     </select>
                 </div>
+                <div><label>Luas m2</label><input type="number" step="0.01" name="area_sqm" id="area_sqm" value="0"></div>
                 <div><label>Tanggal Mulai</label><input type="date" name="start_date" required></div>
                 <div><label>Tanggal Selesai</label><input type="date" name="end_date" <?= $module === 'cl' ? 'required' : '' ?>></div>
-                <div><label>Luas m2</label><input type="number" step="0.01" name="area_sqm" id="area_sqm" value="0"></div>
                 <?php if ($module === 'media'): ?>
                 <div id="slots_wrap" style="display:none">
                     <label>Jumlah Slot</label>
@@ -341,6 +391,62 @@ function transaction_form(PDO $pdo): void
                     sel.appendChild(opt);
                 });
             }
+
+            // Searchable client picker
+            (function(){
+                const cliData = <?= json_encode(array_values($clients)) ?>;
+                const src = document.getElementById('cliSearch');
+                const hid = document.getElementById('client_id');
+                const dd  = document.getElementById('cliDrop');
+                document.body.appendChild(dd);
+                dd.style.cssText = 'display:none;position:fixed;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:9000;max-height:220px;overflow-y:auto';
+                function pos() {
+                    const r = src.getBoundingClientRect();
+                    dd.style.top = (r.bottom + 2) + 'px';
+                    dd.style.left = r.left + 'px';
+                    dd.style.width = r.width + 'px';
+                }
+                function render(q) {
+                    pos();
+                    const lq = q.toLowerCase().trim();
+                    const list = lq ? cliData.filter(c =>
+                        c.company_name.toLowerCase().includes(lq) ||
+                        (c.brand_name && c.brand_name.toLowerCase().includes(lq))
+                    ) : cliData;
+                    dd.innerHTML = '';
+                    list.slice(0, 60).forEach(function(c) {
+                        const d = document.createElement('div');
+                        d.style.cssText = 'padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9';
+                        d.innerHTML = '<strong>' + c.company_name + '</strong>' + (c.brand_name ? ' <span style="color:var(--muted);font-size:11px">(' + c.brand_name + ')</span>' : '');
+                        d.addEventListener('mouseover', function(){ this.style.background='#f0fdf4'; });
+                        d.addEventListener('mouseout',  function(){ this.style.background=''; });
+                        d.addEventListener('mousedown', function(e){
+                            e.preventDefault();
+                            src.value = c.company_name + (c.brand_name ? ' (' + c.brand_name + ')' : '');
+                            hid.value = c.id;
+                            src.style.outline = '';
+                            dd.style.display = 'none';
+                            filterContacts();
+                        });
+                        dd.appendChild(d);
+                    });
+                    if (!list.length) dd.innerHTML = '<div style="padding:10px 14px;font-size:13px;color:var(--muted)">Tidak ditemukan</div>';
+                    dd.style.display = '';
+                }
+                src.addEventListener('input', function(){ hid.value = ''; render(this.value); });
+                src.addEventListener('focus', function(){ render(this.value); });
+                src.addEventListener('blur',  function(){ setTimeout(function(){ dd.style.display='none'; }, 200); });
+                window.addEventListener('scroll', function(){ if (dd.style.display !== 'none') pos(); }, true);
+                document.querySelectorAll('form button[type=submit]').forEach(function(btn){
+                    btn.addEventListener('click', function(e){
+                        if (!hid.value) {
+                            e.preventDefault(); e.stopImmediatePropagation();
+                            src.style.outline = '2px solid #EF4444';
+                            src.focus();
+                        }
+                    });
+                });
+            })();
 
             <?php if ($module === 'media'): ?>
             function parseSizeM2(size) {
@@ -597,12 +703,17 @@ function transaction_edit(PDO $pdo): void
                 </div>
                 <div>
                     <label>Client / Perusahaan</label>
-                    <select name="client_id" id="client_id" required onchange="filterContacts()">
-                        <option value="">- Pilih Client -</option>
-                        <?php foreach ($clients as $c): ?>
-                            <option value="<?= h((string) $c['id']) ?>" <?= (int) $trx['client_id'] === (int) $c['id'] ? 'selected' : '' ?>><?= h($c['company_name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <?php
+                    $editCli = array_values(array_filter($clients, fn($c) => (int)$c['id'] === (int)$trx['client_id']));
+                    $editCli = $editCli[0] ?? [];
+                    $editCliLabel = $editCli ? ($editCli['company_name'] . ($editCli['brand_name'] ? ' (' . $editCli['brand_name'] . ')' : '')) : '';
+                    ?>
+                    <div style="position:relative" id="cliPicker">
+                        <input type="text" id="cliSearch" autocomplete="off" placeholder="Ketik nama client..." value="<?= h($editCliLabel) ?>">
+                        <input type="hidden" name="client_id" id="client_id" value="<?= h((string)($trx['client_id'] ?? '')) ?>">
+                        <div id="cliDrop" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:500;max-height:220px;overflow-y:auto"></div>
+                    </div>
+                    <div class="help">Ketik nama atau brand untuk mencari, lalu pilih dari daftar.</div>
                 </div>
                 <div>
                     <label>Contact Person</label>
@@ -690,6 +801,62 @@ function transaction_edit(PDO $pdo): void
                     sel.appendChild(opt);
                 });
             }
+
+            // Searchable client picker
+            (function(){
+                const cliData = <?= json_encode(array_values($clients)) ?>;
+                const src = document.getElementById('cliSearch');
+                const hid = document.getElementById('client_id');
+                const dd  = document.getElementById('cliDrop');
+                document.body.appendChild(dd);
+                dd.style.cssText = 'display:none;position:fixed;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:9000;max-height:220px;overflow-y:auto';
+                function pos() {
+                    const r = src.getBoundingClientRect();
+                    dd.style.top = (r.bottom + 2) + 'px';
+                    dd.style.left = r.left + 'px';
+                    dd.style.width = r.width + 'px';
+                }
+                function render(q) {
+                    pos();
+                    const lq = q.toLowerCase().trim();
+                    const list = lq ? cliData.filter(c =>
+                        c.company_name.toLowerCase().includes(lq) ||
+                        (c.brand_name && c.brand_name.toLowerCase().includes(lq))
+                    ) : cliData;
+                    dd.innerHTML = '';
+                    list.slice(0, 60).forEach(function(c) {
+                        const d = document.createElement('div');
+                        d.style.cssText = 'padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9';
+                        d.innerHTML = '<strong>' + c.company_name + '</strong>' + (c.brand_name ? ' <span style="color:var(--muted);font-size:11px">(' + c.brand_name + ')</span>' : '');
+                        d.addEventListener('mouseover', function(){ this.style.background='#f0fdf4'; });
+                        d.addEventListener('mouseout',  function(){ this.style.background=''; });
+                        d.addEventListener('mousedown', function(e){
+                            e.preventDefault();
+                            src.value = c.company_name + (c.brand_name ? ' (' + c.brand_name + ')' : '');
+                            hid.value = c.id;
+                            src.style.outline = '';
+                            dd.style.display = 'none';
+                            filterContacts();
+                        });
+                        dd.appendChild(d);
+                    });
+                    if (!list.length) dd.innerHTML = '<div style="padding:10px 14px;font-size:13px;color:var(--muted)">Tidak ditemukan</div>';
+                    dd.style.display = '';
+                }
+                src.addEventListener('input', function(){ hid.value = ''; render(this.value); });
+                src.addEventListener('focus', function(){ render(this.value); });
+                src.addEventListener('blur',  function(){ setTimeout(function(){ dd.style.display='none'; }, 200); });
+                window.addEventListener('scroll', function(){ if (dd.style.display !== 'none') pos(); }, true);
+                document.querySelectorAll('form button[type=submit]').forEach(function(btn){
+                    btn.addEventListener('click', function(e){
+                        if (!hid.value) {
+                            e.preventDefault(); e.stopImmediatePropagation();
+                            src.style.outline = '2px solid #EF4444';
+                            src.focus();
+                        }
+                    });
+                });
+            })();
 
             <?php if ($trx['module'] === 'media'): ?>
             function parseSizeM2(size) {

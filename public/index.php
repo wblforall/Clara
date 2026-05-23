@@ -31,7 +31,7 @@ if (!$isDisplayRoute && session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
-define('SESSION_TIMEOUT', 7200);
+define('SESSION_TIMEOUT', 1800);
 if (!$isDisplayRoute && isset($_SESSION['user'])) {
     if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity']) > SESSION_TIMEOUT) {
         session_unset();
@@ -168,6 +168,13 @@ if ($route === 'select_property') {
     exit;
 }
 
+if ($route === 'change_password') {
+    require_once APP_ROOT . '/app/pages/auth.php';
+    if (empty($_SESSION['user'])) redirect_to('login');
+    change_password_page($pdo);
+    exit;
+}
+
 if ($route === 'switch_property') {
     if (empty($_SESSION['user'])) redirect_to('login');
     $to  = (int)getv('to', 0);
@@ -182,6 +189,10 @@ if ($route === 'switch_property') {
 
 // ─── Authenticated area ───────────────────────────────────────────────────────
 require_login();
+
+if (!empty($_SESSION['_must_change_pw'])) {
+    redirect_to('change_password');
+}
 
 // Permission matrix — cached 5 min in session
 if (!isset($_SESSION['_perm_matrix']) || (time() - ($_SESSION['_perm_cache_at'] ?? 0)) > 300) {
@@ -243,6 +254,7 @@ $pageFiles = [
     'users'                       => 'users.php',
     'user_form'                   => 'users.php',
     'user_save'                   => 'users.php',
+    'user_created'                => 'users.php',
     'roles'                       => 'users.php',
     'roles_save'                  => 'users.php',
     'audit'                       => 'users.php',
@@ -292,6 +304,7 @@ match ($route) {
     'users'                       => users_page($pdo),
     'user_form'                   => user_form($pdo),
     'user_save'                   => user_save($pdo),
+    'user_created'                => user_created_page($pdo),
     'roles'                       => roles_page($pdo),
     'roles_save'                  => roles_save($pdo),
     'audit'                       => audit_page($pdo),
