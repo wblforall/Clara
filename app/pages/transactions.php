@@ -554,7 +554,7 @@ function transaction_form(PDO $pdo): void
                           + '<td style="padding:2px 0;text-align:right;font-weight:600;color:#0369a1">Rp ' + amt.toLocaleString('id-ID') + '</td></tr>';
                 });
                 return '<span style="color:#0369a1;font-weight:600">Estimasi Spread (' + n + ' bulan):</span>'
-                     + '<table style="margin-top:6px;border-collapse:collapse">' + rows + '</table>';
+                     + '<table style="margin-top:6px;border-collapse:collapse;background:transparent;width:100%">' + rows + '</table>';
             }
 
             function kalkulasiTotal() {
@@ -1017,7 +1017,7 @@ function transaction_edit(PDO $pdo): void
                           + '<td style="padding:2px 0;text-align:right;font-weight:600;color:#0369a1">Rp ' + amt.toLocaleString('id-ID') + '</td></tr>';
                 });
                 return '<span style="color:#0369a1;font-weight:600">Estimasi Spread (' + n + ' bulan):</span>'
-                     + '<table style="margin-top:6px;border-collapse:collapse">' + rows + '</table>';
+                     + '<table style="margin-top:6px;border-collapse:collapse;background:transparent;width:100%">' + rows + '</table>';
             }
 
             function kalkulasiTotal() {
