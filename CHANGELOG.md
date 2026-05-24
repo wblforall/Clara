@@ -11,6 +11,20 @@
 
 ---
 
+## Version 4.0 — 24 Mei 2026
+
+### Recurring — Integrasi Menyeluruh ke Seluruh Modul
+
+- **Dashboard**: KPI card Recurring ditambahkan sebagai kartu kelima di samping Potensi, Target, Aktual, dan % Achievement vs Target.
+- **Executive Summary — KPI Strip gabungan**: Card "Achievement vs Potensi" dihapus, diganti card Recurring. Strip kini menampilkan Potensi, Target, Regular, Recurring, dan Aktual.
+- **Executive Summary — Tabel Occupancy**: Progress bar dihapus, diganti tiga kolom Regular / Recurring / Total di setiap segmen (Exhibition, Media, Gudang).
+- **Executive Summary — Card per Properti**: Layout KPI dipecah dua baris — Potensi/Target di atas; Regular/Recurring/Aktual+% di bawah.
+- **Executive Summary — Tabel PIC**: Kolom TRX ditambahkan (format `recurring/total`, angka recurring ditampilkan biru).
+- **Laporan PIC**: Kolom TRX (format `recurring/total`) di tabel summary. Brand name ditampilkan dalam tanda kurung di tabel dealing. `<colgroup>` untuk lebar kolom konsisten. Font 12 px agar angka tidak wrap.
+- **Print Dashboard & Print Exec**: Semua perubahan layar disinkronkan ke tampilan cetak — tile Recurring di KPI strip, kolom TRX di tabel PIC, layout Regular/Recurring/Total di occupancy.
+
+---
+
 ## Version 3.9 — 24 Mei 2026
 
 ### Laporan PIC — Perbaikan & Fitur
