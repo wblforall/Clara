@@ -374,6 +374,7 @@ function transaction_form(PDO $pdo): void
                     <span style="color:#166534">Total: <strong id="kalkulasi-nilai">-</strong> &nbsp;|&nbsp; <span id="kalkulasi-hari">-</span></span>
                 </div>
             </div>
+            <div id="kalkulasi-spread" style="display:none;margin-top:8px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 18px;font-size:13px;line-height:1.8"></div>
             <div id="overlap-warn" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:13px;color:#92400e"></div>
             <p style="margin-top:14px;animation:_fadeUp .35s cubic-bezier(.22,.68,0,1.2) both;animation-delay:.72s"><button type="submit">Simpan & Hitung Alokasi</button> <a class="btn secondary" href="?r=transactions&module=<?= h($module) ?>">Kembali</a></p>
         </form>
@@ -532,6 +533,30 @@ function transaction_form(PDO $pdo): void
             document.querySelector('[name=start_date]').addEventListener('change', checkOverlap);
             document.querySelector('[name=end_date]').addEventListener('change', checkOverlap);
 
+            function buildSpreadHtml(total, startVal, endVal) {
+                const BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+                const s = new Date(startVal.substring(0, 7) + '-01');
+                const e = new Date(endVal.substring(0, 7) + '-01');
+                const months = [];
+                let cur = new Date(s);
+                while (cur <= e) {
+                    months.push(BULAN[cur.getMonth()] + ' ' + cur.getFullYear());
+                    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+                }
+                if (!months.length) return '';
+                const n = months.length;
+                const perMonth = Math.floor(total / n);
+                let rows = '', running = 0;
+                months.forEach((label, i) => {
+                    const amt = i === n - 1 ? Math.round(total - running) : perMonth;
+                    running += amt;
+                    rows += '<tr><td style="padding:2px 12px 2px 0;color:#374151">' + label + '</td>'
+                          + '<td style="padding:2px 0;text-align:right;font-weight:600;color:#0369a1">Rp ' + amt.toLocaleString('id-ID') + '</td></tr>';
+                });
+                return '<span style="color:#0369a1;font-weight:600">Estimasi Spread (' + n + ' bulan):</span>'
+                     + '<table style="margin-top:6px;border-collapse:collapse">' + rows + '</table>';
+            }
+
             function kalkulasiTotal() {
                 const startVal = document.querySelector('[name=start_date]').value;
                 const endVal   = document.querySelector('[name=end_date]').value;
@@ -559,6 +584,15 @@ function transaction_form(PDO $pdo): void
                 document.getElementById('kalkulasi-result').style.display = 'block';
                 document.getElementById('kalkulasi-nilai').textContent = 'Rp ' + Math.round(total).toLocaleString('id-ID');
                 document.getElementById('kalkulasi-hari').textContent = days + ' hari';
+
+                const recogEl   = document.getElementById('recognition_month');
+                const spreadDiv = document.getElementById('kalkulasi-spread');
+                if (spreadDiv && recogEl && recogEl.value === 'spread' && startVal && endVal) {
+                    spreadDiv.innerHTML = buildSpreadHtml(total, startVal, endVal);
+                    spreadDiv.style.display = 'block';
+                } else if (spreadDiv) {
+                    spreadDiv.style.display = 'none';
+                }
             }
 
             document.querySelectorAll('.override-fmt').forEach(function(inp) {
@@ -798,6 +832,7 @@ function transaction_edit(PDO $pdo): void
                     <span style="color:#166534">Total: <strong id="kalkulasi-nilai">-</strong> &nbsp;|&nbsp; <span id="kalkulasi-hari">-</span></span>
                 </div>
             </div>
+            <div id="kalkulasi-spread" style="display:none;margin-top:8px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 18px;font-size:13px;line-height:1.8"></div>
             <div id="overlap-warn" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:13px;color:#92400e"></div>
             <p style="margin-top:14px"><button type="submit">Simpan & Hitung Ulang Alokasi</button> <a class="btn secondary" href="?r=allocation_detail&id=<?= h((string) $id) ?>">Kembali</a></p>
         </form>
@@ -959,6 +994,30 @@ function transaction_edit(PDO $pdo): void
             document.getElementById('end_date').addEventListener('change', checkOverlap);
             checkOverlap();
 
+            function buildSpreadHtml(total, startVal, endVal) {
+                const BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+                const s = new Date(startVal.substring(0, 7) + '-01');
+                const e = new Date(endVal.substring(0, 7) + '-01');
+                const months = [];
+                let cur = new Date(s);
+                while (cur <= e) {
+                    months.push(BULAN[cur.getMonth()] + ' ' + cur.getFullYear());
+                    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+                }
+                if (!months.length) return '';
+                const n = months.length;
+                const perMonth = Math.floor(total / n);
+                let rows = '', running = 0;
+                months.forEach((label, i) => {
+                    const amt = i === n - 1 ? Math.round(total - running) : perMonth;
+                    running += amt;
+                    rows += '<tr><td style="padding:2px 12px 2px 0;color:#374151">' + label + '</td>'
+                          + '<td style="padding:2px 0;text-align:right;font-weight:600;color:#0369a1">Rp ' + amt.toLocaleString('id-ID') + '</td></tr>';
+                });
+                return '<span style="color:#0369a1;font-weight:600">Estimasi Spread (' + n + ' bulan):</span>'
+                     + '<table style="margin-top:6px;border-collapse:collapse">' + rows + '</table>';
+            }
+
             function kalkulasiTotal() {
                 const startVal = document.getElementById('start_date').value;
                 const endVal   = document.getElementById('end_date').value;
@@ -983,6 +1042,15 @@ function transaction_edit(PDO $pdo): void
                 document.getElementById('kalkulasi-result').style.display = 'block';
                 document.getElementById('kalkulasi-nilai').textContent = 'Rp ' + Math.round(total).toLocaleString('id-ID');
                 document.getElementById('kalkulasi-hari').textContent = days + ' hari';
+
+                const recogEl   = document.getElementById('recognition_month');
+                const spreadDiv = document.getElementById('kalkulasi-spread');
+                if (spreadDiv && recogEl && recogEl.value === 'spread' && startVal && endVal) {
+                    spreadDiv.innerHTML = buildSpreadHtml(total, startVal, endVal);
+                    spreadDiv.style.display = 'block';
+                } else if (spreadDiv) {
+                    spreadDiv.style.display = 'none';
+                }
             }
 
             document.querySelectorAll('.override-fmt').forEach(function(inp) {
