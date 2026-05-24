@@ -11,6 +11,17 @@
 
 ---
 
+## Version 3.9 — 24 Mei 2026
+
+### Laporan PIC — Perbaikan & Fitur
+
+- **Multi-property layout** — Jika user punya akses ke 2 properti, laporan PIC menampilkan E-Walk di atas dan Pentacity di bawah dalam satu halaman, masing-masing dengan KPI dan tabel PIC-nya sendiri.
+- **Fix dropdown periode double** — Periode tidak lagi muncul duplikat ketika 2 properti punya period_key yang sama (`GROUP BY period_key`).
+- **Kolom Regular & Recurring** — Tabel PIC kini menampilkan pemisahan revenue Regular vs Recurring per PIC, plus total masing-masing di baris Total. KPI card juga menampilkan keduanya secara terpisah.
+- **Badge Recurring di detail transaksi PIC** — Transaksi recurring ditandai badge biru saat klik expand nama PIC.
+
+---
+
 ## Version 3.8 — 24 Mei 2026
 
 ### Fitur Baru — Transaksi Recurring (Spread per Bulan)

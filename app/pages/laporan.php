@@ -1,16 +1,11 @@
 <?php
 declare(strict_types=1);
 
-function pic_report_page(PDO $pdo): void
+function _pic_fetch_section(PDO $pdo, string $period, int $pid): array
 {
-    require_permission('view_pic_report');
-
-    $period  = getv('period', date('Y-m'));
-    $pid     = current_property_id();
-    $periods = $pdo->query("SELECT period_key, label FROM periods ORDER BY period_key DESC")->fetchAll();
     $tgtStmt = $pdo->prepare("SELECT target_amount FROM targets_monthly WHERE period_key=? AND property_id=?");
     $tgtStmt->execute([$period, $pid]);
-    $target  = (float)($tgtStmt->fetchColumn() ?: 0);
+    $target = (float)($tgtStmt->fetchColumn() ?: 0);
 
     $picStmt = $pdo->prepare(
         "SELECT p.name, COALESCE(p.role_name,'-') role_name, COALESCE(p.target_share,0) target_share,
@@ -18,6 +13,7 @@ function pic_report_page(PDO $pdo): void
                 COALESCE(SUM(CASE WHEN a.module='media'  THEN a.amount ELSE 0 END),0) actual_media,
                 COALESCE(SUM(CASE WHEN a.module='gudang' THEN a.amount ELSE 0 END),0) actual_gudang,
                 COALESCE(SUM(a.amount),0) actual_total,
+                COALESCE(SUM(CASE WHEN t.billing_method='spread' THEN a.amount ELSE 0 END),0) actual_recurring,
                 COUNT(DISTINCT t.id) trx_count
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
@@ -30,14 +26,16 @@ function pic_report_page(PDO $pdo): void
     $pics = $picStmt->fetchAll();
 
     $trxStmt = $pdo->prepare(
-        "SELECT t.id, t.module, t.master_code, COALESCE(c.company_name,'-') company_name,
+        "SELECT t.id, t.module, t.master_code, t.billing_method,
+                COALESCE(c.company_name,'-') company_name,
                 t.start_date, t.end_date, COALESCE(t.pic_name,'Tanpa PIC') pic_name,
                 t.invoice_no, COALESCE(SUM(a.amount),0) period_amount
          FROM transactions t
          LEFT JOIN master_clients c ON c.id=t.client_id
          JOIN transaction_allocations a ON a.transaction_id=t.id AND a.period_key=? AND a.property_id=?
          WHERE t.deleted_at IS NULL AND t.property_id=?
-         GROUP BY t.id, t.module, t.master_code, c.company_name, t.start_date, t.end_date, t.pic_name, t.invoice_no
+         GROUP BY t.id, t.module, t.master_code, t.billing_method, c.company_name,
+                  t.start_date, t.end_date, t.pic_name, t.invoice_no
          ORDER BY t.pic_name, period_amount DESC"
     );
     $trxStmt->execute([$period, $pid, $pid]);
@@ -46,10 +44,142 @@ function pic_report_page(PDO $pdo): void
         $trxByPic[$trx['pic_name']][] = $trx;
     }
 
-    $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
-    $totalActual = array_sum(array_column($pics, 'actual_total'));
+    return [
+        'target'   => $target,
+        'pics'     => $pics,
+        'trxByPic' => $trxByPic,
+        'total'    => array_sum(array_column($pics, 'actual_total')),
+    ];
+}
 
-    layout('Laporan PIC', function () use ($pics, $trxByPic, $target, $totalActual, $period, $periods, $moduleLabel) {
+function _pic_render_section(array $sec, string $period, array $moduleLabel, string $idPrefix): void
+{
+    $pics      = $sec['pics'];
+    $trxByPic        = $sec['trxByPic'];
+    $target          = $sec['target'];
+    $total           = $sec['total'];
+    $totalRecurring  = array_sum(array_column($pics, 'actual_recurring'));
+    $totalRegular    = $total - $totalRecurring;
+    $ach             = $target > 0 ? $total / $target : 0;
+    $achColor        = fn($v) => $v >= 1 ? '#16a34a' : ($v >= 0.8 ? '#d97706' : '#dc2626');
+    ?>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:16px">
+        <?php foreach ([
+            ['Target Bulan Ini', money($target), ''],
+            ['Regular',          money($totalRegular), ''],
+            ['Recurring',        money($totalRecurring), '#e0f2fe'],
+            ['Total Actual',     money($total), ''],
+            ['Achievement',      $target > 0 ? pct($ach) : '—', ''],
+        ] as [$lbl, $val, $bg]): ?>
+        <div class="panel" style="padding:14px 16px;margin:0<?= $bg ? ';background:' . $bg : '' ?>">
+            <div class="kpi-label"><?= $lbl ?></div>
+            <div class="kpi-value" style="font-size:20px"><?= $val ?></div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+
+    <div class="panel" style="margin-bottom:8px">
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nama PIC</th><th>Role</th>
+                        <th class="r">Target Posisi</th>
+                        <th class="r">Exhibition</th><th class="r">Media</th><th class="r">Gudang</th>
+                        <th class="r">Regular</th><th class="r">Recurring</th>
+                        <th class="r">Total Actual</th><th class="r">Achievement</th><th class="r">Trx</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($pics as $i => $p):
+                    $tp  = (float)$p['target_share'] * $target;
+                    $a   = $tp > 0 ? $p['actual_total'] / $tp : 0;
+                    $uid = $idPrefix . $i;
+                    $rec = (float)$p['actual_recurring'];
+                    $reg = (float)$p['actual_total'] - $rec;
+                ?>
+                <tr>
+                    <td>
+                        <a href="#<?= $uid ?>" onclick="var s=document.getElementById('<?= $uid ?>');s.style.display=s.style.display==='none'?'table-row-group':'none';return false"
+                           style="font-weight:600;color:var(--primary);cursor:pointer;text-decoration:none"><?= h($p['name']) ?></a>
+                    </td>
+                    <td style="font-size:12px;color:var(--muted)"><?= h($p['role_name']) ?></td>
+                    <td class="r"><?= money($tp) ?></td>
+                    <td class="r"><?= money($p['actual_cl']) ?></td>
+                    <td class="r"><?= money($p['actual_media']) ?></td>
+                    <td class="r"><?= money($p['actual_gudang']) ?></td>
+                    <td class="r"><?= money($reg) ?></td>
+                    <td class="r"><?= $rec > 0 ? '<span style="color:#0369a1;font-weight:600">' . money($rec) . '</span>' : '—' ?></td>
+                    <td class="r" style="font-weight:700"><?= money($p['actual_total']) ?></td>
+                    <td class="r"><span style="font-weight:700;color:<?= $achColor($a) ?>"><?= pct($a) ?></span></td>
+                    <td class="r"><?= $p['trx_count'] ?></td>
+                </tr>
+                <?php if (!empty($trxByPic[$p['name']])): ?>
+                <tr id="<?= $uid ?>" style="display:none">
+                    <td colspan="11" style="padding:0;background:#F8FAFC">
+                        <table style="width:100%;font-size:12px">
+                            <thead><tr style="background:#F1F5F9">
+                                <th style="padding:6px 10px;text-align:left">Kode</th>
+                                <th style="padding:6px 10px;text-align:left">Client</th>
+                                <th style="padding:6px 10px;text-align:left">Modul</th>
+                                <th style="padding:6px 10px;text-align:left">Periode Kontrak</th>
+                                <th style="padding:6px 10px;text-align:left">No. Invoice</th>
+                                <th style="padding:6px 10px;text-align:right">Aktual Bulan Ini</th>
+                            </tr></thead>
+                            <tbody>
+                            <?php foreach ($trxByPic[$p['name']] as $trx): ?>
+                            <tr style="border-top:1px solid var(--line)">
+                                <td style="padding:5px 10px"><?= h($trx['master_code']) ?></td>
+                                <td style="padding:5px 10px">
+                                    <?= h($trx['company_name']) ?>
+                                    <?= ($trx['billing_method'] ?? '') === 'spread' ? ' <span class="badge" style="font-size:10px;background:#e0f2fe;color:#0369a1">Recurring</span>' : '' ?>
+                                </td>
+                                <td style="padding:5px 10px"><?= h($moduleLabel[$trx['module']] ?? $trx['module']) ?></td>
+                                <td style="padding:5px 10px;white-space:nowrap"><?= h($trx['start_date'] . ' s/d ' . $trx['end_date']) ?></td>
+                                <td style="padding:5px 10px;color:var(--muted)"><?= h($trx['invoice_no'] ?? '-') ?></td>
+                                <td style="padding:5px 10px;text-align:right;font-weight:600"><?= money($trx['period_amount']) ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </td>
+                </tr>
+                <?php endif; ?>
+                <?php endforeach; ?>
+                <tr style="font-weight:700;border-top:2px solid var(--line);background:#F8FAFC">
+                    <td colspan="2">Total</td>
+                    <td class="r"><?= money(array_sum(array_map(fn($p) => (float)$p['target_share'] * $target, $pics))) ?></td>
+                    <td class="r"><?= money(array_sum(array_column($pics,'actual_cl'))) ?></td>
+                    <td class="r"><?= money(array_sum(array_column($pics,'actual_media'))) ?></td>
+                    <td class="r"><?= money(array_sum(array_column($pics,'actual_gudang'))) ?></td>
+                    <td class="r"><?= money($totalRegular) ?></td>
+                    <td class="r" style="color:#0369a1"><?= money($totalRecurring) ?></td>
+                    <td class="r"><?= money($total) ?></td>
+                    <td class="r"><span style="font-weight:700;color:<?= $achColor($ach) ?>"><?= $target > 0 ? pct($ach) : '—' ?></span></td>
+                    <td class="r"><?= array_sum(array_column($pics,'trx_count')) ?></td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <?php
+}
+
+function pic_report_page(PDO $pdo): void
+{
+    require_permission('view_pic_report');
+
+    $period  = getv('period', date('Y-m'));
+    $periods = $pdo->query("SELECT period_key, MAX(label) label FROM periods GROUP BY period_key ORDER BY period_key DESC")->fetchAll();
+    $props   = allowed_properties();
+    $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
+
+    $sections = [];
+    foreach ($props as $prop) {
+        $sections[] = ['prop' => $prop] + _pic_fetch_section($pdo, $period, (int)$prop['id']);
+    }
+
+    layout('Laporan PIC', function () use ($sections, $periods, $period, $moduleLabel) {
         ?>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
             <form method="get" style="display:flex;gap:6px;align-items:center">
@@ -65,95 +195,16 @@ function pic_report_page(PDO $pdo): void
             <a class="btn light" href="?r=export_pic_report_xlsx&period=<?= h($period) ?>">⬇ Export Excel</a>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px">
-            <?php foreach ([
-                ['Target Bulan Ini', money($target)],
-                ['Total Actual', money($totalActual)],
-                ['Achievement', $target > 0 ? pct($totalActual / $target) : '—'],
-                ['Jumlah PIC Aktif', count($pics)],
-            ] as [$lbl, $val]): ?>
-            <div class="panel" style="padding:14px 16px;margin:0">
-                <div class="kpi-label"><?= $lbl ?></div>
-                <div class="kpi-value" style="font-size:20px"><?= $val ?></div>
-            </div>
-            <?php endforeach; ?>
+        <?php foreach ($sections as $si => $sec): ?>
+        <?php if (count($sections) > 1): ?>
+        <div style="background:var(--primary);color:#fff;border-radius:8px 8px 0 0;padding:8px 16px;font-weight:700;font-size:13px;margin-top:<?= $si > 0 ? '28px' : '0' ?>">
+            <?= h($sec['prop']['name']) ?>
         </div>
+        <?php endif; ?>
+        <?php _pic_render_section($sec, $period, $moduleLabel, 'pic-' . $si . '-'); ?>
+        <?php endforeach; ?>
 
-        <div class="panel" style="margin-bottom:16px">
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Nama PIC</th><th>Role</th>
-                            <th class="r">Target Posisi</th>
-                            <th class="r">Exhibition</th><th class="r">Media</th><th class="r">Gudang</th>
-                            <th class="r">Total Actual</th><th class="r">Achievement</th><th class="r">Trx</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    <?php foreach ($pics as $i => $p):
-                        $targetPosisi = (float)$p['target_share'] * $target;
-                        $ach = $targetPosisi > 0 ? $p['actual_total'] / $targetPosisi : 0;
-                        $achColor = $ach >= 1 ? '#16a34a' : ($ach >= 0.8 ? '#d97706' : '#dc2626');
-                    ?>
-                    <tr>
-                        <td>
-                            <a href="#pic-<?= $i ?>" onclick="var s=document.getElementById('pic-<?= $i ?>');s.style.display=s.style.display==='none'?'table-row-group':'none';return false"
-                               style="font-weight:600;color:var(--primary);cursor:pointer;text-decoration:none"><?= h($p['name']) ?></a>
-                        </td>
-                        <td style="font-size:12px;color:var(--muted)"><?= h($p['role_name']) ?></td>
-                        <td class="r"><?= money($targetPosisi) ?></td>
-                        <td class="r"><?= money($p['actual_cl']) ?></td>
-                        <td class="r"><?= money($p['actual_media']) ?></td>
-                        <td class="r"><?= money($p['actual_gudang']) ?></td>
-                        <td class="r" style="font-weight:700"><?= money($p['actual_total']) ?></td>
-                        <td class="r"><span style="font-weight:700;color:<?= $achColor ?>"><?= pct($ach) ?></span></td>
-                        <td class="r"><?= $p['trx_count'] ?></td>
-                    </tr>
-                    <?php if (!empty($trxByPic[$p['name']])): ?>
-                    <tr id="pic-<?= $i ?>" style="display:none">
-                        <td colspan="9" style="padding:0;background:#F8FAFC">
-                            <table style="width:100%;font-size:12px">
-                                <thead><tr style="background:#F1F5F9">
-                                    <th style="padding:6px 10px;text-align:left">Kode</th>
-                                    <th style="padding:6px 10px;text-align:left">Client</th>
-                                    <th style="padding:6px 10px;text-align:left">Modul</th>
-                                    <th style="padding:6px 10px;text-align:left">Periode Kontrak</th>
-                                    <th style="padding:6px 10px;text-align:left">No. Invoice</th>
-                                    <th style="padding:6px 10px;text-align:right">Aktual Bulan Ini</th>
-                                </tr></thead>
-                                <tbody>
-                                <?php foreach ($trxByPic[$p['name']] as $trx): ?>
-                                <tr style="border-top:1px solid var(--line)">
-                                    <td style="padding:5px 10px"><?= h($trx['master_code']) ?></td>
-                                    <td style="padding:5px 10px"><?= h($trx['company_name']) ?></td>
-                                    <td style="padding:5px 10px"><?= h($moduleLabel[$trx['module']] ?? $trx['module']) ?></td>
-                                    <td style="padding:5px 10px;white-space:nowrap"><?= h($trx['start_date'] . ' s/d ' . $trx['end_date']) ?></td>
-                                    <td style="padding:5px 10px;color:var(--muted)"><?= h($trx['invoice_no'] ?? '-') ?></td>
-                                    <td style="padding:5px 10px;text-align:right;font-weight:600"><?= money($trx['period_amount']) ?></td>
-                                </tr>
-                                <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </td>
-                    </tr>
-                    <?php endif; ?>
-                    <?php endforeach; ?>
-                    <tr style="font-weight:700;border-top:2px solid var(--line);background:#F8FAFC">
-                        <td colspan="2">Total</td>
-                        <td class="r"><?= money(array_sum(array_map(fn($p) => (float)$p['target_share'] * $target, $pics))) ?></td>
-                        <td class="r"><?= money(array_sum(array_column($pics,'actual_cl'))) ?></td>
-                        <td class="r"><?= money(array_sum(array_column($pics,'actual_media'))) ?></td>
-                        <td class="r"><?= money(array_sum(array_column($pics,'actual_gudang'))) ?></td>
-                        <td class="r"><?= money($totalActual) ?></td>
-                        <td class="r"><span style="font-weight:700;color:<?= $target>0 ? ($totalActual/$target>=1?'#16a34a':($totalActual/$target>=0.8?'#d97706':'#dc2626')) : 'inherit' ?>"><?= $target > 0 ? pct($totalActual/$target) : '—' ?></span></td>
-                        <td class="r"><?= array_sum(array_column($pics,'trx_count')) ?></td>
-                    </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        <p style="font-size:12px;color:var(--muted)">Klik nama PIC untuk melihat daftar transaksi di periode ini.</p>
+        <p style="font-size:12px;color:var(--muted);margin-top:4px">Klik nama PIC untuk melihat daftar transaksi di periode ini.</p>
         <?php
     });
 }
