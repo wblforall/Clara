@@ -378,6 +378,19 @@ function transaction_form(PDO $pdo): void
             <div id="overlap-warn" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:13px;color:#92400e"></div>
             <p style="margin-top:14px;animation:_fadeUp .35s cubic-bezier(.22,.68,0,1.2) both;animation-delay:.72s"><button type="submit">Simpan & Hitung Alokasi</button> <a class="btn secondary" href="?r=transactions&module=<?= h($module) ?>">Kembali</a></p>
         </form>
+        <div style="margin-top:24px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:18px 22px;font-size:13px;color:#374151">
+            <p style="font-weight:700;margin:0 0 10px;font-size:14px;color:#1e293b">Panduan Input Transaksi Recurring (Spread per Bulan)</p>
+            <p style="margin:0 0 8px;color:#64748b">Gunakan mode ini untuk kontrak yang revenue-nya dibagi rata ke setiap bulan yang dicakup, bukan diakui sekaligus di satu bulan.</p>
+            <ol style="margin:0 0 12px;padding-left:18px;line-height:2">
+                <li>Isi <strong>Tanggal Mulai</strong> dan <strong>Tanggal Selesai</strong> — pastikan beda bulan agar opsi muncul.</li>
+                <li>Di dropdown <strong>Nilai Diakui di Bulan</strong>, pilih <strong>Spread per Bulan (Recurring)</strong>.</li>
+                <li>Isi <strong>Pricing Type</strong> dan <strong>Rate</strong> sesuai kontrak, lalu klik <strong>Kalkulasi Total</strong>.</li>
+                <li>Panel estimasi akan tampil — menunjukkan nilai per bulan hasil pembagian rata.</li>
+                <li>Jika nilai final berbeda dari kalkulasi (misal: ada diskon atau negosiasi), isi <strong>Override Aktual</strong> lalu klik Kalkulasi lagi untuk memperbarui estimasi.</li>
+                <li>Klik <strong>Simpan</strong> — sistem akan membuat alokasi bulanan secara otomatis.</li>
+            </ol>
+            <p style="margin:0;color:#64748b"><strong>Catatan:</strong> Jika nilai tidak habis dibagi rata, selisih pembulatan dialokasikan ke bulan terakhir. Hasil alokasi final bisa dicek di halaman <em>Detail Alokasi</em> setelah disimpan.</p>
+        </div>
         <script>
             const masters = <?= json_encode($masters) ?>;
             const byCode = Object.fromEntries(masters.map(m => [m.code, m]));
@@ -838,6 +851,19 @@ function transaction_edit(PDO $pdo): void
             <div id="overlap-warn" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:13px;color:#92400e"></div>
             <p style="margin-top:14px"><button type="submit">Simpan & Hitung Ulang Alokasi</button> <a class="btn secondary" href="?r=allocation_detail&id=<?= h((string) $id) ?>">Kembali</a></p>
         </form>
+        <div style="margin-top:24px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:18px 22px;font-size:13px;color:#374151">
+            <p style="font-weight:700;margin:0 0 10px;font-size:14px;color:#1e293b">Panduan Input Transaksi Recurring (Spread per Bulan)</p>
+            <p style="margin:0 0 8px;color:#64748b">Gunakan mode ini untuk kontrak yang revenue-nya dibagi rata ke setiap bulan yang dicakup, bukan diakui sekaligus di satu bulan.</p>
+            <ol style="margin:0 0 12px;padding-left:18px;line-height:2">
+                <li>Isi <strong>Tanggal Mulai</strong> dan <strong>Tanggal Selesai</strong> — pastikan beda bulan agar opsi muncul.</li>
+                <li>Di dropdown <strong>Nilai Diakui di Bulan</strong>, pilih <strong>Spread per Bulan (Recurring)</strong>.</li>
+                <li>Isi <strong>Pricing Type</strong> dan <strong>Rate</strong> sesuai kontrak, lalu klik <strong>Kalkulasi Total</strong>.</li>
+                <li>Panel estimasi akan tampil — menunjukkan nilai per bulan hasil pembagian rata.</li>
+                <li>Jika nilai final berbeda dari kalkulasi (misal: ada diskon atau negosiasi), isi <strong>Override Aktual</strong> lalu klik Kalkulasi lagi untuk memperbarui estimasi.</li>
+                <li>Klik <strong>Simpan</strong> — sistem akan membuat alokasi bulanan secara otomatis.</li>
+            </ol>
+            <p style="margin:0;color:#64748b"><strong>Catatan:</strong> Jika nilai tidak habis dibagi rata, selisih pembulatan dialokasikan ke bulan terakhir. Hasil alokasi final bisa dicek di halaman <em>Detail Alokasi</em> setelah disimpan.</p>
+        </div>
         <script>
             const masters = <?= json_encode($masters) ?>;
             const byCode = Object.fromEntries(masters.map(m => [m.code, m]));
