@@ -11,6 +11,17 @@
 
 ---
 
+## Version 3.8 — 24 Mei 2026
+
+### Fitur Baru — Transaksi Recurring (Spread per Bulan)
+
+- **Opsi "Spread per Bulan (Recurring)"** di field *Nilai Diakui di Bulan* pada form tambah dan edit transaksi. Pilih opsi ini untuk kontrak yang nilainya dibagi rata ke setiap bulan selama durasi kontrak.
+- **Distribusi Bagi Rata** — Saat disimpan, sistem menghitung total bulan kontrak dan membagi `final_amount` secara merata ke setiap bulan. Sisa pembulatan diakumulasikan ke bulan terakhir.
+- **Badge "Recurring"** — Transaksi dengan `billing_method='spread'` ditandai badge biru "Recurring" di daftar transaksi dan halaman detail alokasi.
+- `billing_method` kini ikut diperbarui saat edit transaksi (sebelumnya tidak tersimpan saat update).
+
+---
+
 ## Version 3.7 — 24 Mei 2026
 
 ### Fitur Baru — Historis Potensi

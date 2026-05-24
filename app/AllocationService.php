@@ -67,17 +67,21 @@ final class AllocationService
         $allocations = self::preview($trx);
 
         $finalAmount = (float) ($trx['final_amount'] ?? 0);
-        if ($finalAmount > 0) {
-            $allocations = self::applyOverrideAmount($allocations, $finalAmount);
-        }
 
-        $recognitionPeriod = $trx['recognition_period'] ?? null;
-        if ($recognitionPeriod !== null) {
-            $totalAmount = array_sum(array_column($allocations, 'amount'));
-            foreach ($allocations as &$a) {
-                $a['amount'] = $a['period_key'] === $recognitionPeriod ? $totalAmount : 0;
+        if (($trx['billing_method'] ?? '') === 'spread') {
+            $allocations = self::applySpreadAmount($allocations, $finalAmount);
+        } else {
+            if ($finalAmount > 0) {
+                $allocations = self::applyOverrideAmount($allocations, $finalAmount);
             }
-            unset($a);
+            $recognitionPeriod = $trx['recognition_period'] ?? null;
+            if ($recognitionPeriod !== null) {
+                $totalAmount = array_sum(array_column($allocations, 'amount'));
+                foreach ($allocations as &$a) {
+                    $a['amount'] = $a['period_key'] === $recognitionPeriod ? $totalAmount : 0;
+                }
+                unset($a);
+            }
         }
 
         $propertyId = (int)($trx['property_id'] ?? (function_exists('current_property_id') ? current_property_id() : 1));
@@ -222,6 +226,25 @@ final class AllocationService
             $running += $allocation['amount'];
         }
 
+        return $allocations;
+    }
+
+    private static function applySpreadAmount(array $allocations, float $finalAmount): array
+    {
+        $n = count($allocations);
+        if ($n === 0) return $allocations;
+        $perMonth = floor($finalAmount / $n);
+        $running = 0;
+        $lastIndex = $n - 1;
+        foreach ($allocations as $i => &$a) {
+            if ($i === $lastIndex) {
+                $a['amount'] = round($finalAmount - $running);
+            } else {
+                $a['amount'] = (int) $perMonth;
+                $running += $a['amount'];
+            }
+        }
+        unset($a);
         return $allocations;
     }
 

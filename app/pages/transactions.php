@@ -141,7 +141,10 @@ function transactions_page(PDO $pdo): void
                             <?= !empty($row['invoice_no']) ? '<br><span style="font-size:10px;color:var(--muted)">' . h($row['invoice_no']) . '</span>' : '' ?>
                         </td>
                         <td style="white-space:nowrap"><?= h($row['start_date'] . ' s/d ' . $row['end_date']) ?></td>
-                        <td><?= h($row['pricing_type']) ?></td>
+                        <td>
+                            <?= h($row['pricing_type']) ?>
+                            <?= ($row['billing_method'] ?? '') === 'spread' ? '<br><span class="badge" style="font-size:10px;background:var(--accent-light,#e8f4ff);color:var(--accent,#2563eb)">Recurring</span>' : '' ?>
+                        </td>
                         <td><?= money($row['final_amount']) ?></td>
                         <td><?= h($row['pic_name'] ?? '-') ?></td>
                         <td style="font-size:11px;color:var(--muted)">
@@ -355,11 +358,12 @@ function transaction_form(PDO $pdo): void
                 </div>
                 <div id="recognition_month_wrap" style="display:none">
                     <label>Nilai Diakui di Bulan</label>
-                    <select name="recognition_month">
+                    <select name="recognition_month" id="recognition_month">
                         <option value="start">Bulan Awal (bulan mulai)</option>
                         <option value="end">Bulan Akhir (bulan selesai)</option>
+                        <option value="spread">Spread per Bulan (Recurring)</option>
                     </select>
-                    <div class="help">Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.</div>
+                    <div class="help" id="recognition_help">Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.</div>
                 </div>
                 <div class="wide"><label>Materi / Keterangan</label><textarea name="content_note"></textarea></div>
                 <div><label>No. Invoice Accurate <span class="muted" style="font-weight:400">(opsional)</span></label><input type="text" name="invoice_no" placeholder="cth. INV-2026/04/001"></div>
@@ -489,6 +493,14 @@ function transaction_form(PDO $pdo): void
                     wrap.style.display = 'none';
                 }
             }
+            function updateRecognitionHelp() {
+                const val  = document.getElementById('recognition_month').value;
+                const help = document.getElementById('recognition_help');
+                help.textContent = val === 'spread'
+                    ? 'Revenue dibagi rata ke setiap bulan yang dicakup kontrak.'
+                    : 'Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.';
+            }
+            document.getElementById('recognition_month').addEventListener('change', updateRecognitionHelp);
             document.querySelector('[name=start_date]').addEventListener('change', checkRecognitionMonth);
             document.querySelector('[name=end_date]').addEventListener('change', checkRecognitionMonth);
 
@@ -603,9 +615,14 @@ function transaction_save(PDO $pdo): void
     $trx['override_amount']  = $override;
     $trx['final_amount']     = $override ?: $calculated;
     $recognitionMonth = post('recognition_month', 'start');
-    $trx['period_key'] = $recognitionMonth === 'end' ? substr($end, 0, 7) : substr($start, 0, 7);
-    if (substr($start, 0, 7) !== substr($end, 0, 7)) {
-        $trx['recognition_period'] = $trx['period_key'];
+    if ($recognitionMonth === 'spread') {
+        $trx['billing_method'] = 'spread';
+        $trx['period_key']     = substr($start, 0, 7);
+    } else {
+        $trx['period_key'] = $recognitionMonth === 'end' ? substr($end, 0, 7) : substr($start, 0, 7);
+        if (substr($start, 0, 7) !== substr($end, 0, 7)) {
+            $trx['recognition_period'] = $trx['period_key'];
+        }
     }
 
     $createdBy = $_SESSION['user']['name'] ?? 'system';
@@ -668,11 +685,13 @@ function transaction_edit(PDO $pdo): void
     $pics = $picsStmt3->fetchAll();
     $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
 
-    // Detect recognition_month from existing allocations
+    // Detect recognition_month from billing_method or existing allocations
     $startMonth = substr($trx['start_date'], 0, 7);
     $endMonth   = substr($trx['end_date'], 0, 7);
     $recognitionMonth = 'start';
-    if ($startMonth !== $endMonth) {
+    if (($trx['billing_method'] ?? '') === 'spread') {
+        $recognitionMonth = 'spread';
+    } elseif ($startMonth !== $endMonth) {
         $allocRows = $pdo->prepare('SELECT period_key, SUM(amount) amt FROM transaction_allocations WHERE transaction_id = ? AND property_id = ? GROUP BY period_key');
         $allocRows->execute([$id, current_property_id()]);
         $amtByPeriod = [];
@@ -762,11 +781,12 @@ function transaction_edit(PDO $pdo): void
                 </div>
                 <div id="recognition_month_wrap" style="<?= $startMonth !== $endMonth ? '' : 'display:none' ?>">
                     <label>Nilai Diakui di Bulan</label>
-                    <select name="recognition_month">
-                        <option value="start" <?= $recognitionMonth === 'start' ? 'selected' : '' ?>>Bulan Awal (bulan mulai)</option>
-                        <option value="end"   <?= $recognitionMonth === 'end'   ? 'selected' : '' ?>>Bulan Akhir (bulan selesai)</option>
+                    <select name="recognition_month" id="recognition_month">
+                        <option value="start"  <?= $recognitionMonth === 'start'  ? 'selected' : '' ?>>Bulan Awal (bulan mulai)</option>
+                        <option value="end"    <?= $recognitionMonth === 'end'    ? 'selected' : '' ?>>Bulan Akhir (bulan selesai)</option>
+                        <option value="spread" <?= $recognitionMonth === 'spread' ? 'selected' : '' ?>>Spread per Bulan (Recurring)</option>
                     </select>
-                    <div class="help">Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.</div>
+                    <div class="help" id="recognition_help">Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.</div>
                 </div>
                 <div class="wide"><label>Materi / Keterangan</label><textarea name="content_note"><?= h($trx['content_note'] ?? '') ?></textarea></div>
                 <div><label>No. Invoice Accurate <span class="muted" style="font-weight:400">(opsional)</span></label><input type="text" name="invoice_no" value="<?= h($trx['invoice_no'] ?? '') ?>" placeholder="cth. INV-2026/04/001"></div>
@@ -898,6 +918,15 @@ function transaction_edit(PDO $pdo): void
                     wrap.style.display = 'none';
                 }
             }
+            function updateRecognitionHelp() {
+                const val  = document.getElementById('recognition_month').value;
+                const help = document.getElementById('recognition_help');
+                help.textContent = val === 'spread'
+                    ? 'Revenue dibagi rata ke setiap bulan yang dicakup kontrak.'
+                    : 'Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.';
+            }
+            document.getElementById('recognition_month').addEventListener('change', updateRecognitionHelp);
+            updateRecognitionHelp();
             document.getElementById('start_date').addEventListener('change', checkRecognitionMonth);
             document.getElementById('end_date').addEventListener('change', checkRecognitionMonth);
 
@@ -1019,9 +1048,14 @@ function transaction_update(PDO $pdo): void
     $trx['override_amount']  = $override;
     $trx['final_amount']     = $override ?: $calculated;
     $recognitionMonth = post('recognition_month', 'start');
-    $trx['period_key'] = $recognitionMonth === 'end' ? substr($end, 0, 7) : substr($start, 0, 7);
-    if (substr($start, 0, 7) !== substr($end, 0, 7)) {
-        $trx['recognition_period'] = $trx['period_key'];
+    if ($recognitionMonth === 'spread') {
+        $trx['billing_method'] = 'spread';
+        $trx['period_key']     = substr($start, 0, 7);
+    } else {
+        $trx['period_key'] = $recognitionMonth === 'end' ? substr($end, 0, 7) : substr($start, 0, 7);
+        if (substr($start, 0, 7) !== substr($end, 0, 7)) {
+            $trx['recognition_period'] = $trx['period_key'];
+        }
     }
 
     $pdo->prepare(
@@ -1029,6 +1063,7 @@ function transaction_update(PDO $pdo): void
          client_id=:client_id, contact_id=:contact_id,
          content_note=:content_note, start_date=:start_date, end_date=:end_date, quantity=:quantity, slots=:slots,
          area_sqm=:area_sqm, pricing_type=:pricing_type, unit_rate=:unit_rate, contract_months=:contract_months,
+         billing_method=:billing_method,
          total_calculated=:total_calculated, override_amount=:override_amount, final_amount=:final_amount,
          pic_name=:pic_name, remarks=:remarks, invoice_no=:invoice_no,
          updated_at=CURRENT_TIMESTAMP, updated_by=:updated_by WHERE id=:id AND property_id=:property_id'
@@ -1046,6 +1081,7 @@ function transaction_update(PDO $pdo): void
         ':pricing_type'     => $trx['pricing_type'],
         ':unit_rate'        => $trx['unit_rate'],
         ':contract_months'  => $trx['contract_months'],
+        ':billing_method'   => $trx['billing_method'],
         ':total_calculated' => $trx['total_calculated'],
         ':override_amount'  => $trx['override_amount'],
         ':final_amount'     => $trx['final_amount'],
@@ -1087,7 +1123,7 @@ function allocation_detail(PDO $pdo): void
             <?php $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang']; ?>
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
                 <div>
-                    <h2><?= h($trx['company_name'] ?? '-') ?> <span class="badge"><?= h($moduleLabel[$trx['module']] ?? $trx['module']) ?></span></h2>
+                    <h2><?= h($trx['company_name'] ?? '-') ?> <span class="badge"><?= h($moduleLabel[$trx['module']] ?? $trx['module']) ?></span><?= ($trx['billing_method'] ?? '') === 'spread' ? ' <span class="badge" style="background:var(--accent-light,#e8f4ff);color:var(--accent,#2563eb)">Recurring</span>' : '' ?></h2>
                     <p><?= h($trx['master_code']) ?> | <?= h($trx['start_date'] . ' s/d ' . $trx['end_date']) ?> | <?= h($trx['pricing_type']) ?></p>
                     <p>CP: <strong><?= h($trx['cp_name'] ?? '-') ?></strong><?= $trx['cp_phone'] ? ' · <a href="tel:' . h($trx['cp_phone']) . '">' . h($trx['cp_phone']) . '</a>' : '' ?></p>
                     <p>Total hitung: <strong><?= money($trx['total_calculated']) ?></strong> | Final: <strong><?= money($trx['final_amount']) ?></strong><?= $trx['invoice_no'] ? ' | No. Invoice: <strong>' . h($trx['invoice_no']) . '</strong>' : '' ?></p>
