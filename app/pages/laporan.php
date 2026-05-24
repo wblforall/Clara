@@ -228,6 +228,7 @@ function pic_report_print(PDO $pdo): void
                 COALESCE(SUM(CASE WHEN a.module='media'  THEN a.amount ELSE 0 END),0) actual_media,
                 COALESCE(SUM(CASE WHEN a.module='gudang' THEN a.amount ELSE 0 END),0) actual_gudang,
                 COALESCE(SUM(a.amount),0) actual_total,
+                COALESCE(SUM(CASE WHEN t.billing_method='spread' THEN a.amount ELSE 0 END),0) actual_recurring,
                 COUNT(DISTINCT t.id) trx_count
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
@@ -240,14 +241,16 @@ function pic_report_print(PDO $pdo): void
     $pics = $picStmt->fetchAll();
 
     $trxStmt = $pdo->prepare(
-        "SELECT t.id, t.module, t.master_code, COALESCE(c.company_name,'-') company_name,
+        "SELECT t.id, t.module, t.master_code, t.billing_method,
+                COALESCE(c.company_name,'-') company_name,
                 t.start_date, t.end_date, COALESCE(t.pic_name,'Tanpa PIC') pic_name,
                 t.invoice_no, COALESCE(SUM(a.amount),0) period_amount
          FROM transactions t
          LEFT JOIN master_clients c ON c.id=t.client_id
          JOIN transaction_allocations a ON a.transaction_id=t.id AND a.period_key=? AND a.property_id=?
          WHERE t.deleted_at IS NULL AND t.property_id=?
-         GROUP BY t.id, t.module, t.master_code, c.company_name, t.start_date, t.end_date, t.pic_name, t.invoice_no
+         GROUP BY t.id, t.module, t.master_code, t.billing_method, c.company_name,
+                  t.start_date, t.end_date, t.pic_name, t.invoice_no
          ORDER BY t.pic_name, period_amount DESC"
     );
     $trxStmt->execute([$period, $pid, $pid]);
@@ -256,7 +259,9 @@ function pic_report_print(PDO $pdo): void
         $trxByPic[$trx['pic_name']][] = $trx;
     }
 
-    $totalActual = array_sum(array_column($pics, 'actual_total'));
+    $totalActual    = array_sum(array_column($pics, 'actual_total'));
+    $totalRecurring = array_sum(array_column($pics, 'actual_recurring'));
+    $totalRegular   = $totalActual - $totalRecurring;
     $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
     audit($pdo, 'print', 'pic_report', $period, ['period' => $period], [], 'reporting');
     ?>
@@ -267,7 +272,6 @@ function pic_report_print(PDO $pdo): void
 <title>Laporan PIC — <?= h($appName) ?> — <?= h($periodLabel) ?></title>
 <link rel="icon" type="image/png" href="assets/clara-logo.png">
 <style>
-@import url() /* removed - using system font */;
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',sans-serif;font-size:11px;color:#0F1623;background:#fff}
 @page{size:A4 landscape;margin:14mm 12mm}
@@ -276,24 +280,34 @@ body{font-family:'Inter',sans-serif;font-size:11px;color:#0F1623;background:#fff
 .btn-print{background:#0D9488;color:#fff}
 .btn-close{background:#f1f5f9;color:#334155}
 @media print{.no-print{display:none}}
-h1{font-size:16px;font-weight:800;margin-bottom:2px}
-.sub{font-size:11px;color:#64748B;margin-bottom:14px}
+.rpt-header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:10px;border-bottom:2px solid #0D9488;margin-bottom:14px}
+.rpt-logo{width:160px;height:auto;display:block;object-fit:contain}
+.rpt-brand{font-size:22px;font-weight:900;color:#0D9488;letter-spacing:-.5px}
+.rpt-brand small{display:block;font-size:10px;font-weight:500;color:#7B8A9C;margin-top:2px;letter-spacing:0}
+.rpt-meta{text-align:right;font-size:12px;color:#7B8A9C;line-height:1.8}
+.rpt-period{font-size:18px;font-weight:800;color:#0F1623}
 table{width:100%;border-collapse:collapse;font-size:10px}
-th{background:#0D9488;color:#fff;padding:5px 7px;text-align:left;font-weight:700}
+th{background:#F8FAFC;color:#344054;font-weight:700;text-transform:uppercase;font-size:9px;letter-spacing:.04em;padding:6px 8px;border:1px solid #E4E9F0;text-align:left;white-space:nowrap}
 th.r,td.r{text-align:right}
-td{padding:4px 7px;border-bottom:1px solid #E2E8F0;vertical-align:top}
-tr:nth-child(even){background:#F8FAFC}
+td{padding:5px 8px;border:1px solid #E4E9F0;vertical-align:middle}
 .total-row td{font-weight:700;border-top:2px solid #0D9488;background:#F0FDF9}
-.section-header{background:#1E3A5F;color:#fff;padding:5px 7px;font-weight:700;font-size:10px;margin-top:12px}
+.section-header{background:#1E3A5F;color:#fff;padding:5px 8px;font-weight:700;font-size:10px;margin-top:14px;margin-bottom:6px}
 .ach-good{color:#16a34a;font-weight:700}
 .ach-warn{color:#d97706;font-weight:700}
 .ach-bad{color:#dc2626;font-weight:700}
-.trx-table th{background:#334155}
+.trx-table th{background:#334155;color:#fff}
 .pic-section{margin-top:14px;page-break-inside:avoid}
-.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
-.kpi-box{border:1px solid #E2E8F0;border-radius:6px;padding:8px 12px}
+.kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
+.kpi-box{border:1px solid #E4E9F0;border-radius:6px;padding:8px 12px}
+.kpi-box:nth-child(1){border-top:3px solid #0D9488}
+.kpi-box:nth-child(2){border-top:3px solid #10B981}
+.kpi-box:nth-child(3){border-top:3px solid #0369a1}
+.kpi-box:nth-child(4){border-top:3px solid #F59E0B}
+.kpi-box:nth-child(5){border-top:3px solid #8B5CF6}
 .kpi-label{font-size:9px;color:#64748B;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
-.kpi-val{font-size:16px;font-weight:800;color:#0D9488}
+.kpi-val{font-size:16px;font-weight:800;color:#0F1623}
+.rpt-footer{margin-top:14px;padding-top:8px;border-top:1px solid #E4E9F0;display:flex;justify-content:space-between;font-size:9px;color:#7B8A9C}
+*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 </style>
 </head>
 <body>
@@ -302,18 +316,30 @@ tr:nth-child(even){background:#F8FAFC}
     <button class="btn-close" onclick="window.close()">✕ Tutup</button>
 </div>
 
-<h1>Laporan Pencapaian PIC — <?= h($periodLabel) ?></h1>
-<div class="sub"><?= h($appName) ?> &middot; Dicetak: <?= date('d/m/Y H:i') ?></div>
+<div class="rpt-header">
+    <div>
+        <img class="rpt-logo" src="assets/clara-logo.png" alt="CLARA" onerror="this.hidden=true;this.nextElementSibling.style.display='block'">
+        <div class="rpt-brand" style="display:none"><?= h($appName) ?><small>Casual Leasing Achievement &amp; Revenue Analytics</small></div>
+    </div>
+    <div class="rpt-meta">
+        <div class="rpt-period"><?= h($periodLabel) ?></div>
+        <div style="font-size:16px;font-weight:800;color:#0D9488;margin-bottom:2px">Laporan Pencapaian PIC</div>
+        <div><?= h(current_property()['name'] ?? '') ?></div>
+        <div>Dicetak: <?= date('d/m/Y H:i:s') ?></div>
+        <div>Oleh: <?= h($_SESSION['user']['name'] ?? '-') ?> (<?= h($_SESSION['user']['role'] ?? '-') ?>)</div>
+    </div>
+</div>
 
 <div class="kpi-grid">
     <?php
-    $ach = $target > 0 ? $totalActual / $target : 0;
+    $ach    = $target > 0 ? $totalActual / $target : 0;
     $achCls = $ach >= 1 ? 'ach-good' : ($ach >= 0.8 ? 'ach-warn' : 'ach-bad');
     foreach ([
         ['Target Bulan Ini', money($target)],
-        ['Total Actual', money($totalActual)],
-        ['Achievement', pct($ach)],
-        ['Jumlah PIC', count($pics)],
+        ['Regular',          money($totalRegular)],
+        ['Recurring',        money($totalRecurring)],
+        ['Total Actual',     money($totalActual)],
+        ['Achievement',      $target > 0 ? pct($ach) : '—'],
     ] as [$lbl, $val]): ?>
     <div class="kpi-box">
         <div class="kpi-label"><?= $lbl ?></div>
@@ -329,6 +355,7 @@ tr:nth-child(even){background:#F8FAFC}
             <th>Nama PIC</th><th>Role</th>
             <th class="r">Target Posisi</th>
             <th class="r">Exhibition</th><th class="r">Media</th><th class="r">Gudang</th>
+            <th class="r">Regular</th><th class="r">Recurring</th>
             <th class="r">Total Actual</th><th class="r">Achievement</th><th class="r">Trx</th>
         </tr>
     </thead>
@@ -337,6 +364,8 @@ tr:nth-child(even){background:#F8FAFC}
         $tp  = (float)$p['target_share'] * $target;
         $a   = $tp > 0 ? $p['actual_total'] / $tp : 0;
         $cls = $a >= 1 ? 'ach-good' : ($a >= 0.8 ? 'ach-warn' : 'ach-bad');
+        $rec = (float)$p['actual_recurring'];
+        $reg = (float)$p['actual_total'] - $rec;
     ?>
     <tr>
         <td style="font-weight:700"><?= h($p['name']) ?></td>
@@ -345,6 +374,8 @@ tr:nth-child(even){background:#F8FAFC}
         <td class="r"><?= money($p['actual_cl']) ?></td>
         <td class="r"><?= money($p['actual_media']) ?></td>
         <td class="r"><?= money($p['actual_gudang']) ?></td>
+        <td class="r"><?= money($reg) ?></td>
+        <td class="r" style="color:#0369a1;font-weight:600"><?= $rec > 0 ? money($rec) : '—' ?></td>
         <td class="r" style="font-weight:700"><?= money($p['actual_total']) ?></td>
         <td class="r"><span class="<?= $cls ?>"><?= pct($a) ?></span></td>
         <td class="r"><?= $p['trx_count'] ?></td>
@@ -356,8 +387,10 @@ tr:nth-child(even){background:#F8FAFC}
         <td class="r"><?= money(array_sum(array_column($pics,'actual_cl'))) ?></td>
         <td class="r"><?= money(array_sum(array_column($pics,'actual_media'))) ?></td>
         <td class="r"><?= money(array_sum(array_column($pics,'actual_gudang'))) ?></td>
+        <td class="r"><?= money($totalRegular) ?></td>
+        <td class="r" style="color:#0369a1"><?= money($totalRecurring) ?></td>
         <td class="r"><?= money($totalActual) ?></td>
-        <td class="r"><span class="<?= $achCls ?>"><?= pct($ach) ?></span></td>
+        <td class="r"><span class="<?= $achCls ?>"><?= $target > 0 ? pct($ach) : '—' ?></span></td>
         <td class="r"><?= array_sum(array_column($pics,'trx_count')) ?></td>
     </tr>
     </tbody>
@@ -369,32 +402,50 @@ tr:nth-child(even){background:#F8FAFC}
     $tp  = (float)$p['target_share'] * $target;
     $a   = $tp > 0 ? $p['actual_total'] / $tp : 0;
     $cls = $a >= 1 ? 'ach-good' : ($a >= 0.8 ? 'ach-warn' : 'ach-bad');
+    $rec = (float)$p['actual_recurring'];
+    $reg = (float)$p['actual_total'] - $rec;
 ?>
 <div class="pic-section">
-    <div class="section-header"><?= h($p['name']) ?> — <?= h($p['role_name']) ?> &nbsp;|&nbsp; Actual: <?= money($p['actual_total']) ?> &nbsp;|&nbsp; Achievement: <span class="<?= $cls ?>"><?= pct($a) ?></span></div>
+    <div class="section-header">
+        <?= h($p['name']) ?> — <?= h($p['role_name']) ?>
+        &nbsp;|&nbsp; Regular: <?= money($reg) ?>
+        <?= $rec > 0 ? ' &nbsp;|&nbsp; <span style="color:#93c5fd">Recurring: ' . money($rec) . '</span>' : '' ?>
+        &nbsp;|&nbsp; Total: <?= money($p['actual_total']) ?>
+        &nbsp;|&nbsp; Achievement: <span class="<?= $cls ?>"><?= pct($a) ?></span>
+    </div>
     <table class="trx-table">
         <thead><tr>
-            <th>Kode</th><th>Client</th><th>Modul</th><th>Periode Kontrak</th><th>No. Invoice</th><th class="r">Aktual Bulan Ini</th>
+            <th>Kode</th><th>Client</th><th>Tipe</th><th>Modul</th><th>Periode Kontrak</th><th>No. Invoice</th><th class="r">Aktual Bulan Ini</th>
         </tr></thead>
         <tbody>
-        <?php foreach ($trxByPic[$p['name']] as $trx): ?>
-        <tr>
+        <?php foreach ($trxByPic[$p['name']] as $trx):
+            $isRecurring = ($trx['billing_method'] ?? '') === 'spread';
+        ?>
+        <tr<?= $isRecurring ? ' style="background:#eff6ff"' : '' ?>>
             <td><?= h($trx['master_code']) ?></td>
             <td><?= h($trx['company_name']) ?></td>
+            <td style="color:<?= $isRecurring ? '#0369a1' : '#64748b' ?>;font-weight:<?= $isRecurring ? '700' : '400' ?>">
+                <?= $isRecurring ? 'Recurring' : 'Regular' ?>
+            </td>
             <td><?= h($moduleLabel[$trx['module']] ?? $trx['module']) ?></td>
             <td style="white-space:nowrap"><?= h($trx['start_date'] . ' s/d ' . $trx['end_date']) ?></td>
             <td style="color:#64748B"><?= h($trx['invoice_no'] ?? '-') ?></td>
-            <td class="r" style="font-weight:700"><?= money($trx['period_amount']) ?></td>
+            <td class="r" style="font-weight:700<?= $isRecurring ? ';color:#0369a1' : '' ?>"><?= money($trx['period_amount']) ?></td>
         </tr>
         <?php endforeach; ?>
         <tr style="font-weight:700;background:#F0FDF9">
-            <td colspan="5" style="text-align:right">Total <?= h($p['name']) ?></td>
+            <td colspan="6" style="text-align:right">Total <?= h($p['name']) ?></td>
             <td class="r"><?= money($p['actual_total']) ?></td>
         </tr>
         </tbody>
     </table>
 </div>
 <?php endforeach; ?>
+
+<div class="rpt-footer">
+    <span>Laporan PIC — <?= h($periodLabel) ?> &nbsp;|&nbsp; <?= h(current_property()['name'] ?? '') ?></span>
+    <span>Dicetak <?= date('d/m/Y H:i:s') ?> &nbsp;|&nbsp; <?= h($_SESSION['user']['name'] ?? '-') ?></span>
+</div>
 </body>
 </html>
 <?php
