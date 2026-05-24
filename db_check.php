@@ -56,8 +56,8 @@ $expected = [
     'transactions' => [
         'id', 'property_id', 'module', 'client_id', 'contact_id', 'master_code',
         'period_key', 'content_note', 'start_date', 'end_date', 'quantity', 'slots',
-        'area_sqm', 'pricing_type', 'unit_rate', 'contract_months', 'billing_method',
-        'total_calculated', 'override_amount', 'final_amount', 'pic_name', 'remarks',
+        'area_sqm', 'pricing_type', 'unit_rate', 'contract_months',
+        'billing_method', 'total_calculated', 'override_amount', 'final_amount', 'pic_name', 'remarks',
         'invoice_no', 'status', 'created_at', 'created_by', 'updated_at', 'updated_by',
         'deleted_at', 'deleted_by',
     ],
