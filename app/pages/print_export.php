@@ -10,11 +10,7 @@ function print_dashboard(PDO $pdo): void
     $monthNames = ['01'=>'Januari','02'=>'Februari','03'=>'Maret','04'=>'April','05'=>'Mei','06'=>'Juni','07'=>'Juli','08'=>'Agustus','09'=>'September','10'=>'Oktober','11'=>'November','12'=>'Desember'];
     $periodLabel = ($monthNames[substr($period,5,2)] ?? substr($period,5,2)) . ' ' . substr($period,0,4);
     $target = (float)($pdo->query("SELECT target_amount FROM targets_monthly WHERE period_key=".$pdo->quote($period)." AND property_id=$pid")->fetchColumn() ?: 0);
-    $projection = [
-        'cl'     => (float)$pdo->query("SELECT COALESCE(SUM(projection_monthly),0) FROM master_cl_units WHERE status='active' AND property_id=$pid")->fetchColumn(),
-        'media'  => (float)$pdo->query("SELECT COALESCE(SUM(projection_monthly),0) FROM master_media WHERE status='active' AND property_id=$pid")->fetchColumn(),
-        'gudang' => (float)$pdo->query("SELECT COALESCE(SUM(projection_monthly),0) FROM master_gudang WHERE status='active' AND property_id=$pid")->fetchColumn(),
-    ];
+    $projection = get_projection($pdo, $period, $pid);
     $actual = $capacity = $allocatedDays = ['cl'=>0,'media'=>0,'gudang'=>0];
     $aStmt = $pdo->prepare('SELECT module, COALESCE(SUM(amount),0) actual, COALESCE(SUM(capacity_days),0) cap, COALESCE(SUM(allocated_days),0) adays FROM transaction_allocations WHERE period_key=? AND property_id=? GROUP BY module');
     $aStmt->execute([$period, $pid]);
@@ -64,20 +60,39 @@ function print_dashboard(PDO $pdo): void
     $picRows = $picStmt->fetchAll();
 
     // Detail CL
-    $clStmt = $pdo->prepare("SELECT m.code, m.floor, m.location_name, m.unit_type, m.area_sqm, m.projection_monthly, COALESCE(SUM(a.amount),0) actual, COALESCE(SUM(a.allocated_days),0) days FROM master_cl_units m LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='cl' AND a.period_key=? AND a.property_id=? WHERE m.property_id=? GROUP BY m.id ORDER BY CASE m.floor WHEN 'LG' THEN 1 WHEN 'GF' THEN 2 WHEN 'UG' THEN 3 WHEN 'FF' THEN 4 WHEN 'SF' THEN 5 ELSE 6 END, m.code");
-    $clStmt->execute([$period, $pid, $pid]);
+    $clStmt = $pdo->prepare("SELECT m.code, m.floor, m.location_name, m.unit_type, m.area_sqm,
+        COALESCE(pp.potential_value, m.projection_monthly) AS projection_monthly,
+        COALESCE(SUM(a.amount),0) actual, COALESCE(SUM(a.allocated_days),0) days
+        FROM master_cl_units m
+        LEFT JOIN period_potentials pp ON pp.slot_id=m.id AND pp.segment='exhibition' AND pp.period_key=? AND pp.property_id=m.property_id
+        LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='cl' AND a.period_key=? AND a.property_id=?
+        WHERE m.property_id=? GROUP BY m.id
+        ORDER BY CASE m.floor WHEN 'LG' THEN 1 WHEN 'GF' THEN 2 WHEN 'UG' THEN 3 WHEN 'FF' THEN 4 WHEN 'SF' THEN 5 ELSE 6 END, m.code");
+    $clStmt->execute([$period, $period, $pid, $pid]);
     $clByFloor = [];
     foreach ($clStmt->fetchAll() as $r) { $clByFloor[$r['floor']][] = $r; }
 
     // Detail Media
-    $mediaStmt = $pdo->prepare("SELECT m.code, m.media_type, m.location, m.point, m.projection_monthly, COALESCE(SUM(a.amount),0) actual, COALESCE(SUM(a.allocated_days),0) days FROM master_media m LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='media' AND a.period_key=? AND a.property_id=? WHERE m.property_id=? GROUP BY m.id ORDER BY m.code");
-    $mediaStmt->execute([$period, $pid, $pid]);
+    $mediaStmt = $pdo->prepare("SELECT m.code, m.media_type, m.location, m.point,
+        COALESCE(pp.potential_value, m.projection_monthly) AS projection_monthly,
+        COALESCE(SUM(a.amount),0) actual, COALESCE(SUM(a.allocated_days),0) days
+        FROM master_media m
+        LEFT JOIN period_potentials pp ON pp.slot_id=m.id AND pp.segment='media' AND pp.period_key=? AND pp.property_id=m.property_id
+        LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='media' AND a.period_key=? AND a.property_id=?
+        WHERE m.property_id=? GROUP BY m.id ORDER BY m.code");
+    $mediaStmt->execute([$period, $period, $pid, $pid]);
     $mediaByType = [];
     foreach ($mediaStmt->fetchAll() as $r) { $mediaByType[$r['media_type']][] = $r; }
 
     // Detail Gudang
-    $gudangStmt = $pdo->prepare("SELECT m.code, m.location, m.name, m.area_sqm, m.projection_monthly, COALESCE(SUM(a.amount),0) actual, COALESCE(SUM(a.allocated_days),0) days FROM master_gudang m LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='gudang' AND a.period_key=? AND a.property_id=? WHERE m.property_id=? GROUP BY m.id ORDER BY m.code");
-    $gudangStmt->execute([$period, $pid, $pid]);
+    $gudangStmt = $pdo->prepare("SELECT m.code, m.location, m.name, m.area_sqm,
+        COALESCE(pp.potential_value, m.projection_monthly) AS projection_monthly,
+        COALESCE(SUM(a.amount),0) actual, COALESCE(SUM(a.allocated_days),0) days
+        FROM master_gudang m
+        LEFT JOIN period_potentials pp ON pp.slot_id=m.id AND pp.segment='gudang' AND pp.period_key=? AND pp.property_id=m.property_id
+        LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='gudang' AND a.period_key=? AND a.property_id=?
+        WHERE m.property_id=? GROUP BY m.id ORDER BY m.code");
+    $gudangStmt->execute([$period, $period, $pid, $pid]);
     $gudangByLoc = [];
     foreach ($gudangStmt->fetchAll() as $r) { $gudangByLoc[$r['location']][] = $r; }
 
@@ -416,11 +431,7 @@ function print_exec(PDO $pdo): void
     $monthNames  = ['01'=>'Januari','02'=>'Februari','03'=>'Maret','04'=>'April','05'=>'Mei','06'=>'Juni','07'=>'Juli','08'=>'Agustus','09'=>'September','10'=>'Oktober','11'=>'November','12'=>'Desember'];
     $periodLabel = ($monthNames[substr($period,5,2)] ?? substr($period,5,2)) . ' ' . substr($period,0,4);
     $target      = (float)($pdo->query("SELECT target_amount FROM targets_monthly WHERE period_key=".$pdo->quote($period)." AND property_id=$pid")->fetchColumn() ?: 0);
-    $projection  = [
-        'cl'     => (float)$pdo->query("SELECT COALESCE(SUM(projection_monthly),0) FROM master_cl_units WHERE status='active' AND property_id=$pid")->fetchColumn(),
-        'media'  => (float)$pdo->query("SELECT COALESCE(SUM(projection_monthly),0) FROM master_media WHERE status='active' AND property_id=$pid")->fetchColumn(),
-        'gudang' => (float)$pdo->query("SELECT COALESCE(SUM(projection_monthly),0) FROM master_gudang WHERE status='active' AND property_id=$pid")->fetchColumn(),
-    ];
+    $projection  = get_projection($pdo, $period, $pid);
     $actual = ['cl'=>0,'media'=>0,'gudang'=>0];
     $aStmt  = $pdo->prepare('SELECT module, COALESCE(SUM(amount),0) actual FROM transaction_allocations WHERE period_key=? AND property_id=? GROUP BY module');
     $aStmt->execute([$period, $pid]);
@@ -463,44 +474,47 @@ function print_exec(PDO $pdo): void
     // CL subtotals by floor
     $clStmt = $pdo->prepare(
         "SELECT m.floor, COUNT(*) unit_count, COALESCE(SUM(m.area_sqm),0) area_total,
-                COALESCE(SUM(m.projection_monthly),0) proj_total,
+                COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                 COALESCE(SUM(a.amount),0) actual_total,
                 COALESCE(SUM(a.allocated_days),0) days_total
          FROM master_cl_units m
+         LEFT JOIN period_potentials pp ON pp.slot_id = m.id AND pp.segment = 'exhibition' AND pp.period_key = ? AND pp.property_id = ?
          LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='cl' AND a.period_key=? AND a.property_id=?
          WHERE m.property_id=?
          GROUP BY m.floor
          ORDER BY CASE m.floor WHEN 'LG' THEN 1 WHEN 'GF' THEN 2 WHEN 'UG' THEN 3 WHEN 'FF' THEN 4 WHEN 'SF' THEN 5 ELSE 6 END"
     );
-    $clStmt->execute([$period, $pid, $pid]);
+    $clStmt->execute([$period, $pid, $period, $pid, $pid]);
     $clFloors = $clStmt->fetchAll();
 
     // Media subtotals by type
     $mediaStmt = $pdo->prepare(
         "SELECT m.media_type, COUNT(*) item_count,
-                COALESCE(SUM(m.projection_monthly),0) proj_total,
+                COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                 COALESCE(SUM(a.amount),0) actual_total,
                 COALESCE(SUM(a.allocated_days),0) days_total
          FROM master_media m
+         LEFT JOIN period_potentials pp ON pp.slot_id = m.id AND pp.segment = 'media' AND pp.period_key = ? AND pp.property_id = ?
          LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='media' AND a.period_key=? AND a.property_id=?
          WHERE m.property_id=?
          GROUP BY m.media_type ORDER BY m.media_type"
     );
-    $mediaStmt->execute([$period, $pid, $pid]);
+    $mediaStmt->execute([$period, $pid, $period, $pid, $pid]);
     $mediaTypes = $mediaStmt->fetchAll();
 
     // Gudang subtotals by location
     $gudangStmt = $pdo->prepare(
         "SELECT m.location, COUNT(*) unit_count, COALESCE(SUM(m.area_sqm),0) area_total,
-                COALESCE(SUM(m.projection_monthly),0) proj_total,
+                COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                 COALESCE(SUM(a.amount),0) actual_total,
                 COALESCE(SUM(a.allocated_days),0) days_total
          FROM master_gudang m
+         LEFT JOIN period_potentials pp ON pp.slot_id = m.id AND pp.segment = 'gudang' AND pp.period_key = ? AND pp.property_id = ?
          LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='gudang' AND a.period_key=? AND a.property_id=?
          WHERE m.property_id=?
          GROUP BY m.location ORDER BY m.location"
     );
-    $gudangStmt->execute([$period, $pid, $pid]);
+    $gudangStmt->execute([$period, $pid, $period, $pid, $pid]);
     $gudangLocs = $gudangStmt->fetchAll();
 
     audit($pdo, 'print_exec', 'dashboard', $period, ['period'=>$period], [], 'reporting');
@@ -780,12 +794,7 @@ function print_exec_summary(PDO $pdo): void
         $d['target'] = (float)($s->fetchColumn() ?: 0);
 
         // Projection per segment
-        $d['projection'] = [];
-        foreach (['cl'=>'master_cl_units','media'=>'master_media','gudang'=>'master_gudang'] as $seg=>$tbl) {
-            $s = $pdo->prepare("SELECT COALESCE(SUM(projection_monthly),0) FROM $tbl WHERE status='active' AND property_id=?");
-            $s->execute([$pid]);
-            $d['projection'][$seg] = (float)$s->fetchColumn();
-        }
+        $d['projection'] = get_projection($pdo, $period, $pid);
 
         // Actual per segment
         $s = $pdo->prepare("SELECT module, COALESCE(SUM(amount),0) actual FROM transaction_allocations WHERE period_key=? AND property_id=? GROUP BY module");
@@ -830,16 +839,17 @@ function print_exec_summary(PDO $pdo): void
             "SELECT m.floor AS group_key, COUNT(*) unit_count,
                     COALESCE(SUM(a.allocated_days),0) days_total,
                     COALESCE(SUM(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.area_sqm ELSE 0 END),0) area_total,
-                    COALESCE(SUM(m.projection_monthly),0) proj_total,
+                    COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                     COALESCE(SUM(a.amount),0) actual_total,
                     AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
                              THEN a.amount/a.allocated_days/m.area_sqm ELSE NULL END) avg_rate
              FROM master_cl_units m
+             LEFT JOIN period_potentials pp ON pp.slot_id = m.id AND pp.segment = 'exhibition' AND pp.period_key = ? AND pp.property_id = ?
              LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='cl' AND a.period_key=? AND a.property_id=?
              LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
              WHERE m.property_id=? AND m.status='active' GROUP BY m.floor"
         );
-        $s->execute([$period, $pid, $pid]);
+        $s->execute([$period, $pid, $period, $pid, $pid]);
         $d['floor_occ'] = $s->fetchAll();
 
         // Media occ
@@ -847,16 +857,17 @@ function print_exec_summary(PDO $pdo): void
             "SELECT m.media_type AS group_key, COUNT(*) unit_count,
                     COALESCE(SUM(a.allocated_days),0) days_total,
                     0 AS area_total,
-                    COALESCE(SUM(m.projection_monthly),0) proj_total,
+                    COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                     COALESCE(SUM(a.amount),0) actual_total,
                     AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
                              THEN a.amount/a.allocated_days ELSE NULL END) avg_rate
              FROM master_media m
+             LEFT JOIN period_potentials pp ON pp.slot_id = m.id AND pp.segment = 'media' AND pp.period_key = ? AND pp.property_id = ?
              LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='media' AND a.period_key=? AND a.property_id=?
              LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
              WHERE m.property_id=? AND m.status='active' GROUP BY m.media_type ORDER BY m.media_type"
         );
-        $s->execute([$period, $pid, $pid]);
+        $s->execute([$period, $pid, $period, $pid, $pid]);
         $d['media_occ'] = $s->fetchAll();
 
         // Gudang occ
@@ -864,16 +875,17 @@ function print_exec_summary(PDO $pdo): void
             "SELECT m.location AS group_key, COUNT(*) unit_count,
                     COALESCE(SUM(a.allocated_days),0) days_total,
                     COALESCE(SUM(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.area_sqm ELSE 0 END),0) area_total,
-                    COALESCE(SUM(m.projection_monthly),0) proj_total,
+                    COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                     COALESCE(SUM(a.amount),0) actual_total,
                     AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
                              THEN a.amount/m.area_sqm ELSE NULL END) avg_rate
              FROM master_gudang m
+             LEFT JOIN period_potentials pp ON pp.slot_id = m.id AND pp.segment = 'gudang' AND pp.period_key = ? AND pp.property_id = ?
              LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='gudang' AND a.period_key=? AND a.property_id=?
              LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
              WHERE m.property_id=? AND m.status='active' GROUP BY m.location ORDER BY m.location"
         );
-        $s->execute([$period, $pid, $pid]);
+        $s->execute([$period, $pid, $period, $pid, $pid]);
         $d['gudang_occ'] = $s->fetchAll();
 
         $d['name'] = $prop['name'];

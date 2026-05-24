@@ -476,13 +476,8 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
     $s->execute([$period, $pid]);
     $target = (float)($s->fetchColumn() ?: 0);
 
-    // Projection per segment
-    $projection = [];
-    foreach (['cl' => 'master_cl_units', 'media' => 'master_media', 'gudang' => 'master_gudang'] as $seg => $tbl) {
-        $s = $pdo->prepare("SELECT COALESCE(SUM(projection_monthly),0) FROM $tbl WHERE status='active' AND property_id=?");
-        $s->execute([$pid]);
-        $projection[$seg] = (float)$s->fetchColumn();
-    }
+    // Projection per segment (reads from period_potentials snapshot, falls back to master)
+    $projection = get_projection($pdo, $period, $pid);
 
     // Actual per segment
     $s = $pdo->prepare("SELECT module, COALESCE(SUM(amount),0) actual FROM transaction_allocations WHERE period_key=? AND property_id=? GROUP BY module");
@@ -529,18 +524,19 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
         "SELECT m.floor AS group_key,
                 COUNT(*) unit_count,
                 COALESCE(SUM(a.allocated_days),0) days_total,
-                COALESCE(SUM(m.projection_monthly),0) proj_total,
+                COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                 COALESCE(SUM(a.amount),0) actual_total,
                 AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
                          THEN a.amount/a.allocated_days/m.area_sqm ELSE NULL END) avg_rate
          FROM master_cl_units m
+         LEFT JOIN period_potentials pp ON pp.slot_id = m.id AND pp.segment = 'exhibition' AND pp.period_key = ? AND pp.property_id = ?
          LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='cl' AND a.period_key=? AND a.property_id=?
          LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
          WHERE m.property_id=? AND m.status='active'
          GROUP BY m.floor
          ORDER BY CASE m.floor WHEN 'LG' THEN 1 WHEN 'GF' THEN 2 WHEN 'UG' THEN 3 WHEN 'FF' THEN 4 WHEN 'SF' THEN 5 ELSE 6 END"
     );
-    $s->execute([$period, $pid, $pid]);
+    $s->execute([$period, $pid, $period, $pid, $pid]);
     $floorOcc = $s->fetchAll();
 
     // Occupancy per jenis (Media)
@@ -548,17 +544,18 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
         "SELECT m.media_type AS group_key,
                 COUNT(*) unit_count,
                 COALESCE(SUM(a.allocated_days),0) days_total,
-                COALESCE(SUM(m.projection_monthly),0) proj_total,
+                COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                 COALESCE(SUM(a.amount),0) actual_total,
                 AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
                          THEN a.amount/a.allocated_days ELSE NULL END) avg_rate
          FROM master_media m
+         LEFT JOIN period_potentials pp ON pp.slot_id = m.id AND pp.segment = 'media' AND pp.period_key = ? AND pp.property_id = ?
          LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='media' AND a.period_key=? AND a.property_id=?
          LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
          WHERE m.property_id=? AND m.status='active'
          GROUP BY m.media_type ORDER BY m.media_type"
     );
-    $s->execute([$period, $pid, $pid]);
+    $s->execute([$period, $pid, $period, $pid, $pid]);
     $mediaOcc = $s->fetchAll();
 
     // Occupancy per lokasi (Gudang)
@@ -566,17 +563,18 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
         "SELECT m.location AS group_key,
                 COUNT(*) unit_count,
                 COALESCE(SUM(a.allocated_days),0) days_total,
-                COALESCE(SUM(m.projection_monthly),0) proj_total,
+                COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                 COALESCE(SUM(a.amount),0) actual_total,
                 AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
                          THEN a.amount/m.area_sqm ELSE NULL END) avg_rate
          FROM master_gudang m
+         LEFT JOIN period_potentials pp ON pp.slot_id = m.id AND pp.segment = 'gudang' AND pp.period_key = ? AND pp.property_id = ?
          LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='gudang' AND a.period_key=? AND a.property_id=?
          LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
          WHERE m.property_id=? AND m.status='active'
          GROUP BY m.location ORDER BY m.location"
     );
-    $s->execute([$period, $pid, $pid]);
+    $s->execute([$period, $pid, $period, $pid, $pid]);
     $gudangOcc = $s->fetchAll();
 
     return [

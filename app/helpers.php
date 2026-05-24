@@ -267,6 +267,81 @@ function log_activity(PDO $pdo, string $action, ?string $module = null, ?string 
     audit($pdo, $action, $module ?? module_from_request(getv('r', 'system')), $recordId, $context, [], $module);
 }
 
+/**
+ * Ambil total potensi per segmen untuk periode tertentu.
+ * Prioritas: snapshot di period_potentials → fallback ke projection_monthly master.
+ */
+function get_projection(PDO $pdo, string $period, int $pid): array
+{
+    $map = [
+        'cl'     => ['master_cl_units', 'exhibition'],
+        'media'  => ['master_media',    'media'],
+        'gudang' => ['master_gudang',   'gudang'],
+    ];
+    $result = [];
+    foreach ($map as $key => [$table, $segment]) {
+        $stmt = $pdo->prepare("
+            SELECT COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)), 0)
+            FROM $table m
+            LEFT JOIN period_potentials pp ON pp.slot_id = m.id AND pp.segment = ?
+                AND pp.period_key = ? AND pp.property_id = ?
+            WHERE m.status = 'active' AND m.property_id = ?
+        ");
+        $stmt->execute([$segment, $period, $pid, $pid]);
+        $result[$key] = (float) $stmt->fetchColumn();
+    }
+    return $result;
+}
+
+function snapshot_potential(PDO $pdo, string $segment, int $slotId, string $slotCode, float $newValue, int $pid, ?float $priorMasterValue = null): void
+{
+    $periodKey = date('Y-m');
+    $userId    = (int) ($_SESSION['user']['id'] ?? 0);
+
+    $oldRow = $pdo->prepare(
+        'SELECT potential_value FROM period_potentials
+         WHERE property_id = ? AND period_key = ? AND segment = ? AND slot_id = ?'
+    );
+    $oldRow->execute([$pid, $periodKey, $segment, $slotId]);
+    $oldValue = (float) ($oldRow->fetchColumn() ?: 0);
+
+    // Freeze past months that have no snapshot yet so they are not affected by future master changes.
+    // Only do this when we know what the slot's value was before this edit ($priorMasterValue).
+    if ($priorMasterValue !== null) {
+        $chk = $pdo->prepare(
+            'SELECT COUNT(*) FROM period_potentials
+             WHERE property_id = ? AND period_key = ? AND segment = ? AND slot_id = ?'
+        );
+        $ins = $pdo->prepare(
+            'INSERT IGNORE INTO period_potentials
+             (property_id, period_key, segment, slot_id, slot_code, potential_value)
+             VALUES (?,?,?,?,?,?)'
+        );
+        for ($i = 1; $i <= 12; $i++) {
+            $pastPeriod = date('Y-m', strtotime("-$i month"));
+            $chk->execute([$pid, $pastPeriod, $segment, $slotId]);
+            if ((int)$chk->fetchColumn() === 0) {
+                $ins->execute([$pid, $pastPeriod, $segment, $slotId, $slotCode, $priorMasterValue]);
+            }
+        }
+    }
+
+    if (abs($newValue - $oldValue) < 0.01) return;
+
+    $pdo->prepare(
+        'INSERT INTO potential_history
+         (property_id, period_key, segment, slot_id, slot_code, old_value, new_value, changed_by, change_source)
+         VALUES (?,?,?,?,?,?,?,?,?)'
+    )->execute([$pid, $periodKey, $segment, $slotId, $slotCode, $oldValue, $newValue, $userId, 'master_' . $segment]);
+
+    $pdo->prepare(
+        'INSERT INTO period_potentials
+         (property_id, period_key, segment, slot_id, slot_code, potential_value)
+         VALUES (?,?,?,?,?,?)
+         ON DUPLICATE KEY UPDATE slot_code = VALUES(slot_code), potential_value = VALUES(potential_value)'
+    )->execute([$pid, $periodKey, $segment, $slotId, $slotCode, $newValue]);
+}
+
 function validate_password(string $pw): ?string
 {
     if (strlen($pw) < 8)                          return 'Password minimal 8 karakter.';

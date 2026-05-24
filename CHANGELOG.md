@@ -11,6 +11,28 @@
 
 ---
 
+## Version 3.7 — 24 Mei 2026
+
+### Fitur Baru — Historis Potensi
+
+- **Snapshot Potensi per Periode** — Setiap kali data master CL, Media, atau Gudang disimpan (edit rate, luasan, atau potensi bulanan), sistem otomatis menyimpan snapshot potensi slot tersebut untuk bulan berjalan ke tabel `period_potentials`. Dashboard, laporan cetak, Exec Summary, dan TV Display kini membaca potensi dari snapshot ini — bukan lagi langsung dari master — sehingga potensi bulan yang sudah lewat tidak ikut berubah ketika ada perubahan di master.
+
+- **Freeze Bulan Lalu** — Saat slot pertama kali di-snapshot, 12 bulan ke belakang yang belum punya snapshot otomatis dibekukan dengan nilai sebelum perubahan (nilai lama master). Slot baru yang ditambahkan di bulan berjalan membekukan bulan-bulan sebelumnya dengan nilai 0 (slot belum ada).
+
+- **Histori Perubahan Potensi** — Setiap perubahan nilai potensi dicatat di tabel `potential_history`: siapa yang mengubah, kapan, dari berapa, ke berapa, dan sumbernya (manual edit atau import). Histori ini bisa dilihat di halaman Master → Target.
+
+- **Import Ikut Trigger Snapshot** — Import CSV Media dan Import Template Excel (semua segmen) juga men-trigger snapshot dan merekam histori perubahan, sama seperti edit manual.
+
+- **Migration Runner** — Script `db_migrate.php` untuk menjalankan perubahan skema database secara terkontrol. Migrasi: `001_create_period_potentials.php`, `002_create_potential_history.php`.
+
+### Perbaikan Internal
+
+- `snapshot_potential()` dipindah dari `master.php` ke `helpers.php` agar bisa diakses dari semua modul.
+- `DashboardService`, `exec_dashboard`, `print_export` (semua section GROUP BY subtotal dan occ per lantai/jenis/lokasi) diperbarui menggunakan COALESCE JOIN ke `period_potentials`.
+- Dead code `$dashboard = DashboardService::data()` di `dashboard.php` dihapus.
+
+---
+
 ## Version 3.6 — 24 Mei 2026
 
 ### UX — Input Transaksi

@@ -19,17 +19,7 @@ final class DashboardService
         $targetStmt = $pdo->prepare("SELECT target_amount FROM targets_monthly WHERE period_key = ? AND property_id = ?");
         $targetStmt->execute([$period, $pid]);
         $target = (float) ($targetStmt->fetchColumn() ?: 0);
-        $projClStmt = $pdo->prepare("SELECT COALESCE(SUM(projection_monthly),0) FROM master_cl_units WHERE status='active' AND property_id = ?");
-        $projClStmt->execute([$pid]);
-        $projMediaStmt = $pdo->prepare("SELECT COALESCE(SUM(projection_monthly),0) FROM master_media WHERE status='active' AND property_id = ?");
-        $projMediaStmt->execute([$pid]);
-        $projGudangStmt = $pdo->prepare("SELECT COALESCE(SUM(projection_monthly),0) FROM master_gudang WHERE status='active' AND property_id = ?");
-        $projGudangStmt->execute([$pid]);
-        $projection = [
-            'cl'     => (float) $projClStmt->fetchColumn(),
-            'media'  => (float) $projMediaStmt->fetchColumn(),
-            'gudang' => (float) $projGudangStmt->fetchColumn(),
-        ];
+        $projection = get_projection($pdo, $period, $pid);
 
         $actual = ['cl' => 0.0, 'media' => 0.0, 'gudang' => 0.0];
         $capacity = ['cl' => 0.0, 'media' => 0.0, 'gudang' => 0.0];

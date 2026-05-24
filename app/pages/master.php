@@ -22,7 +22,7 @@ function master_page(PDO $pdo, array $masterConfig): void
         $stmt->execute([$pid]);
         $rows = $stmt->fetchAll();
     }
-    layout($cfg['title'], function () use ($type, $cfg, $rows, $picStatus) {
+    layout($cfg['title'], function () use ($type, $cfg, $rows, $picStatus, $pdo, $pid) {
         ?>
         <div class="toolbar">
             <?php if (can('manage_master')): ?><a class="btn" href="?r=master_form&type=<?= h($type) ?>">Tambah Data</a><?php endif; ?>
@@ -77,6 +77,62 @@ function master_page(PDO $pdo, array $masterConfig): void
                 </tbody>
             </table>
         </div>
+        <?php if ($type === 'target'): ?>
+        <?php
+            $histori = $pdo->prepare(
+                "SELECT h.changed_at, h.period_key, h.segment, h.slot_code,
+                        h.old_value, h.new_value, u.name AS user_name
+                 FROM potential_history h
+                 LEFT JOIN users u ON u.id = h.changed_by
+                 WHERE h.property_id = ?
+                 ORDER BY h.changed_at DESC
+                 LIMIT 100"
+            );
+            $histori->execute([$pid]);
+            $histRows = $histori->fetchAll();
+            $segLabel = ['exhibition' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
+        ?>
+        <div style="margin-top:24px">
+            <h3 style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px">Histori Perubahan Potensi</h3>
+            <?php if (empty($histRows)): ?>
+                <p style="color:var(--muted);font-size:13px">Belum ada perubahan potensi tercatat. Histori akan muncul setelah ada perubahan di Master Exhibition, Media, atau Gudang.</p>
+            <?php else: ?>
+            <div class="table-wrap">
+                <table style="font-size:12px">
+                    <thead>
+                        <tr>
+                            <th>Waktu</th>
+                            <th>Periode</th>
+                            <th>Segmen</th>
+                            <th>Slot</th>
+                            <th style="text-align:right">Nilai Lama</th>
+                            <th style="text-align:right">Nilai Baru</th>
+                            <th style="text-align:right">Selisih</th>
+                            <th>Diubah Oleh</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($histRows as $h): ?>
+                        <?php $diff = (float)$h['new_value'] - (float)$h['old_value']; ?>
+                        <tr>
+                            <td style="white-space:nowrap;color:var(--muted)"><?= h(date('d/m/Y H:i', strtotime($h['changed_at']))) ?></td>
+                            <td><?= h($h['period_key']) ?></td>
+                            <td><?= h($segLabel[$h['segment']] ?? $h['segment']) ?></td>
+                            <td><code><?= h($h['slot_code']) ?></code></td>
+                            <td style="text-align:right"><?= money($h['old_value']) ?></td>
+                            <td style="text-align:right"><?= money($h['new_value']) ?></td>
+                            <td style="text-align:right;font-weight:700;color:<?= $diff >= 0 ? '#16a34a' : '#dc2626' ?>">
+                                <?= ($diff >= 0 ? '+' : '') . money($diff) ?>
+                            </td>
+                            <td><?= h($h['user_name'] ?? '—') ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
         <?php
     });
 }
@@ -289,12 +345,22 @@ function master_save(PDO $pdo, array $masterConfig): void
     $data['updated_at'] = date('Y-m-d H:i:s');
     $pid = current_property_id();
 
+    $savedId = 0;
+    $priorMasterValue = null;
+    $segmentMap = ['cl' => 'exhibition', 'media' => 'media', 'gudang' => 'gudang'];
     if ($id) {
+        // Capture old projection_monthly before update so past months can be frozen correctly
+        if (isset($segmentMap[$type])) {
+            $old = $pdo->prepare('SELECT projection_monthly FROM ' . $cfg['table'] . ' WHERE id = ? AND property_id = ?');
+            $old->execute([(int)$id, $pid]);
+            $priorMasterValue = ($v = $old->fetchColumn()) !== false ? (float)$v : null;
+        }
         $sets = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($data)));
         $stmt = $pdo->prepare('UPDATE ' . $cfg['table'] . " SET $sets WHERE id = :id AND property_id = :property_id");
         $data['id'] = $id;
         $data['property_id'] = $pid;
         $stmt->execute($data);
+        $savedId = (int) $id;
         audit($pdo, 'update', $cfg['table'], (string) $id, $data);
     } else {
         $data['property_id'] = $pid;
@@ -302,8 +368,16 @@ function master_save(PDO $pdo, array $masterConfig): void
         $params = ':' . implode(', :', array_keys($data));
         $stmt = $pdo->prepare('INSERT INTO ' . $cfg['table'] . " ($cols) VALUES ($params)");
         $stmt->execute($data);
-        audit($pdo, 'create', $cfg['table'], (string) $pdo->lastInsertId(), $data);
+        $savedId = (int) $pdo->lastInsertId();
+        audit($pdo, 'create', $cfg['table'], (string) $savedId, $data);
+        // Slot baru: freeze bulan lalu dengan 0 agar tidak mempengaruhi histori
+        if (isset($segmentMap[$type])) $priorMasterValue = 0.0;
     }
+    // Snapshot potensi bulan ini saat master CL/Media/Gudang diubah
+    if (isset($segmentMap[$type]) && isset($data['projection_monthly']) && $savedId > 0) {
+        snapshot_potential($pdo, $segmentMap[$type], $savedId, (string) ($data['code'] ?? ''), (float) $data['projection_monthly'], $pid, $priorMasterValue);
+    }
+
     // Auto-register period ke tabel periods saat simpan target
     if ($type === 'target' && !empty($data['period_key'])) {
         $pk = $data['period_key'];

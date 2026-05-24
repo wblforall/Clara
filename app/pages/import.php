@@ -21,6 +21,7 @@ function import_media(PDO $pdo): void
         $fh = fopen($file['tmp_name'], 'r');
         $headers = array_map('trim', fgetcsv($fh) ?: []);
         $count = 0;
+        $importedMedia = [];
         while (($row = fgetcsv($fh)) !== false) {
             if (count($headers) !== count($row)) {
                 flash('Format baris tidak valid atau jumlah kolom tidak sesuai pada baris ke-' . ($count + 1));
@@ -53,7 +54,14 @@ function import_media(PDO $pdo): void
                 ':projection_monthly'=> $data['projection_monthly'] ?? 0,
                 ':status'            => $data['status'] ?? 'active',
             ]);
+            $importedMedia[] = ['code' => $data['code'], 'projection_monthly' => (float)($data['projection_monthly'] ?? 0)];
             $count++;
+        }
+        foreach ($importedMedia as $m) {
+            $s = $pdo->prepare('SELECT id, projection_monthly FROM master_media WHERE property_id = ? AND code = ?');
+            $s->execute([$pid, $m['code']]);
+            $row = $s->fetch();
+            if ($row) snapshot_potential($pdo, 'media', (int)$row['id'], $m['code'], $m['projection_monthly'], $pid, (float)$row['projection_monthly']);
         }
         audit($pdo, 'import_csv', 'master_media', null, ['rows' => $count]);
         flash("$count baris media berhasil diimport/update.");
@@ -283,6 +291,27 @@ function process_template_data(PDO $pdo, array $data): void
         }
 
         $pdo->commit();
+
+        // Snapshot potentials for all imported/updated slots
+        foreach ($data['media'] as $m) {
+            $s = $pdo->prepare('SELECT id, projection_monthly FROM master_media WHERE property_id = ? AND code = ?');
+            $s->execute([$pid, $m['code']]);
+            $row = $s->fetch();
+            if ($row) snapshot_potential($pdo, 'media', (int)$row['id'], $m['code'], (float)$m['projection_monthly'], $pid, (float)$row['projection_monthly']);
+        }
+        foreach ($data['cl_units'] as $c) {
+            $s = $pdo->prepare('SELECT id, projection_monthly FROM master_cl_units WHERE property_id = ? AND code = ?');
+            $s->execute([$pid, $c['code']]);
+            $row = $s->fetch();
+            if ($row) snapshot_potential($pdo, 'exhibition', (int)$row['id'], $c['code'], (float)$c['projection_monthly'], $pid, (float)$row['projection_monthly']);
+        }
+        foreach ($data['gudang'] as $g) {
+            $s = $pdo->prepare('SELECT id, projection_monthly FROM master_gudang WHERE property_id = ? AND code = ?');
+            $s->execute([$pid, $g['code']]);
+            $row = $s->fetch();
+            if ($row) snapshot_potential($pdo, 'gudang', (int)$row['id'], $g['code'], (float)$g['projection_monthly'], $pid, (float)$row['projection_monthly']);
+        }
+
         $countTotal = count($data['media']) + count($data['cl_units']) + count($data['gudang']) + count($data['pic']) + (isset($data['target']) ? count($data['target']) : 0);
         flash("Import template berhasil. $countTotal data diperbarui.");
     } catch (Throwable $e) {
