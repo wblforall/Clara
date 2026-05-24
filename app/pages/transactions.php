@@ -588,7 +588,9 @@ function transaction_form(PDO $pdo): void
                 const recogEl   = document.getElementById('recognition_month');
                 const spreadDiv = document.getElementById('kalkulasi-spread');
                 if (spreadDiv && recogEl && recogEl.value === 'spread' && startVal && endVal) {
-                    spreadDiv.innerHTML = buildSpreadHtml(total, startVal, endVal);
+                    const overrideRaw = document.querySelector('.override-val');
+                    const finalAmount = (overrideRaw && overrideRaw.value) ? parseFloat(overrideRaw.value) : total;
+                    spreadDiv.innerHTML = buildSpreadHtml(finalAmount, startVal, endVal);
                     spreadDiv.style.display = 'block';
                 } else if (spreadDiv) {
                     spreadDiv.style.display = 'none';
@@ -1046,7 +1048,9 @@ function transaction_edit(PDO $pdo): void
                 const recogEl   = document.getElementById('recognition_month');
                 const spreadDiv = document.getElementById('kalkulasi-spread');
                 if (spreadDiv && recogEl && recogEl.value === 'spread' && startVal && endVal) {
-                    spreadDiv.innerHTML = buildSpreadHtml(total, startVal, endVal);
+                    const overrideRaw = document.querySelector('.override-val');
+                    const finalAmount = (overrideRaw && overrideRaw.value) ? parseFloat(overrideRaw.value) : total;
+                    spreadDiv.innerHTML = buildSpreadHtml(finalAmount, startVal, endVal);
                     spreadDiv.style.display = 'block';
                 } else if (spreadDiv) {
                     spreadDiv.style.display = 'none';
