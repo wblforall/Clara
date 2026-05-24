@@ -11,6 +11,23 @@
 
 ---
 
+## Version 4.1 — 24 Mei 2026
+
+### Fitur Baru — Rewarding PIC
+
+- **Halaman Rewarding PIC** (`Analisa → Rewarding PIC`) — tracking streak dan bonus achievement bulanan per PIC.
+- **Skema Tier Bonus**: streak 3–5 bulan → Rp 500.000/bln | 6–8 bulan → Rp 750.000/bln | 9–11 bulan → Rp 1.000.000/bln | 12+ bulan → Rp 1.500.000/bln.
+- **Streak Reset Otomatis** — jika satu bulan tidak achieve target posisi (100%), streak kembali ke 0 dan bonus berhenti.
+- **Riwayat Bulanan per PIC** — klik baris PIC untuk expand timeline bulan per bulan: achieve/tidak, streak, tier, bonus.
+- **KPI Strip** — ringkasan tracking sejak kapan, total bulan berjalan, bonus bulan ini, dan total akumulasi sejak awal.
+- **Set Periode Mulai** — admin dapat menentukan dari bulan berapa tracking dimulai (tersimpan di tabel `settings`). Global untuk semua properti.
+- **Badge Streak di Laporan PIC** — nama PIC di tabel Laporan PIC menampilkan badge 🔥 NNbln jika streak ≥ 3.
+- **Tombol Rewarding PIC** — di toolbar Laporan PIC tersedia shortcut ke halaman Rewarding.
+- Hak akses mengikuti `view_pic_report` (sama dengan Laporan PIC).
+- Migration `005_create_settings.php` — tabel `settings` (key-value) untuk konfigurasi aplikasi.
+
+---
+
 ## Version 4.0 — 24 Mei 2026
 
 ### Recurring — Integrasi Menyeluruh ke Seluruh Modul

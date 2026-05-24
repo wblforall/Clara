@@ -151,6 +151,7 @@ function permission_for_route(string $route): string
         'clients', 'client_form', 'client_save' => 'manage_master',
         'client_analysis' => 'view_master',
         'pic_report', 'pic_report_print' => 'view_pic_report',
+        'pic_reward', 'pic_reward_save'  => 'view_pic_report',
         'lookup_manage', 'lookup_save', 'lookup_delete' => 'manage_master',
         'trend', 'comparison' => 'view_dashboard',
         'switch_property', 'select_property', 'set_property' => 'view_dashboard',

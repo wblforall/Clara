@@ -74,6 +74,7 @@ function layout(string $title, callable $body, array $opts = []): void
         ['', 'clients', 'Master Client', 'view_master'],
         ['Analisa', 'client_analysis', 'Analisa Market Client', 'view_master'],
         ['', 'pic_report', 'Laporan PIC', 'view_pic_report'],
+        ['', 'pic_reward', 'Rewarding PIC', 'view_pic_report'],
         ['Admin', 'lookup_manage', 'Kelola Opsi Dropdown', 'manage_master'],
         ['', 'users', 'Users & Role', 'manage_users'],
         ['', 'roles', 'Role & Permission', 'manage_users'],

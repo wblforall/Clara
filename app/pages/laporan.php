@@ -1,6 +1,51 @@
 <?php
 declare(strict_types=1);
 
+function _pic_streak_map(PDO $pdo, string $startPeriod, string $currentPeriod, int $pid): array
+{
+    // Generate month list from start to current
+    $months = [];
+    $cur    = $startPeriod;
+    while ($cur <= $currentPeriod) {
+        $months[] = $cur;
+        [$y, $m]  = explode('-', $cur);
+        $m        = (int)$m + 1;
+        if ($m > 12) { $m = 1; $y++; }
+        $cur = sprintf('%04d-%02d', (int)$y, $m);
+    }
+    if (!$months) return [];
+
+    $first = $months[0];
+    $last  = end($months);
+
+    // Targets per period
+    $tgtStmt = $pdo->prepare("SELECT period_key, target_amount FROM targets_monthly WHERE property_id=? AND period_key BETWEEN ? AND ?");
+    $tgtStmt->execute([$pid, $first, $last]);
+    $targets = [];
+    foreach ($tgtStmt->fetchAll() as $r) { $targets[$r['period_key']] = (float)$r['target_amount']; }
+
+    // Actuals per period per PIC
+    $actStmt = $pdo->prepare("SELECT period_key, pic_name, COALESCE(SUM(amount),0) actual FROM transaction_allocations WHERE property_id=? AND period_key BETWEEN ? AND ? GROUP BY period_key, pic_name");
+    $actStmt->execute([$pid, $first, $last]);
+    $actuals = [];
+    foreach ($actStmt->fetchAll() as $r) { $actuals[$r['period_key']][$r['pic_name']] = (float)$r['actual']; }
+
+    // PIC target shares
+    $pics = $pdo->query("SELECT name, COALESCE(target_share,0) target_share FROM master_pic WHERE status='active' AND property_id=$pid")->fetchAll();
+
+    $streaks = [];
+    foreach ($pics as $pic) {
+        $streak = 0;
+        foreach ($months as $m) {
+            $tgt    = (float)$pic['target_share'] * ($targets[$m] ?? 0);
+            $act    = $actuals[$m][$pic['name']] ?? 0.0;
+            $streak = ($tgt > 0 && $act >= $tgt) ? $streak + 1 : 0;
+        }
+        $streaks[$pic['name']] = $streak;
+    }
+    return $streaks;
+}
+
 function _pic_fetch_section(PDO $pdo, string $period, int $pid): array
 {
     $tgtStmt = $pdo->prepare("SELECT target_amount FROM targets_monthly WHERE period_key=? AND property_id=?");
@@ -60,6 +105,7 @@ function _pic_render_section(array $sec, string $period, array $moduleLabel, str
     $trxByPic        = $sec['trxByPic'];
     $target          = $sec['target'];
     $total           = $sec['total'];
+    $streaks         = $sec['streaks'] ?? [];
     $totalRecurring  = array_sum(array_column($pics, 'actual_recurring'));
     $totalRegular    = $total - $totalRecurring;
     $ach             = $target > 0 ? $total / $target : 0;
@@ -101,10 +147,14 @@ function _pic_render_section(array $sec, string $period, array $moduleLabel, str
                     $rec = (float)$p['actual_recurring'];
                     $reg = (float)$p['actual_total'] - $rec;
                 ?>
+                <?php $pStreak = $streaks[$p['name']] ?? 0; ?>
                 <tr>
                     <td>
                         <a href="#<?= $uid ?>" onclick="var s=document.getElementById('<?= $uid ?>');s.style.display=s.style.display==='none'?'table-row-group':'none';return false"
                            style="font-weight:600;color:var(--primary);cursor:pointer;text-decoration:none"><?= h($p['name']) ?></a>
+                        <?php if ($pStreak >= 3): ?>
+                        <span style="margin-left:4px;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;background:#fef9c3;color:#854d0e">🔥 <?= $pStreak ?>bln</span>
+                        <?php endif; ?>
                     </td>
                     <td style="font-size:12px;color:var(--muted)"><?= h($p['role_name']) ?></td>
                     <td class="r"><?= money($tp) ?></td>
@@ -178,9 +228,16 @@ function pic_report_page(PDO $pdo): void
     $props   = allowed_properties();
     $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
 
+    $rewardStart = (string)($pdo->query("SELECT value FROM settings WHERE `key`='reward_start_period'")->fetchColumn() ?: '');
+
     $sections = [];
     foreach ($props as $prop) {
-        $sections[] = ['prop' => $prop] + _pic_fetch_section($pdo, $period, (int)$prop['id']);
+        $pid     = (int)$prop['id'];
+        $sec     = ['prop' => $prop] + _pic_fetch_section($pdo, $period, $pid);
+        $sec['streaks'] = ($rewardStart && $rewardStart <= $period)
+            ? _pic_streak_map($pdo, $rewardStart, $period, $pid)
+            : [];
+        $sections[] = $sec;
     }
 
     layout('Laporan PIC', function () use ($sections, $periods, $period, $moduleLabel) {
@@ -195,7 +252,8 @@ function pic_report_page(PDO $pdo): void
                     <?php endforeach; ?>
                 </select>
             </form>
-            <a class="btn light" href="?r=pic_report_print&period=<?= h($period) ?>" target="_blank" style="margin-left:auto">🖨 Cetak / PDF</a>
+            <a class="btn light" href="?r=pic_reward&period=<?= h($period) ?>" style="margin-left:auto">🏆 Rewarding PIC</a>
+            <a class="btn light" href="?r=pic_report_print&period=<?= h($period) ?>" target="_blank">🖨 Cetak / PDF</a>
             <a class="btn light" href="?r=export_pic_report_xlsx&period=<?= h($period) ?>">⬇ Export Excel</a>
         </div>
 
