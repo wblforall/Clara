@@ -46,7 +46,7 @@ function exec_dashboard(PDO $pdo): void
             .exec-toolbar { position:sticky;top:0;z-index:50;background:var(--bg,#f8fafc);box-shadow:0 1px 0 var(--line,#e2e8f0);padding:10px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap; }
             .exec-badge-label { display:inline-block;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:#fef3c7;color:#92400e;margin-bottom:12px; }
             .prop-col-grid { display:grid;grid-template-columns:repeat(<?= count($propData) ?>,1fr);gap:16px;margin-bottom:16px; }
-            .prop-card { background:#fff;border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:18px 20px;position:relative;overflow:hidden; }
+            .prop-card { background:#fff;border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:18px 20px;position:relative;overflow-x:auto; }
             .prop-card::before { content:'';position:absolute;top:0;left:0;right:0;height:4px; }
             .prop-card.p1::before { background:#0d9488; }
             .prop-card.p2::before { background:#7c3aed; }
@@ -69,12 +69,14 @@ function exec_dashboard(PDO $pdo): void
             .combined-kpi:first-child { border-top:3px solid #0d9488; }
             .combined-kpi:nth-child(2) { border-top:3px solid #3b82f6; }
             .combined-kpi:nth-child(3) { border-top:3px solid #10b981; }
-            .combined-kpi:nth-child(4) { border-top:3px solid #f59e0b; }
-            .combined-kpi:nth-child(5) { border-top:3px solid #8b5cf6; }
+            .combined-kpi:nth-child(4) { border-top:3px solid #0369a1; }
+            .combined-kpi:nth-child(5) { border-top:3px solid #f59e0b; }
+            .combined-kpi:nth-child(6) { border-top:3px solid #8b5cf6; }
             .combined-kpi-label { font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted,#64748b);letter-spacing:.05em; }
             .combined-kpi-value { font-size:20px;font-weight:800;margin-top:4px;color:var(--ink,#0f172a); }
             .section-title { font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted,#64748b);margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--line,#e2e8f0); }
-            .pic-table th, .pic-table td { font-size:12px; }
+            .pic-table th, .pic-table td { font-size:10px; }
+            .occ-table td, .occ-table th { font-size:10px; }
             .prop-tag { display:inline-block;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:700; }
             .prop-tag-1 { background:#ccfbf1;color:#0f766e; }
             .prop-tag-2 { background:#ede9fe;color:#6d28d9; }
@@ -89,10 +91,11 @@ function exec_dashboard(PDO $pdo): void
             @keyframes exFadeIn{from{opacity:0}to{opacity:1}}
             .combined-strip>.combined-kpi{animation:exSlideUp .4s ease both}
             .combined-strip>.combined-kpi:nth-child(1){animation-delay:.05s}
-            .combined-strip>.combined-kpi:nth-child(2){animation-delay:.12s}
-            .combined-strip>.combined-kpi:nth-child(3){animation-delay:.19s}
-            .combined-strip>.combined-kpi:nth-child(4){animation-delay:.26s}
-            .combined-strip>.combined-kpi:nth-child(5){animation-delay:.33s}
+            .combined-strip>.combined-kpi:nth-child(2){animation-delay:.11s}
+            .combined-strip>.combined-kpi:nth-child(3){animation-delay:.17s}
+            .combined-strip>.combined-kpi:nth-child(4){animation-delay:.23s}
+            .combined-strip>.combined-kpi:nth-child(5){animation-delay:.29s}
+            .combined-strip>.combined-kpi:nth-child(6){animation-delay:.35s}
             .section-title{animation:exFadeIn .5s ease both}
         </style>
 
@@ -139,14 +142,14 @@ function exec_dashboard(PDO $pdo): void
                     <div class="combined-kpi-label">Total Aktual</div>
                     <div class="combined-kpi-value <?= $achColor ?>"><?= money($combined['actual']) ?></div>
                 </div>
+                <div class="combined-kpi" style="background:<?= $combined['recurring'] > 0 ? '#f0f9ff' : '' ?>">
+                    <div class="combined-kpi-label" style="color:#0369a1">Recurring</div>
+                    <div class="combined-kpi-value" style="color:<?= $combined['recurring'] > 0 ? '#0369a1' : 'var(--muted)' ?>"><?= $combined['recurring'] > 0 ? money($combined['recurring']) : '—' ?></div>
+                </div>
                 <div class="combined-kpi">
                     <div class="combined-kpi-label">Achievement vs Target</div>
                     <?php $a=$totalAch; $cls=$a>=1?'ach-good':($a>=.8?'ach-warn':'ach-bad'); ?>
                     <div class="combined-kpi-value"><span class="ach-pill <?= $cls ?>" style="font-size:18px"><?= pct($totalAch) ?></span></div>
-                </div>
-                <div class="combined-kpi">
-                    <div class="combined-kpi-label">Achievement vs Potensi</div>
-                    <div class="combined-kpi-value"><?= pct($totalPotAch) ?></div>
                 </div>
             </div>
 
@@ -173,13 +176,20 @@ function exec_dashboard(PDO $pdo): void
                         <div class="prop-kpi-label">Target</div>
                         <div class="prop-kpi-value"><?= money($d['target']) ?></div>
                     </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
                     <div class="prop-kpi">
-                        <div class="prop-kpi-label">Aktual</div>
-                        <div class="prop-kpi-value <?= $achClass ?>"><?= money($d['actual']) ?></div>
+                        <div class="prop-kpi-label">Regular</div>
+                        <div class="prop-kpi-value" style="font-size:14px"><?= money($d['actual'] - $d['recurring']) ?></div>
+                    </div>
+                    <div class="prop-kpi" style="background:#f0f9ff">
+                        <div class="prop-kpi-label" style="color:#0369a1">Recurring</div>
+                        <div class="prop-kpi-value" style="font-size:14px;color:#0369a1"><?= $d['recurring'] > 0 ? money($d['recurring']) : '—' ?></div>
                     </div>
                     <div class="prop-kpi">
-                        <div class="prop-kpi-label">Achievement</div>
-                        <div class="prop-kpi-value"><span class="ach-pill <?= $achPillClass ?>"><?= pct($ach) ?></span></div>
+                        <div class="prop-kpi-label">Aktual</div>
+                        <div class="prop-kpi-value <?= $achClass ?>" style="font-size:14px"><?= money($d['actual']) ?></div>
+                        <div style="margin-top:4px"><span class="ach-pill <?= $achPillClass ?>" style="font-size:10px"><?= pct($ach) ?></span></div>
                     </div>
                 </div>
                 <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:6px">
@@ -226,7 +236,7 @@ function exec_dashboard(PDO $pdo): void
             <!-- Segment Comparison Table -->
             <div class="section-title" style="margin-top:4px">Perbandingan Segment</div>
             <div class="panel" style="padding:0;overflow:hidden;margin-bottom:16px">
-                <table class="pic-table" style="width:100%;border-collapse:collapse;font-size:12px">
+                <table class="pic-table" style="width:100%;border-collapse:collapse;font-size:10px">
                     <thead>
                         <tr style="background:#f8fafc">
                             <th style="padding:10px 14px;text-align:left;border-bottom:1px solid var(--line,#e2e8f0);width:120px">Segment</th>
@@ -337,62 +347,58 @@ function exec_dashboard(PDO $pdo): void
                 <?php if (empty($displayKeys)): ?>
                     <div style="color:var(--muted);font-size:12px;padding:8px 0">Tidak ada data.</div>
                 <?php else: ?>
-                <table style="width:100%;border-collapse:collapse;font-size:12px">
+                <table class="occ-table" style="width:100%;border-collapse:collapse">
                     <thead>
                         <tr style="border-bottom:1px solid var(--line,#e2e8f0)">
-                            <th style="padding:5px 8px;text-align:left;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px"><?= $groupLabel ?></th>
-                            <th style="padding:5px 8px;text-align:center;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px">Unit</th>
-                            <th style="padding:5px 8px;text-align:right;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px">Occ %</th>
-                            <th style="padding:5px 8px;text-align:right;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px"><?= h($rateLabel) ?></th>
-                            <th style="padding:5px 8px;text-align:right;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px">Aktual</th>
-                            <th style="padding:5px 8px"></th>
+                            <th style="padding:3px 5px;text-align:left;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:8px"><?= $groupLabel ?></th>
+                            <th style="padding:3px 5px;text-align:center;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:8px">Unit</th>
+                            <th style="padding:3px 5px;text-align:right;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:8px">Occ %</th>
+                            <th style="padding:3px 5px;text-align:right;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:8px"><?= h($rateLabel) ?></th>
+                            <th style="padding:3px 5px;text-align:right;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:8px">Regular</th>
+                            <th style="padding:3px 5px;text-align:right;font-weight:700;color:#0369a1;text-transform:uppercase;font-size:8px">Recurring</th>
+                            <th style="padding:3px 5px;text-align:right;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:8px">Total</th>
                         </tr>
                     </thead>
                     <tbody>
                     <?php
-                    $tU = $tD = $tA = 0;
+                    $tU = $tD = $tA = $tRec = 0;
                     foreach ($displayKeys as $key):
                         $row     = $indexed[$d['id']][$key] ?? null;
-                        $units   = $row ? (int)$row['unit_count']    : 0;
-                        $daysTot = $row ? (float)$row['days_total']  : 0.0;
-                        $actTot  = $row ? (float)$row['actual_total']: 0.0;
+                        $units   = $row ? (int)$row['unit_count']       : 0;
+                        $daysTot = $row ? (float)$row['days_total']     : 0.0;
+                        $actTot  = $row ? (float)$row['actual_total']   : 0.0;
+                        $recTot  = $row ? (float)$row['recurring_total']: 0.0;
+                        $regTot  = $actTot - $recTot;
                         $avgRate = $row ? ($row['avg_rate'] !== null ? (float)$row['avg_rate'] : null) : null;
                         $maxDays  = $units * $periodDays;
                         $occ      = $maxDays > 0 ? $daysTot / $maxDays : 0;
                         $occColor = $occ >= 0.8 ? '#16a34a' : ($occ >= 0.5 ? '#d97706' : '#dc2626');
                         $dimmed   = $row ? '' : 'color:var(--muted)';
-                        $tU += $units; $tD += $daysTot; $tA += $actTot;
+                        $tU += $units; $tD += $daysTot; $tA += $actTot; $tRec += $recTot;
                     ?>
                     <tr style="border-bottom:1px solid #f1f5f9;<?= $dimmed ?>">
-                        <td style="padding:6px 8px;font-weight:600;<?= $dimmed ?>"><?= h($key ?: '—') ?></td>
-                        <td style="padding:6px 8px;text-align:center"><?= $units ?: '<span style="color:var(--muted)">—</span>' ?></td>
-                        <td style="padding:6px 8px;text-align:right;font-weight:800;color:<?= $row ? $occColor : 'var(--muted)' ?>"><?= $row ? number_format($occ*100,1,',','.').'%' : '—' ?></td>
-                        <td style="padding:6px 8px;text-align:right;color:var(--muted)"><?= $avgRate !== null ? money($avgRate) : '<span style="color:var(--muted)">—</span>' ?></td>
-                        <td style="padding:6px 8px;text-align:right"><?= $row ? money($actTot) : '<span style="color:var(--muted)">—</span>' ?></td>
-                        <td style="padding:6px 8px;min-width:56px">
-                            <?php if ($row): ?>
-                            <div style="height:6px;background:#f1f5f9;border-radius:999px;overflow:hidden">
-                                <div class="exec-bar" data-w="<?= number_format(min($occ*100,100),1,'.','.') ?>" style="height:100%;width:0;background:<?= $occColor ?>;border-radius:999px"></div>
-                            </div>
-                            <?php endif; ?>
-                        </td>
+                        <td style="padding:3px 5px;font-weight:600;<?= $dimmed ?>"><?= h($key ?: '—') ?></td>
+                        <td style="padding:3px 5px;text-align:center"><?= $units ?: '<span style="color:var(--muted)">—</span>' ?></td>
+                        <td style="padding:3px 5px;text-align:right;font-weight:800;color:<?= $row ? $occColor : 'var(--muted)' ?>"><?= $row ? number_format($occ*100,1,',','.').'%' : '—' ?></td>
+                        <td style="padding:3px 5px;text-align:right;color:var(--muted);white-space:nowrap"><?= $avgRate !== null ? money($avgRate) : '<span style="color:var(--muted)">—</span>' ?></td>
+                        <td style="padding:3px 5px;text-align:right;white-space:nowrap"><?= $row ? money($regTot) : '<span style="color:var(--muted)">—</span>' ?></td>
+                        <td style="padding:3px 5px;text-align:right;white-space:nowrap;color:<?= $row && $recTot > 0 ? '#0369a1' : 'var(--muted)' ?>;font-weight:<?= $row && $recTot > 0 ? '700' : '400' ?>"><?= $row ? ($recTot > 0 ? money($recTot) : '—') : '<span style="color:var(--muted)">—</span>' ?></td>
+                        <td style="padding:3px 5px;text-align:right;white-space:nowrap;font-weight:700"><?= $row ? money($actTot) : '<span style="color:var(--muted)">—</span>' ?></td>
                     </tr>
                     <?php endforeach;
                     $totalMaxDays  = $tU * $periodDays;
                     $totalOcc      = $totalMaxDays > 0 ? $tD / $totalMaxDays : 0;
                     $totalOccColor = $totalOcc >= 0.8 ? '#16a34a' : ($totalOcc >= 0.5 ? '#d97706' : '#dc2626');
+                    $tReg = $tA - $tRec;
                     ?>
                     <tr style="background:#f8fafc;font-weight:800;border-top:2px solid var(--line,#e2e8f0)">
-                        <td style="padding:6px 8px">Total</td>
-                        <td style="padding:6px 8px;text-align:center"><?= $tU ?></td>
-                        <td style="padding:6px 8px;text-align:right;color:<?= $totalOccColor ?>"><?= number_format($totalOcc*100,1,',','.') ?>%</td>
-                        <td style="padding:6px 8px;text-align:right;color:var(--muted)">—</td>
-                        <td style="padding:6px 8px;text-align:right"><?= money($tA) ?></td>
-                        <td style="padding:6px 8px">
-                            <div style="height:6px;background:#f1f5f9;border-radius:999px;overflow:hidden">
-                                <div class="exec-bar" data-w="<?= number_format(min($totalOcc*100,100),1,'.','.') ?>" style="height:100%;width:0;background:<?= $totalOccColor ?>;border-radius:999px"></div>
-                            </div>
-                        </td>
+                        <td style="padding:3px 5px">Total</td>
+                        <td style="padding:3px 5px;text-align:center"><?= $tU ?></td>
+                        <td style="padding:3px 5px;text-align:right;color:<?= $totalOccColor ?>"><?= number_format($totalOcc*100,1,',','.') ?>%</td>
+                        <td style="padding:3px 5px;text-align:right;color:var(--muted)">—</td>
+                        <td style="padding:3px 5px;text-align:right;white-space:nowrap"><?= money($tReg) ?></td>
+                        <td style="padding:3px 5px;text-align:right;white-space:nowrap;color:<?= $tRec > 0 ? '#0369a1' : 'var(--muted)' ?>"><?= $tRec > 0 ? money($tRec) : '—' ?></td>
+                        <td style="padding:3px 5px;text-align:right;white-space:nowrap"><?= money($tA) ?></td>
                     </tr>
                     </tbody>
                 </table>
@@ -426,6 +432,7 @@ function exec_dashboard(PDO $pdo): void
                                 <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Target Posisi</th>
                                 <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Aktual</th>
                                 <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Achievement</th>
+                                <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">TRX</th>
                                 <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Client Baru</th>
                             </tr>
                         </thead>
@@ -445,11 +452,12 @@ function exec_dashboard(PDO $pdo): void
                             <td style="padding:8px 14px;text-align:right"><?= $picTarget > 0 ? money($picTarget) : '<span style="color:var(--muted)">—</span>' ?></td>
                             <td style="padding:8px 14px;text-align:right;font-weight:700"><?= money($row['actual']) ?></td>
                             <td style="padding:8px 14px;text-align:right"><?= $picTarget > 0 ? '<span class="ach-pill '.$achPillCls.'">'.pct($ach).'</span>' : '<span style="color:var(--muted)">—</span>' ?></td>
+                            <td style="padding:8px 14px;text-align:right;font-size:12px"><span style="color:#0369a1;font-weight:700"><?= (int)$row['trx_recurring'] ?></span>/<?= (int)$row['trx_count'] ?></td>
                             <td style="padding:8px 14px;text-align:right;font-weight:700"><?= (int)$row['new_clients'] ?></td>
                         </tr>
                         <?php endforeach; ?>
                         <?php if (empty($d['pics'])): ?>
-                        <tr><td colspan="7" style="padding:24px;text-align:center;color:var(--muted)">Belum ada data PIC untuk periode ini.</td></tr>
+                        <tr><td colspan="8" style="padding:24px;text-align:center;color:var(--muted)">Belum ada data PIC untuk periode ini.</td></tr>
                         <?php endif; ?>
                         </tbody>
                     </table>
@@ -458,7 +466,7 @@ function exec_dashboard(PDO $pdo): void
             <?php endforeach; ?>
         <script>
         setTimeout(function(){
-            document.querySelectorAll('.seg-bar-fill[data-w],.exec-bar[data-w]').forEach(function(b){
+            document.querySelectorAll('.seg-bar-fill[data-w]').forEach(function(b){
                 b.style.transition='width .7s ease';
                 b.style.width=b.getAttribute('data-w')+'%';
             });
@@ -486,6 +494,15 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
     foreach ($s->fetchAll() as $r) { $actualSeg[$r['module']] = (float)$r['actual']; }
     $actual = array_sum($actualSeg);
 
+    // Recurring
+    $s = $pdo->prepare(
+        "SELECT COALESCE(SUM(a.amount),0) FROM transaction_allocations a
+         JOIN transactions t ON t.id=a.transaction_id AND t.billing_method='spread' AND t.deleted_at IS NULL
+         WHERE a.period_key=? AND a.property_id=?"
+    );
+    $s->execute([$period, $pid]);
+    $recurring = (float)$s->fetchColumn();
+
     // New clients
     $s = $pdo->prepare(
         "SELECT COUNT(DISTINCT t.client_id) FROM transaction_allocations a
@@ -504,6 +521,8 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
     $s = $pdo->prepare(
         "SELECT p.name pic_name, COALESCE(p.role_name,'-') role_name, COALESCE(p.target_share,0) target_share,
                 COALESCE(SUM(a.amount),0) actual,
+                COUNT(DISTINCT t.id) trx_count,
+                COUNT(DISTINCT CASE WHEN t.billing_method='spread' THEN t.id END) trx_recurring,
                 COUNT(DISTINCT CASE WHEN t.client_id IS NOT NULL AND prev.client_id IS NULL THEN t.client_id END) AS new_clients
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
@@ -526,6 +545,7 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
                 COALESCE(SUM(a.allocated_days),0) days_total,
                 COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                 COALESCE(SUM(a.amount),0) actual_total,
+                COALESCE(SUM(CASE WHEN t.billing_method='spread' THEN a.amount ELSE 0 END),0) recurring_total,
                 AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
                          THEN a.amount/a.allocated_days/m.area_sqm ELSE NULL END) avg_rate
          FROM master_cl_units m
@@ -546,6 +566,7 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
                 COALESCE(SUM(a.allocated_days),0) days_total,
                 COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                 COALESCE(SUM(a.amount),0) actual_total,
+                COALESCE(SUM(CASE WHEN t.billing_method='spread' THEN a.amount ELSE 0 END),0) recurring_total,
                 AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
                          THEN a.amount/a.allocated_days ELSE NULL END) avg_rate
          FROM master_media m
@@ -565,6 +586,7 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
                 COALESCE(SUM(a.allocated_days),0) days_total,
                 COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                 COALESCE(SUM(a.amount),0) actual_total,
+                COALESCE(SUM(CASE WHEN t.billing_method='spread' THEN a.amount ELSE 0 END),0) recurring_total,
                 AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
                          THEN a.amount/m.area_sqm ELSE NULL END) avg_rate
          FROM master_gudang m
@@ -582,6 +604,7 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
         'projection'  => $projection,
         'actual_seg'  => $actualSeg,
         'actual'      => $actual,
+        'recurring'   => $recurring,
         'new_clients' => $newClients,
         'pics'        => $pics,
         'floor_occ'   => $floorOcc,
@@ -592,11 +615,12 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
 
 function _exec_combine(array $propData): array
 {
-    $target = $projection = $actual = 0;
+    $target = $projection = $actual = $recurring = 0;
     foreach ($propData as $d) {
         $target     += $d['target'];
         $projection += array_sum($d['projection']);
         $actual     += $d['actual'];
+        $recurring  += $d['recurring'];
     }
-    return compact('target', 'projection', 'actual');
+    return compact('target', 'projection', 'actual', 'recurring');
 }

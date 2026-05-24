@@ -22,6 +22,13 @@ function print_dashboard(PDO $pdo): void
     $periodDays     = (int)date('t', strtotime($period.'-01'));
     $totalProjection= array_sum($projection);
     $totalActual    = array_sum($actual);
+    $recStmt = $pdo->prepare(
+        "SELECT COALESCE(SUM(a.amount),0) FROM transaction_allocations a
+         JOIN transactions t ON t.id=a.transaction_id AND t.billing_method='spread' AND t.deleted_at IS NULL
+         WHERE a.period_key=? AND a.property_id=?"
+    );
+    $recStmt->execute([$period, $pid]);
+    $totalRecurring = (float)$recStmt->fetchColumn();
     $unitCount      = [
         'cl'    =>(int)$pdo->query("SELECT COUNT(*) FROM master_cl_units WHERE status='active' AND property_id=$pid")->fetchColumn(),
         'media' =>(int)$pdo->query("SELECT COUNT(*) FROM master_media WHERE status='active' AND property_id=$pid")->fetchColumn(),
@@ -32,6 +39,8 @@ function print_dashboard(PDO $pdo): void
     $picStmt = $pdo->prepare(
         "SELECT p.name pic_name, COALESCE(p.role_name,'-') role_name, COALESCE(p.target_share,0) target_share,
                 COALESCE(SUM(a.amount),0) actual,
+                COUNT(DISTINCT t.id) trx_count,
+                COUNT(DISTINCT CASE WHEN t.billing_method='spread' THEN t.id END) trx_recurring,
                 COUNT(DISTINCT CASE WHEN t.client_id IS NOT NULL AND prev.client_id IS NULL THEN t.client_id END) AS new_clients
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
@@ -210,9 +219,9 @@ td.money { text-align: right; font-weight: 600; }
         <?php $_ach = $target > 0 ? $totalActual / $target : 0; ?>
         <div class="kpi-box-value"<?= $_ach < 1 && $target > 0 ? ' style="color:#dc2626"' : '' ?>><?= pct($_ach) ?></div>
     </div>
-    <div class="kpi-box">
-        <div class="kpi-box-label">% Aktual vs Potensi</div>
-        <div class="kpi-box-value"><?= pct($totalProjection > 0 ? $totalActual / $totalProjection : 0) ?></div>
+    <div class="kpi-box" style="background:<?= $totalRecurring > 0 ? '#f0f9ff' : '' ?>">
+        <div class="kpi-box-label" style="color:#0369a1">Recurring</div>
+        <div class="kpi-box-value" style="color:<?= $totalRecurring > 0 ? '#0369a1' : 'inherit' ?>"><?= $totalRecurring > 0 ? money($totalRecurring) : '—' ?></div>
     </div>
 </div>
 
@@ -239,7 +248,7 @@ td.money { text-align: right; font-weight: 600; }
         <span style="font-size:10px;color:#7B8A9C">/ <?= $ncTarget ?> target</span>
     </div>
     <table>
-        <thead><tr><th>PIC</th><th>Posisi</th><th class="r">Target Posisi</th><th class="r">Aktual</th><th class="r">% vs Target</th><th class="r">% thd Target Bulanan</th><th class="r">Client Baru</th></tr></thead>
+        <thead><tr><th>PIC</th><th>Posisi</th><th class="r">Target Posisi</th><th class="r">Aktual</th><th class="r">% vs Target</th><th class="r">% thd Target Bulanan</th><th class="r">TRX</th><th class="r">Client Baru</th></tr></thead>
         <tbody>
         <?php $bottomIdx = count($picRows) - 1; foreach ($picRows as $i => $row):
             $pt = (float)$row['target_share'] * $target;
@@ -251,6 +260,7 @@ td.money { text-align: right; font-weight: 600; }
             <td class="money"><?= money($row['actual']) ?></td>
             <td class="r"><?= pct($pt>0 ? $row['actual']/$pt : 0) ?></td>
             <td class="r"><?= pct($target>0 ? $row['actual']/$target : 0) ?></td>
+            <td class="r"><span style="color:#0369a1;font-weight:700"><?= (int)$row['trx_recurring'] ?></span>/<?= (int)$row['trx_count'] ?></td>
             <td class="r" style="font-weight:700"><?= (int)$row['new_clients'] ?></td>
         </tr>
         <?php endforeach; ?>
@@ -439,11 +449,20 @@ function print_exec(PDO $pdo): void
     $periodDays      = (int)date('t', strtotime($period.'-01'));
     $totalProjection = array_sum($projection);
     $totalActual     = array_sum($actual);
+    $recExecStmt = $pdo->prepare(
+        "SELECT COALESCE(SUM(a.amount),0) FROM transaction_allocations a
+         JOIN transactions t ON t.id=a.transaction_id AND t.billing_method='spread' AND t.deleted_at IS NULL
+         WHERE a.period_key=? AND a.property_id=?"
+    );
+    $recExecStmt->execute([$period, $pid]);
+    $totalRecurring = (float)$recExecStmt->fetchColumn();
 
     // PIC
     $picStmt = $pdo->prepare(
         "SELECT p.name pic_name, COALESCE(p.role_name,'-') role_name, COALESCE(p.target_share,0) target_share,
                 COALESCE(SUM(a.amount),0) actual,
+                COUNT(DISTINCT t.id) trx_count,
+                COUNT(DISTINCT CASE WHEN t.billing_method='spread' THEN t.id END) trx_recurring,
                 COUNT(DISTINCT CASE WHEN t.client_id IS NOT NULL AND prev.client_id IS NULL THEN t.client_id END) AS new_clients
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
@@ -617,9 +636,9 @@ tr.grand-total td { background: #F0FDFA; font-weight: 800; color: #0F1623; borde
         <?php $_ach = $target > 0 ? $totalActual / $target : 0; ?>
         <div class="kpi-box-value"<?= $_ach < 1 && $target > 0 ? ' style="color:#dc2626"' : '' ?>><?= pct($_ach) ?></div>
     </div>
-    <div class="kpi-box">
-        <div class="kpi-box-label">% Aktual vs Potensi</div>
-        <div class="kpi-box-value"><?= pct($totalProjection > 0 ? $totalActual / $totalProjection : 0) ?></div>
+    <div class="kpi-box" style="background:<?= $totalRecurring > 0 ? '#f0f9ff' : '' ?>">
+        <div class="kpi-box-label" style="color:#0369a1">Recurring</div>
+        <div class="kpi-box-value" style="color:<?= $totalRecurring > 0 ? '#0369a1' : 'inherit' ?>"><?= $totalRecurring > 0 ? money($totalRecurring) : '—' ?></div>
     </div>
 </div>
 
@@ -738,7 +757,7 @@ tr.grand-total td { background: #F0FDFA; font-weight: 800; color: #0F1623; borde
         <span style="font-size:10px;color:#7B8A9C">/ <?= $ncTarget ?> target</span>
     </div>
     <table>
-        <thead><tr><th>PIC</th><th>Posisi</th><th class="r">Target Posisi</th><th class="r">Aktual</th><th class="r">% vs Target</th><th class="r">% thd Target Bulanan</th><th class="r">Client Baru</th></tr></thead>
+        <thead><tr><th>PIC</th><th>Posisi</th><th class="r">Target Posisi</th><th class="r">Aktual</th><th class="r">% vs Target</th><th class="r">% thd Target Bulanan</th><th class="r">TRX</th><th class="r">Client Baru</th></tr></thead>
         <tbody>
         <?php $bottomIdx = count($picRows) - 1; foreach ($picRows as $i => $row):
             $pt = (float)$row['target_share'] * $target;
@@ -750,6 +769,7 @@ tr.grand-total td { background: #F0FDFA; font-weight: 800; color: #0F1623; borde
             <td class="money"><?= money($row['actual']) ?></td>
             <td class="r"><?= pct($pt>0 ? $row['actual']/$pt : 0) ?></td>
             <td class="r"><?= pct($target>0 ? $row['actual']/$target : 0) ?></td>
+            <td class="r"><span style="color:#0369a1;font-weight:700"><?= (int)$row['trx_recurring'] ?></span>/<?= (int)$row['trx_count'] ?></td>
             <td class="r" style="font-weight:700"><?= (int)$row['new_clients'] ?></td>
         </tr>
         <?php endforeach; ?>
@@ -803,6 +823,15 @@ function print_exec_summary(PDO $pdo): void
         foreach ($s->fetchAll() as $r) { $d['actual_seg'][$r['module']] = (float)$r['actual']; }
         $d['actual'] = array_sum($d['actual_seg']);
 
+        // Recurring
+        $s = $pdo->prepare(
+            "SELECT COALESCE(SUM(a.amount),0) FROM transaction_allocations a
+             JOIN transactions t ON t.id=a.transaction_id AND t.billing_method='spread' AND t.deleted_at IS NULL
+             WHERE a.period_key=? AND a.property_id=?"
+        );
+        $s->execute([$period, $pid]);
+        $d['recurring'] = (float)$s->fetchColumn();
+
         // New clients
         $s = $pdo->prepare(
             "SELECT COUNT(DISTINCT t.client_id) FROM transaction_allocations a
@@ -820,6 +849,8 @@ function print_exec_summary(PDO $pdo): void
         $s = $pdo->prepare(
             "SELECT p.name pic_name, COALESCE(p.role_name,'-') role_name, COALESCE(p.target_share,0) target_share,
                     COALESCE(SUM(a.amount),0) actual,
+                    COUNT(DISTINCT t.id) trx_count,
+                    COUNT(DISTINCT CASE WHEN t.billing_method='spread' THEN t.id END) trx_recurring,
                     COUNT(DISTINCT CASE WHEN t.client_id IS NOT NULL AND prev.client_id IS NULL THEN t.client_id END) AS new_clients
              FROM master_pic p
              LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
@@ -841,6 +872,7 @@ function print_exec_summary(PDO $pdo): void
                     COALESCE(SUM(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.area_sqm ELSE 0 END),0) area_total,
                     COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                     COALESCE(SUM(a.amount),0) actual_total,
+                    COALESCE(SUM(CASE WHEN t.billing_method='spread' THEN a.amount ELSE 0 END),0) recurring_total,
                     AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
                              THEN a.amount/a.allocated_days/m.area_sqm ELSE NULL END) avg_rate
              FROM master_cl_units m
@@ -859,6 +891,7 @@ function print_exec_summary(PDO $pdo): void
                     0 AS area_total,
                     COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                     COALESCE(SUM(a.amount),0) actual_total,
+                    COALESCE(SUM(CASE WHEN t.billing_method='spread' THEN a.amount ELSE 0 END),0) recurring_total,
                     AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
                              THEN a.amount/a.allocated_days ELSE NULL END) avg_rate
              FROM master_media m
@@ -877,6 +910,7 @@ function print_exec_summary(PDO $pdo): void
                     COALESCE(SUM(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.area_sqm ELSE 0 END),0) area_total,
                     COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                     COALESCE(SUM(a.amount),0) actual_total,
+                    COALESCE(SUM(CASE WHEN t.billing_method='spread' THEN a.amount ELSE 0 END),0) recurring_total,
                     AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
                              THEN a.amount/m.area_sqm ELSE NULL END) avg_rate
              FROM master_gudang m
@@ -894,11 +928,12 @@ function print_exec_summary(PDO $pdo): void
     }
 
     // Combined totals
-    $combTarget = $combProjection = $combActual = 0;
+    $combTarget = $combProjection = $combActual = $combRecurring = 0;
     foreach ($propData as $d) {
         $combTarget     += $d['target'];
         $combProjection += array_sum($d['projection']);
         $combActual     += $d['actual'];
+        $combRecurring  += $d['recurring'] ?? 0;
     }
 
     // Floor canonical sort
@@ -1021,13 +1056,14 @@ $combPotAch = $combProjection > 0 ? $combActual / $combProjection : 0;
     <div class="kpi-box"><div class="kpi-box-label">Total Aktual</div>
         <div class="kpi-box-value" style="<?= $combAch < 1 && $combTarget > 0 ? 'color:#dc2626' : '' ?>"><?= money($combActual) ?></div>
     </div>
+    <div class="kpi-box" style="border-top-color:#0369a1;<?= $combRecurring > 0 ? 'background:#f0f9ff' : '' ?>">
+        <div class="kpi-box-label" style="color:#0369a1">Recurring</div>
+        <div class="kpi-box-value" style="color:<?= $combRecurring > 0 ? '#0369a1' : '#94a3b8' ?>"><?= $combRecurring > 0 ? money($combRecurring) : '—' ?></div>
+    </div>
     <div class="kpi-box"><div class="kpi-box-label">Achievement vs Target</div>
         <div class="kpi-box-value"><?php $cls=$combAch>=1?'ach-good':($combAch>=.8?'ach-warn':'ach-bad'); ?>
             <span class="ach-pill <?= $cls ?>" style="font-size:14px"><?= pct($combAch) ?></span>
         </div>
-    </div>
-    <div class="kpi-box"><div class="kpi-box-label">Achievement vs Potensi</div>
-        <div class="kpi-box-value"><?= pct($combPotAch) ?></div>
     </div>
 </div>
 <!-- PER-PROPERTY CARDS -->
@@ -1045,9 +1081,13 @@ $combPotAch = $combProjection > 0 ? $combActual / $combProjection : 0;
         <div class="prop-kpi-grid">
             <div class="prop-kpi"><div class="prop-kpi-label">Potensi</div><div class="prop-kpi-value"><?= money(array_sum($d['projection'])) ?></div></div>
             <div class="prop-kpi"><div class="prop-kpi-label">Target</div><div class="prop-kpi-value"><?= money($d['target']) ?></div></div>
-            <div class="prop-kpi"><div class="prop-kpi-label">Aktual</div><div class="prop-kpi-value" style="color:<?= $achC ?>"><?= money($d['actual']) ?></div></div>
-            <div class="prop-kpi"><div class="prop-kpi-label">Achievement</div>
-                <div class="prop-kpi-value"><span class="ach-pill <?= $achPill ?>"><?= pct($ach) ?></span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:6px">
+            <div class="prop-kpi"><div class="prop-kpi-label">Regular</div><div class="prop-kpi-value" style="font-size:11px"><?= money($d['actual'] - $d['recurring']) ?></div></div>
+            <div class="prop-kpi" style="background:#f0f9ff"><div class="prop-kpi-label" style="color:#0369a1">Recurring</div><div class="prop-kpi-value" style="font-size:11px;color:#0369a1"><?= $d['recurring'] > 0 ? money($d['recurring']) : '—' ?></div></div>
+            <div class="prop-kpi"><div class="prop-kpi-label">Aktual</div>
+                <div class="prop-kpi-value" style="font-size:11px;color:<?= $achC ?>"><?= money($d['actual']) ?></div>
+                <div style="margin-top:3px"><span class="ach-pill <?= $achPill ?>" style="font-size:8px"><?= pct($ach) ?></span></div>
             </div>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:9px;color:#7b8a9c">
@@ -1199,22 +1239,26 @@ $renderOccPrint = function(string $title, string $occKey, string $groupLabel, ?c
                     <th class="r">Avg Hari</th>
                     <th class="r">Occ%</th>
                     <th class="r"><?= $rateLabel ?></th>
-                    <th class="r">Aktual</th>
+                    <th class="r">Regular</th>
+                    <th class="r" style="color:#0369a1">Recurring</th>
+                    <th class="r">Total</th>
                 </tr>
             </thead>
             <tbody>
             <?php
-            $tU=$tD=$tAreaSum=0; $tA=0;
+            $tU=$tD=$tAreaSum=0; $tA=$tRec=0;
             foreach($displayKeys as $key):
                 $row = $indexed[$d['id']][$key]??null;
                 $units = $row?(int)$row['unit_count']:0;
                 $days  = $row?(float)$row['days_total']:0;
                 $area  = $row?(float)($row['area_total']??0):0;
                 $act   = $row?(float)$row['actual_total']:0;
+                $rec   = $row?(float)($row['recurring_total']??0):0;
+                $reg   = $act - $rec;
                 $max   = $units*$periodDays;
                 $occ   = $max>0?$days/$max:0;
                 $avgRate = $row ? ($row['avg_rate'] !== null ? (float)$row['avg_rate'] : null) : null;
-                $tU+=$units;$tD+=$days;$tAreaSum+=$area;$tA+=$act;
+                $tU+=$units;$tD+=$days;$tAreaSum+=$area;$tA+=$act;$tRec+=$rec;
                 $avgDays = $units>0 ? $days/$units : 0;
             ?>
             <tr class="<?= $row?'':'row-dimmed' ?>">
@@ -1223,17 +1267,22 @@ $renderOccPrint = function(string $title, string $occKey, string $groupLabel, ?c
                 <td class="r"><?= $row?number_format($avgDays,1,',','.'):'' ?></td>
                 <td class="r" style="<?= $row?$occStyle($occ):'' ?>"><?= $row?number_format($occ*100,1,',','.').'%':'—' ?></td>
                 <td class="r" style="color:#7b8a9c"><?= $avgRate!==null?money($avgRate):'—' ?></td>
+                <td class="money"><?= $row?money($reg):'—' ?></td>
+                <td class="money" style="color:<?= $row&&$rec>0?'#0369a1':'#94a3b8' ?>"><?= $row?($rec>0?money($rec):'—'):'—' ?></td>
                 <td class="money"><?= $row?money($act):'—' ?></td>
             </tr>
             <?php endforeach;
             $totOcc = $tU*$periodDays>0?$tD/($tU*$periodDays):0;
-            $totAvg = $tU>0 ? $tD/$tU : 0; ?>
+            $totAvg = $tU>0 ? $tD/$tU : 0;
+            $tReg = $tA - $tRec; ?>
             <tr class="grand-total">
                 <td>Total</td>
                 <td class="r"><?= $tU ?></td>
                 <td class="r"><?= number_format($totAvg,1,',','.') ?></td>
                 <td class="r" style="<?= $occStyle($totOcc) ?>"><?= number_format($totOcc*100,1,',','.').'%' ?></td>
                 <td class="r" style="color:#7b8a9c">—</td>
+                <td class="money"><?= money($tReg) ?></td>
+                <td class="money" style="color:<?= $tRec>0?'#0369a1':'#94a3b8' ?>"><?= $tRec>0?money($tRec):'—' ?></td>
                 <td class="money"><?= money($tA) ?></td>
             </tr>
             </tbody>
@@ -1268,7 +1317,8 @@ $renderOccPrint('Occupancy Gudang / Storage per Lokasi', 'gudang_occ', 'Lokasi',
                     <th class="r">Target</th>
                     <th class="r">Aktual</th>
                     <th class="r">Ach%</th>
-                    <th class="r">Baru</th>
+                    <th class="r">TRX</th>
+                    <th class="r">Client Baru</th>
                 </tr>
             </thead>
             <tbody>
@@ -1288,6 +1338,7 @@ $renderOccPrint('Occupancy Gudang / Storage per Lokasi', 'gudang_occ', 'Lokasi',
                 <td class="money"><?= $pt>0?money($pt):'<span style="color:#94a3b8">—</span>' ?></td>
                 <td class="money"><?= money($row['actual']) ?></td>
                 <td class="r"><?= $pt>0?'<span class="ach-pill '.$aCls.'">'.pct($ach).'</span>':'<span style="color:#94a3b8">—</span>' ?></td>
+                <td class="r"><span style="color:#0369a1;font-weight:700"><?= (int)$row['trx_recurring'] ?></span>/<?= (int)$row['trx_count'] ?></td>
                 <td class="r" style="font-weight:700"><?= (int)$row['new_clients'] ?></td>
             </tr>
             <?php endforeach; ?>

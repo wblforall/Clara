@@ -38,6 +38,14 @@ function dashboard(PDO $pdo): void
     }
     $totalProjection = array_sum($projection);
     $totalActual = array_sum($actual);
+    $recurringStmt = $pdo->prepare(
+        "SELECT COALESCE(SUM(a.amount),0)
+         FROM transaction_allocations a
+         JOIN transactions t ON t.id = a.transaction_id AND t.billing_method = 'spread' AND t.deleted_at IS NULL
+         WHERE a.period_key = ? AND a.property_id = ?"
+    );
+    $recurringStmt->execute([$period, $pid]);
+    $totalRecurring = (float) $recurringStmt->fetchColumn();
     $detail = $pdo->prepare(
         "SELECT m.code, m.media_type, m.location, m.point,
                 COALESCE(pp.potential_value, m.projection_monthly) AS projection_monthly,
@@ -145,7 +153,7 @@ function dashboard(PDO $pdo): void
         $monthsByYear[$y][] = $m;
     }
 
-    layout('Dashboard Bulanan', function () use ($pdo, $period, $target, $projection, $actual, $capacity, $occupancy, $totalProjection, $totalActual, $detail, $detailCl, $detailGudang, $pic, $periodDays, $years, $monthsByYear, $periodYear, $periodMonth, $monthNames, $mediaRates, $totalNewClients) {
+    layout('Dashboard Bulanan', function () use ($pdo, $period, $target, $projection, $actual, $capacity, $occupancy, $totalProjection, $totalActual, $totalRecurring, $detail, $detailCl, $detailGudang, $pic, $periodDays, $years, $monthsByYear, $periodYear, $periodMonth, $monthNames, $mediaRates, $totalNewClients) {
         $achPct   = $totalProjection > 0 ? $totalActual / $totalProjection : 0;
         $achClass = $achPct >= 1.0 ? 'kpi-good' : ($achPct >= 0.8 ? 'kpi-warn' : 'kpi-bad');
         $gi       = 0;
@@ -244,11 +252,12 @@ function dashboard(PDO $pdo): void
         }
         </script>
 
-        <div class="grid grid-4">
-            <div class="card"><div class="kpi-label">Potensi</div><div class="kpi-value" data-countup="<?= (int)$totalProjection ?>">Rp 0</div></div>
-            <div class="card"><div class="kpi-label">Target</div><div class="kpi-value" data-countup="<?= (int)$target ?>">Rp 0</div></div>
-            <div class="card"><div class="kpi-label">Aktual</div><div class="kpi-value"<?= $target > 0 && $totalActual < $target ? ' style="color:#dc2626"' : '' ?> data-countup="<?= (int)$totalActual ?>">Rp 0</div></div>
-            <div class="card <?= $achClass ?>"><div class="kpi-label">% Aktual vs Potensi</div><div class="kpi-value"><?= pct($achPct) ?></div></div>
+        <div class="grid" style="grid-template-columns:repeat(5,minmax(0,1fr))">
+            <div class="card" style="border-top:3px solid var(--primary)"><div class="kpi-label">Potensi</div><div class="kpi-value" data-countup="<?= (int)$totalProjection ?>">Rp 0</div></div>
+            <div class="card" style="border-top:3px solid var(--green)"><div class="kpi-label">Target</div><div class="kpi-value" data-countup="<?= (int)$target ?>">Rp 0</div></div>
+            <div class="card" style="border-top:3px solid #3B82F6"><div class="kpi-label">Aktual</div><div class="kpi-value"<?= $target > 0 && $totalActual < $target ? ' style="color:#dc2626"' : '' ?> data-countup="<?= (int)$totalActual ?>">Rp 0</div></div>
+            <div class="card" style="border-top:3px solid #0369a1;background:<?= $totalRecurring > 0 ? '#f0f9ff' : '' ?>"><div class="kpi-label">Recurring</div><div class="kpi-value" style="color:<?= $totalRecurring > 0 ? '#0369a1' : 'var(--muted)' ?>" data-countup="<?= (int)$totalRecurring ?>"><?= $totalRecurring > 0 ? 'Rp 0' : '—' ?></div></div>
+            <div class="card <?= $achClass ?>" style="border-top:3px solid var(--amber)"><div class="kpi-label">% Aktual vs Potensi</div><div class="kpi-value"><?= pct($achPct) ?></div></div>
         </div>
 
         <script src="assets/chart.umd.min.js"></script>

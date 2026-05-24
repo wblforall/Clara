@@ -14,7 +14,8 @@ function _pic_fetch_section(PDO $pdo, string $period, int $pid): array
                 COALESCE(SUM(CASE WHEN a.module='gudang' THEN a.amount ELSE 0 END),0) actual_gudang,
                 COALESCE(SUM(a.amount),0) actual_total,
                 COALESCE(SUM(CASE WHEN t.billing_method='spread' THEN a.amount ELSE 0 END),0) actual_recurring,
-                COUNT(DISTINCT t.id) trx_count
+                COUNT(DISTINCT t.id) trx_count,
+                COUNT(DISTINCT CASE WHEN t.billing_method='spread' THEN t.id END) trx_recurring
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
          LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL AND t.property_id=?
@@ -28,13 +29,14 @@ function _pic_fetch_section(PDO $pdo, string $period, int $pid): array
     $trxStmt = $pdo->prepare(
         "SELECT t.id, t.module, t.master_code, t.billing_method,
                 COALESCE(c.company_name,'-') company_name,
+                COALESCE(c.brand_name,'') brand_name,
                 t.start_date, t.end_date, COALESCE(t.pic_name,'Tanpa PIC') pic_name,
                 t.invoice_no, COALESCE(SUM(a.amount),0) period_amount
          FROM transactions t
          LEFT JOIN master_clients c ON c.id=t.client_id
          JOIN transaction_allocations a ON a.transaction_id=t.id AND a.period_key=? AND a.property_id=?
          WHERE t.deleted_at IS NULL AND t.property_id=?
-         GROUP BY t.id, t.module, t.master_code, t.billing_method, c.company_name,
+         GROUP BY t.id, t.module, t.master_code, t.billing_method, c.company_name, c.brand_name,
                   t.start_date, t.end_date, t.pic_name, t.invoice_no
          ORDER BY t.pic_name, period_amount DESC"
     );
@@ -78,9 +80,10 @@ function _pic_render_section(array $sec, string $period, array $moduleLabel, str
         <?php endforeach; ?>
     </div>
 
+    <style>.pic-tbl td{font-size:12px;padding:8px 10px;white-space:nowrap}.pic-tbl th{padding:8px 10px}</style>
     <div class="panel" style="margin-bottom:8px">
         <div class="table-wrap">
-            <table>
+            <table class="pic-tbl">
                 <thead>
                     <tr>
                         <th>Nama PIC</th><th>Role</th>
@@ -112,7 +115,7 @@ function _pic_render_section(array $sec, string $period, array $moduleLabel, str
                     <td class="r"><?= $rec > 0 ? '<span style="color:#0369a1;font-weight:600">' . money($rec) . '</span>' : '—' ?></td>
                     <td class="r" style="font-weight:700"><?= money($p['actual_total']) ?></td>
                     <td class="r"><span style="font-weight:700;color:<?= $achColor($a) ?>"><?= pct($a) ?></span></td>
-                    <td class="r"><?= $p['trx_count'] ?></td>
+                    <td class="r"><?= '<span style="color:#0369a1;font-weight:700">' . (int)$p['trx_recurring'] . '</span>/' . (int)$p['trx_count'] ?></td>
                 </tr>
                 <?php if (!empty($trxByPic[$p['name']])): ?>
                 <tr id="<?= $uid ?>" style="display:none">
@@ -156,7 +159,8 @@ function _pic_render_section(array $sec, string $period, array $moduleLabel, str
                     <td class="r" style="color:#0369a1"><?= money($totalRecurring) ?></td>
                     <td class="r"><?= money($total) ?></td>
                     <td class="r"><span style="font-weight:700;color:<?= $achColor($ach) ?>"><?= $target > 0 ? pct($ach) : '—' ?></span></td>
-                    <td class="r"><?= array_sum(array_column($pics,'trx_count')) ?></td>
+                    <?php $totRec = array_sum(array_column($pics,'trx_recurring')); $totTrx = array_sum(array_column($pics,'trx_count')); ?>
+                    <td class="r"><?= '<span style="color:#0369a1;font-weight:700">' . $totRec . '</span>/' . $totTrx ?></td>
                 </tr>
                 </tbody>
             </table>
@@ -229,7 +233,8 @@ function pic_report_print(PDO $pdo): void
                 COALESCE(SUM(CASE WHEN a.module='gudang' THEN a.amount ELSE 0 END),0) actual_gudang,
                 COALESCE(SUM(a.amount),0) actual_total,
                 COALESCE(SUM(CASE WHEN t.billing_method='spread' THEN a.amount ELSE 0 END),0) actual_recurring,
-                COUNT(DISTINCT t.id) trx_count
+                COUNT(DISTINCT t.id) trx_count,
+                COUNT(DISTINCT CASE WHEN t.billing_method='spread' THEN t.id END) trx_recurring
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
          LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL AND t.property_id=?
@@ -243,13 +248,14 @@ function pic_report_print(PDO $pdo): void
     $trxStmt = $pdo->prepare(
         "SELECT t.id, t.module, t.master_code, t.billing_method,
                 COALESCE(c.company_name,'-') company_name,
+                COALESCE(c.brand_name,'') brand_name,
                 t.start_date, t.end_date, COALESCE(t.pic_name,'Tanpa PIC') pic_name,
                 t.invoice_no, COALESCE(SUM(a.amount),0) period_amount
          FROM transactions t
          LEFT JOIN master_clients c ON c.id=t.client_id
          JOIN transaction_allocations a ON a.transaction_id=t.id AND a.period_key=? AND a.property_id=?
          WHERE t.deleted_at IS NULL AND t.property_id=?
-         GROUP BY t.id, t.module, t.master_code, t.billing_method, c.company_name,
+         GROUP BY t.id, t.module, t.master_code, t.billing_method, c.company_name, c.brand_name,
                   t.start_date, t.end_date, t.pic_name, t.invoice_no
          ORDER BY t.pic_name, period_amount DESC"
     );
@@ -350,6 +356,13 @@ td{padding:5px 8px;border:1px solid #E4E9F0;vertical-align:middle}
 
 <!-- Summary Table -->
 <table>
+    <colgroup>
+        <col style="width:14%"><col style="width:9%">
+        <col style="width:9%">
+        <col style="width:8%"><col style="width:7%"><col style="width:7%">
+        <col style="width:9%"><col style="width:9%">
+        <col style="width:9%"><col style="width:9%"><col style="width:5%">
+    </colgroup>
     <thead>
         <tr>
             <th>Nama PIC</th><th>Role</th>
@@ -378,7 +391,7 @@ td{padding:5px 8px;border:1px solid #E4E9F0;vertical-align:middle}
         <td class="r" style="color:#0369a1;font-weight:600"><?= $rec > 0 ? money($rec) : '—' ?></td>
         <td class="r" style="font-weight:700"><?= money($p['actual_total']) ?></td>
         <td class="r"><span class="<?= $cls ?>"><?= pct($a) ?></span></td>
-        <td class="r"><?= $p['trx_count'] ?></td>
+        <td class="r"><?= '<span style="color:#0369a1;font-weight:700">' . (int)$p['trx_recurring'] . '</span>/' . (int)$p['trx_count'] ?></td>
     </tr>
     <?php endforeach; ?>
     <tr class="total-row">
@@ -391,7 +404,8 @@ td{padding:5px 8px;border:1px solid #E4E9F0;vertical-align:middle}
         <td class="r" style="color:#0369a1"><?= money($totalRecurring) ?></td>
         <td class="r"><?= money($totalActual) ?></td>
         <td class="r"><span class="<?= $achCls ?>"><?= $target > 0 ? pct($ach) : '—' ?></span></td>
-        <td class="r"><?= array_sum(array_column($pics,'trx_count')) ?></td>
+        <?php $totRec2 = array_sum(array_column($pics,'trx_recurring')); $totTrx2 = array_sum(array_column($pics,'trx_count')); ?>
+        <td class="r"><?= '<span style="color:#0369a1;font-weight:700">' . $totRec2 . '</span>/' . $totTrx2 ?></td>
     </tr>
     </tbody>
 </table>
@@ -414,6 +428,10 @@ td{padding:5px 8px;border:1px solid #E4E9F0;vertical-align:middle}
         &nbsp;|&nbsp; Achievement: <span class="<?= $cls ?>"><?= pct($a) ?></span>
     </div>
     <table class="trx-table">
+        <colgroup>
+            <col style="width:10%"><col style="width:28%"><col style="width:8%">
+            <col style="width:10%"><col style="width:19%"><col style="width:12%"><col style="width:13%">
+        </colgroup>
         <thead><tr>
             <th>Kode</th><th>Client</th><th>Tipe</th><th>Modul</th><th>Periode Kontrak</th><th>No. Invoice</th><th class="r">Aktual Bulan Ini</th>
         </tr></thead>
@@ -423,7 +441,7 @@ td{padding:5px 8px;border:1px solid #E4E9F0;vertical-align:middle}
         ?>
         <tr<?= $isRecurring ? ' style="background:#eff6ff"' : '' ?>>
             <td><?= h($trx['master_code']) ?></td>
-            <td><?= h($trx['company_name']) ?></td>
+            <td><?= h($trx['company_name']) ?><?= $trx['brand_name'] ? ' <span style="color:#64748b">(' . h($trx['brand_name']) . ')</span>' : '' ?></td>
             <td style="color:<?= $isRecurring ? '#0369a1' : '#64748b' ?>;font-weight:<?= $isRecurring ? '700' : '400' ?>">
                 <?= $isRecurring ? 'Recurring' : 'Regular' ?>
             </td>
