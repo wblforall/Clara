@@ -11,6 +11,16 @@
 
 ---
 
+## Version 3.9 — 24 Mei 2026
+
+### Peningkatan — Recurring: Estimasi & Panduan
+
+- **Preview Estimasi Spread** — Setelah klik Kalkulasi dengan mode Recurring dipilih, muncul panel biru di bawah total berisi breakdown nilai per bulan. Jika Override Aktual diisi, estimasi otomatis menggunakan nilai override tersebut.
+- **Panduan Input Recurring** — Instruksi 6 langkah ditampilkan di bagian bawah form tambah dan edit transaksi, menjelaskan cara input recurring dari awal hingga simpan.
+- **Migration 004** — Ditambahkan migration idempotent untuk kolom `billing_method` di tabel `transactions` agar deployment ke production aman via `php db_migrate.php`.
+
+---
+
 ## Version 3.8 — 24 Mei 2026
 
 ### Fitur Baru — Transaksi Recurring (Spread per Bulan)
