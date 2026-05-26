@@ -800,16 +800,13 @@ function display_page(PDO $pdo, array $config): void
                             <div class="tv-pic-name">${esc(p.pic_name)}${badge}</div>
                             <div class="tv-pic-sub">${esc(p.role_name !== '-' ? p.role_name : 'PIC')}</div>
                         </div>
-                        <div class="tv-pic-cols">
-                            <div class="tv-pic-col tv-pic-col--actual">
-                                <div class="tv-pic-col-lbl">Aktual</div>
-                                <div class="tv-pic-col-val tv-pic-amt">${esc(p.actual_formatted)}</div>
+                        <div class="tv-pic-right">
+                            <div class="tv-pic-row-top">
+                                <div class="tv-pic-amt">${esc(p.actual_formatted)}</div>
+                                ${hasTarget ? `<div class="tv-pic-ach ${c}">${esc(p.achievement_formatted)}</div>` : ''}
                             </div>
-                            ${hasTarget ? `<div class="tv-pic-col tv-pic-col--target">
-                                <div class="tv-pic-col-val tv-pic-col-val--target">${esc(p.target_posisi_formatted)}</div>
-                            </div>` : ''}
+                            ${hasTarget ? `<div class="tv-pic-col-val--target">${esc(p.target_posisi_formatted)}</div>` : ''}
                         </div>
-                        ${hasTarget ? `<div class="tv-pic-ach ${c}">${esc(p.achievement_formatted)}</div>` : ''}
                     </div>`;
                 }).join('')
                 : '<div class="tv-empty">Belum ada data PIC.</div>';
