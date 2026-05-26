@@ -11,6 +11,20 @@
 
 ---
 
+## Version 4.2 — 26 Mei 2026
+
+### Fitur Baru
+
+- **Cek Overlap Transaksi** — halaman baru di `Input Transaksi` (tombol ⚠ Cek Overlap di toolbar) yang menampilkan semua pasang transaksi dengan tanggal tumpang tindih pada unit yang sama. Dilengkapi filter per bulan dan per modul. Link langsung ke Detail Alokasi masing-masing transaksi.
+
+### Perbaikan Bug
+
+- **Executive Summary — avg rate per lantai/jenis/lokasi tidak akurat**: Query SQL untuk tabel occupancy (CL, Media, Gudang) kini menggunakan subquery yang mengagregasi `SUM(amount)` dan `SUM(days)` per unit (`master_code`) terlebih dahulu sebelum menghitung `AVG(rate)`. Sebelumnya `AVG()` dihitung langsung atas baris alokasi sehingga unit dengan lebih dari satu alokasi dalam sebulan menimbang rata-rata lebih banyak dari seharusnya.
+- **Dashboard — rate rata-rata tidak termasuk unit tanpa revenue**: Filter `actual > 0` ditambahkan pada kalkulasi avg rate per unit di segmen CL, Media, dan Gudang agar unit dengan hari alokasi tapi nilai Rp 0 (anchor cycle) tidak masuk perhitungan rata-rata harian.
+- **Cek Overlap — transaksi terhapus ikut muncul**: Kondisi `deleted_at IS NULL` dipindah ke `WHERE` clause (eksplisit untuk kedua sisi join) sehingga transaksi yang sudah dihapus (soft delete) tidak lagi muncul di laporan overlap.
+
+---
+
 ## Version 4.1 — 24 Mei 2026
 
 ### Fitur Baru — Rewarding PIC

@@ -443,7 +443,7 @@ function dashboard(PDO $pdo): void
                         $fRateBulanList = [];
                         foreach ($floorRows as $_r) {
                             $_a = max((float)$_r['area_sqm'], 1);
-                            if ($_r['days'] > 0) $fRateHariList[] = $_r['actual'] / $_r['days'] / $_a;
+                            if ($_r['days'] > 0 && $_r['actual'] > 0) $fRateHariList[] = $_r['actual'] / $_r['days'] / $_a;
                             $fRateBulanList[] = $_r['actual'] / $periodDays / $_a;
                         }
                         $fAvgRateHari  = count($fRateHariList)  > 0 ? array_sum($fRateHariList)  / count($fRateHariList)  : 0;
@@ -504,7 +504,7 @@ function dashboard(PDO $pdo): void
                         $tRateHariList  = [];
                         $tRateBulanList = [];
                         foreach ($typeRows as $_r) {
-                            if ($_r['days'] > 0) $tRateHariList[] = $_r['actual'] / $_r['days'];
+                            if ($_r['days'] > 0 && $_r['actual'] > 0) $tRateHariList[] = $_r['actual'] / $_r['days'];
                             $tRateBulanList[] = $_r['actual'] / $periodDays;
                         }
                         $tAvgRateHari  = count($tRateHariList)  > 0 ? array_sum($tRateHariList)  / count($tRateHariList)  : 0;
@@ -569,7 +569,7 @@ function dashboard(PDO $pdo): void
                         $lRateBulanList = [];
                         foreach ($locRows as $_r) {
                             $_a = max((float)$_r['area_sqm'], 1);
-                            if ($_r['days'] > 0) $lRateHariList[] = $_r['actual'] / $_r['days'] / $_a;
+                            if ($_r['days'] > 0 && $_r['actual'] > 0) $lRateHariList[] = $_r['actual'] / $_r['days'] / $_a;
                             $lRateBulanList[] = $_r['actual'] / $periodDays / $_a;
                         }
                         $lAvgRateHari  = count($lRateHariList)  > 0 ? array_sum($lRateHariList)  / count($lRateHariList)  : 0;

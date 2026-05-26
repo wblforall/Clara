@@ -68,7 +68,10 @@ function transactions_page(PDO $pdo): void
             <?php if (can('manage_transactions')): ?>
                 <a class="btn" href="?r=transaction_form&module=<?= h($module) ?>">+ Tambah Transaksi</a>
             <?php endif; ?>
-            <a class="btn light" href="?r=export_transactions_xlsx&module=<?= h($module) ?>&search=<?= urlencode($search) ?>&pic=<?= urlencode($filterPic) ?>&date_from=<?= h($dateFrom) ?>&date_to=<?= h($dateTo) ?>">⬇ Export Excel</a>
+            <div style="display:flex;gap:8px">
+                <a class="btn light" href="?r=transaction_overlaps" style="color:#92400e;border-color:#fcd34d">⚠ Cek Overlap</a>
+                <a class="btn light" href="?r=export_transactions_xlsx&module=<?= h($module) ?>&search=<?= urlencode($search) ?>&pic=<?= urlencode($filterPic) ?>&date_from=<?= h($dateFrom) ?>&date_to=<?= h($dateTo) ?>">⬇ Export Excel</a>
+            </div>
         </div>
 
         <!-- FILTER FORM -->
@@ -1386,6 +1389,137 @@ function transaction_history_page(PDO $pdo): void
             </div>
             <?php endforeach; ?>
         </div>
+        <?php endif; ?>
+        <?php
+    });
+}
+
+function transaction_overlaps_page(PDO $pdo): void
+{
+    $pid          = current_property_id();
+    $moduleFilter = getv('module', '');
+    $periodFilter = getv('period', '');  // YYYY-MM
+    $moduleLabel  = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
+
+    $params = [$pid];
+    $extraWhere = '';
+    if ($moduleFilter) {
+        $extraWhere .= ' AND t1.module = ?';
+        $params[] = $moduleFilter;
+    }
+    if ($periodFilter) {
+        // overlap window [GREATEST(start1,start2), LEAST(end1,end2)] harus menyentuh bulan yang dipilih
+        $extraWhere .= ' AND GREATEST(t1.start_date, t2.start_date) <= LAST_DAY(?)
+                         AND LEAST(t1.end_date, t2.end_date) >= ?';
+        $params[] = $periodFilter . '-01';
+        $params[] = $periodFilter . '-01';
+    }
+
+    $stmt = $pdo->prepare(
+        "SELECT t1.id id1, t1.module, t1.master_code,
+                t1.start_date start1, t1.end_date end1,
+                COALESCE(c1.company_name, '-') client1, COALESCE(t1.pic_name, '-') pic1,
+                t2.id id2,
+                t2.start_date start2, t2.end_date end2,
+                COALESCE(c2.company_name, '-') client2, COALESCE(t2.pic_name, '-') pic2
+         FROM transactions t1
+         JOIN transactions t2 ON t2.master_code = t1.master_code
+             AND t2.property_id = t1.property_id
+             AND t2.id > t1.id
+             AND t1.start_date <= t2.end_date
+             AND t1.end_date   >= t2.start_date
+         LEFT JOIN master_clients c1 ON c1.id = t1.client_id
+         LEFT JOIN master_clients c2 ON c2.id = t2.client_id
+         WHERE t1.deleted_at IS NULL
+           AND t2.deleted_at IS NULL
+           AND t1.property_id = ?
+           $extraWhere
+         ORDER BY t1.master_code, t1.start_date
+         LIMIT 500"
+    );
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll();
+
+    layout('Cek Overlap Transaksi', function () use ($rows, $moduleFilter, $periodFilter, $moduleLabel) {
+        ?>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:14px">
+            <a class="btn secondary" href="?r=transactions">← Kembali</a>
+            <form method="get" style="display:inline-flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0">
+                <input type="hidden" name="r" value="transaction_overlaps">
+                <div>
+                    <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">Bulan</label>
+                    <input type="month" name="period" value="<?= h($periodFilter) ?>" style="width:160px">
+                </div>
+                <div>
+                    <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">Modul</label>
+                    <select name="module" style="width:auto">
+                        <option value="">Semua Modul</option>
+                        <?php foreach (['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'] as $k => $v): ?>
+                            <option value="<?= h($k) ?>" <?= $moduleFilter === $k ? 'selected' : '' ?>><?= h($v) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div style="align-self:flex-end;display:flex;gap:6px">
+                    <button type="submit">Cari</button>
+                    <?php if ($moduleFilter || $periodFilter): ?>
+                        <a class="btn secondary" href="?r=transaction_overlaps">Reset</a>
+                    <?php endif; ?>
+                </div>
+            </form>
+        </div>
+
+        <?php if (empty($rows)): ?>
+            <div class="panel" style="text-align:center;padding:40px;color:var(--muted)">
+                <div style="font-size:32px;margin-bottom:10px">✅</div>
+                <div style="font-weight:600;color:var(--ink)">Tidak ada overlap ditemukan</div>
+                <div style="margin-top:6px;font-size:13px">
+                    Semua transaksi<?= $moduleFilter ? ' (' . h($moduleLabel[$moduleFilter]) . ')' : '' ?>
+                    <?= $periodFilter ? ' di bulan ' . h(period_label($periodFilter)) : '' ?>
+                    tidak saling tumpang tindih tanggalnya.
+                </div>
+            </div>
+        <?php else: ?>
+            <div style="margin-bottom:12px;padding:10px 14px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;font-size:13px;color:#92400e">
+                Ditemukan <strong><?= count($rows) ?></strong> pasang transaksi dengan tanggal yang overlap
+                <?= $periodFilter ? 'di bulan <strong>' . h(period_label($periodFilter)) . '</strong>' : '' ?>.
+                Ini bisa wajar jika unit memang bisa dibagi per slot/luasan — periksa apakah memang disengaja.
+            </div>
+            <div class="table-wrap">
+                <table style="font-size:12px">
+                    <thead>
+                        <tr>
+                            <th>Kode Unit</th>
+                            <th>Modul</th>
+                            <th>Transaksi A</th>
+                            <th>Periode A</th>
+                            <th>PIC A</th>
+                            <th>Transaksi B</th>
+                            <th>Periode B</th>
+                            <th>PIC B</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($rows as $row): ?>
+                        <tr>
+                            <td style="font-weight:600"><?= h($row['master_code']) ?></td>
+                            <td><span style="font-size:11px;font-weight:700;text-transform:uppercase"><?= h($row['module']) ?></span></td>
+                            <td>
+                                <a href="?r=allocation_detail&id=<?= (int)$row['id1'] ?>">#<?= (int)$row['id1'] ?></a><br>
+                                <span style="color:var(--muted)"><?= h($row['client1']) ?></span>
+                            </td>
+                            <td style="white-space:nowrap"><?= h($row['start1']) ?><br><?= h($row['end1']) ?></td>
+                            <td><?= h($row['pic1']) ?></td>
+                            <td>
+                                <a href="?r=allocation_detail&id=<?= (int)$row['id2'] ?>">#<?= (int)$row['id2'] ?></a><br>
+                                <span style="color:var(--muted)"><?= h($row['client2']) ?></span>
+                            </td>
+                            <td style="white-space:nowrap"><?= h($row['start2']) ?><br><?= h($row['end2']) ?></td>
+                            <td><?= h($row['pic2']) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
         <?php endif; ?>
         <?php
     });
