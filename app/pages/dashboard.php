@@ -816,31 +816,48 @@ function display_page(PDO $pdo, array $config): void
                 : '<div class="tv-empty">Belum ada data PIC.</div>';
         }
 
+        let failCount = 0;
+        let retryTimer = null;
+
+        async function fetchPanel(panel, period) {
+            const r = await fetch(baseUrl + '&period=' + encodeURIComponent(period) + '&pid=' + panel.dataset.pid, { cache: 'no-store' });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return { panel, d: await r.json() };
+        }
+
         async function refresh() {
+            clearTimeout(retryTimer);
             statusEl.className   = 'tv-dot';
             statusEl.textContent = 'Memperbarui...';
             const period = sel.value;
-            try {
-                const panels = [...document.querySelectorAll('.tv-panel')];
-                const results = await Promise.all(panels.map(panel =>
-                    fetch(baseUrl + '&period=' + encodeURIComponent(period) + '&pid=' + panel.dataset.pid, { cache: 'no-store' })
-                        .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
-                        .then(d => ({ panel, d }))
-                ));
-                results.forEach(({ panel, d }) => renderPanel(panel, d));
+            const panels = [...document.querySelectorAll('.tv-panel')];
+            const results = await Promise.allSettled(panels.map(panel => fetchPanel(panel, period)));
+            let anyOk = false;
+            results.forEach(res => {
+                if (res.status === 'fulfilled') { renderPanel(res.value.panel, res.value.d); anyOk = true; }
+            });
+            if (anyOk) {
+                failCount = 0;
                 statusEl.className   = 'tv-dot is-online';
                 statusEl.textContent = 'Online';
-            } catch (e) {
-                statusEl.className   = 'tv-dot is-error';
-                statusEl.textContent = 'Koneksi terputus';
+            } else {
+                failCount++;
+                if (failCount >= 3) {
+                    statusEl.className   = 'tv-dot is-error';
+                    statusEl.textContent = 'Koneksi terputus';
+                } else {
+                    statusEl.className   = 'tv-dot';
+                    statusEl.textContent = 'Mencoba ulang...';
+                    retryTimer = setTimeout(refresh, 10000);
+                }
             }
         }
 
-        sel.addEventListener('change', refresh);
+        sel.addEventListener('change', () => { failCount = 0; refresh(); });
         setClock();
         refresh();
         setInterval(setClock, 1000);
-        setInterval(refresh, 60000);
+        setInterval(refresh, 30000);
     </script>
     </body>
     </html>
