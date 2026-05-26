@@ -793,7 +793,11 @@ function display_page(PDO $pdo, array $config): void
                 ? d.pics.slice(0, 5).map((p, i, arr) => {
                     const c = cls(Number(p.achievement || 0) * 100);
                     const hasTarget = p.target_posisi > 0;
-                    const badge = arr.length > 1 && i === 0 ? ' 👑' : (arr.length > 1 && i === arr.length - 1 ? ' 😢' : '');
+                    const ranked = arr.filter(x => x.pic_name !== 'WBL Unit');
+                    const badge = p.pic_name === 'WBL Unit' ? ''
+                        : (ranked.length > 1 && p.pic_name === ranked[0].pic_name) ? ' 👑'
+                        : (ranked.length > 1 && p.pic_name === ranked[ranked.length - 1].pic_name) ? ' 😢'
+                        : '';
                     return `<div class="tv-pic r${i + 1}">
                         <div class="tv-pic-num">${i + 1}</div>
                         <div class="tv-pic-info">
