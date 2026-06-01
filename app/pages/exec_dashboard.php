@@ -40,7 +40,51 @@ function exec_dashboard(PDO $pdo): void
 
     audit($pdo, 'view', 'exec_dashboard', $period, ['period' => $period], [], 'reporting');
 
-    layout('Executive Summary', function () use ($period, $periodLabel, $periodDays, $propData, $combined, $allPeriods, $monthNames) {
+    // Daily occupancy chart data — per property
+    $firstDay = $period . '-01';
+    $lastDay  = $period . '-' . $periodDays;
+
+    $clTotalByProp  = [];
+    $medTotalByProp = [];
+    $stCl  = $pdo->prepare("SELECT COUNT(*) FROM master_cl_units WHERE status='active' AND property_id=?");
+    $stMed = $pdo->prepare("SELECT COUNT(*) FROM master_media   WHERE status='active' AND property_id=?");
+    foreach ($properties as $prop) {
+        $pid = (int) $prop['id'];
+        $stCl->execute([$pid]);  $clTotalByProp[$pid]  = (int) $stCl->fetchColumn();
+        $stMed->execute([$pid]); $medTotalByProp[$pid] = (int) $stMed->fetchColumn();
+    }
+
+    $trxStmt = $pdo->prepare(
+        "SELECT property_id, master_code, module, start_date, end_date
+         FROM transactions
+         WHERE deleted_at IS NULL AND module IN ('cl','media')
+           AND start_date <= ? AND end_date >= ?"
+    );
+    $trxStmt->execute([$lastDay, $firstDay]);
+    $monthTrx = $trxStmt->fetchAll();
+
+    $dailyOccByProp = [];
+    foreach ($properties as $prop) {
+        $pid  = (int) $prop['id'];
+        $clT  = $clTotalByProp[$pid]  ?? 0;
+        $medT = $medTotalByProp[$pid] ?? 0;
+        $cl = $med = [];
+        for ($d = 1; $d <= $periodDays; $d++) {
+            $day = sprintf('%s-%02d', $period, $d);
+            $clCodes = $medCodes = [];
+            foreach ($monthTrx as $t) {
+                if ((int)$t['property_id'] === $pid && $t['start_date'] <= $day && $t['end_date'] >= $day) {
+                    if ($t['module'] === 'cl')    $clCodes[$t['master_code']]  = true;
+                    else                          $medCodes[$t['master_code']] = true;
+                }
+            }
+            $cl[]  = $clT  > 0 ? round(count($clCodes)  / $clT  * 100, 1) : 0;
+            $med[] = $medT > 0 ? round(count($medCodes) / $medT * 100, 1) : 0;
+        }
+        $dailyOccByProp[$pid] = ['name' => $prop['name'], 'cl' => $cl, 'media' => $med];
+    }
+
+    layout('Executive Summary', function () use ($period, $periodLabel, $periodDays, $propData, $combined, $allPeriods, $monthNames, $dailyOccByProp) {
         ?>
         <style>
             .exec-toolbar { position:sticky;top:0;z-index:50;background:var(--bg,#f8fafc);box-shadow:0 1px 0 var(--line,#e2e8f0);padding:10px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap; }
@@ -464,6 +508,24 @@ function exec_dashboard(PDO $pdo): void
                 </div>
             </div>
             <?php endforeach; ?>
+        <!-- DAILY OCCUPANCY CHART -->
+        <div class="section-title" style="margin-top:4px">Tren Occupancy Harian — <?= h($periodLabel) ?></div>
+        <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:12px">
+            <span style="display:flex;align-items:center;gap:6px"><span style="width:24px;height:3px;background:#0D9488;border-radius:2px;display:inline-block"></span>Exhibition (CL)</span>
+            <span style="display:flex;align-items:center;gap:6px"><span style="width:24px;height:3px;background:#0891B2;border-radius:2px;display:inline-block"></span>Media</span>
+        </div>
+        <div class="prop-col-grid" style="margin-bottom:16px">
+        <?php foreach ($dailyOccByProp as $pid => $occ): ?>
+            <div class="panel" style="padding:14px 16px">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:10px"><?= h($occ['name']) ?></div>
+                <div style="position:relative;height:180px">
+                    <canvas id="chartDailyOcc<?= $pid ?>"></canvas>
+                </div>
+            </div>
+        <?php endforeach; ?>
+        </div>
+
+        <script src="assets/chart.umd.min.js"></script>
         <script>
         setTimeout(function(){
             document.querySelectorAll('.seg-bar-fill[data-w]').forEach(function(b){
@@ -471,6 +533,75 @@ function exec_dashboard(PDO $pdo): void
                 b.style.width=b.getAttribute('data-w')+'%';
             });
         },300);
+
+        (function(){
+            var days = <?= $periodDays ?>;
+            var labels = [];
+            for (var i = 1; i <= days; i++) labels.push(i);
+            var period = '<?= substr($period, 0, 7) ?>';
+
+            var chartCfg = function(clData, medData) {
+                return {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'Exhibition (CL)',
+                                data: clData,
+                                borderColor: '#0D9488',
+                                backgroundColor: 'rgba(13,148,136,.07)',
+                                borderWidth: 2,
+                                pointRadius: 2,
+                                pointHoverRadius: 5,
+                                tension: 0.3,
+                                fill: true,
+                            },
+                            {
+                                label: 'Media',
+                                data: medData,
+                                borderColor: '#0891B2',
+                                backgroundColor: 'rgba(8,145,178,.05)',
+                                borderWidth: 2,
+                                pointRadius: 2,
+                                pointHoverRadius: 5,
+                                tension: 0.3,
+                                fill: true,
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    title: function(ctx) { return period + '-' + String(ctx[0].label).padStart(2,'0'); },
+                                    label: function(ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y + '%'; }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 }, color: '#94A3B8' } },
+                            y: {
+                                min: 0, max: 100,
+                                grid: { color: '#f1f5f9' },
+                                ticks: { font: { size: 10 }, color: '#94A3B8', callback: function(v){ return v+'%'; }, stepSize: 25 }
+                            }
+                        }
+                    }
+                };
+            };
+
+            <?php foreach ($dailyOccByProp as $pid => $occ): ?>
+            new Chart(document.getElementById('chartDailyOcc<?= $pid ?>'), chartCfg(
+                <?= json_encode($occ['cl']) ?>,
+                <?= json_encode($occ['media']) ?>
+            ));
+            <?php endforeach; ?>
+        })();
         </script>
         </div>
         <?php

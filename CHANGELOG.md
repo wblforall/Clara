@@ -11,6 +11,33 @@
 
 ---
 
+## Version 4.4 — 1 Juni 2026
+
+### Fitur Baru
+
+- **Konversi Recurring** (`Admin → Konversi Recurring`) — halaman deteksi dan konversi transaksi yang diinput manual per bulan menjadi satu transaksi recurring (spread).
+  - **Deteksi otomatis** 121 grup kandidat (467 transaksi) berdasarkan pola `master_code + client` yang muncul di 2+ bulan dengan `billing_method = anchor_cycle`.
+  - **Confidence level**: High (amount identik, 90 grup) dan Medium (amount bervariasi, 31 grup).
+  - **Filter** per modul dan confidence level.
+  - **Halaman review per grup**: tampilkan daftar transaksi lama yang akan di-soft-delete, form editable start_date/end_date (bisa diperpanjang), nilai/bulan, override total, dan preview breakdown spread per bulan sebelum konfirmasi.
+  - **Eksekusi merge**: soft-delete transaksi lama + alokasi, buat 1 transaksi baru `billing_method=spread`, hitung ulang alokasi via `AllocationService`, catat ke audit log. Hanya bisa diakses `superadmin`.
+
+---
+
+## Version 4.3 — 1 Juni 2026
+
+### Fitur Baru
+
+- **Occupancy Harian** (`Analisa → Occupancy Harian`) — lihat snapshot occupancy pada tanggal tertentu untuk segmen Exhibition dan Media.
+  - **Summary card** per segmen: jumlah unit terisi, total unit, dan persentase occupancy dengan progress bar.
+  - **Exhibition — Per Lantai**: breakdown occupancy per lantai (LG/GF/UG/FF/SF) lengkap dengan jumlah unit occupied, kosong, dan %. Warna % mengikuti threshold: hijau ≥80%, kuning ≥50%, merah <50%.
+  - **Media — Per Tipe**: breakdown occupancy per tipe media.
+  - **Detail unit terisi**: di bawah setiap lantai/tipe, tabel menampilkan kode unit, lokasi, client, durasi kontrak, PIC, dan nilai — dengan link ke Detail Alokasi.
+  - **Date picker**: pilih tanggal bebas; default hari ini. Tombol "Hari Ini" muncul bila tanggal berbeda.
+  - **Edge case**: tanggal tanpa transaksi menampilkan pesan kosong yang tepat per lantai/tipe.
+
+---
+
 ## Version 4.2 — 26 Mei 2026
 
 ### Fitur Baru

@@ -266,6 +266,9 @@ $pageFiles = [
     'lookup_delete'               => 'lookup.php',
     'trend'                       => 'analytics.php',
     'comparison'                  => 'analytics.php',
+    'daily_occupancy'             => 'daily_occupancy.php',
+    'recurring_candidates'        => 'recurring_candidates.php',
+    'recurring_merge_execute'     => 'recurring_candidates.php',
 ];
 require_once APP_ROOT . '/app/pages/' . ($pageFiles[$route] ?? 'dashboard.php');
 match ($route) {
@@ -316,5 +319,8 @@ match ($route) {
     'audit'                       => audit_page($pdo),
     'trend'                       => trend_page($pdo),
     'comparison'                  => comparison_page($pdo),
+    'daily_occupancy'             => daily_occupancy_page($pdo),
+    'recurring_candidates'        => recurring_candidates_page($pdo),
+    'recurring_merge_execute'     => recurring_merge_execute($pdo),
     default                       => dashboard($pdo),
 };
