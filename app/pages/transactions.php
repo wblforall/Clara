@@ -368,6 +368,14 @@ function transaction_form(PDO $pdo): void
                     </select>
                     <div class="help" id="recognition_help">Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.</div>
                 </div>
+                <div id="cycle_recognition_wrap" style="display:none">
+                    <label>Pengakuan per Siklus</label>
+                    <select name="cycle_recognition" id="cycle_recognition">
+                        <option value="cycle_start">Bulan Awal siklus</option>
+                        <option value="cycle_end">Bulan Akhir siklus</option>
+                    </select>
+                    <div class="help">Revenue tiap siklus diakui di bulan awal atau akhir siklus tersebut.</div>
+                </div>
                 <div class="wide"><label>Materi / Keterangan</label><textarea name="content_note"></textarea></div>
                 <div><label>No. Invoice Accurate <span class="muted" style="font-weight:400">(opsional)</span></label><input type="text" name="invoice_no" placeholder="cth. INV-2026/04/001"></div>
             </div>
@@ -513,9 +521,11 @@ function transaction_form(PDO $pdo): void
             function updateRecognitionHelp() {
                 const val  = document.getElementById('recognition_month').value;
                 const help = document.getElementById('recognition_help');
+                const cycleWrap = document.getElementById('cycle_recognition_wrap');
                 help.textContent = val === 'spread'
                     ? 'Revenue dibagi rata ke setiap bulan yang dicakup kontrak.'
                     : 'Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.';
+                if (cycleWrap) cycleWrap.style.display = val === 'spread' ? '' : 'none';
             }
             document.getElementById('recognition_month').addEventListener('change', updateRecognitionHelp);
             document.querySelector('[name=start_date]').addEventListener('change', checkRecognitionMonth);
@@ -656,7 +666,8 @@ function transaction_save(PDO $pdo): void
         'pricing_type' => post('pricing_type'),
         'unit_rate'    => (float) post('unit_rate', 0),
         'contract_months' => $months ?: null,
-        'billing_method'  => 'anchor_cycle',
+        'billing_method'     => 'anchor_cycle',
+        'cycle_recognition'  => post('cycle_recognition', 'cycle_start'),
         'pic_name'     => post('pic_name'),
         'remarks'      => post('remarks'),
         'invoice_no'   => trim((string) post('invoice_no')) ?: null,
@@ -681,35 +692,36 @@ function transaction_save(PDO $pdo): void
     $stmt = $pdo->prepare(
         'INSERT INTO transactions
         (property_id, module, master_code, period_key, client_id, contact_id, content_note, start_date, end_date, quantity, slots, area_sqm,
-         pricing_type, unit_rate, contract_months, billing_method, total_calculated, override_amount, final_amount, pic_name, remarks, invoice_no, created_by)
+         pricing_type, unit_rate, contract_months, billing_method, cycle_recognition, total_calculated, override_amount, final_amount, pic_name, remarks, invoice_no, created_by)
          VALUES
         (:property_id, :module, :master_code, :period_key, :client_id, :contact_id, :content_note, :start_date, :end_date, :quantity, :slots, :area_sqm,
-         :pricing_type, :unit_rate, :contract_months, :billing_method, :total_calculated, :override_amount, :final_amount, :pic_name, :remarks, :invoice_no, :created_by)'
+         :pricing_type, :unit_rate, :contract_months, :billing_method, :cycle_recognition, :total_calculated, :override_amount, :final_amount, :pic_name, :remarks, :invoice_no, :created_by)'
     );
     $stmt->execute([
-        ':property_id'     => current_property_id(),
-        ':module'          => $trx['module'],
-        ':master_code'     => $trx['master_code'],
-        ':period_key'      => $trx['period_key'],
-        ':client_id'       => $clientId ?: null,
-        ':contact_id'      => $contactId ?: null,
-        ':content_note'    => $trx['content_note'],
-        ':start_date'      => $trx['start_date'],
-        ':end_date'        => $trx['end_date'],
-        ':quantity'        => $trx['quantity'],
-        ':slots'           => $trx['slots'],
-        ':area_sqm'        => $trx['area_sqm'],
-        ':pricing_type'    => $trx['pricing_type'],
-        ':unit_rate'       => $trx['unit_rate'],
-        ':contract_months' => $trx['contract_months'],
-        ':billing_method'  => $trx['billing_method'],
-        ':total_calculated'=> $trx['total_calculated'],
-        ':override_amount' => $trx['override_amount'],
-        ':final_amount'    => $trx['final_amount'],
-        ':pic_name'        => $trx['pic_name'],
-        ':remarks'         => $trx['remarks'],
-        ':invoice_no'      => $trx['invoice_no'],
-        ':created_by'      => $createdBy,
+        ':property_id'       => current_property_id(),
+        ':module'            => $trx['module'],
+        ':master_code'       => $trx['master_code'],
+        ':period_key'        => $trx['period_key'],
+        ':client_id'         => $clientId ?: null,
+        ':contact_id'        => $contactId ?: null,
+        ':content_note'      => $trx['content_note'],
+        ':start_date'        => $trx['start_date'],
+        ':end_date'          => $trx['end_date'],
+        ':quantity'          => $trx['quantity'],
+        ':slots'             => $trx['slots'],
+        ':area_sqm'          => $trx['area_sqm'],
+        ':pricing_type'      => $trx['pricing_type'],
+        ':unit_rate'         => $trx['unit_rate'],
+        ':contract_months'   => $trx['contract_months'],
+        ':billing_method'    => $trx['billing_method'],
+        ':cycle_recognition' => $trx['cycle_recognition'],
+        ':total_calculated'  => $trx['total_calculated'],
+        ':override_amount'   => $trx['override_amount'],
+        ':final_amount'      => $trx['final_amount'],
+        ':pic_name'          => $trx['pic_name'],
+        ':remarks'           => $trx['remarks'],
+        ':invoice_no'        => $trx['invoice_no'],
+        ':created_by'        => $createdBy,
     ]);
     $id = (int) $pdo->lastInsertId();
     AllocationService::saveAllocations($pdo, $id, $trx);
@@ -839,6 +851,15 @@ function transaction_edit(PDO $pdo): void
                         <option value="spread" <?= $recognitionMonth === 'spread' ? 'selected' : '' ?>>Spread per Bulan (Recurring)</option>
                     </select>
                     <div class="help" id="recognition_help">Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.</div>
+                </div>
+                <div id="cycle_recognition_wrap" style="<?= $recognitionMonth === 'spread' ? '' : 'display:none' ?>">
+                    <label>Pengakuan per Siklus</label>
+                    <select name="cycle_recognition" id="cycle_recognition">
+                        <?php $cr = $trx['cycle_recognition'] ?? 'cycle_start'; ?>
+                        <option value="cycle_start" <?= $cr === 'cycle_start' ? 'selected' : '' ?>>Bulan Awal siklus</option>
+                        <option value="cycle_end"   <?= $cr === 'cycle_end'   ? 'selected' : '' ?>>Bulan Akhir siklus</option>
+                    </select>
+                    <div class="help">Revenue tiap siklus diakui di bulan awal atau akhir siklus tersebut.</div>
                 </div>
                 <div class="wide"><label>Materi / Keterangan</label><textarea name="content_note"><?= h($trx['content_note'] ?? '') ?></textarea></div>
                 <div><label>No. Invoice Accurate <span class="muted" style="font-weight:400">(opsional)</span></label><input type="text" name="invoice_no" value="<?= h($trx['invoice_no'] ?? '') ?>" placeholder="cth. INV-2026/04/001"></div>
@@ -987,9 +1008,11 @@ function transaction_edit(PDO $pdo): void
             function updateRecognitionHelp() {
                 const val  = document.getElementById('recognition_month').value;
                 const help = document.getElementById('recognition_help');
+                const cycleWrap = document.getElementById('cycle_recognition_wrap');
                 help.textContent = val === 'spread'
                     ? 'Revenue dibagi rata ke setiap bulan yang dicakup kontrak.'
                     : 'Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.';
+                if (cycleWrap) cycleWrap.style.display = val === 'spread' ? '' : 'none';
             }
             document.getElementById('recognition_month').addEventListener('change', updateRecognitionHelp);
             updateRecognitionHelp();
@@ -1138,10 +1161,11 @@ function transaction_update(PDO $pdo): void
         'pricing_type'    => post('pricing_type'),
         'unit_rate'       => (float) post('unit_rate', 0),
         'contract_months' => $months ?: null,
-        'billing_method'  => 'anchor_cycle',
-        'pic_name'        => post('pic_name'),
-        'remarks'         => post('remarks'),
-        'invoice_no'      => trim((string) post('invoice_no')) ?: null,
+        'billing_method'     => 'anchor_cycle',
+        'cycle_recognition'  => post('cycle_recognition', 'cycle_start'),
+        'pic_name'           => post('pic_name'),
+        'remarks'            => post('remarks'),
+        'invoice_no'         => trim((string) post('invoice_no')) ?: null,
     ];
     $calculated = AllocationService::totalCalculated($trx);
     $override = post('override_amount') !== '' ? (float) post('override_amount') : null;
@@ -1164,28 +1188,29 @@ function transaction_update(PDO $pdo): void
          client_id=:client_id, contact_id=:contact_id,
          content_note=:content_note, start_date=:start_date, end_date=:end_date, quantity=:quantity, slots=:slots,
          area_sqm=:area_sqm, pricing_type=:pricing_type, unit_rate=:unit_rate, contract_months=:contract_months,
-         billing_method=:billing_method,
+         billing_method=:billing_method, cycle_recognition=:cycle_recognition,
          total_calculated=:total_calculated, override_amount=:override_amount, final_amount=:final_amount,
          pic_name=:pic_name, remarks=:remarks, invoice_no=:invoice_no,
          updated_at=CURRENT_TIMESTAMP, updated_by=:updated_by WHERE id=:id AND property_id=:property_id'
     )->execute([
-        ':master_code'      => $trx['master_code'],
-        ':period_key'       => $trx['period_key'],
-        ':client_id'        => $clientId ?: null,
-        ':contact_id'       => $contactId ?: null,
-        ':content_note'     => $trx['content_note'],
-        ':start_date'       => $trx['start_date'],
-        ':end_date'         => $trx['end_date'],
-        ':quantity'         => $trx['quantity'],
-        ':slots'            => $trx['slots'],
-        ':area_sqm'         => $trx['area_sqm'],
-        ':pricing_type'     => $trx['pricing_type'],
-        ':unit_rate'        => $trx['unit_rate'],
-        ':contract_months'  => $trx['contract_months'],
-        ':billing_method'   => $trx['billing_method'],
-        ':total_calculated' => $trx['total_calculated'],
-        ':override_amount'  => $trx['override_amount'],
-        ':final_amount'     => $trx['final_amount'],
+        ':master_code'       => $trx['master_code'],
+        ':period_key'        => $trx['period_key'],
+        ':client_id'         => $clientId ?: null,
+        ':contact_id'        => $contactId ?: null,
+        ':content_note'      => $trx['content_note'],
+        ':start_date'        => $trx['start_date'],
+        ':end_date'          => $trx['end_date'],
+        ':quantity'          => $trx['quantity'],
+        ':slots'             => $trx['slots'],
+        ':area_sqm'          => $trx['area_sqm'],
+        ':pricing_type'      => $trx['pricing_type'],
+        ':unit_rate'         => $trx['unit_rate'],
+        ':contract_months'   => $trx['contract_months'],
+        ':billing_method'    => $trx['billing_method'],
+        ':cycle_recognition' => $trx['cycle_recognition'],
+        ':total_calculated'  => $trx['total_calculated'],
+        ':override_amount'   => $trx['override_amount'],
+        ':final_amount'      => $trx['final_amount'],
         ':pic_name'         => $trx['pic_name'],
         ':remarks'          => $trx['remarks'],
         ':invoice_no'       => $trx['invoice_no'],

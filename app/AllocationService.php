@@ -69,6 +69,33 @@ final class AllocationService
         $finalAmount = (float) ($trx['final_amount'] ?? 0);
 
         if (($trx['billing_method'] ?? '') === 'spread') {
+            $cycleRecognition = $trx['cycle_recognition'] ?? 'cycle_start';
+            if (($trx['pricing_type'] ?? '') === 'monthly'
+                && in_array($cycleRecognition, ['cycle_start', 'cycle_end'], true)
+            ) {
+                // Alokasi per siklus — tiap cycle diakui di 1 period_key tanpa dipecah
+                $allocations = self::monthlyCycleAllocations(
+                    new DateTimeImmutable($trx['start_date']),
+                    new DateTimeImmutable($trx['end_date']),
+                    $finalAmount,
+                    $cycleRecognition
+                );
+                $propertyId = (int)($trx['property_id'] ?? (function_exists('current_property_id') ? current_property_id() : 1));
+                $stmt = $pdo->prepare(
+                    'INSERT INTO transaction_allocations
+                    (property_id, transaction_id, module, master_code, period_key, allocation_start, allocation_end, allocated_days, amount, capacity_days, pic_name)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+                );
+                foreach ($allocations as $a) {
+                    $stmt->execute([
+                        $propertyId, $transactionId, $trx['module'], $trx['master_code'],
+                        $a['period_key'], $a['allocation_start'], $a['allocation_end'],
+                        $a['allocated_days'], $a['amount'], $a['capacity_days'],
+                        $trx['pic_name'] ?? null,
+                    ]);
+                }
+                return;
+            }
             $allocations = self::applySpreadAmount($allocations, $finalAmount);
         } else {
             if ($finalAmount > 0) {
@@ -246,6 +273,42 @@ final class AllocationService
         }
         unset($a);
         return $allocations;
+    }
+
+    private static function monthlyCycleAllocations(
+        DateTimeImmutable $start,
+        DateTimeImmutable $end,
+        float $finalAmount,
+        string $recognition
+    ): array {
+        $cycles = [];
+        $cursor = $start;
+        $limit  = 120;
+        while ($cursor <= $end && $limit-- > 0) {
+            $cycleEnd = $cursor->modify('+1 month')->modify('-1 day');
+            if ($cycleEnd > $end) $cycleEnd = $end;
+            $days      = self::daysInclusive($cursor, $cycleEnd);
+            $periodKey = ($recognition === 'cycle_end' ? $cycleEnd : $cursor)->format('Y-m');
+            $cycles[]  = [
+                'period_key'       => $periodKey,
+                'allocation_start' => $cursor->format('Y-m-d'),
+                'allocation_end'   => $cycleEnd->format('Y-m-d'),
+                'allocated_days'   => $days,
+                'capacity_days'    => $days,
+                'amount'           => 0,
+            ];
+            $cursor = $cycleEnd->modify('+1 day');
+        }
+        $n = count($cycles);
+        if (!$n) return $cycles;
+        $perC = (int) floor($finalAmount / $n);
+        $running = 0;
+        foreach ($cycles as $i => &$c) {
+            $c['amount'] = ($i === $n - 1) ? (int) round($finalAmount - $running) : $perC;
+            $running    += $c['amount'];
+        }
+        unset($c);
+        return $cycles;
     }
 
     private static function adjustRounding(array $allocations, float $target): array

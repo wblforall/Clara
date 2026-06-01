@@ -11,6 +11,25 @@
 
 ---
 
+## Version 4.5 — 1 Juni 2026
+
+### Fitur Baru
+
+- **Pengakuan per Siklus (Cycle Recognition)** — untuk transaksi recurring/spread dengan `pricing_type=monthly` yang tanggal kontraknya lintas bulan kalender (misal 9 Jan – 8 Feb), user kini bisa memilih revenue tiap siklus diakui di **Bulan Awal** atau **Bulan Akhir** siklus tersebut, alih-alih dipecah proporsional per hari.
+  - Tersedia di form **Tambah Transaksi** dan **Edit Transaksi** — muncul otomatis saat "Spread per Bulan (Recurring)" dipilih.
+  - Tersedia di halaman **Konversi Recurring** — pilihan sama di form review per grup.
+  - Kolom baru `cycle_recognition` di tabel `transactions` (migration `006`).
+  - `AllocationService` diperbarui: jika `billing_method=spread`, `pricing_type=monthly`, dan `cycle_recognition` di-set, alokasi dibuat per siklus bulanan (1 siklus = 1 baris alokasi di 1 period_key) tanpa split kalender.
+
+### Perbaikan
+
+- **Konversi Recurring — filter properti**: tambah dropdown filter properti di halaman daftar kandidat.
+- **Konversi Recurring — urutan**: daftar diurutkan per properti → CL → Media → Gudang → high confidence → bulan terbanyak.
+- **Konversi Recurring — lompat bulan**: grup dengan bulan tidak berurutan (ada gap) otomatis dikeluarkan dari daftar kandidat menggunakan `PERIOD_DIFF`.
+- **Konversi Recurring — end_date pre-fill**: menggunakan tanggal asli kontrak, bukan akhir bulan period_key.
+
+---
+
 ## Version 4.4 — 1 Juni 2026
 
 ### Fitur Baru
