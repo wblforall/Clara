@@ -610,8 +610,11 @@ function dashboard(PDO $pdo): void
                 if (!isNaN(v)) countUp(el, v, 900);
             });
         }
-        window.addEventListener('pageshow', runCountUp);
         runCountUp();
+        // Re-run hanya saat bfcache restore (browser back/forward)
+        window.addEventListener('pageshow', function(e) {
+            if (e.persisted) runCountUp();
+        });
 
         // 2. Collapsible group headers
         (function () {
