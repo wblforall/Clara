@@ -37,6 +37,17 @@ function trend_page(PDO $pdo): void
     $allocStmt->execute([$pid]);
     $alloc = $allocStmt->fetchAll();
 
+    // Recurring per period_key
+    $recurStmt = $pdo->prepare(
+        "SELECT ta.period_key, COALESCE(SUM(ta.amount),0) recurring
+         FROM transaction_allocations ta
+         JOIN transactions t ON t.id = ta.transaction_id AND t.deleted_at IS NULL AND t.billing_method = 'spread'
+         WHERE ta.property_id = ?
+         GROUP BY ta.period_key"
+    );
+    $recurStmt->execute([$pid]);
+    $recurByPeriod = $recurStmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
     $targetsStmt = $pdo->prepare(
         "SELECT period_key, target_amount FROM targets_monthly WHERE property_id = ?"
     );
@@ -51,34 +62,40 @@ function trend_page(PDO $pdo): void
 
     // Bangun 12 bulan untuk tahun yang dipilih
     $months = ['01','02','03','04','05','06','07','08','09','10','11','12'];
-    $labels = $cActual = $cTarget = $cCl = $cMedia = $cGudang = [];
-    $yearActual = $yearTarget = 0;
+    $labels = $cActual = $cTarget = $cCl = $cMedia = $cGudang = $cRegular = $cRecurring = [];
+    $yearActual = $yearTarget = $yearRecurring = 0;
     $bestAmt = 0; $bestLabel = '—';
 
     foreach ($months as $m) {
         $pk = $selectedYear . '-' . $m;
         $labels[] = $mn[$m];
-        $cl     = $byPeriod[$pk]['cl']     ?? 0;
-        $media  = $byPeriod[$pk]['media']  ?? 0;
-        $gudang = $byPeriod[$pk]['gudang'] ?? 0;
-        $total  = $cl + $media + $gudang;
-        $tgt    = (float)($targets[$pk] ?? 0);
+        $cl        = $byPeriod[$pk]['cl']     ?? 0;
+        $media     = $byPeriod[$pk]['media']  ?? 0;
+        $gudang    = $byPeriod[$pk]['gudang'] ?? 0;
+        $total     = $cl + $media + $gudang;
+        $recurring = (float)($recurByPeriod[$pk] ?? 0);
+        $regular   = max(0, $total - $recurring);
+        $tgt       = (float)($targets[$pk] ?? 0);
 
-        $cCl[]     = round($cl);
-        $cMedia[]  = round($media);
-        $cGudang[] = round($gudang);
-        $cActual[] = round($total);
-        $cTarget[] = round($tgt);
+        $cCl[]        = round($cl);
+        $cMedia[]     = round($media);
+        $cGudang[]    = round($gudang);
+        $cActual[]    = round($total);
+        $cRegular[]   = round($regular);
+        $cRecurring[] = round($recurring);
+        $cTarget[]    = round($tgt);
 
-        $yearActual += $total;
-        $yearTarget += $tgt;
+        $yearActual    += $total;
+        $yearRecurring += $recurring;
+        $yearTarget    += $tgt;
 
         if ($total > $bestAmt) { $bestAmt = $total; $bestLabel = $mn[$m]; }
     }
 
-    $yearAch = $yearTarget > 0 ? $yearActual / $yearTarget : 0;
+    $yearAch     = $yearTarget > 0 ? $yearActual / $yearTarget : 0;
+    $yearRegular = $yearActual - $yearRecurring;
 
-    layout('Trend Revenue', function () use ($labels, $cActual, $cTarget, $cCl, $cMedia, $cGudang, $months, $byPeriod, $targets, $yearActual, $yearTarget, $yearAch, $bestAmt, $bestLabel, $selectedYear, $allYears, $mn) {
+    layout('Trend Revenue', function () use ($labels, $cActual, $cTarget, $cCl, $cMedia, $cGudang, $cRegular, $cRecurring, $months, $byPeriod, $recurByPeriod, $targets, $yearActual, $yearTarget, $yearAch, $yearRecurring, $yearRegular, $bestAmt, $bestLabel, $selectedYear, $allYears, $mn) {
         ?>
         <script src="assets/chart.umd.min.js"></script>
         <style>
@@ -104,24 +121,27 @@ function trend_page(PDO $pdo): void
             </div>
         </form>
 
-        <div class="grid grid-4" style="margin-bottom:20px">
+        <div class="grid" style="grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px">
             <div class="card kpi-anim" style="animation-delay:.04s">
                 <div class="kpi-label">Total Aktual <?= h($selectedYear) ?></div>
                 <div class="kpi-value" data-countup="<?= $yearActual ?>"></div>
             </div>
-            <div class="card kpi-anim" style="animation-delay:.1s">
-                <div class="kpi-label">Total Target <?= h($selectedYear) ?></div>
-                <div class="kpi-value" data-countup="<?= $yearTarget ?>"></div>
+            <div class="card kpi-anim" style="animation-delay:.08s">
+                <div class="kpi-label">Regular <?= h($selectedYear) ?></div>
+                <div class="kpi-value" style="color:#0D9488" data-countup="<?= $yearRegular ?>"></div>
+            </div>
+            <div class="card kpi-anim" style="animation-delay:.12s">
+                <div class="kpi-label">Recurring <?= h($selectedYear) ?></div>
+                <div class="kpi-value" style="color:#0369a1" data-countup="<?= $yearRecurring ?>"></div>
             </div>
             <div class="card kpi-anim" style="animation-delay:.16s">
+                <div class="kpi-label">Target <?= h($selectedYear) ?></div>
+                <div class="kpi-value" data-countup="<?= $yearTarget ?>"></div>
+            </div>
+            <div class="card kpi-anim" style="animation-delay:.20s">
                 <div class="kpi-label">Achievement <?= h($selectedYear) ?></div>
                 <div class="kpi-value" style="color:<?= $yearAch >= 1 ? 'var(--green)' : ($yearAch >= .8 ? 'var(--amber)' : 'var(--accent)') ?>"
                      data-countup="<?= $yearAch ?>" data-countup-pct="1"></div>
-            </div>
-            <div class="card kpi-anim" style="animation-delay:.22s">
-                <div class="kpi-label">Bulan Terbaik</div>
-                <div class="kpi-value" style="font-size:19px"><?= h($bestLabel) ?></div>
-                <div style="color:var(--muted);font-size:12px;margin-top:4px"><?= money($bestAmt) ?></div>
             </div>
         </div>
 
@@ -143,6 +163,8 @@ function trend_page(PDO $pdo): void
                         <th style="text-align:right">Exhibition</th>
                         <th style="text-align:right">Media</th>
                         <th style="text-align:right">Gudang</th>
+                        <th style="text-align:right">Regular</th>
+                        <th style="text-align:right;color:#0369a1">Recurring</th>
                         <th style="text-align:right">Total Aktual</th>
                         <th style="text-align:right">Target</th>
                         <th style="text-align:right">Achievement</th>
@@ -150,22 +172,26 @@ function trend_page(PDO $pdo): void
                 </thead>
                 <tbody>
                 <?php
-                $tTot = $tTgt = 0;
+                $tTot = $tTgt = $tRec = 0;
                 foreach ($months as $i => $m):
                     $pk  = $selectedYear . '-' . $m;
                     $cl  = $byPeriod[$pk]['cl']     ?? 0;
                     $med = $byPeriod[$pk]['media']  ?? 0;
                     $gd  = $byPeriod[$pk]['gudang'] ?? 0;
                     $tot = $cl + $med + $gd;
+                    $rec = (float)($recurByPeriod[$pk] ?? 0);
+                    $reg = max(0, $tot - $rec);
                     $tgt = (float)($targets[$pk] ?? 0);
                     $ach = $tgt > 0 ? $tot / $tgt : null;
-                    $tTot += $tot; $tTgt += $tgt;
+                    $tTot += $tot; $tTgt += $tgt; $tRec += $rec;
                 ?>
                 <tr style="animation:_fadeIn .3s ease both;animation-delay:<?= round(.45 + $i * .04, 2) ?>s">
                     <td style="font-weight:600"><?= h($mn[$m]) ?></td>
                     <td style="text-align:right"><?= $cl  > 0 ? money($cl)  : '<span style="color:var(--muted)">—</span>' ?></td>
                     <td style="text-align:right"><?= $med > 0 ? money($med) : '<span style="color:var(--muted)">—</span>' ?></td>
                     <td style="text-align:right"><?= $gd  > 0 ? money($gd)  : '<span style="color:var(--muted)">—</span>' ?></td>
+                    <td style="text-align:right"><?= $reg > 0 ? money($reg) : '<span style="color:var(--muted)">—</span>' ?></td>
+                    <td style="text-align:right;color:#0369a1"><?= $rec > 0 ? money($rec) : '<span style="color:var(--muted)">—</span>' ?></td>
                     <td style="text-align:right;font-weight:700"><?= $tot > 0 ? money($tot) : '<span style="color:var(--muted)">—</span>' ?></td>
                     <td style="text-align:right"><?= $tgt > 0 ? money($tgt) : '<span style="color:var(--muted)">—</span>' ?></td>
                     <td style="text-align:right">
@@ -184,6 +210,8 @@ function trend_page(PDO $pdo): void
                         <td style="text-align:right"><?= money(array_sum(array_column(array_map(fn($m)=>['v'=>$byPeriod[$selectedYear.'-'.$m]['cl']??0],$months),'v'))) ?></td>
                         <td style="text-align:right"><?= money(array_sum(array_column(array_map(fn($m)=>['v'=>$byPeriod[$selectedYear.'-'.$m]['media']??0],$months),'v'))) ?></td>
                         <td style="text-align:right"><?= money(array_sum(array_column(array_map(fn($m)=>['v'=>$byPeriod[$selectedYear.'-'.$m]['gudang']??0],$months),'v'))) ?></td>
+                        <td style="text-align:right"><?= money($tTot - $tRec) ?></td>
+                        <td style="text-align:right;color:#0369a1"><?= money($tRec) ?></td>
                         <td style="text-align:right"><?= money($tTot) ?></td>
                         <td style="text-align:right"><?= $tTgt > 0 ? money($tTgt) : '—' ?></td>
                         <td style="text-align:right">
@@ -207,6 +235,8 @@ function trend_page(PDO $pdo): void
         const jCl  = <?= json_encode(array_values($cCl)) ?>;
         const jMed = <?= json_encode(array_values($cMedia)) ?>;
         const jGd  = <?= json_encode(array_values($cGudang)) ?>;
+        const jReg = <?= json_encode(array_values($cRegular)) ?>;
+        const jRec = <?= json_encode(array_values($cRecurring)) ?>;
 
         const baseOpts = {
             responsive: true,
@@ -242,13 +272,25 @@ function trend_page(PDO $pdo): void
                         tension: 0.3, order: 0,
                     },
                     {
-                        type: 'bar', label: 'Aktual', data: jAct,
-                        backgroundColor: 'rgba(13,148,136,.75)',
-                        borderRadius: 5, order: 1,
+                        type: 'bar', label: 'Regular', data: jReg,
+                        backgroundColor: 'rgba(13,148,136,.8)',
+                        borderRadius: [4, 4, 0, 0], stack: 'aktual', order: 1,
+                    },
+                    {
+                        type: 'bar', label: 'Recurring', data: jRec,
+                        backgroundColor: 'rgba(3,105,161,.75)',
+                        borderRadius: [4, 4, 0, 0], stack: 'aktual', order: 1,
                     }
                 ]
             },
-            options: baseOpts
+            options: {
+                ...baseOpts,
+                scales: {
+                    ...baseOpts.scales,
+                    x: { ...baseOpts.scales.x, stacked: true },
+                    y: { ...baseOpts.scales.y, stacked: true },
+                }
+            }
         });
 
         new Chart(document.getElementById('chartSeg'), {

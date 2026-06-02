@@ -11,6 +11,18 @@
 
 ---
 
+## Version 4.6 — 2 Juni 2026
+
+### Fitur Baru
+
+- **Recurring di Trend Revenue** — halaman Trend Revenue kini menampilkan pemisahan Regular dan Recurring:
+  - 5 KPI card: Total Aktual, Regular, Recurring, Target, Achievement.
+  - Chart Aktual vs Target: bar dipecah jadi Regular (hijau) + Recurring (biru), stacked.
+  - Tabel bulanan: kolom Regular dan Recurring ditambahkan.
+- **Brand name di Konversi Recurring** — nama brand ditampilkan di bawah nama perusahaan pada daftar kandidat dan form review.
+
+---
+
 ## Version 4.5 — 1 Juni 2026
 
 ### Fitur Baru

@@ -41,6 +41,7 @@ function _recurring_list_page(PDO $pdo): void
         "SELECT
             t.master_code, t.module, t.client_id, t.property_id,
             c.company_name,
+            c.brand_name,
             p.name AS property_name,
             COUNT(*) jumlah_bulan,
             MIN(t.start_date) start_min,
@@ -166,7 +167,12 @@ function _recurring_list_page(PDO $pdo): void
                         <td style="font-weight:600"><?= h($row['master_code']) ?></td>
                         <td><span style="font-size:11px;font-weight:700;text-transform:uppercase"><?= h($row['module']) ?></span></td>
                         <td style="color:var(--muted)"><?= h($row['property_name']) ?></td>
-                        <td><?= h($row['company_name'] ?? '-') ?></td>
+                        <td>
+                            <?= h($row['company_name'] ?? '-') ?>
+                            <?php if (!empty($row['brand_name'])): ?>
+                                <br><span style="font-size:11px;color:var(--muted)"><?= h($row['brand_name']) ?></span>
+                            <?php endif; ?>
+                        </td>
                         <td style="color:var(--muted)"><?= h($row['pic_name'] ?? '-') ?></td>
                         <td style="text-align:center;font-weight:700"><?= $row['jumlah_bulan'] ?></td>
                         <td style="white-space:nowrap;color:var(--muted)"><?= h($row['period_awal']) ?> – <?= h($row['period_akhir']) ?></td>
@@ -207,7 +213,7 @@ function _recurring_review_page(PDO $pdo): void
 
     // Ambil semua transaksi kandidat
     $s = $pdo->prepare(
-        "SELECT t.*, c.company_name
+        "SELECT t.*, c.company_name, c.brand_name
          FROM transactions t
          LEFT JOIN master_clients c ON c.id = t.client_id
          WHERE t.deleted_at IS NULL
@@ -288,7 +294,7 @@ function _recurring_review_page(PDO $pdo): void
             <div class="form-grid">
                 <div>
                     <label>Client</label>
-                    <input type="text" value="<?= h($first['company_name'] ?? '-') ?>" disabled style="background:#f8fafc">
+                    <input type="text" value="<?= h($first['company_name'] ?? '-') ?><?= !empty($first['brand_name']) ? ' (' . h($first['brand_name']) . ')' : '' ?>" disabled style="background:#f8fafc">
                 </div>
                 <div>
                     <label>Unit / Kode Master</label>
