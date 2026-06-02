@@ -593,25 +593,14 @@ function dashboard(PDO $pdo): void
         </div>
 
         <script>
-        // 1. Count-up animation untuk KPI cards
+        // 1. Set nilai KPI cards — langsung tanpa animasi (reliable di semua kondisi navigasi)
         function runCountUp() {
-            function countUp(el, target, duration) {
-                var start = performance.now();
-                function step(now) {
-                    var p = Math.min((now - start) / duration, 1);
-                    var eased = 1 - Math.pow(1 - p, 3);
-                    el.textContent = 'Rp ' + Math.round(target * eased).toLocaleString('id-ID');
-                    if (p < 1) requestAnimationFrame(step);
-                }
-                requestAnimationFrame(step);
-            }
-            document.querySelectorAll('[data-countup]').forEach(function (el) {
+            document.querySelectorAll('[data-countup]').forEach(function(el) {
                 var v = parseInt(el.dataset.countup, 10);
-                if (!isNaN(v)) countUp(el, v, 900);
+                if (!isNaN(v)) el.textContent = 'Rp ' + v.toLocaleString('id-ID');
             });
         }
         runCountUp();
-        // Re-run hanya saat bfcache restore (browser back/forward)
         window.addEventListener('pageshow', function(e) {
             if (e.persisted) runCountUp();
         });
