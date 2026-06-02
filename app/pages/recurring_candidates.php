@@ -107,7 +107,7 @@ function _recurring_list_page(PDO $pdo): void
                 <select name="property_id" style="width:auto">
                     <option value="">Semua Properti</option>
                     <?php foreach ($properties as $prop): ?>
-                        <option value="<?= $prop['id'] ?>" <?= $propertyFilter===$prop['id']?'selected':'' ?>><?= h($prop['name']) ?></option>
+                        <option value="<?= $prop['id'] ?>" <?= $propertyFilter===(int)$prop['id']?'selected':'' ?>><?= h($prop['name']) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
