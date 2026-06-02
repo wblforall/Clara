@@ -594,13 +594,13 @@ function dashboard(PDO $pdo): void
 
         <script>
         // 1. Count-up animation untuk KPI cards
-        (function () {
+        function runCountUp() {
             function countUp(el, target, duration) {
                 var start = performance.now();
                 function step(now) {
                     var p = Math.min((now - start) / duration, 1);
                     var eased = 1 - Math.pow(1 - p, 3);
-                    el.textContent = 'Rp ' + Math.round(target * eased).toLocaleString('id-ID');
+                    el.textContent = 'Rp ' + Math.round(target * eased).toLocaleString('id-ID');
                     if (p < 1) requestAnimationFrame(step);
                 }
                 requestAnimationFrame(step);
@@ -609,7 +609,9 @@ function dashboard(PDO $pdo): void
                 var v = parseInt(el.dataset.countup, 10);
                 if (!isNaN(v)) countUp(el, v, 900);
             });
-        })();
+        }
+        window.addEventListener('pageshow', runCountUp);
+        runCountUp();
 
         // 2. Collapsible group headers
         (function () {
