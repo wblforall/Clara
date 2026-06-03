@@ -76,6 +76,7 @@ function layout(string $title, callable $body, array $opts = []): void
         ['', 'client_analysis', 'Analisa Market Client', 'view_master'],
         ['', 'pic_report', 'Laporan PIC', 'view_pic_report'],
         ['', 'pic_reward', 'Rewarding PIC', 'view_pic_report'],
+        ['', 'commission_sim', 'Simulasi Komisi', 'view_pic_report'],
         ['Admin', 'recurring_candidates', 'Konversi Recurring', 'manage_transactions'],
         ['', 'lookup_manage', 'Kelola Opsi Dropdown', 'manage_master'],
         ['', 'users', 'Users & Role', 'manage_users'],
@@ -486,12 +487,12 @@ function masterOptions(PDO $pdo, string $module): array
     $pid = current_property_id();
 
     if ($module === 'cl') {
-        $s = $pdo->prepare("SELECT code, location_name label, rate, 'daily_area' pricing_type, area_sqm, 1 quantity, 1 slots FROM master_cl_units WHERE status='active' AND property_id=? ORDER BY CASE floor WHEN 'LG' THEN 1 WHEN 'GF' THEN 2 WHEN 'UG' THEN 3 WHEN 'FF' THEN 4 WHEN 'SF' THEN 5 ELSE 6 END, code");
+        $s = $pdo->prepare("SELECT code, location_name label, rate, 'daily_area' pricing_type, area_sqm, 1 quantity, 1 slots FROM master_cl_units WHERE status='active' AND property_id=? ORDER BY sort_order ASC, CASE floor WHEN 'LG' THEN 1 WHEN 'GF' THEN 2 WHEN 'UG' THEN 3 WHEN 'FF' THEN 4 WHEN 'SF' THEN 5 ELSE 6 END, code");
     } elseif ($module === 'gudang') {
-        $s = $pdo->prepare("SELECT code, name label, monthly_rate rate, 'monthly' pricing_type, area_sqm, 1 quantity, 1 slots FROM master_gudang WHERE status='active' AND property_id=? ORDER BY code");
+        $s = $pdo->prepare("SELECT code, name label, monthly_rate rate, 'monthly' pricing_type, area_sqm, 1 quantity, 1 slots FROM master_gudang WHERE status='active' AND property_id=? ORDER BY sort_order ASC, code");
     } else {
         $concat = "CONCAT(media_type, ' - ', location, ' - ', COALESCE(point,''))";
-        $s = $pdo->prepare("SELECT code, $concat label, rate, pricing_type, 0 area_sqm, quantity, slots, COALESCE(size,'') size, media_type FROM master_media WHERE status='active' AND property_id=? ORDER BY code");
+        $s = $pdo->prepare("SELECT code, $concat label, rate, pricing_type, 0 area_sqm, quantity, slots, COALESCE(size,'') size, media_type FROM master_media WHERE status='active' AND property_id=? ORDER BY sort_order ASC, code");
     }
 
     $s->execute([$pid]);

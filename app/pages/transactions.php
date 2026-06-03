@@ -24,12 +24,16 @@ function transactions_page(PDO $pdo): void
         $where[]           = 't.pic_name = :pic';
         $params[':pic']    = $filterPic;
     }
-    if ($dateFrom !== '') {
-        $where[]              = 't.start_date >= :date_from';
+    if ($dateFrom !== '' && $dateTo !== '') {
+        // Overlap: transaksi yang menyentuh range ini (termasuk recurring panjang)
+        $where[]              = 't.start_date <= :date_to AND t.end_date >= :date_from';
         $params[':date_from'] = $dateFrom;
-    }
-    if ($dateTo !== '') {
-        $where[]            = 't.end_date <= :date_to';
+        $params[':date_to']   = $dateTo;
+    } elseif ($dateFrom !== '') {
+        $where[]              = 't.end_date >= :date_from';
+        $params[':date_from'] = $dateFrom;
+    } elseif ($dateTo !== '') {
+        $where[]            = 't.start_date <= :date_to';
         $params[':date_to'] = $dateTo;
     }
 
@@ -311,7 +315,7 @@ function transaction_form(PDO $pdo): void
                     <label>Kode Master</label>
                     <select name="master_code" id="master_code" required>
                         <?php foreach ($masters as $m): ?>
-                            <option value="<?= h($m['code']) ?>"><?= h($m['code'] . ' - ' . $m['label']) ?></option>
+                            <option value="<?= h($m['code']) ?>"><?= h($m['label']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -780,7 +784,7 @@ function transaction_edit(PDO $pdo): void
                     <label>Kode Master</label>
                     <select name="master_code" id="master_code" required>
                         <?php foreach ($masters as $m): ?>
-                            <option value="<?= h($m['code']) ?>" <?= $m['code'] === $trx['master_code'] ? 'selected' : '' ?>><?= h($m['code'] . ' - ' . $m['label']) ?></option>
+                            <option value="<?= h($m['code']) ?>" <?= $m['code'] === $trx['master_code'] ? 'selected' : '' ?>><?= h($m['label']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>

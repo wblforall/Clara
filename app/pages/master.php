@@ -50,11 +50,18 @@ function master_page(PDO $pdo, array $masterConfig): void
         </div>
         <?php endif; ?>
         <div class="table-wrap">
-            <table>
-                <thead><tr><?php foreach ($cfg['columns'] as $col): ?><th><?= h($cfg['column_labels'][$col] ?? $col) ?></th><?php endforeach; ?><th>Aksi</th></tr></thead>
-                <tbody>
+            <table id="master-table">
+                <thead><tr>
+                    <?php if (!empty($cfg['sortable']) && can('manage_master')): ?><th style="width:32px"></th><?php endif; ?>
+                    <?php foreach ($cfg['columns'] as $col): ?><th><?= h($cfg['column_labels'][$col] ?? $col) ?></th><?php endforeach; ?>
+                    <th>Aksi</th>
+                </tr></thead>
+                <tbody id="master-tbody">
                 <?php foreach ($rows as $row): ?>
-                    <tr>
+                    <tr data-id="<?= (int)$row['id'] ?>">
+                        <?php if (!empty($cfg['sortable']) && can('manage_master')): ?>
+                        <td class="drag-handle" title="Drag untuk atur urutan" style="cursor:grab;text-align:center;color:#cbd5e1;font-size:16px;user-select:none">⠿</td>
+                        <?php endif; ?>
                         <?php foreach ($cfg['columns'] as $col): ?>
                             <?php $isMoney = is_numeric($row[$col] ?? null) && (str_contains($col, 'amount') || str_contains($col, 'rate') || str_contains($col, 'projection')); ?>
                             <?php $isShare = $col === 'target_share'; ?>
@@ -77,6 +84,56 @@ function master_page(PDO $pdo, array $masterConfig): void
                 </tbody>
             </table>
         </div>
+        <?php if (!empty($cfg['sortable']) && can('manage_master')): ?>
+        <script src="assets/sortable.min.js"></script>
+        <script>
+        (function() {
+            var tbody = document.getElementById('master-tbody');
+            if (!tbody) return;
+            var saveEl = null;
+            Sortable.create(tbody, {
+                handle: '.drag-handle',
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                onStart: function() {
+                    if (!saveEl) {
+                        saveEl = document.createElement('div');
+                        saveEl.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#0d9488;color:#fff;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;z-index:999;opacity:0;transition:opacity .2s';
+                        saveEl.textContent = 'Menyimpan urutan…';
+                        document.body.appendChild(saveEl);
+                    }
+                },
+                onEnd: function() {
+                    var ids = Array.from(tbody.querySelectorAll('tr[data-id]')).map(function(r) {
+                        return parseInt(r.dataset.id, 10);
+                    });
+                    saveEl.textContent = 'Menyimpan urutan…';
+                    saveEl.style.opacity = '1';
+                    fetch('?r=master_sort_save&type=<?= h($type) ?>', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ids: ids})
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(d) {
+                        saveEl.textContent = d.ok ? '✓ Urutan tersimpan' : '✗ Gagal simpan';
+                        setTimeout(function() { saveEl.style.opacity = '0'; }, 1500);
+                    })
+                    .catch(function() {
+                        saveEl.textContent = '✗ Gagal simpan';
+                        setTimeout(function() { saveEl.style.opacity = '0'; }, 1500);
+                    });
+                }
+            });
+        })();
+        </script>
+        <style>
+        .sortable-ghost { opacity:.4; background:#e0f2fe !important; }
+        #master-tbody tr { transition: background .15s; }
+        .drag-handle:hover { color:#0d9488 !important; }
+        </style>
+        <?php endif; ?>
+
         <?php if ($type === 'target'): ?>
         <?php
             $histori = $pdo->prepare(
@@ -166,8 +223,66 @@ function master_form(PDO $pdo, array $masterConfig): void
         ? $pdo->query("SELECT id, name FROM users WHERE status='active' ORDER BY name")->fetchAll()
         : [];
 
-    layout(($id ? 'Edit ' : 'Tambah ') . $cfg['title'], function () use ($type, $cfg, $row, $id, $periodYears, $periodMonthNames, $users) {
+    // Kode yang sudah ada — untuk auto-generate di form tambah baru
+    $existingCodes = [];
+    if (!$id && in_array($type, ['cl', 'gudang', 'media'], true)) {
+        $s = $pdo->prepare("SELECT code FROM {$cfg['table']} WHERE property_id = ?");
+        $s->execute([$pid]);
+        $existingCodes = $s->fetchAll(PDO::FETCH_COLUMN);
+    }
+
+    layout(($id ? 'Edit ' : 'Tambah ') . $cfg['title'], function () use ($type, $cfg, $row, $id, $periodYears, $periodMonthNames, $users, $existingCodes) {
         ?>
+        <?php if (!$id && !empty($existingCodes)): ?>
+        <script>
+        var _existingCodes = <?= json_encode($existingCodes) ?>;
+        var _masterType    = <?= json_encode($type) ?>;
+
+        function _nextCode() {
+            var type = _masterType;
+            if (type === 'cl') {
+                var floor = (document.getElementById('floor') || {}).value || '';
+                if (!floor) return '';
+                var prefix = floor.toUpperCase() + '-';
+                var max = 0;
+                _existingCodes.forEach(function(c) {
+                    if (c.toUpperCase().startsWith(prefix)) {
+                        var n = parseInt(c.slice(prefix.length), 10);
+                        if (!isNaN(n) && n > max) max = n;
+                    }
+                });
+                return prefix + String(max + 1).padStart(3, '0');
+            } else {
+                var prefix = type === 'gudang' ? 'Guda-' : 'Medi-';
+                var max = 0;
+                _existingCodes.forEach(function(c) {
+                    if (c.startsWith(prefix)) {
+                        var n = parseInt(c.slice(prefix.length), 10);
+                        if (!isNaN(n) && n > max) max = n;
+                    }
+                });
+                return prefix + String(max + 1).padStart(3, '0');
+            }
+        }
+
+        function generateCode() {
+            var code = _nextCode();
+            if (code) document.getElementById('field-code').value = code;
+        }
+
+        // CL: regenerate saat lantai berubah (sebelum user isi kode)
+        document.addEventListener('DOMContentLoaded', function() {
+            var floorEl = document.getElementById('floor');
+            if (floorEl) {
+                floorEl.addEventListener('change', function() {
+                    var codeEl = document.getElementById('field-code');
+                    if (codeEl && codeEl.value === '') generateCode();
+                });
+            }
+        });
+        </script>
+        <?php endif; ?>
+
         <form class="panel" method="post" action="?r=master_save&type=<?= h($type) ?>" id="master-form">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="id" value="<?= h((string) $id) ?>">
@@ -264,7 +379,20 @@ function master_form(PDO $pdo, array $masterConfig): void
                             })();
                             </script>
                         <?php else: ?>
+                            <?php if ($name === 'code' && !$id && !empty($existingCodes)): ?>
+                            <div style="display:flex;gap:6px;align-items:center">
+                                <input name="code" id="field-code" value="<?= field($row, 'code') ?>" style="flex:1">
+                                <button type="button" onclick="generateCode()" class="btn light" style="white-space:nowrap;flex-shrink:0">⚡ Generate</button>
+                            </div>
+                            <?php elseif ($name === 'floor'): ?>
+                            <select name="floor" id="floor">
+                                <?php foreach (['LG','GF','UG','FF','SF'] as $fl): ?>
+                                    <option value="<?= $fl ?>" <?= ($row['floor'] ?? '') === $fl ? 'selected' : '' ?>><?= $fl ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <?php else: ?>
                             <input name="<?= h($name) ?>" value="<?= field($row, $name) ?>">
+                            <?php endif; ?>
                         <?php endif; ?>
                     </div>
                 <?php endforeach; ?>
@@ -323,6 +451,30 @@ function master_form(PDO $pdo, array $masterConfig): void
         <?php endif; ?>
         <?php
     });
+}
+
+function master_sort_save(PDO $pdo, array $masterConfig): void
+{
+    require_permission('manage_master');
+    header('Content-Type: application/json');
+    $type = getv('type', '');
+    $cfg  = $masterConfig[$type] ?? null;
+    if (!$cfg || empty($cfg['sortable'])) {
+        echo json_encode(['ok' => false, 'error' => 'not sortable']);
+        exit;
+    }
+    $ids = json_decode(file_get_contents('php://input'), true)['ids'] ?? [];
+    if (!is_array($ids) || empty($ids)) {
+        echo json_encode(['ok' => false, 'error' => 'no ids']);
+        exit;
+    }
+    $pid  = current_property_id();
+    $stmt = $pdo->prepare('UPDATE ' . $cfg['table'] . ' SET sort_order = ? WHERE id = ? AND property_id = ?');
+    foreach ($ids as $order => $id) {
+        $stmt->execute([$order, (int)$id, $pid]);
+    }
+    echo json_encode(['ok' => true]);
+    exit;
 }
 
 function master_save(PDO $pdo, array $masterConfig): void
