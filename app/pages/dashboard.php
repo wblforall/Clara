@@ -288,9 +288,8 @@ function dashboard(PDO $pdo): void
                     </div>
                     <?php
                     $moduleColors = ['cl' => '#0f766e', 'media' => '#0ea5e9', 'gudang' => '#f59e0b'];
-                    $moduleMax = max($totalActual, $target, 1);
                     foreach (['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'] as $key => $label):
-                        $pct_bar = min($actual[$key] / $moduleMax * 100, 100);
+                        $pct_bar = $projection[$key] > 0 ? min($actual[$key] / $projection[$key] * 100, 100) : 0;
                     ?>
                     <div style="margin-bottom:14px">
                         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
