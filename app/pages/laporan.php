@@ -64,7 +64,7 @@ function _pic_fetch_section(PDO $pdo, string $period, int $pid): array
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
          LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL AND t.property_id=?
-         WHERE p.status='active' AND p.property_id=?
+         WHERE p.status='active' AND p.property_id=? AND p.show_achievement = 1 AND p.target_share > 0
          GROUP BY p.id, p.name, p.role_name, p.target_share
          ORDER BY actual_total DESC"
     );
@@ -296,7 +296,7 @@ function pic_report_print(PDO $pdo): void
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
          LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL AND t.property_id=?
-         WHERE p.status='active' AND p.property_id=?
+         WHERE p.status='active' AND p.property_id=? AND p.show_achievement = 1 AND p.target_share > 0
          GROUP BY p.id, p.name, p.role_name, p.target_share
          ORDER BY actual_total DESC"
     );

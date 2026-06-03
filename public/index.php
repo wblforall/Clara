@@ -118,11 +118,12 @@ $masterConfig = [
         'title'         => 'Master PIC',
         'table'         => 'master_pic',
         'key'           => 'name',
-        'columns'       => ['name', 'role_name', 'target_share', 'user_id', 'status'],
-        'column_labels' => ['user_id' => 'User Akun'],
+        'columns'       => ['name', 'role_name', 'commission_cat', 'show_achievement', 'target_share', 'user_id', 'status'],
+        'column_labels' => ['user_id' => 'User Akun', 'commission_cat' => 'Kategori Komisi', 'show_achievement' => 'Achievement'],
         'fields'        => [
-            'name' => 'Nama PIC', 'role_name' => 'Jabatan', 'target_share' => 'Porsi Target',
-            'user_id' => 'User Akun', 'status' => 'Status',
+            'name' => 'Nama PIC', 'role_name' => 'Jabatan',
+            'commission_cat' => 'Kategori Komisi', 'show_achievement' => 'Tampil di Achievement PIC',
+            'target_share' => 'Porsi Target', 'user_id' => 'User Akun', 'status' => 'Status',
         ],
     ],
     'target' => [

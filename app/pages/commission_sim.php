@@ -51,41 +51,27 @@ function commission_sim(PDO $pdo): void
     $rateKey   = $achieved ? 'achieved' : 'not';
     $totalPool = $totalRevenue * ($achieved ? 0.037 : 0.0136);
 
-    // PIC + dealing
+    // PIC + dealing — hanya yang punya commission_cat (tidak NULL)
     $s = $pdo->prepare(
-        "SELECT p.name, COALESCE(p.role_name,'') role_name,
+        "SELECT p.name, COALESCE(p.role_name,'') role_name, p.commission_cat cat,
                 COALESCE(SUM(a.amount),0) dealing
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
-         WHERE p.status='active' AND p.property_id=?
+         WHERE p.status='active' AND p.property_id=? AND p.commission_cat IS NOT NULL AND p.commission_cat != ''
          GROUP BY p.id ORDER BY dealing DESC"
     );
     $s->execute([$period, $pid, $pid]);
-    $rawPics = $s->fetchAll();
-
-    // Kategorisasi
-    $pics = [];
-    foreach ($rawPics as $r) {
-        $cat = _csim_cat($r['role_name'], $r['name']);
-        $pics[] = array_merge($r, ['cat' => $cat]);
-    }
-
-    // Sales pool & total dealing Sales
-    $salesDealing = array_sum(array_column(array_filter($pics, fn($p) => $p['cat'] === 'sales'), 'dealing'));
-    $salesPool    = $totalRevenue * $rateTable['sales'][$rateKey];
+    $pics = $s->fetchAll();
 
     // Hitung komisi per PIC
+    // Sales: rate × dealing sendiri (individual, bukan pool)
+    // Non-Sales: rate × total revenue properti
     foreach ($pics as &$p) {
         $cat = $p['cat'];
-        if ($cat === 'sales') {
-            $p['commission'] = $salesDealing > 0
-                ? ($p['dealing'] / $salesDealing) * $salesPool
-                : 0;
-            $p['pool_pct'] = $salesDealing > 0 ? ($p['dealing'] / $salesDealing) : 0;
-        } else {
-            $p['commission'] = $totalRevenue * $rateTable[$cat][$rateKey];
-            $p['pool_pct']   = null;
-        }
+        $p['commission'] = $cat === 'sales'
+            ? (float)$p['dealing'] * $rateTable['sales'][$rateKey]
+            : $totalRevenue * $rateTable[$cat][$rateKey];
+        $p['pool_pct'] = null;
     }
     unset($p);
 
@@ -101,8 +87,7 @@ function commission_sim(PDO $pdo): void
 
     layout('Simulasi Komisi PIC', function () use (
         $pics, $period, $target, $totalRevenue, $achieved, $rateKey, $rateTable,
-        $catLabel, $salesDealing, $salesPool, $totalPool, $totalCommission,
-        $allPeriods, $monthNames
+        $catLabel, $totalCommission, $allPeriods, $monthNames
     ) {
         $achPct = $target > 0 ? $totalRevenue / $target * 100 : 0;
         ?>
@@ -214,9 +199,9 @@ function commission_sim(PDO $pdo): void
                         <th style="text-align:left">#</th>
                         <th style="text-align:left">Nama PIC</th>
                         <th style="text-align:left">Role</th>
-                        <th style="text-align:left">Kategori Komisi</th>
-                        <th style="text-align:right">Dealing Periode</th>
-                        <th style="text-align:right">Proporsi Sales</th>
+                        <th style="text-align:left">Kategori</th>
+                        <th style="text-align:right">Basis Komisi</th>
+                        <th style="text-align:right">Rate</th>
                         <th style="text-align:right">Komisi</th>
                     </tr>
                 </thead>
@@ -230,6 +215,8 @@ function commission_sim(PDO $pdo): void
                         'admin'        => '#d97706',
                         default        => '#64748b',
                     };
+                    $basis = $isSales ? (float)$p['dealing'] : $totalRevenue;
+                    $rate  = $rateTable[$p['cat']][$rateKey];
                 ?>
                 <tr style="<?= $p['cat'] === 'other' && strtolower($p['name']) === 'wbl unit' ? 'color:#94a3b8' : '' ?>">
                     <td style="color:#94a3b8;font-weight:700"><?= $i+1 ?></td>
@@ -240,13 +227,12 @@ function commission_sim(PDO $pdo): void
                             <?= $catLabel[$p['cat']] ?>
                         </span>
                     </td>
-                    <td style="text-align:right"><?= money($p['dealing']) ?></td>
-                    <td style="text-align:right;color:#0369a1">
-                        <?php if ($isSales): ?>
-                            <?= $salesDealing > 0 ? number_format($p['pool_pct'] * 100, 1, ',', '.') . '%' : '—' ?>
-                        <?php else: ?>
-                            <span style="color:#cbd5e1">—</span>
-                        <?php endif; ?>
+                    <td style="text-align:right">
+                        <?= money($basis) ?>
+                        <?php if ($isSales): ?><div style="font-size:10px;color:var(--muted)">dealing sendiri</div><?php else: ?><div style="font-size:10px;color:var(--muted)">total revenue</div><?php endif; ?>
+                    </td>
+                    <td style="text-align:right;font-weight:700;color:<?= $catColor ?>">
+                        <?= number_format($rate * 100, 2, ',', '.') ?>%
                     </td>
                     <td style="text-align:right;font-weight:800;color:<?= $p['commission'] > 0 ? '#15803d' : '#94a3b8' ?>">
                         <?= $p['commission'] > 0 ? money($p['commission']) : '—' ?>
@@ -266,12 +252,10 @@ function commission_sim(PDO $pdo): void
         </div>
 
         <!-- Sales pool note -->
-        <?php if ($salesDealing > 0): ?>
-        <div style="margin-top:12px;padding:10px 14px;background:#f0f9ff;border-radius:8px;border:1px solid #bae6fd;font-size:11px;color:#0369a1">
-            <strong>Pool Sales</strong>: <?= money($salesPool) ?> dibagi ke <?= count(array_filter($pics, fn($p) => $p['cat'] === 'sales')) ?> Sales PIC
-            berdasarkan proporsi dealing masing-masing dari total dealing Sales <?= money($salesDealing) ?>.
+        <div style="margin-top:12px;padding:10px 14px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;font-size:11px;color:#15803d">
+            <strong>Sales</strong>: komisi = rate × dealing sendiri per PIC (individual, bukan pool). &nbsp;
+            <strong>Non-Sales</strong>: komisi = rate × total revenue properti.
         </div>
-        <?php endif; ?>
         <?php
     });
 }

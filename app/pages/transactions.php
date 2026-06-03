@@ -312,12 +312,12 @@ function transaction_form(PDO $pdo): void
             <input type="hidden" name="module" value="<?= h($module) ?>">
             <div class="form-grid form-anim">
                 <div class="wide">
-                    <label>Kode Master</label>
-                    <select name="master_code" id="master_code" required>
-                        <?php foreach ($masters as $m): ?>
-                            <option value="<?= h($m['code']) ?>"><?= h($m['label']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <label>Unit / Lokasi</label>
+                    <div style="position:relative">
+                        <input type="text" id="masterSearch" autocomplete="off" placeholder="Ketik nama unit...">
+                        <input type="hidden" name="master_code" id="master_code" required>
+                        <div id="masterDrop"></div>
+                    </div>
                 </div>
                 <div>
                     <label>Client / Perusahaan</label>
@@ -424,6 +424,47 @@ function transaction_form(PDO $pdo): void
                     sel.appendChild(opt);
                 });
             }
+
+            // Searchable master picker
+            (function(){
+                const src = document.getElementById('masterSearch');
+                const hid = document.getElementById('master_code');
+                const dd  = document.getElementById('masterDrop');
+                document.body.appendChild(dd);
+                dd.style.cssText = 'display:none;position:fixed;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:9000;max-height:260px;overflow-y:auto';
+                function pos() { const r = src.getBoundingClientRect(); dd.style.top=(r.bottom+2)+'px'; dd.style.left=r.left+'px'; dd.style.width=r.width+'px'; }
+                function render(q) {
+                    pos();
+                    const lq = q.toLowerCase().trim();
+                    const list = lq ? masters.filter(m => m.label.toLowerCase().includes(lq) || m.code.toLowerCase().includes(lq)) : masters;
+                    dd.innerHTML = '';
+                    list.forEach(function(m) {
+                        const d = document.createElement('div');
+                        d.style.cssText = 'padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:8px';
+                        d.innerHTML = '<span style="font-weight:600">' + m.label + '</span><span style="color:var(--muted);font-size:11px;flex-shrink:0">' + m.code + '</span>';
+                        d.addEventListener('mouseover', function(){ this.style.background='#f0fdf4'; });
+                        d.addEventListener('mouseout',  function(){ this.style.background=''; });
+                        d.addEventListener('mousedown', function(e){
+                            e.preventDefault();
+                            src.value = m.label; hid.value = m.code; src.style.outline = '';
+                            dd.style.display = 'none';
+                            hid.dispatchEvent(new Event('change'));
+                        });
+                        dd.appendChild(d);
+                    });
+                    if (!list.length) dd.innerHTML = '<div style="padding:10px 14px;font-size:13px;color:var(--muted)">Tidak ditemukan</div>';
+                    dd.style.display = '';
+                }
+                src.addEventListener('input',  function(){ hid.value = ''; render(this.value); });
+                src.addEventListener('focus',  function(){ render(this.value); });
+                src.addEventListener('blur',   function(){ setTimeout(function(){ dd.style.display='none'; }, 200); });
+                window.addEventListener('scroll', function(){ if (dd.style.display !== 'none') pos(); }, true);
+                document.querySelectorAll('form button[type=submit]').forEach(function(btn){
+                    btn.addEventListener('click', function(e){
+                        if (!hid.value){ e.preventDefault(); e.stopImmediatePropagation(); src.style.outline='2px solid #EF4444'; src.focus(); }
+                    });
+                });
+            })();
 
             // Searchable client picker
             (function(){
@@ -781,12 +822,18 @@ function transaction_edit(PDO $pdo): void
             <input type="hidden" name="module" value="<?= h($trx['module']) ?>">
             <div class="form-grid">
                 <div class="wide">
-                    <label>Kode Master</label>
-                    <select name="master_code" id="master_code" required>
-                        <?php foreach ($masters as $m): ?>
-                            <option value="<?= h($m['code']) ?>" <?= $m['code'] === $trx['master_code'] ? 'selected' : '' ?>><?= h($m['label']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <?php
+                    $currentMasterLabel = '';
+                    foreach ($masters as $_m) {
+                        if ($_m['code'] === $trx['master_code']) { $currentMasterLabel = $_m['label']; break; }
+                    }
+                    ?>
+                    <label>Unit / Lokasi</label>
+                    <div style="position:relative">
+                        <input type="text" id="masterSearch" autocomplete="off" placeholder="Ketik nama unit..." value="<?= h($currentMasterLabel) ?>">
+                        <input type="hidden" name="master_code" id="master_code" value="<?= h($trx['master_code']) ?>">
+                        <div id="masterDrop"></div>
+                    </div>
                 </div>
                 <div>
                     <label>Client / Perusahaan</label>
@@ -897,6 +944,42 @@ function transaction_edit(PDO $pdo): void
             const byCode = Object.fromEntries(masters.map(m => [m.code, m]));
             const allContacts = <?= json_encode($allContacts) ?>;
             const currentContactId = <?= (int) ($trx['contact_id'] ?? 0) ?>;
+
+            // Searchable master picker (edit form)
+            (function(){
+                const src = document.getElementById('masterSearch');
+                const hid = document.getElementById('master_code');
+                const dd  = document.getElementById('masterDrop');
+                document.body.appendChild(dd);
+                dd.style.cssText = 'display:none;position:fixed;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:9000;max-height:260px;overflow-y:auto';
+                function pos() { const r = src.getBoundingClientRect(); dd.style.top=(r.bottom+2)+'px'; dd.style.left=r.left+'px'; dd.style.width=r.width+'px'; }
+                function render(q) {
+                    pos();
+                    const lq = q.toLowerCase().trim();
+                    const list = lq ? masters.filter(m => m.label.toLowerCase().includes(lq) || m.code.toLowerCase().includes(lq)) : masters;
+                    dd.innerHTML = '';
+                    list.forEach(function(m) {
+                        const d = document.createElement('div');
+                        d.style.cssText = 'padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:8px';
+                        d.innerHTML = '<span style="font-weight:600">' + m.label + '</span><span style="color:var(--muted);font-size:11px;flex-shrink:0">' + m.code + '</span>';
+                        d.addEventListener('mouseover', function(){ this.style.background='#f0fdf4'; });
+                        d.addEventListener('mouseout',  function(){ this.style.background=''; });
+                        d.addEventListener('mousedown', function(e){
+                            e.preventDefault();
+                            src.value = m.label; hid.value = m.code; src.style.outline = '';
+                            dd.style.display = 'none';
+                            hid.dispatchEvent(new Event('change'));
+                        });
+                        dd.appendChild(d);
+                    });
+                    if (!list.length) dd.innerHTML = '<div style="padding:10px 14px;font-size:13px;color:var(--muted)">Tidak ditemukan</div>';
+                    dd.style.display = '';
+                }
+                src.addEventListener('input',  function(){ hid.value = ''; render(this.value); });
+                src.addEventListener('focus',  function(){ render(this.value); });
+                src.addEventListener('blur',   function(){ setTimeout(function(){ dd.style.display='none'; }, 200); });
+                window.addEventListener('scroll', function(){ if (dd.style.display !== 'none') pos(); }, true);
+            })();
 
             function filterContacts() {
                 const clientId = document.getElementById('client_id').value;

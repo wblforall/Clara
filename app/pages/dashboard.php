@@ -106,7 +106,7 @@ function dashboard(PDO $pdo): void
                AND t2.deleted_at IS NULL
                AND ta2.property_id = ?
          ) prev ON prev.client_id = t.client_id
-         WHERE p.status='active' AND p.property_id = ?
+         WHERE p.status='active' AND p.property_id = ? AND p.show_achievement = 1 AND p.target_share > 0
          GROUP BY p.id
          ORDER BY actual DESC, p.name ASC"
     );

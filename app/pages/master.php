@@ -333,6 +333,29 @@ function master_form(PDO $pdo, array $masterConfig): void
                                 <?php endforeach; ?>
                             </select>
                             <div class="help">Hubungkan ke akun login untuk auto-select saat input transaksi.</div>
+                        <?php elseif ($name === 'commission_cat'): ?>
+                            <select name="commission_cat">
+                                <?php
+                                $commCats = [
+                                    ''             => '— Tidak Dapat Komisi —',
+                                    'sales'        => 'Sales',
+                                    'manager'      => 'Manager',
+                                    'asst_manager' => 'Asst. Manager',
+                                    'admin'        => 'Admin',
+                                    'other'        => 'Other',
+                                ];
+                                $curCat = $row['commission_cat'] ?? '';
+                                foreach ($commCats as $val => $lbl): ?>
+                                    <option value="<?= h($val) ?>" <?= $curCat === $val ? 'selected' : '' ?>><?= h($lbl) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <div class="help">Kosong = tidak masuk perhitungan komisi (contoh: WBL Unit).</div>
+                        <?php elseif ($name === 'show_achievement'): ?>
+                            <select name="show_achievement">
+                                <option value="1" <?= ($row['show_achievement'] ?? 1) == 1 ? 'selected' : '' ?>>Ya — Tampil di Achievement PIC</option>
+                                <option value="0" <?= ($row['show_achievement'] ?? 1) == 0 ? 'selected' : '' ?>>Tidak — Sembunyikan</option>
+                            </select>
+                            <div class="help">Sembunyikan dari tabel Achievement di Dashboard, Exec Summary, dan Laporan PIC.</div>
                         <?php elseif ($name === 'status'): ?>
                             <select name="<?= h($name) ?>">
                                 <?php foreach (['active', 'inactive', 'archived'] as $opt): ?>

@@ -663,7 +663,7 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
              JOIN transactions t2 ON t2.id=ta2.transaction_id
              WHERE ta2.period_key < ? AND ta2.property_id=? AND t2.client_id IS NOT NULL AND t2.deleted_at IS NULL
          ) prev ON prev.client_id=t.client_id
-         WHERE p.status='active' AND p.property_id=?
+         WHERE p.status='active' AND p.property_id=? AND p.show_achievement = 1 AND p.target_share > 0
          GROUP BY p.id ORDER BY actual DESC"
     );
     $s->execute([$period, $pid, $period, $pid, $pid]);

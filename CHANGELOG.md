@@ -11,6 +11,36 @@
 
 ---
 
+## Version 4.7 — 3 Juni 2026
+
+### Fitur Baru
+
+- **Simulasi Komisi PIC** (`Analisa → Simulasi Komisi`) — halaman preview komisi bulanan per PIC berdasarkan struktur komisi yang disepakati:
+  - Sales: komisi = rate × dealing sendiri per PIC (individual).
+  - Non-Sales (Manager/Asst. Manager/Admin/Other): komisi = rate × total revenue properti.
+  - Rate berbeda antara periode tercapai (3,7% total) dan tidak tercapai (1,36% total).
+  - Tabel breakdown per PIC: basis komisi, rate berlaku, dan nominal komisi.
+- **Drag-drop reorder Master** — Master Exhibition, Media, dan Gudang kini mendukung pengurutan baris dengan drag handle (⠿). Urutan tersimpan otomatis via AJAX tanpa reload halaman.
+- **Auto-generate kode** di form tambah Master — tombol ⚡ Generate mengisi kode otomatis (`LG-NNN` / `GF-NNN` berdasarkan lantai untuk Exhibition, `Guda-NNN` untuk Gudang, `Medi-NNN` untuk Media).
+
+### Perbaikan
+
+- **Filter transaksi — recurring tidak tampil**: logika filter tanggal diubah dari *contains* (`start >= from AND end <= to`) menjadi *overlap* (`start <= to AND end >= from`), sehingga transaksi recurring dengan durasi panjang ikut tampil saat filter bulan tertentu.
+- **Dropdown unit di form transaksi**: ganti `<select>` menjadi searchable picker bergaya client picker — ketik nama unit, hasil filter muncul real-time dengan nama (bold) dan kode (abu-abu kecil).
+- **Dropdown kode master**: kode unit tidak lagi ditampilkan di label opsi, hanya nama/lokasi.
+- **countUp dashboard — Aktual PIC tampil "Rp 0"**: animasi `requestAnimationFrame` diganti dengan direct set sehingga nilai selalu tampil di semua kondisi navigasi antar periode.
+
+### Perubahan Master PIC
+
+- Dua field baru di Master PIC:
+  - **Kategori Komisi**: dropdown (Tidak Dapat Komisi / Sales / Manager / Asst. Manager / Admin / Other) — menentukan apakah PIC masuk perhitungan komisi dan di kategori mana.
+  - **Tampil di Achievement PIC**: toggle Ya/Tidak — kontrol eksplisit apakah PIC ditampilkan di tabel Achievement di Dashboard, Exec Summary, dan Laporan PIC.
+- PIC dengan `target_share = 0` otomatis dikecualikan dari semua tabel Achievement.
+- Migration `008`: kolom `commission_cat` dan `show_achievement` di tabel `master_pic`.
+- Migration `007`: kolom `sort_order` di tabel `master_cl_units`, `master_gudang`, `master_media`.
+
+---
+
 ## Version 4.6 — 2 Juni 2026
 
 ### Fitur Baru
