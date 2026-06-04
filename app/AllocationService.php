@@ -61,7 +61,7 @@ final class AllocationService
         return $allocations;
     }
 
-    public static function saveAllocations(PDO $pdo, int $transactionId, array $trx): void
+    public static function saveAllocations(PDO $pdo, int $transactionId, array $trx, array $monthOverrides = []): void
     {
         $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ?')->execute([$transactionId]);
         $allocations = self::preview($trx);
@@ -80,6 +80,9 @@ final class AllocationService
                     $finalAmount,
                     $cycleRecognition
                 );
+                if ($monthOverrides) {
+                    $allocations = self::applyMonthOverrides($allocations, $monthOverrides);
+                }
                 $propertyId = (int)($trx['property_id'] ?? (function_exists('current_property_id') ? current_property_id() : 1));
                 $stmt = $pdo->prepare(
                     'INSERT INTO transaction_allocations
@@ -97,6 +100,9 @@ final class AllocationService
                 return;
             }
             $allocations = self::applySpreadAmount($allocations, $finalAmount);
+            if ($monthOverrides) {
+                $allocations = self::applyMonthOverrides($allocations, $monthOverrides);
+            }
         } else {
             if ($finalAmount > 0) {
                 $allocations = self::applyOverrideAmount($allocations, $finalAmount);
@@ -229,6 +235,17 @@ final class AllocationService
             'monthly' => $qty * $days,
             default => $qty * $days,
         };
+    }
+
+    private static function applyMonthOverrides(array $allocations, array $overrides): array
+    {
+        foreach ($allocations as &$a) {
+            if (isset($overrides[$a['period_key']])) {
+                $a['amount'] = (float) $overrides[$a['period_key']];
+            }
+        }
+        unset($a);
+        return $allocations;
     }
 
     private static function applyOverrideAmount(array $allocations, float $finalAmount): array

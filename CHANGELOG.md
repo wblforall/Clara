@@ -11,6 +11,20 @@
 
 ---
 
+## Version 4.8 — 4 Juni 2026
+
+### Fitur Baru
+
+- **Special price per bulan untuk transaksi recurring** — kontrak spread kini mendukung override amount di bulan tertentu (misal promo, negosiasi khusus):
+  - Tersedia di **form input baru**, **form edit**, dan **halaman Detail Alokasi** (tanpa perlu buka form edit).
+  - Bulan yang di-override ditandai badge **KHUSUS** (biru) + tombol **Reset** untuk mengembalikan ke distribusi rata.
+  - Saat base amount diubah dan Kalkulasi dijalankan ulang, bulan KHUSUS tetap terkunci — hanya bulan normal yang ikut update.
+  - `final_amount` transaksi otomatis diperbarui ke total aktual (jumlah semua bulan setelah override).
+  - **Perpanjang periode recurring**: buka Edit → ganti `end_date` → Kalkulasi → bulan lama tetap terkunci, bulan baru dapat base amount secara otomatis.
+  - Form edit recurring langsung menampilkan spread table dengan semua bulan tersimpan sudah ditandai KHUSUS saat halaman dibuka.
+
+---
+
 ## Version 4.7 — 3 Juni 2026
 
 ### Fitur Baru

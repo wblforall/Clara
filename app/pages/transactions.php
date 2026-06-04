@@ -604,29 +604,82 @@ function transaction_form(PDO $pdo): void
             document.querySelector('[name=start_date]').addEventListener('change', checkOverlap);
             document.querySelector('[name=end_date]').addEventListener('change', checkOverlap);
 
-            function buildSpreadHtml(total, startVal, endVal) {
-                const BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
-                const s = new Date(startVal.substring(0, 7) + '-01');
-                const e = new Date(endVal.substring(0, 7) + '-01');
-                const months = [];
-                let cur = new Date(s);
+            // ── Spread table helpers ─────────────────────────────────────────
+            var spreadOverrides = {};
+            var spreadBaseTotal = 0, spreadBaseStart = '', spreadBaseEnd = '';
+
+            function spreadMonths(startVal, endVal) {
+                var BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+                var months = [], cur = new Date(startVal.substring(0,7)+'-01'), e = new Date(endVal.substring(0,7)+'-01');
                 while (cur <= e) {
-                    months.push(BULAN[cur.getMonth()] + ' ' + cur.getFullYear());
-                    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+                    var y = cur.getFullYear(), m = cur.getMonth();
+                    months.push({ key: y+'-'+String(m+1).padStart(2,'0'), label: BULAN[m]+' '+y });
+                    cur = new Date(y, m+1, 1);
                 }
-                if (!months.length) return '';
-                const n = months.length;
-                const perMonth = Math.floor(total / n);
-                let rows = '', running = 0;
-                months.forEach((label, i) => {
-                    const amt = i === n - 1 ? Math.round(total - running) : perMonth;
-                    running += amt;
-                    rows += '<tr><td style="padding:2px 12px 2px 0;color:#374151">' + label + '</td>'
-                          + '<td style="padding:2px 0;text-align:right;font-weight:600;color:#0369a1">Rp ' + amt.toLocaleString('id-ID') + '</td></tr>';
-                });
-                return '<span style="color:#0369a1;font-weight:600">Estimasi Spread (' + n + ' bulan):</span>'
-                     + '<table style="margin-top:6px;border-collapse:collapse;background:transparent;width:100%">' + rows + '</table>';
+                return months;
             }
+
+            function spreadAmounts(total, months) {
+                var overSum = 0, overKeys = {};
+                months.forEach(function(m){ if (spreadOverrides[m.key]!==undefined){ overSum+=spreadOverrides[m.key]; overKeys[m.key]=1; } });
+                var free = months.filter(function(m){ return !overKeys[m.key]; });
+                var rem = total - overSum, n2 = free.length, base = n2>0 ? Math.floor(rem/n2) : 0;
+                var out = {}, run = 0;
+                free.forEach(function(m,i){ var a=(i===n2-1)?Math.round(rem-run):base; out[m.key]=a; run+=a; });
+                months.forEach(function(m){ if(overKeys[m.key]) out[m.key]=spreadOverrides[m.key]; });
+                return out;
+            }
+
+            function renderSpreadTable() {
+                var spreadDiv = document.getElementById('kalkulasi-spread');
+                if (!spreadDiv || !spreadBaseStart || !spreadBaseEnd) return;
+                var months = spreadMonths(spreadBaseStart, spreadBaseEnd);
+                if (!months.length) { spreadDiv.style.display='none'; return; }
+                var amts = spreadAmounts(spreadBaseTotal, months);
+                var grand = months.reduce(function(s,m){ return s+(amts[m.key]||0); }, 0);
+                var rows = '';
+                months.forEach(function(m) {
+                    var locked = spreadOverrides[m.key]!==undefined;
+                    var amt = amts[m.key]||0;
+                    var badge = locked ? '<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:600">KHUSUS</span>' : '';
+                    var rst   = locked ? '<button type="button" onclick="clearSpreadOvr(\''+m.key+'\')" style="font-size:10px;padding:1px 5px;margin-left:4px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:3px;cursor:pointer">Reset</button>' : '';
+                    var ibg   = locked ? 'background:#dbeafe;font-weight:700;' : '';
+                    rows += '<tr><td style="padding:3px 8px 3px 0;color:#374151;white-space:nowrap">'+m.label+badge+rst+'</td>'
+                          + '<td style="padding:3px 0;text-align:right"><input type="text" inputmode="numeric" data-period="'+m.key+'" value="'+amt.toLocaleString('id-ID')+'" '
+                          + 'style="text-align:right;width:140px;font-size:13px;'+ibg+'" '
+                          + 'onchange="setSpreadOvr(\''+m.key+'\',this.value)" oninput="fmtSpreadInp(this)"></td></tr>';
+                });
+                spreadDiv.innerHTML = '<div style="font-weight:700;color:#0369a1;margin-bottom:8px">Spread ('+months.length+' bulan) | Total: Rp '+grand.toLocaleString('id-ID')+'</div>'
+                    +'<table style="border-collapse:collapse;background:transparent;width:100%">'+rows+'</table>';
+                spreadDiv.style.display = 'block';
+                syncOvrInputs();
+            }
+
+            function fmtSpreadInp(inp) { var r=inp.value.replace(/\D/g,''); inp.value=r?parseInt(r,10).toLocaleString('id-ID'):''; }
+            function setSpreadOvr(k,v) { var r=String(v).replace(/\D/g,''); if(!r){clearSpreadOvr(k);return;} spreadOverrides[k]=parseInt(r,10); renderSpreadTable(); }
+            function clearSpreadOvr(k) { delete spreadOverrides[k]; renderSpreadTable(); }
+            function flushSpreadInputs() {
+                // Baca langsung dari DOM, handle kasus user ganti angka lalu langsung Save tanpa blur
+                var spreadDiv = document.getElementById('kalkulasi-spread');
+                if (!spreadDiv) return;
+                spreadDiv.querySelectorAll('input[data-period]').forEach(function(inp) {
+                    var k = inp.getAttribute('data-period');
+                    var r = inp.value.replace(/\D/g,'');
+                    if (r) spreadOverrides[k] = parseInt(r, 10);
+                });
+            }
+            function syncOvrInputs() {
+                flushSpreadInputs();
+                var form=document.querySelector('form');
+                if(!form) return;
+                form.querySelectorAll('input[name^="month_overrides["]').forEach(function(el){el.remove();});
+                Object.keys(spreadOverrides).forEach(function(k){
+                    var inp=document.createElement('input'); inp.type='hidden';
+                    inp.name='month_overrides['+k+']'; inp.value=spreadOverrides[k]; form.appendChild(inp);
+                });
+            }
+            document.querySelector('form').addEventListener('submit', syncOvrInputs);
+            // ─────────────────────────────────────────────────────────────────
 
             function kalkulasiTotal() {
                 const startVal = document.querySelector('[name=start_date]').value;
@@ -661,8 +714,10 @@ function transaction_form(PDO $pdo): void
                 if (spreadDiv && recogEl && recogEl.value === 'spread' && startVal && endVal) {
                     const overrideRaw = document.querySelector('.override-val');
                     const finalAmount = (overrideRaw && overrideRaw.value) ? parseFloat(overrideRaw.value) : total;
-                    spreadDiv.innerHTML = buildSpreadHtml(finalAmount, startVal, endVal);
-                    spreadDiv.style.display = 'block';
+                    spreadBaseTotal = finalAmount;
+                    spreadBaseStart = startVal;
+                    spreadBaseEnd   = endVal;
+                    renderSpreadTable();
                 } else if (spreadDiv) {
                     spreadDiv.style.display = 'none';
                 }
@@ -769,7 +824,19 @@ function transaction_save(PDO $pdo): void
         ':created_by'        => $createdBy,
     ]);
     $id = (int) $pdo->lastInsertId();
-    AllocationService::saveAllocations($pdo, $id, $trx);
+    $monthOverrides = [];
+    foreach (($_POST['month_overrides'] ?? []) as $k => $v) {
+        if (preg_match('/^\d{4}-\d{2}$/', (string) $k) && $v !== '') {
+            $monthOverrides[(string) $k] = (float) $v;
+        }
+    }
+    AllocationService::saveAllocations($pdo, $id, $trx, $monthOverrides);
+    if ($monthOverrides) {
+        $s = $pdo->prepare('SELECT SUM(amount) FROM transaction_allocations WHERE transaction_id=? AND property_id=?');
+        $s->execute([$id, current_property_id()]);
+        $newFinal = (float) ($s->fetchColumn() ?: $trx['final_amount']);
+        $pdo->prepare('UPDATE transactions SET final_amount=? WHERE id=?')->execute([$newFinal, $id]);
+    }
     audit($pdo, 'create', 'transactions', (string) $id, $trx);
     flash('Transaksi tersimpan dan alokasi bulanan sudah dihitung.');
     redirect_to('allocation_detail', ['id' => $id]);
@@ -798,8 +865,14 @@ function transaction_edit(PDO $pdo): void
     $startMonth = substr($trx['start_date'], 0, 7);
     $endMonth   = substr($trx['end_date'], 0, 7);
     $recognitionMonth = 'start';
+    $existingAllocations = []; // period_key => amount, untuk pre-load spread overrides
     if (($trx['billing_method'] ?? '') === 'spread') {
         $recognitionMonth = 'spread';
+        $allocRows = $pdo->prepare('SELECT period_key, SUM(amount) amt FROM transaction_allocations WHERE transaction_id = ? AND property_id = ? GROUP BY period_key ORDER BY period_key');
+        $allocRows->execute([$id, current_property_id()]);
+        foreach ($allocRows->fetchAll() as $a) {
+            $existingAllocations[$a['period_key']] = (int) round((float) $a['amt']);
+        }
     } elseif ($startMonth !== $endMonth) {
         $allocRows = $pdo->prepare('SELECT period_key, SUM(amount) amt FROM transaction_allocations WHERE transaction_id = ? AND property_id = ? GROUP BY period_key');
         $allocRows->execute([$id, current_property_id()]);
@@ -814,7 +887,7 @@ function transaction_edit(PDO $pdo): void
         }
     }
 
-    layout('Edit Transaksi #' . $id . ' — ' . ($moduleLabel[$trx['module']] ?? strtoupper($trx['module'])), function () use ($id, $trx, $masters, $clients, $allContacts, $pics, $recognitionMonth, $startMonth, $endMonth) {
+    layout('Edit Transaksi #' . $id . ' — ' . ($moduleLabel[$trx['module']] ?? strtoupper($trx['module'])), function () use ($id, $trx, $masters, $clients, $allContacts, $pics, $recognitionMonth, $startMonth, $endMonth, $existingAllocations) {
         ?>
         <form class="panel" method="post" action="?r=transaction_update">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
@@ -1135,29 +1208,83 @@ function transaction_edit(PDO $pdo): void
             document.getElementById('end_date').addEventListener('change', checkOverlap);
             checkOverlap();
 
-            function buildSpreadHtml(total, startVal, endVal) {
-                const BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
-                const s = new Date(startVal.substring(0, 7) + '-01');
-                const e = new Date(endVal.substring(0, 7) + '-01');
-                const months = [];
-                let cur = new Date(s);
+            // ── Spread table helpers ─────────────────────────────────────────
+            // Pre-load existing allocations sebagai initial overrides (untuk transaksi spread)
+            var spreadOverrides = <?= json_encode($existingAllocations) ?>;
+            var spreadBaseTotal = 0, spreadBaseStart = '', spreadBaseEnd = '';
+
+            function spreadMonths(startVal, endVal) {
+                var BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+                var months = [], cur = new Date(startVal.substring(0,7)+'-01'), e = new Date(endVal.substring(0,7)+'-01');
                 while (cur <= e) {
-                    months.push(BULAN[cur.getMonth()] + ' ' + cur.getFullYear());
-                    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+                    var y = cur.getFullYear(), m = cur.getMonth();
+                    months.push({ key: y+'-'+String(m+1).padStart(2,'0'), label: BULAN[m]+' '+y });
+                    cur = new Date(y, m+1, 1);
                 }
-                if (!months.length) return '';
-                const n = months.length;
-                const perMonth = Math.floor(total / n);
-                let rows = '', running = 0;
-                months.forEach((label, i) => {
-                    const amt = i === n - 1 ? Math.round(total - running) : perMonth;
-                    running += amt;
-                    rows += '<tr><td style="padding:2px 12px 2px 0;color:#374151">' + label + '</td>'
-                          + '<td style="padding:2px 0;text-align:right;font-weight:600;color:#0369a1">Rp ' + amt.toLocaleString('id-ID') + '</td></tr>';
-                });
-                return '<span style="color:#0369a1;font-weight:600">Estimasi Spread (' + n + ' bulan):</span>'
-                     + '<table style="margin-top:6px;border-collapse:collapse;background:transparent;width:100%">' + rows + '</table>';
+                return months;
             }
+
+            function spreadAmounts(total, months) {
+                var overSum = 0, overKeys = {};
+                months.forEach(function(m){ if (spreadOverrides[m.key]!==undefined){ overSum+=spreadOverrides[m.key]; overKeys[m.key]=1; } });
+                var free = months.filter(function(m){ return !overKeys[m.key]; });
+                var rem = total - overSum, n2 = free.length, base = n2>0 ? Math.floor(rem/n2) : 0;
+                var out = {}, run = 0;
+                free.forEach(function(m,i){ var a=(i===n2-1)?Math.round(rem-run):base; out[m.key]=a; run+=a; });
+                months.forEach(function(m){ if(overKeys[m.key]) out[m.key]=spreadOverrides[m.key]; });
+                return out;
+            }
+
+            function renderSpreadTable() {
+                var spreadDiv = document.getElementById('kalkulasi-spread');
+                if (!spreadDiv || !spreadBaseStart || !spreadBaseEnd) return;
+                var months = spreadMonths(spreadBaseStart, spreadBaseEnd);
+                if (!months.length) { spreadDiv.style.display='none'; return; }
+                var amts = spreadAmounts(spreadBaseTotal, months);
+                var grand = months.reduce(function(s,m){ return s+(amts[m.key]||0); }, 0);
+                var rows = '';
+                months.forEach(function(m) {
+                    var locked = spreadOverrides[m.key]!==undefined;
+                    var amt = amts[m.key]||0;
+                    var badge = locked ? '<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:600">KHUSUS</span>' : '';
+                    var rst   = locked ? '<button type="button" onclick="clearSpreadOvr(\''+m.key+'\')" style="font-size:10px;padding:1px 5px;margin-left:4px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:3px;cursor:pointer">Reset</button>' : '';
+                    var ibg   = locked ? 'background:#dbeafe;font-weight:700;' : '';
+                    rows += '<tr><td style="padding:3px 8px 3px 0;color:#374151;white-space:nowrap">'+m.label+badge+rst+'</td>'
+                          + '<td style="padding:3px 0;text-align:right"><input type="text" inputmode="numeric" data-period="'+m.key+'" value="'+amt.toLocaleString('id-ID')+'" '
+                          + 'style="text-align:right;width:140px;font-size:13px;'+ibg+'" '
+                          + 'onchange="setSpreadOvr(\''+m.key+'\',this.value)" oninput="fmtSpreadInp(this)"></td></tr>';
+                });
+                spreadDiv.innerHTML = '<div style="font-weight:700;color:#0369a1;margin-bottom:8px">Spread ('+months.length+' bulan) | Total: Rp '+grand.toLocaleString('id-ID')+'</div>'
+                    +'<table style="border-collapse:collapse;background:transparent;width:100%">'+rows+'</table>';
+                spreadDiv.style.display = 'block';
+                syncOvrInputs();
+            }
+
+            function fmtSpreadInp(inp) { var r=inp.value.replace(/\D/g,''); inp.value=r?parseInt(r,10).toLocaleString('id-ID'):''; }
+            function setSpreadOvr(k,v) { var r=String(v).replace(/\D/g,''); if(!r){clearSpreadOvr(k);return;} spreadOverrides[k]=parseInt(r,10); renderSpreadTable(); }
+            function clearSpreadOvr(k) { delete spreadOverrides[k]; renderSpreadTable(); }
+            function flushSpreadInputs() {
+                // Baca langsung dari DOM, handle kasus user ganti angka lalu langsung Save tanpa blur
+                var spreadDiv = document.getElementById('kalkulasi-spread');
+                if (!spreadDiv) return;
+                spreadDiv.querySelectorAll('input[data-period]').forEach(function(inp) {
+                    var k = inp.getAttribute('data-period');
+                    var r = inp.value.replace(/\D/g,'');
+                    if (r) spreadOverrides[k] = parseInt(r, 10);
+                });
+            }
+            function syncOvrInputs() {
+                flushSpreadInputs();
+                var form=document.querySelector('form');
+                if(!form) return;
+                form.querySelectorAll('input[name^="month_overrides["]').forEach(function(el){el.remove();});
+                Object.keys(spreadOverrides).forEach(function(k){
+                    var inp=document.createElement('input'); inp.type='hidden';
+                    inp.name='month_overrides['+k+']'; inp.value=spreadOverrides[k]; form.appendChild(inp);
+                });
+            }
+            document.querySelector('form').addEventListener('submit', syncOvrInputs);
+            // ─────────────────────────────────────────────────────────────────
 
             function kalkulasiTotal() {
                 const startVal = document.getElementById('start_date').value;
@@ -1189,8 +1316,10 @@ function transaction_edit(PDO $pdo): void
                 if (spreadDiv && recogEl && recogEl.value === 'spread' && startVal && endVal) {
                     const overrideRaw = document.querySelector('.override-val');
                     const finalAmount = (overrideRaw && overrideRaw.value) ? parseFloat(overrideRaw.value) : total;
-                    spreadDiv.innerHTML = buildSpreadHtml(finalAmount, startVal, endVal);
-                    spreadDiv.style.display = 'block';
+                    spreadBaseTotal = finalAmount;
+                    spreadBaseStart = startVal;
+                    spreadBaseEnd   = endVal;
+                    renderSpreadTable();
                 } else if (spreadDiv) {
                     spreadDiv.style.display = 'none';
                 }
@@ -1206,6 +1335,11 @@ function transaction_edit(PDO $pdo): void
                     hidden.value = raw;
                 });
             });
+
+            // Auto-tampilkan spread table saat buka edit form transaksi recurring
+            <?php if (($trx['billing_method'] ?? '') === 'spread'): ?>
+            kalkulasiTotal();
+            <?php endif; ?>
         </script>
         <?php
     });
@@ -1306,7 +1440,19 @@ function transaction_update(PDO $pdo): void
         ':property_id'      => current_property_id(),
     ]);
 
-    AllocationService::saveAllocations($pdo, $id, $trx);
+    $monthOverrides = [];
+    foreach (($_POST['month_overrides'] ?? []) as $k => $v) {
+        if (preg_match('/^\d{4}-\d{2}$/', (string) $k) && $v !== '') {
+            $monthOverrides[(string) $k] = (float) $v;
+        }
+    }
+    AllocationService::saveAllocations($pdo, $id, $trx, $monthOverrides);
+    if ($monthOverrides) {
+        $s = $pdo->prepare('SELECT SUM(amount) FROM transaction_allocations WHERE transaction_id=? AND property_id=?');
+        $s->execute([$id, current_property_id()]);
+        $newFinal = (float) ($s->fetchColumn() ?: $trx['final_amount']);
+        $pdo->prepare('UPDATE transactions SET final_amount=? WHERE id=?')->execute([$newFinal, $id]);
+    }
     audit($pdo, 'update', 'transactions', (string) $id, $trx, (array) $existing);
     flash('Transaksi diperbarui dan alokasi dihitung ulang.');
     redirect_to('allocation_detail', ['id' => $id]);
@@ -1353,23 +1499,134 @@ function allocation_detail(PDO $pdo): void
             <h2>Breakdown Bulanan</h2>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Bulan</th><th>Periode Alokasi</th><th>Hari</th><th>Capacity-days</th><th>Aktual</th></tr></thead>
+                    <thead><tr>
+                        <th>Bulan</th><th>Periode Alokasi</th><th>Hari</th><th>Capacity-days</th><th>Aktual</th>
+                        <?php if (($trx['billing_method'] ?? '') === 'spread' && can('manage_transactions')): ?><th></th><?php endif; ?>
+                    </tr></thead>
                     <tbody>
-                    <?php foreach ($alloc->fetchAll() as $row): ?>
-                        <tr>
+                    <?php foreach ($alloc->fetchAll() as $row):
+                        $isSpreadEditable = ($trx['billing_method'] ?? '') === 'spread' && can('manage_transactions');
+                    ?>
+                        <tr id="row-<?= (int)$row['id'] ?>">
                             <td><?= h(period_label($row['period_key'])) ?></td>
                             <td><?= h($row['allocation_start'] . ' s/d ' . $row['allocation_end']) ?></td>
                             <td><?= h((string) $row['allocated_days']) ?></td>
                             <td><?= h((string) $row['capacity_days']) ?></td>
-                            <td><?= money($row['amount']) ?></td>
+                            <td id="amt-<?= (int)$row['id'] ?>"><?= money($row['amount']) ?></td>
+                            <?php if ($isSpreadEditable): ?>
+                            <td style="white-space:nowrap">
+                                <button type="button" class="btn light" style="font-size:11px;padding:2px 8px" onclick="toggleEditRow(<?= (int)$row['id'] ?>, <?= (int)$row['amount'] ?>)">Edit</button>
+                            </td>
+                            <?php endif; ?>
                         </tr>
+                        <?php if ($isSpreadEditable): ?>
+                        <tr id="edit-<?= (int)$row['id'] ?>" style="display:none;background:#f0f9ff">
+                            <td colspan="6" style="padding:8px 12px">
+                                <form method="post" action="?r=allocation_amount_override" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                                    <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                                    <input type="hidden" name="alloc_id" value="<?= (int)$row['id'] ?>">
+                                    <input type="hidden" name="transaction_id" value="<?= (int)$trx['id'] ?>">
+                                    <label style="font-size:12px;font-weight:600;color:#0369a1"><?= h(period_label($row['period_key'])) ?> — Special Price:</label>
+                                    <input type="text" inputmode="numeric" id="edit-fmt-<?= (int)$row['id'] ?>"
+                                        style="width:150px;font-size:13px"
+                                        value="<?= number_format((int)$row['amount'], 0, ',', '.') ?>"
+                                        oninput="syncAmt(this, 'edit-raw-<?= (int)$row['id'] ?>')">
+                                    <input type="hidden" name="new_amount" id="edit-raw-<?= (int)$row['id'] ?>" value="<?= (int)$row['amount'] ?>">
+                                    <button type="submit" style="font-size:12px">Simpan</button>
+                                    <button type="button" class="btn secondary" style="font-size:12px" onclick="toggleEditRow(<?= (int)$row['id'] ?>)">Batal</button>
+                                    <span style="font-size:11px;color:#6b7280">Total transaksi akan dihitung ulang dari jumlah semua bulan.</span>
+                                </form>
+                            </td>
+                        </tr>
+                        <?php endif; ?>
                     <?php endforeach; ?>
                     </tbody>
                 </table>
             </div>
         </div>
+        <?php if (($trx['billing_method'] ?? '') === 'spread' && can('manage_transactions')): ?>
+        <script>
+        function toggleEditRow(id, currentAmt) {
+            var editRow = document.getElementById('edit-' + id);
+            var isHidden = editRow.style.display === 'none';
+            // tutup semua edit row lain
+            document.querySelectorAll('tr[id^="edit-"]').forEach(function(r) { r.style.display = 'none'; });
+            if (isHidden) {
+                editRow.style.display = '';
+                if (currentAmt !== undefined) {
+                    var fmt = document.getElementById('edit-fmt-' + id);
+                    var raw = document.getElementById('edit-raw-' + id);
+                    fmt.value = currentAmt.toLocaleString('id-ID');
+                    raw.value = currentAmt;
+                }
+            }
+        }
+        function syncAmt(input, rawId) {
+            var raw = input.value.replace(/\D/g, '');
+            input.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+            document.getElementById(rawId).value = raw;
+        }
+        </script>
+        <?php endif; ?>
         <?php
     });
+}
+
+function allocation_amount_override(PDO $pdo): void
+{
+    if (!can('manage_transactions')) {
+        http_response_code(403); exit('Akses ditolak.');
+    }
+    verify_csrf();
+
+    $allocId  = (int)   post('alloc_id');
+    $trxId    = (int)   post('transaction_id');
+    $newAmt   = (float) post('new_amount');
+    $pid      = current_property_id();
+
+    // Verifikasi alokasi milik properti & transaksi yang tepat, dan transaksinya adalah spread
+    $alloc = $pdo->prepare(
+        'SELECT ta.id, ta.period_key FROM transaction_allocations ta
+         JOIN transactions t ON t.id = ta.transaction_id
+         WHERE ta.id = ? AND ta.transaction_id = ? AND ta.property_id = ? AND t.billing_method = "spread"'
+    );
+    $alloc->execute([$allocId, $trxId, $pid]);
+    $row = $alloc->fetch();
+
+    if (!$row) {
+        flash('Alokasi tidak ditemukan atau bukan transaksi recurring.');
+        redirect_to('allocation_detail', ['id' => $trxId]);
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('UPDATE transaction_allocations SET amount = ? WHERE id = ?')
+            ->execute([$newAmt, $allocId]);
+
+        // Recalculate final_amount transaksi = SUM semua alokasi
+        $sumStmt = $pdo->prepare('SELECT SUM(amount) FROM transaction_allocations WHERE transaction_id = ? AND property_id = ?');
+        $sumStmt->execute([$trxId, $pid]);
+        $newFinal = (float) ($sumStmt->fetchColumn() ?: 0);
+
+        $pdo->prepare('UPDATE transactions SET final_amount = ?, updated_by = ?, updated_at = NOW() WHERE id = ?')
+            ->execute([$newFinal, $_SESSION['user']['name'] ?? 'system', $trxId]);
+
+        audit($pdo, 'allocation_override', 'transaction_allocations', (string) $allocId, [
+            'transaction_id' => $trxId,
+            'period_key'     => $row['period_key'],
+            'new_amount'     => $newAmt,
+            'new_final'      => $newFinal,
+        ]);
+
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        flash('Gagal simpan: ' . $e->getMessage());
+        redirect_to('allocation_detail', ['id' => $trxId]);
+    }
+
+    flash('Amount ' . $row['period_key'] . ' diperbarui. Total recurring diperbarui ke ' . number_format($newFinal, 0, ',', '.') . '.');
+    redirect_to('allocation_detail', ['id' => $trxId]);
 }
 
 function transaction_history_page(PDO $pdo): void
