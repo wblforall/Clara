@@ -313,6 +313,7 @@ function roles_page(PDO $pdo): void
         'import_master'       => 'Import Master',
         'export_reports'      => 'Export Laporan',
         'view_pic_report'     => 'Laporan PIC',
+        'view_commission_sim' => 'Simulasi Komisi',
         'view_logs'           => 'Activity Log',
         'manage_users'        => 'Kelola Users',
         'manage_deleted'      => 'Hapus Transaksi',
@@ -380,7 +381,7 @@ function roles_save(PDO $pdo): void
     $allPermissions = [
         'view_dashboard', 'view_exec_summary', 'view_transactions', 'manage_transactions',
         'view_master', 'manage_master', 'import_master',
-        'export_reports', 'view_pic_report', 'view_logs', 'manage_users', 'manage_deleted',
+        'export_reports', 'view_pic_report', 'view_commission_sim', 'view_logs', 'manage_users', 'manage_deleted',
     ];
 
     $submitted = $_POST['perms'] ?? [];

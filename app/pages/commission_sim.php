@@ -16,7 +16,7 @@ function _csim_cat(string $roleName, string $picName): string
 
 function commission_sim(PDO $pdo): void
 {
-    require_permission('view_pic_report');
+    require_permission('view_commission_sim');
 
     $period     = getv('period', date('Y-m'));
     $pid        = current_property_id();
