@@ -782,11 +782,16 @@ function transaction_form(PDO $pdo): void
                 if (spreadDiv && recogEl && recogEl.value === 'spread' && startVal && endVal) {
                     const overrideRaw = document.querySelector('.override-val');
                     const finalAmount = (overrideRaw && overrideRaw.value) ? parseFloat(overrideRaw.value) : total;
-                    spreadBaseTotal   = finalAmount;
                     spreadBaseStart   = startVal;
                     spreadBaseEnd     = endVal;
                     spreadBasePricing = pricing;
                     spreadBaseCycle   = (document.getElementById('cycle_recognition') || {value:'cycle_start'}).value;
+                    // Monthly: total = rate × jumlah siklus (bukan hanya rate 1 bulan)
+                    if (pricing === 'monthly' && !(overrideRaw && overrideRaw.value)) {
+                        var _cycles = spreadMonths(startVal, endVal, pricing, spreadBaseCycle);
+                        finalAmount = rate * _cycles.length;
+                    }
+                    spreadBaseTotal   = finalAmount;
                     renderSpreadTable();
                 } else if (spreadDiv) {
                     spreadDiv.style.display = 'none';
@@ -1452,11 +1457,16 @@ function transaction_edit(PDO $pdo): void
                 if (spreadDiv && recogEl && recogEl.value === 'spread' && startVal && endVal) {
                     const overrideRaw = document.querySelector('.override-val');
                     const finalAmount = (overrideRaw && overrideRaw.value) ? parseFloat(overrideRaw.value) : total;
-                    spreadBaseTotal   = finalAmount;
                     spreadBaseStart   = startVal;
                     spreadBaseEnd     = endVal;
                     spreadBasePricing = pricing;
                     spreadBaseCycle   = (document.getElementById('cycle_recognition') || {value:'cycle_start'}).value;
+                    // Monthly: total = rate × jumlah siklus (bukan hanya rate 1 bulan)
+                    if (pricing === 'monthly' && !(overrideRaw && overrideRaw.value)) {
+                        var _cycles = spreadMonths(startVal, endVal, pricing, spreadBaseCycle);
+                        finalAmount = rate * _cycles.length;
+                    }
+                    spreadBaseTotal   = finalAmount;
                     renderSpreadTable();
                 } else if (spreadDiv) {
                     spreadDiv.style.display = 'none';
