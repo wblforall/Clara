@@ -369,6 +369,7 @@ function layout(string $title, callable $body, array $opts = []): void
     document.addEventListener('submit',function(e){var form=e.target;if(form.dataset.submitted){e.preventDefault();return;}form.dataset.submitted='1';form.querySelectorAll('button[type=submit]').forEach(function(btn){btn.disabled=true;btn.dataset.orig=btn.textContent;btn.textContent='Menyimpan...';});});
     </script>
     <script src="assets/flatpickr.min.js"></script>
+    <script src="assets/spread-table.js"></script>
     <script>
     (function(){
         if(typeof flatpickr==='undefined') return;
