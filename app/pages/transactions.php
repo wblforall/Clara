@@ -652,27 +652,71 @@ function transaction_form(PDO $pdo): void
                 return out;
             }
 
+            function computeNewBase(total, months) {
+                var n = months.length;
+                if (!n) return {};
+                var base = Math.floor(total / n), out = {}, run = 0;
+                months.forEach(function(m, i) {
+                    var a = (i === n-1) ? Math.round(total - run) : base;
+                    out[m.key] = a; run += a;
+                });
+                return out;
+            }
+
+            function useAllNewBase() {
+                spreadOverrides = {};
+                renderSpreadTable();
+            }
+
             function renderSpreadTable() {
                 var spreadDiv = document.getElementById('kalkulasi-spread');
                 if (!spreadDiv || !spreadBaseStart || !spreadBaseEnd) return;
                 var months = spreadMonths(spreadBaseStart, spreadBaseEnd, spreadBasePricing, spreadBaseCycle);
                 if (!months.length) { spreadDiv.style.display='none'; return; }
-                var amts = spreadAmounts(spreadBaseTotal, months);
-                var grand = months.reduce(function(s,m){ return s+(amts[m.key]||0); }, 0);
+                var newBase = computeNewBase(spreadBaseTotal, months);
+                var amts    = spreadAmounts(spreadBaseTotal, months);
+                var grand   = months.reduce(function(s,m){ return s+(amts[m.key]||0); }, 0);
+
+                // Cek apakah ada bulan yang berbeda dari kalkulasi baru
+                var hasDiff = months.some(function(m){
+                    return spreadOverrides[m.key]!==undefined && Math.abs(spreadOverrides[m.key]-(newBase[m.key]||0))>1;
+                });
+
                 var rows = '';
                 months.forEach(function(m) {
-                    var locked = spreadOverrides[m.key]!==undefined;
-                    var amt = amts[m.key]||0;
-                    var badge = locked ? '<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:600">KHUSUS</span>' : '';
-                    var rst   = locked ? '<button type="button" onclick="clearSpreadOvr(\''+m.key+'\')" style="font-size:10px;padding:1px 5px;margin-left:4px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:3px;cursor:pointer">Reset</button>' : '';
-                    var ibg   = locked ? 'background:#dbeafe;font-weight:700;' : '';
-                    rows += '<tr><td style="padding:3px 8px 3px 0;color:#374151;white-space:nowrap">'+m.label+badge+rst+'</td>'
+                    var locked  = spreadOverrides[m.key]!==undefined;
+                    var amt     = amts[m.key]||0;
+                    var newAmt  = newBase[m.key]||0;
+                    var isDiff  = locked && Math.abs(amt - newAmt) > 1;
+                    var badge   = locked ? '<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:600">KHUSUS</span>' : '';
+                    var rst     = locked ? '<button type="button" onclick="clearSpreadOvr(\''+m.key+'\')" style="font-size:10px;padding:1px 5px;margin-left:4px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:3px;cursor:pointer">Reset</button>' : '';
+                    var ibg     = locked ? 'background:#dbeafe;font-weight:700;' : '';
+                    var diffCell = isDiff
+                        ? '<td style="padding:3px 0 3px 10px;font-size:11px;color:#6b7280;white-space:nowrap">'
+                          + '→ baru: <strong style="color:#0369a1">'+newAmt.toLocaleString('id-ID')+'</strong>'
+                          + ' <button type="button" onclick="clearSpreadOvr(\''+m.key+'\')" style="font-size:10px;padding:1px 6px;margin-left:2px;background:#0ea5e9;color:#fff;border:none;border-radius:3px;cursor:pointer">Pakai</button>'
+                          + '</td>'
+                        : '<td></td>';
+                    rows += '<tr>'
+                          + '<td style="padding:3px 8px 3px 0;color:#374151;white-space:nowrap">'+m.label+badge+rst+'</td>'
                           + '<td style="padding:3px 0;text-align:right"><input type="text" inputmode="numeric" data-period="'+m.key+'" value="'+amt.toLocaleString('id-ID')+'" '
                           + 'style="text-align:right;width:140px;font-size:13px;'+ibg+'" '
-                          + 'onchange="setSpreadOvr(\''+m.key+'\',this.value)" oninput="fmtSpreadInp(this)"></td></tr>';
+                          + 'onchange="setSpreadOvr(\''+m.key+'\',this.value)" oninput="fmtSpreadInp(this)"></td>'
+                          + diffCell
+                          + '</tr>';
                 });
-                spreadDiv.innerHTML = '<div style="font-weight:700;color:#0369a1;margin-bottom:8px">Spread ('+months.length+' bulan) | Total: Rp '+grand.toLocaleString('id-ID')+'</div>'
-                    +'<table style="border-collapse:collapse;background:transparent;width:100%">'+rows+'</table>';
+
+                var header = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">'
+                    + '<span style="font-weight:700;color:#0369a1">Spread ('+months.length+' bulan) | Total: Rp '+grand.toLocaleString('id-ID')+'</span>';
+                if (hasDiff) {
+                    var newTotal = months.reduce(function(s,m){ return s+(newBase[m.key]||0); }, 0);
+                    header += '<button type="button" onclick="useAllNewBase()" style="font-size:11px;padding:2px 10px;background:#0ea5e9;color:#fff;border:none;border-radius:4px;cursor:pointer">'
+                        + 'Pakai Semua Baru (Rp '+newTotal.toLocaleString('id-ID')+')</button>';
+                }
+                header += '</div>';
+
+                spreadDiv.innerHTML = header
+                    + '<table style="border-collapse:collapse;background:transparent;width:100%">'+rows+'</table>';
                 spreadDiv.style.display = 'block';
                 syncOvrInputs();
             }
@@ -1281,27 +1325,71 @@ function transaction_edit(PDO $pdo): void
                 return out;
             }
 
+            function computeNewBase(total, months) {
+                var n = months.length;
+                if (!n) return {};
+                var base = Math.floor(total / n), out = {}, run = 0;
+                months.forEach(function(m, i) {
+                    var a = (i === n-1) ? Math.round(total - run) : base;
+                    out[m.key] = a; run += a;
+                });
+                return out;
+            }
+
+            function useAllNewBase() {
+                spreadOverrides = {};
+                renderSpreadTable();
+            }
+
             function renderSpreadTable() {
                 var spreadDiv = document.getElementById('kalkulasi-spread');
                 if (!spreadDiv || !spreadBaseStart || !spreadBaseEnd) return;
                 var months = spreadMonths(spreadBaseStart, spreadBaseEnd, spreadBasePricing, spreadBaseCycle);
                 if (!months.length) { spreadDiv.style.display='none'; return; }
-                var amts = spreadAmounts(spreadBaseTotal, months);
-                var grand = months.reduce(function(s,m){ return s+(amts[m.key]||0); }, 0);
+                var newBase = computeNewBase(spreadBaseTotal, months);
+                var amts    = spreadAmounts(spreadBaseTotal, months);
+                var grand   = months.reduce(function(s,m){ return s+(amts[m.key]||0); }, 0);
+
+                // Cek apakah ada bulan yang berbeda dari kalkulasi baru
+                var hasDiff = months.some(function(m){
+                    return spreadOverrides[m.key]!==undefined && Math.abs(spreadOverrides[m.key]-(newBase[m.key]||0))>1;
+                });
+
                 var rows = '';
                 months.forEach(function(m) {
-                    var locked = spreadOverrides[m.key]!==undefined;
-                    var amt = amts[m.key]||0;
-                    var badge = locked ? '<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:600">KHUSUS</span>' : '';
-                    var rst   = locked ? '<button type="button" onclick="clearSpreadOvr(\''+m.key+'\')" style="font-size:10px;padding:1px 5px;margin-left:4px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:3px;cursor:pointer">Reset</button>' : '';
-                    var ibg   = locked ? 'background:#dbeafe;font-weight:700;' : '';
-                    rows += '<tr><td style="padding:3px 8px 3px 0;color:#374151;white-space:nowrap">'+m.label+badge+rst+'</td>'
+                    var locked  = spreadOverrides[m.key]!==undefined;
+                    var amt     = amts[m.key]||0;
+                    var newAmt  = newBase[m.key]||0;
+                    var isDiff  = locked && Math.abs(amt - newAmt) > 1;
+                    var badge   = locked ? '<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:600">KHUSUS</span>' : '';
+                    var rst     = locked ? '<button type="button" onclick="clearSpreadOvr(\''+m.key+'\')" style="font-size:10px;padding:1px 5px;margin-left:4px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:3px;cursor:pointer">Reset</button>' : '';
+                    var ibg     = locked ? 'background:#dbeafe;font-weight:700;' : '';
+                    var diffCell = isDiff
+                        ? '<td style="padding:3px 0 3px 10px;font-size:11px;color:#6b7280;white-space:nowrap">'
+                          + '→ baru: <strong style="color:#0369a1">'+newAmt.toLocaleString('id-ID')+'</strong>'
+                          + ' <button type="button" onclick="clearSpreadOvr(\''+m.key+'\')" style="font-size:10px;padding:1px 6px;margin-left:2px;background:#0ea5e9;color:#fff;border:none;border-radius:3px;cursor:pointer">Pakai</button>'
+                          + '</td>'
+                        : '<td></td>';
+                    rows += '<tr>'
+                          + '<td style="padding:3px 8px 3px 0;color:#374151;white-space:nowrap">'+m.label+badge+rst+'</td>'
                           + '<td style="padding:3px 0;text-align:right"><input type="text" inputmode="numeric" data-period="'+m.key+'" value="'+amt.toLocaleString('id-ID')+'" '
                           + 'style="text-align:right;width:140px;font-size:13px;'+ibg+'" '
-                          + 'onchange="setSpreadOvr(\''+m.key+'\',this.value)" oninput="fmtSpreadInp(this)"></td></tr>';
+                          + 'onchange="setSpreadOvr(\''+m.key+'\',this.value)" oninput="fmtSpreadInp(this)"></td>'
+                          + diffCell
+                          + '</tr>';
                 });
-                spreadDiv.innerHTML = '<div style="font-weight:700;color:#0369a1;margin-bottom:8px">Spread ('+months.length+' bulan) | Total: Rp '+grand.toLocaleString('id-ID')+'</div>'
-                    +'<table style="border-collapse:collapse;background:transparent;width:100%">'+rows+'</table>';
+
+                var header = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">'
+                    + '<span style="font-weight:700;color:#0369a1">Spread ('+months.length+' bulan) | Total: Rp '+grand.toLocaleString('id-ID')+'</span>';
+                if (hasDiff) {
+                    var newTotal = months.reduce(function(s,m){ return s+(newBase[m.key]||0); }, 0);
+                    header += '<button type="button" onclick="useAllNewBase()" style="font-size:11px;padding:2px 10px;background:#0ea5e9;color:#fff;border:none;border-radius:4px;cursor:pointer">'
+                        + 'Pakai Semua Baru (Rp '+newTotal.toLocaleString('id-ID')+')</button>';
+                }
+                header += '</div>';
+
+                spreadDiv.innerHTML = header
+                    + '<table style="border-collapse:collapse;background:transparent;width:100%">'+rows+'</table>';
                 spreadDiv.style.display = 'block';
                 syncOvrInputs();
             }
