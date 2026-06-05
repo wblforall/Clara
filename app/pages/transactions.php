@@ -781,7 +781,7 @@ function transaction_form(PDO $pdo): void
                 const spreadDiv = document.getElementById('kalkulasi-spread');
                 if (spreadDiv && recogEl && recogEl.value === 'spread' && startVal && endVal) {
                     const overrideRaw = document.querySelector('.override-val');
-                    const finalAmount = (overrideRaw && overrideRaw.value) ? parseFloat(overrideRaw.value) : total;
+                    var finalAmount = (overrideRaw && overrideRaw.value) ? parseFloat(overrideRaw.value) : total;
                     spreadBaseStart   = startVal;
                     spreadBaseEnd     = endVal;
                     spreadBasePricing = pricing;
@@ -1456,7 +1456,7 @@ function transaction_edit(PDO $pdo): void
                 const spreadDiv = document.getElementById('kalkulasi-spread');
                 if (spreadDiv && recogEl && recogEl.value === 'spread' && startVal && endVal) {
                     const overrideRaw = document.querySelector('.override-val');
-                    const finalAmount = (overrideRaw && overrideRaw.value) ? parseFloat(overrideRaw.value) : total;
+                    var finalAmount = (overrideRaw && overrideRaw.value) ? parseFloat(overrideRaw.value) : total;
                     spreadBaseStart   = startVal;
                     spreadBaseEnd     = endVal;
                     spreadBasePricing = pricing;
