@@ -606,15 +606,37 @@ function transaction_form(PDO $pdo): void
 
             // ── Spread table helpers ─────────────────────────────────────────
             var spreadOverrides = {};
-            var spreadBaseTotal = 0, spreadBaseStart = '', spreadBaseEnd = '';
+            var spreadBaseTotal = 0, spreadBaseStart = '', spreadBaseEnd = '', spreadBasePricing = '', spreadBaseCycle = 'cycle_start';
 
-            function spreadMonths(startVal, endVal) {
+            function parseLocalDate(s) {
+                var p = s.split('-'); return new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
+            }
+
+            function spreadMonths(startVal, endVal, pricingType, cycleRecognition) {
                 var BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
-                var months = [], cur = new Date(startVal.substring(0,7)+'-01'), e = new Date(endVal.substring(0,7)+'-01');
-                while (cur <= e) {
-                    var y = cur.getFullYear(), m = cur.getMonth();
-                    months.push({ key: y+'-'+String(m+1).padStart(2,'0'), label: BULAN[m]+' '+y });
-                    cur = new Date(y, m+1, 1);
+                var months = [];
+                if (pricingType === 'monthly') {
+                    // Cycle-based: anchor ke start_date, cocok dengan PHP monthlyCycleAllocations
+                    var cursor = parseLocalDate(startVal);
+                    var endDate = parseLocalDate(endVal);
+                    var limit = 120;
+                    while (cursor <= endDate && limit-- > 0) {
+                        var nextAnchor = new Date(cursor.getFullYear(), cursor.getMonth()+1, cursor.getDate());
+                        var cycleEnd = new Date(nextAnchor.getFullYear(), nextAnchor.getMonth(), nextAnchor.getDate()-1);
+                        if (cycleEnd > endDate) cycleEnd = new Date(endDate);
+                        var periodDate = (cycleRecognition === 'cycle_end') ? cycleEnd : cursor;
+                        var y = periodDate.getFullYear(), mo = periodDate.getMonth();
+                        months.push({ key: y+'-'+String(mo+1).padStart(2,'0'), label: BULAN[mo]+' '+y });
+                        cursor = new Date(cycleEnd.getFullYear(), cycleEnd.getMonth(), cycleEnd.getDate()+1);
+                    }
+                } else {
+                    // Calendar-month based (untuk daily_*, fixed)
+                    var cur = new Date(startVal.substring(0,7)+'-01'), e = new Date(endVal.substring(0,7)+'-01');
+                    while (cur <= e) {
+                        var y = cur.getFullYear(), mo = cur.getMonth();
+                        months.push({ key: y+'-'+String(mo+1).padStart(2,'0'), label: BULAN[mo]+' '+y });
+                        cur = new Date(y, mo+1, 1);
+                    }
                 }
                 return months;
             }
@@ -633,7 +655,7 @@ function transaction_form(PDO $pdo): void
             function renderSpreadTable() {
                 var spreadDiv = document.getElementById('kalkulasi-spread');
                 if (!spreadDiv || !spreadBaseStart || !spreadBaseEnd) return;
-                var months = spreadMonths(spreadBaseStart, spreadBaseEnd);
+                var months = spreadMonths(spreadBaseStart, spreadBaseEnd, spreadBasePricing, spreadBaseCycle);
                 if (!months.length) { spreadDiv.style.display='none'; return; }
                 var amts = spreadAmounts(spreadBaseTotal, months);
                 var grand = months.reduce(function(s,m){ return s+(amts[m.key]||0); }, 0);
@@ -714,9 +736,11 @@ function transaction_form(PDO $pdo): void
                 if (spreadDiv && recogEl && recogEl.value === 'spread' && startVal && endVal) {
                     const overrideRaw = document.querySelector('.override-val');
                     const finalAmount = (overrideRaw && overrideRaw.value) ? parseFloat(overrideRaw.value) : total;
-                    spreadBaseTotal = finalAmount;
-                    spreadBaseStart = startVal;
-                    spreadBaseEnd   = endVal;
+                    spreadBaseTotal   = finalAmount;
+                    spreadBaseStart   = startVal;
+                    spreadBaseEnd     = endVal;
+                    spreadBasePricing = pricing;
+                    spreadBaseCycle   = (document.getElementById('cycle_recognition') || {value:'cycle_start'}).value;
                     renderSpreadTable();
                 } else if (spreadDiv) {
                     spreadDiv.style.display = 'none';
@@ -1238,7 +1262,7 @@ function transaction_edit(PDO $pdo): void
             function renderSpreadTable() {
                 var spreadDiv = document.getElementById('kalkulasi-spread');
                 if (!spreadDiv || !spreadBaseStart || !spreadBaseEnd) return;
-                var months = spreadMonths(spreadBaseStart, spreadBaseEnd);
+                var months = spreadMonths(spreadBaseStart, spreadBaseEnd, spreadBasePricing, spreadBaseCycle);
                 if (!months.length) { spreadDiv.style.display='none'; return; }
                 var amts = spreadAmounts(spreadBaseTotal, months);
                 var grand = months.reduce(function(s,m){ return s+(amts[m.key]||0); }, 0);
@@ -1316,9 +1340,11 @@ function transaction_edit(PDO $pdo): void
                 if (spreadDiv && recogEl && recogEl.value === 'spread' && startVal && endVal) {
                     const overrideRaw = document.querySelector('.override-val');
                     const finalAmount = (overrideRaw && overrideRaw.value) ? parseFloat(overrideRaw.value) : total;
-                    spreadBaseTotal = finalAmount;
-                    spreadBaseStart = startVal;
-                    spreadBaseEnd   = endVal;
+                    spreadBaseTotal   = finalAmount;
+                    spreadBaseStart   = startVal;
+                    spreadBaseEnd     = endVal;
+                    spreadBasePricing = pricing;
+                    spreadBaseCycle   = (document.getElementById('cycle_recognition') || {value:'cycle_start'}).value;
                     renderSpreadTable();
                 } else if (spreadDiv) {
                     spreadDiv.style.display = 'none';
