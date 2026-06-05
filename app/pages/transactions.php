@@ -681,12 +681,14 @@ function transaction_form(PDO $pdo): void
             function setSpreadOvr(k,v) { var r=String(v).replace(/\D/g,''); if(!r){clearSpreadOvr(k);return;} spreadOverrides[k]=parseInt(r,10); renderSpreadTable(); }
             function clearSpreadOvr(k) { delete spreadOverrides[k]; renderSpreadTable(); }
             function flushSpreadInputs() {
-                // Baca langsung dari DOM, handle kasus user ganti angka lalu langsung Save tanpa blur
+                // Baca langsung dari DOM; skip nilai negatif atau kosong
                 var spreadDiv = document.getElementById('kalkulasi-spread');
                 if (!spreadDiv) return;
                 spreadDiv.querySelectorAll('input[data-period]').forEach(function(inp) {
                     var k = inp.getAttribute('data-period');
-                    var r = inp.value.replace(/\D/g,'');
+                    var raw = inp.value.trim();
+                    if (!raw || raw.charAt(0) === '-') return;
+                    var r = raw.replace(/\D/g,'');
                     if (r) spreadOverrides[k] = parseInt(r, 10);
                 });
             }
@@ -1235,15 +1237,35 @@ function transaction_edit(PDO $pdo): void
             // ── Spread table helpers ─────────────────────────────────────────
             // Pre-load existing allocations sebagai initial overrides (untuk transaksi spread)
             var spreadOverrides = <?= json_encode($existingAllocations) ?>;
-            var spreadBaseTotal = 0, spreadBaseStart = '', spreadBaseEnd = '';
+            var spreadBaseTotal = 0, spreadBaseStart = '', spreadBaseEnd = '', spreadBasePricing = '', spreadBaseCycle = 'cycle_start';
 
-            function spreadMonths(startVal, endVal) {
+            function parseLocalDate(s) {
+                var p = s.split('-'); return new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
+            }
+
+            function spreadMonths(startVal, endVal, pricingType, cycleRecognition) {
                 var BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
-                var months = [], cur = new Date(startVal.substring(0,7)+'-01'), e = new Date(endVal.substring(0,7)+'-01');
-                while (cur <= e) {
-                    var y = cur.getFullYear(), m = cur.getMonth();
-                    months.push({ key: y+'-'+String(m+1).padStart(2,'0'), label: BULAN[m]+' '+y });
-                    cur = new Date(y, m+1, 1);
+                var months = [];
+                if (pricingType === 'monthly') {
+                    var cursor = parseLocalDate(startVal);
+                    var endDate = parseLocalDate(endVal);
+                    var limit = 120;
+                    while (cursor <= endDate && limit-- > 0) {
+                        var nextAnchor = new Date(cursor.getFullYear(), cursor.getMonth()+1, cursor.getDate());
+                        var cycleEnd = new Date(nextAnchor.getFullYear(), nextAnchor.getMonth(), nextAnchor.getDate()-1);
+                        if (cycleEnd > endDate) cycleEnd = new Date(endDate);
+                        var periodDate = (cycleRecognition === 'cycle_end') ? cycleEnd : cursor;
+                        var y = periodDate.getFullYear(), mo = periodDate.getMonth();
+                        months.push({ key: y+'-'+String(mo+1).padStart(2,'0'), label: BULAN[mo]+' '+y });
+                        cursor = new Date(cycleEnd.getFullYear(), cycleEnd.getMonth(), cycleEnd.getDate()+1);
+                    }
+                } else {
+                    var cur = new Date(startVal.substring(0,7)+'-01'), e = new Date(endVal.substring(0,7)+'-01');
+                    while (cur <= e) {
+                        var y = cur.getFullYear(), mo = cur.getMonth();
+                        months.push({ key: y+'-'+String(mo+1).padStart(2,'0'), label: BULAN[mo]+' '+y });
+                        cur = new Date(y, mo+1, 1);
+                    }
                 }
                 return months;
             }
@@ -1288,12 +1310,14 @@ function transaction_edit(PDO $pdo): void
             function setSpreadOvr(k,v) { var r=String(v).replace(/\D/g,''); if(!r){clearSpreadOvr(k);return;} spreadOverrides[k]=parseInt(r,10); renderSpreadTable(); }
             function clearSpreadOvr(k) { delete spreadOverrides[k]; renderSpreadTable(); }
             function flushSpreadInputs() {
-                // Baca langsung dari DOM, handle kasus user ganti angka lalu langsung Save tanpa blur
+                // Baca langsung dari DOM; skip nilai negatif atau kosong
                 var spreadDiv = document.getElementById('kalkulasi-spread');
                 if (!spreadDiv) return;
                 spreadDiv.querySelectorAll('input[data-period]').forEach(function(inp) {
                     var k = inp.getAttribute('data-period');
-                    var r = inp.value.replace(/\D/g,'');
+                    var raw = inp.value.trim();
+                    if (!raw || raw.charAt(0) === '-') return;
+                    var r = raw.replace(/\D/g,'');
                     if (r) spreadOverrides[k] = parseInt(r, 10);
                 });
             }
