@@ -31,7 +31,7 @@
   - **Executive Summary versi mobile** (tab "Eksekutif") — hanya muncul untuk user dengan hak `view_exec_summary`: pencapaian gabungan, KPI (proyeksi, recurring, klien baru, gap), per segmen, rincian per properti, dan **occupancy per properti** (Exhibition per lantai, Media per jenis, Gudang per lokasi). Memakai ulang query exec dashboard desktop.
   - **Achievement PIC di beranda** untuk user non-sales: persentase pencapaian vs target individu, **dikelompokkan per properti** (untuk akses multi-properti).
   - Form transaksi & Renewal ikut tampil di dalam shell mobile (bottom-nav konsisten). Halaman lain (master data, audit, dll) tetap memakai layout desktop. Bottom-nav menyesuaikan hak akses tiap user.
-  - **Header kontekstual:** halaman agregat (Beranda multi-properti & Eksekutif) menampilkan "Semua Properti"; halaman per-properti (Transaksi) menampilkan nama properti aktif.
+  - **Header kontekstual:** halaman agregat (Beranda multi-properti & Eksekutif) menampilkan "Semua Properti"; halaman per-properti (Transaksi/form) menampilkan **pemilih properti** (dropdown) bagi user multi-properti untuk ganti properti aktif langsung dari HP.
   - **Konsistensi dengan desktop:** warna Recurring biru (`#0369a1`/latar biru muda) sama seperti dashboard/exec; urutan occupancy lantai Exhibition & lokasi Gudang memakai map lantai yang sama (LG→GF→UG→FF→SF, lalu lainnya).
   - Bukan aplikasi/native terpisah — semua tetap 1 codebase PHP. Layout desktop tidak berubah sama sekali.
 

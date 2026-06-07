@@ -182,6 +182,8 @@ function layout(string $title, callable $body, array $opts = []): void
         .m-top .t-title { font-size: 17px; font-weight: 800; line-height: 1.15; }
         .m-top .t-sub { font-size: 11.5px; opacity: .85; margin-top: 2px; }
         .m-top a.t-desk { color: #fff; font-size: 11px; font-weight: 700; background: rgba(255,255,255,.18); padding: 6px 11px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+        .m-top .t-prop-sw { margin-top: 4px; max-width: 100%; width: auto; background: rgba(255,255,255,.18); color: #fff; border: none; border-radius: 8px; padding: 4px 26px 4px 9px; font-size: 12px; font-weight: 700; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
+        .m-top .t-prop-sw option { color: #0F1623; }
         .m-body { padding: 14px; }
         .m-flash { margin: 12px 14px 0; padding: 11px 14px; background: var(--soft); color: var(--primary-dark); border-radius: 10px; font-weight: 600; font-size: 13px; border-left: 3px solid var(--primary); }
         .m-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; height: calc(var(--m-nav-h) + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); background: #fff; border-top: 1px solid var(--line); display: flex; box-shadow: 0 -2px 14px rgba(16,24,40,.06); }
@@ -199,7 +201,15 @@ function layout(string $title, callable $body, array $opts = []): void
             <div class="m-top">
                 <div style="min-width:0">
                     <div class="t-title"><?= h($title) ?></div>
+                    <?php if (!isset($opts['prop_label']) && $isMulti): ?>
+                    <select class="t-prop-sw" onchange="if(this.value)location.href=this.value" aria-label="Ganti properti">
+                        <?php foreach ($allowedProps as $ap): ?>
+                        <option value="?r=switch_property&to=<?= (int)$ap['id'] ?>&back=<?= urlencode('?' . ($_SERVER['QUERY_STRING'] ?? '')) ?>" <?= ((int)$ap['id'] === $currentPid) ? 'selected' : '' ?>><?= h($ap['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <?php else: ?>
                     <div class="t-sub"><?= h($appName) ?> &middot; <?= h($opts['prop_label'] ?? ($currentProp['name'] ?? '')) ?></div>
+                    <?php endif; ?>
                 </div>
             </div>
             <?php if ($flash): ?><div class="m-flash"><?= h($flash) ?></div><?php endif; ?>
