@@ -122,7 +122,7 @@ function _referrer_form(PDO $pdo, int $id): void
     $title = $id ? 'Edit Referrer' : 'Tambah Referrer';
     layout($title, function () use ($row, $id) {
         ?>
-        <div style="max-width:520px">
+        <div style="max-width:720px">
             <div style="margin-bottom:12px">
                 <a class="btn secondary" href="?r=master_referrer">← Kembali</a>
             </div>
@@ -147,7 +147,12 @@ function _referrer_form(PDO $pdo, int $id): void
                     </div>
                     <div>
                         <label>Nama Bank <span class="muted" style="font-weight:400">(opsional)</span></label>
-                        <input type="text" name="nama_bank" value="<?= h($row['nama_bank'] ?? '') ?>" placeholder="cth. BCA, BNI, Mandiri">
+                        <select name="nama_bank">
+                            <option value="">— Pilih Bank —</option>
+                            <?php foreach (['BCA','BNI','BRI','Mandiri','CIMB Niaga','BSI','BTN','Maybank','Bankaltimtara','Mega'] as $b): ?>
+                                <option value="<?= $b ?>" <?= ($row['nama_bank'] ?? '') === $b ? 'selected' : '' ?>><?= $b ?></option>
+                            <?php endforeach; ?>
+                        </select>
                     </div>
                     <div>
                         <label>Status</label>
