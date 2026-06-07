@@ -222,6 +222,18 @@ if (!can($permission)) {
     require_permission($permission);
 }
 
+// ─── Mobile view: toggle eksplisit + auto-route HP ke beranda mobile ──────────
+if (isset($_GET['view'])) {
+    $v = $_GET['view'] === 'mobile' ? 'mobile' : 'desktop';
+    setcookie('clara_view', $v, ['expires' => time() + 86400 * 365, 'path' => '/', 'samesite' => 'Lax']);
+    $_COOKIE['clara_view'] = $v;
+    redirect_to($v === 'mobile' ? 'm_home' : 'dashboard');
+}
+if (mobile_view_active()) {
+    if ($route === 'dashboard')      redirect_to('m_home');
+    if ($route === 'exec_dashboard') redirect_to('m_exec');
+}
+
 
 $pageFiles = [
     'dashboard'                   => 'dashboard.php',
@@ -280,6 +292,9 @@ $pageFiles = [
     'recurring_candidates'        => 'recurring_candidates.php',
     'recurring_merge_execute'     => 'recurring_candidates.php',
     'renewals'                    => 'renewals.php',
+    'm_home'                      => 'mobile.php',
+    'm_transactions'              => 'mobile.php',
+    'm_exec'                      => 'mobile.php',
 ];
 require_once APP_ROOT . '/app/pages/' . ($pageFiles[$route] ?? 'dashboard.php');
 match ($route) {
@@ -339,5 +354,8 @@ match ($route) {
     'recurring_candidates'        => recurring_candidates_page($pdo),
     'recurring_merge_execute'     => recurring_merge_execute($pdo),
     'renewals'                    => renewals_page($pdo),
+    'm_home'                      => mobile_home_page($pdo),
+    'm_transactions'              => mobile_transactions_page($pdo),
+    'm_exec'                      => mobile_exec_page($pdo),
     default                       => dashboard($pdo),
 };

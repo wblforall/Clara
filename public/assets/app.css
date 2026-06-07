@@ -369,6 +369,94 @@ tr[style*="background: #e0f2fe"] td {
     .kpi-value { font-size: 17px; }
 }
 
+/* ===== MOBILE HARDENING (≤768px) ===== */
+@media (max-width: 768px) {
+    /* Cegah scroll horizontal halaman secara global */
+    html, body { overflow-x: hidden; }
+    .main { max-width: 100vw; }
+
+    /* Media & chart jangan meluber */
+    .main img, .main svg, .main video { max-width: 100%; height: auto; }
+    .main canvas { max-width: 100% !important; }
+
+    /* Tabel selalu aman: yang tidak jadi kartu tetap bisa di-scroll samping */
+    .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .main table:not(.mobile-cards) { min-width: max-content; }
+
+    /* Target sentuh lebih besar + cegah auto-zoom iOS (font ≥16px saat fokus) */
+    .btn, button { padding: 11px 15px; }
+    input, select, textarea { font-size: 16px; padding: 11px 12px; }
+
+    /* Toolbar / filter penuh selebar layar & rapi */
+    .toolbar form { width: 100%; }
+    .toolbar form > * { flex: 1 1 auto; min-width: 0; }
+    .toolbar .btn, .toolbar button { width: 100%; }
+
+    /* Tab properti (multi-property) bisa di-scroll, tidak menjebol */
+    .prop-tabs { display: flex; gap: 6px; overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
+    .prop-tabs .prop-tab { white-space: nowrap; flex-shrink: 0; }
+
+    /* Badge user di topbar boleh wrap */
+    .badge { white-space: normal; }
+
+    /* ── TABEL → KARTU BERTUMPUK ── */
+    table.mobile-cards { min-width: 0 !important; width: 100%; display: block; }
+    table.mobile-cards thead { display: none; }
+    table.mobile-cards tbody, table.mobile-cards tfoot { display: block; width: 100%; }
+    table.mobile-cards tr {
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+        padding: 2px 13px;
+        margin-bottom: 10px;
+        box-shadow: 0 1px 3px rgba(16,24,40,.05);
+    }
+    table.mobile-cards td {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 14px;
+        padding: 9px 0;
+        border: none;
+        border-bottom: 1px solid var(--line);
+        text-align: right;
+        white-space: normal;
+        word-break: break-word;
+        font-size: 13.5px;
+    }
+    table.mobile-cards tr td:last-child { border-bottom: none; }
+    table.mobile-cards td[data-label]::before {
+        content: attr(data-label);
+        flex: 0 0 40%;
+        text-align: left;
+        font-weight: 700;
+        color: var(--ink2);
+        text-transform: none;
+        letter-spacing: 0;
+        font-size: 12px;
+        padding-top: 1px;
+    }
+    /* Baris grup/subtotal & footer → banner full-width (tanpa label) */
+    table.mobile-cards tr.mc-full,
+    table.mobile-cards tfoot tr {
+        background: #F1F5F9;
+        padding: 4px 13px;
+    }
+    table.mobile-cards tr.mc-full td,
+    table.mobile-cards tfoot td {
+        display: block;
+        text-align: left;
+        border-bottom: none;
+        font-weight: 700;
+    }
+    table.mobile-cards tr.mc-full td::before,
+    table.mobile-cards tfoot td::before { content: none; }
+
+    /* Wrapper kartu: buang border/scroll luar supaya kartu yang jadi bingkai */
+    .table-wrap.mc-wrap { border: none; background: transparent; overflow: visible; }
+}
+
 /* ===== SECTION TITLE (dashboard panels) ===== */
 .panel h2, .card h2 {
     font-size: 14.5px;

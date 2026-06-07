@@ -32,6 +32,31 @@ function getv(string $key, $default = null)
     return $_GET[$key] ?? $default;
 }
 
+// ─── Mobile view ─────────────────────────────────────────────────────────────
+
+/** Deteksi perangkat HP dari User-Agent (tablet tetap dianggap desktop). */
+function is_mobile_device(): bool
+{
+    $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    if (preg_match('/iPad|Tablet|PlayBook|Nexus 7|Nexus 10/i', $ua)) {
+        return false;
+    }
+    return (bool) preg_match('/Android|iPhone|iPod|Mobile|Opera Mini|IEMobile|BlackBerry|webOS/i', $ua);
+}
+
+/**
+ * Apakah tampilan mobile aktif. Override eksplisit (cookie clara_view) menang;
+ * jika tidak ada, auto-deteksi dari User-Agent. User bisa paksa lewat
+ * ?view=mobile / ?view=desktop (ditangani di index.php).
+ */
+function mobile_view_active(): bool
+{
+    $pref = $_COOKIE['clara_view'] ?? '';
+    if ($pref === 'mobile')  return true;
+    if ($pref === 'desktop') return false;
+    return is_mobile_device();
+}
+
 // ─── Property helpers ────────────────────────────────────────────────────────
 
 function current_property_id(): int
@@ -178,6 +203,9 @@ function permission_for_route(string $route): string
         'pic_report', 'pic_report_print' => 'view_pic_report',
         'pic_reward', 'pic_reward_save'  => 'view_pic_report',
         'renewals' => 'view_renewals',
+        'm_home' => 'view_dashboard',
+        'm_transactions' => 'view_transactions',
+        'm_exec' => 'view_exec_summary',
         'lookup_manage', 'lookup_save', 'lookup_delete' => 'manage_master',
         'trend', 'comparison' => 'view_dashboard',
         'switch_property', 'select_property', 'set_property' => 'view_dashboard',

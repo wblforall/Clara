@@ -22,6 +22,27 @@
   - Service worker & manifest di-set `no-cache` agar pembaruan PWA langsung diterima browser (tidak ikut aturan cache 1 tahun aset statis).
   - Tidak mengubah logika apa pun — murni lapisan instalasi/offline di atas aplikasi yang sudah responsive.
 
+- **Tampilan khusus mobile (app-like)** — saat dibuka dari HP, CLARA otomatis tampil sebagai aplikasi: **top bar** ringkas + **bottom navigation** (Beranda · Transaksi · Renewal), tanpa sidebar. Bisa dipaksa lewat `?view=mobile` / `?view=desktop` (tersimpan di cookie); ada link "📱 Tampilan HP" di sidebar desktop saat diakses dari HP.
+  - **Beranda menyesuaikan peran:**
+    - *PIC sales* → beranda personal: achievement & target pribadi (ring %), peringkat di antara PIC, kontribusi per segmen, transaksi terbaru sendiri.
+    - *Akses multi-properti* → ringkasan agregat + rincian pencapaian per properti.
+    - *Properti tunggal* → ringkasan properti (segmen, Top PIC, transaksi terbaru).
+  - **Transaksi** → daftar kartu ringkas (kode/client/nilai/tanggal/PIC) + tab modul + pencarian + tombol tambah (FAB).
+  - **Executive Summary versi mobile** (tab "Eksekutif") — hanya muncul untuk user dengan hak `view_exec_summary`: pencapaian gabungan, KPI (proyeksi, recurring, klien baru, gap), per segmen, rincian per properti, dan **occupancy per properti** (Exhibition per lantai, Media per jenis, Gudang per lokasi). Memakai ulang query exec dashboard desktop.
+  - **Achievement PIC di beranda** untuk user non-sales: persentase pencapaian vs target individu, **dikelompokkan per properti** (untuk akses multi-properti).
+  - Form transaksi & Renewal ikut tampil di dalam shell mobile (bottom-nav konsisten). Halaman lain (master data, audit, dll) tetap memakai layout desktop. Bottom-nav menyesuaikan hak akses tiap user.
+  - **Header kontekstual:** halaman agregat (Beranda multi-properti & Eksekutif) menampilkan "Semua Properti"; halaman per-properti (Transaksi) menampilkan nama properti aktif.
+  - **Konsistensi dengan desktop:** warna Recurring biru (`#0369a1`/latar biru muda) sama seperti dashboard/exec; urutan occupancy lantai Exhibition & lokasi Gudang memakai map lantai yang sama (LG→GF→UG→FF→SF, lalu lainnya).
+  - Bukan aplikasi/native terpisah — semua tetap 1 codebase PHP. Layout desktop tidak berubah sama sekali.
+
+- **Perbaikan bug perhitungan achievement PIC:** target individu PIC dihitung `target_properti × target_share` (target_share tersimpan sebagai pecahan, mis. 0,25 = 25%). Sebelumnya welcome-modal membagi lagi dengan 100 sehingga target 100× lebih kecil & persentase pencapaian 100× lebih besar. Kini konsisten dengan halaman Performa PIC / Executive Summary / Rewarding.
+
+- **Perbaikan tampilan mobile menyeluruh:**
+  - **Tabel data → kartu bertumpuk** di layar HP (≤768px): tiap baris jadi kartu dengan label kolom di kiri & nilai di kanan, otomatis untuk semua halaman (judul kolom diambil dari header tabel). Baris grup/subtotal & total tetap tampil sebagai banner full-width. Tabel yang belum bisa dipetakan tetap aman di-scroll samping.
+  - Cegah scroll horizontal halaman yang tidak diinginkan; gambar/chart dibatasi agar tidak meluber.
+  - Target sentuh tombol diperbesar; field input pakai font ≥16px agar tidak auto-zoom di iOS.
+  - Toolbar/filter & tab properti dirapikan untuk layar sempit.
+
 ---
 
 ## Version 4.11 — 8 Juni 2026

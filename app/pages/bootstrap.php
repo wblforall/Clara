@@ -53,6 +53,33 @@ function xlsx_download(string $filename, array $headers, array $rows): void
     exit;
 }
 
+/** Ikon inline (stroke SVG) untuk shell mobile. */
+function _m_icon(string $name): string
+{
+    $p = [
+        'home'    => '<path d="M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"/>',
+        'tx'      => '<path d="M4 4h16v16H4zM8 9h8M8 13h8M8 17h5"/>',
+        'renew'   => '<path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/>',
+        'desktop' => '<path d="M3 4h18v12H3zM8 20h8M12 16v4"/>',
+        'plus'    => '<path d="M12 5v14M5 12h14"/>',
+        'search'  => '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+        'chart'   => '<path d="M3 21h18M6 21v-7M11 21V8M16 21v-4"/>',
+    ];
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+         . 'stroke-linecap="round" stroke-linejoin="round" width="22" height="22">'
+         . ($p[$name] ?? '') . '</svg>';
+}
+
+/** Tab bottom-nav mana yang aktif berdasarkan route saat ini. */
+function _mobile_active_tab(string $route): string
+{
+    if ($route === 'm_home') return 'home';
+    if ($route === 'm_transactions' || str_starts_with($route, 'transaction')) return 'tx';
+    if ($route === 'm_exec' || $route === 'exec_dashboard') return 'exec';
+    if ($route === 'renewals') return 'renew';
+    return '';
+}
+
 function layout(string $title, callable $body, array $opts = []): void
 {
     global $route, $config, $pdo;
@@ -147,8 +174,52 @@ function layout(string $title, callable $body, array $opts = []): void
             .prop-tab:hover:not(.active){background:var(--soft,#f0fdf4);color:var(--primary-dark,#0A7267)}
         </style>
         <?php endif; ?>
+        <?php if (mobile_view_active()): ?>
+        <style>
+        :root { --m-nav-h: 62px; }
+        .m-shell { min-height: 100vh; padding-bottom: calc(var(--m-nav-h) + env(safe-area-inset-bottom, 0px) + 14px); }
+        .m-top { position: sticky; top: 0; z-index: 50; background: linear-gradient(135deg, var(--primary), var(--primary2)); color: #fff; padding: 14px 16px; padding-top: calc(14px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; justify-content: space-between; gap: 12px; box-shadow: 0 2px 10px rgba(13,148,136,.25); }
+        .m-top .t-title { font-size: 17px; font-weight: 800; line-height: 1.15; }
+        .m-top .t-sub { font-size: 11.5px; opacity: .85; margin-top: 2px; }
+        .m-top a.t-desk { color: #fff; font-size: 11px; font-weight: 700; background: rgba(255,255,255,.18); padding: 6px 11px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+        .m-body { padding: 14px; }
+        .m-flash { margin: 12px 14px 0; padding: 11px 14px; background: var(--soft); color: var(--primary-dark); border-radius: 10px; font-weight: 600; font-size: 13px; border-left: 3px solid var(--primary); }
+        .m-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; height: calc(var(--m-nav-h) + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); background: #fff; border-top: 1px solid var(--line); display: flex; box-shadow: 0 -2px 14px rgba(16,24,40,.06); }
+        .m-nav a { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--muted); font-size: 10.5px; font-weight: 700; }
+        .m-nav a.active { color: var(--primary); }
+        .m-sec-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 4px 2px 10px; }
+        .m-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 16px; box-shadow: 0 1px 3px rgba(16,24,40,.05); margin-bottom: 13px; }
+        </style>
+        <?php endif; ?>
     </head>
     <body>
+    <?php $isMobile = mobile_view_active(); ?>
+    <?php if ($isMobile): ?>
+        <div class="m-shell">
+            <div class="m-top">
+                <div style="min-width:0">
+                    <div class="t-title"><?= h($title) ?></div>
+                    <div class="t-sub"><?= h($appName) ?> &middot; <?= h($opts['prop_label'] ?? ($currentProp['name'] ?? '')) ?></div>
+                </div>
+            </div>
+            <?php if ($flash): ?><div class="m-flash"><?= h($flash) ?></div><?php endif; ?>
+            <div class="m-body"><?php $body(); ?></div>
+        </div>
+        <nav class="m-nav">
+            <?php
+            $_mtabs = [
+                'home'  => ['m_home',         'Beranda',   'home',  'view_dashboard'],
+                'tx'    => ['m_transactions', 'Transaksi', 'tx',    'view_transactions'],
+                'exec'  => ['m_exec',         'Eksekutif', 'chart', 'view_exec_summary'],
+                'renew' => ['renewals',       'Renewal',   'renew', 'view_renewals'],
+            ];
+            $_mact  = _mobile_active_tab($route);
+            foreach ($_mtabs as $_k => [$_rt, $_lbl, $_ic, $_perm]):
+                if (!can($_perm)) continue; ?>
+                <a href="?r=<?= h($_rt) ?>" class="<?= $_mact === $_k ? 'active' : '' ?>"><?= _m_icon($_ic) ?><span><?= h($_lbl) ?></span></a>
+            <?php endforeach; ?>
+        </nav>
+    <?php else: ?>
     <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
     <div class="app">
         <aside class="sidebar" id="sidebar">
@@ -188,6 +259,9 @@ function layout(string $title, callable $body, array $opts = []): void
                 <?php endforeach; ?>
                 <?php if ($_inAdmin): ?></div><?php endif; ?>
                 <div class="nav-logout">
+                    <?php if (is_mobile_device()): ?>
+                    <a href="?view=mobile">📱 Tampilan HP</a>
+                    <?php endif; ?>
                     <a href="?r=logout">↩ Logout</a>
                 </div>
             </nav>
@@ -224,7 +298,8 @@ function layout(string $title, callable $body, array $opts = []): void
             <?php $body(); ?>
         </main>
     </div>
-    <?php if (!empty($_SESSION['_show_welcome']) && isset($pdo)):
+    <?php endif; ?>
+    <?php if (!$isMobile && !empty($_SESSION['_show_welcome']) && isset($pdo)):
         unset($_SESSION['_show_welcome']);
         $wpPeriod = date('Y-m');
         $wpPid    = current_property_id();
@@ -262,7 +337,7 @@ function layout(string $title, callable $body, array $opts = []): void
             $sPicTarget->execute([$wpPeriod, (int)$wpPic['property_id']]);
             $wpPicPropTarget = (float)($sPicTarget->fetchColumn() ?: 0);
             $wpActual     = (float)$wpPic['actual'];
-            $wpMyTarget   = $wpPicPropTarget * ((float)$wpPic['target_share'] / 100);
+            $wpMyTarget   = $wpPicPropTarget * (float)$wpPic['target_share']; // target_share = pecahan (0.25 = 25%)
             $wpAchieve    = $wpMyTarget > 0 ? round($wpActual / $wpMyTarget * 100) : 0;
             $wpSubject    = $wpPic['pic_name'];
             $wpHeading    = 'Achievement Pribadi';
@@ -357,9 +432,11 @@ function layout(string $title, callable $body, array $opts = []): void
     </script>
     <?php endif; ?>
     <script>
+    <?php if (!$isMobile): ?>
     function openSidebar(){document.getElementById('sidebar').classList.add('open');document.getElementById('sidebar-overlay').classList.add('active');document.body.style.overflow='hidden';}
     function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebar-overlay').classList.remove('active');document.body.style.overflow='';}
     (function(){var sb=document.getElementById('sidebar');var ss=sessionStorage.getItem('_sb_scroll');if(ss)sb.scrollTop=parseInt(ss,10);document.querySelectorAll('.nav a').forEach(function(a){a.addEventListener('click',function(){sessionStorage.setItem('_sb_scroll',sb.scrollTop);closeSidebar();});});})();
+    <?php endif; ?>
     (function(){
         var timeout=<?= SESSION_TIMEOUT ?>,warnBefore=120,warnAt=(timeout-warnBefore)*1000,logoutAt=timeout*1000;
         var overlay=document.createElement('div');
@@ -374,6 +451,7 @@ function layout(string $title, callable $body, array $opts = []): void
     </script>
     <script src="assets/flatpickr.min.js"></script>
     <script src="assets/spread-table.js"></script>
+    <script src="assets/mobile-tables.js?v=<?= CSS_VER ?>"></script>
     <script>
     (function(){
         if(typeof flatpickr==='undefined') return;
