@@ -36,12 +36,15 @@ function _referrer_list(PDO $pdo): void
             <?php if (empty($rows)): ?>
                 <p class="muted" style="text-align:center;padding:32px">Belum ada data referrer.</p>
             <?php else: ?>
-            <div class="table-wrap">
+            <div class="table-wrap" style="overflow-x:auto">
                 <table>
                     <thead>
                         <tr>
                             <th>Nama</th>
+                            <th>Jabatan</th>
                             <th>Departemen</th>
+                            <th>No. Rekening</th>
+                            <th>Nama Bank</th>
                             <th style="text-align:center">Status</th>
                             <th></th>
                         </tr>
@@ -50,7 +53,10 @@ function _referrer_list(PDO $pdo): void
                     <?php foreach ($rows as $r): ?>
                         <tr>
                             <td style="font-weight:600"><?= h($r['name']) ?></td>
+                            <td class="muted"><?= h($r['jabatan'] ?? '—') ?></td>
                             <td class="muted"><?= h($r['dept'] ?? '—') ?></td>
+                            <td><?= h($r['no_rekening'] ?? '—') ?></td>
+                            <td class="muted"><?= h($r['nama_bank'] ?? '—') ?></td>
                             <td style="text-align:center">
                                 <?php if ($r['status'] === 'active'): ?>
                                     <span style="background:#dcfce7;color:#15803d;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px">Aktif</span>
@@ -87,9 +93,12 @@ function _referrer_form(PDO $pdo, int $id): void
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         verify_csrf();
-        $name   = trim((string) post('name'));
-        $dept   = trim((string) post('dept')) ?: null;
-        $status = post('status', 'active') === 'inactive' ? 'inactive' : 'active';
+        $name       = trim((string) post('name'));
+        $jabatan    = trim((string) post('jabatan'))    ?: null;
+        $dept       = trim((string) post('dept'))       ?: null;
+        $no_rekening = trim((string) post('no_rekening')) ?: null;
+        $nama_bank  = trim((string) post('nama_bank'))  ?: null;
+        $status     = post('status', 'active') === 'inactive' ? 'inactive' : 'active';
 
         if (!$name) {
             flash('Nama wajib diisi.');
@@ -97,12 +106,14 @@ function _referrer_form(PDO $pdo, int $id): void
         }
 
         if ($id) {
-            $pdo->prepare('UPDATE master_referrer SET name=?, dept=?, status=? WHERE id=?')
-                ->execute([$name, $dept, $status, $id]);
+            $pdo->prepare(
+                'UPDATE master_referrer SET name=?, jabatan=?, dept=?, no_rekening=?, nama_bank=?, status=? WHERE id=?'
+            )->execute([$name, $jabatan, $dept, $no_rekening, $nama_bank, $status, $id]);
             flash('Data referrer diperbarui.');
         } else {
-            $pdo->prepare('INSERT INTO master_referrer (name, dept, status) VALUES (?,?,?)')
-                ->execute([$name, $dept, $status]);
+            $pdo->prepare(
+                'INSERT INTO master_referrer (name, jabatan, dept, no_rekening, nama_bank, status) VALUES (?,?,?,?,?,?)'
+            )->execute([$name, $jabatan, $dept, $no_rekening, $nama_bank, $status]);
             flash('Referrer baru ditambahkan.');
         }
         redirect_to('master_referrer');
@@ -111,7 +122,7 @@ function _referrer_form(PDO $pdo, int $id): void
     $title = $id ? 'Edit Referrer' : 'Tambah Referrer';
     layout($title, function () use ($row, $id) {
         ?>
-        <div style="max-width:480px">
+        <div style="max-width:520px">
             <div style="margin-bottom:12px">
                 <a class="btn secondary" href="?r=master_referrer">← Kembali</a>
             </div>
@@ -119,12 +130,24 @@ function _referrer_form(PDO $pdo, int $id): void
                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
                 <div class="form-grid">
                     <div class="wide">
-                        <label>Nama <span style="color:#ef4444">*</span></label>
+                        <label>Nama Lengkap <span style="color:#ef4444">*</span></label>
                         <input type="text" name="name" value="<?= h($row['name'] ?? '') ?>" required autofocus placeholder="cth. Budi Santoso">
                     </div>
-                    <div class="wide">
+                    <div>
+                        <label>Jabatan <span class="muted" style="font-weight:400">(opsional)</span></label>
+                        <input type="text" name="jabatan" value="<?= h($row['jabatan'] ?? '') ?>" placeholder="cth. Staff Marketing">
+                    </div>
+                    <div>
                         <label>Departemen <span class="muted" style="font-weight:400">(opsional)</span></label>
                         <input type="text" name="dept" value="<?= h($row['dept'] ?? '') ?>" placeholder="cth. Marketing, IT, F&B">
+                    </div>
+                    <div>
+                        <label>No. Rekening <span class="muted" style="font-weight:400">(opsional)</span></label>
+                        <input type="text" name="no_rekening" value="<?= h($row['no_rekening'] ?? '') ?>" placeholder="cth. 1234567890">
+                    </div>
+                    <div>
+                        <label>Nama Bank <span class="muted" style="font-weight:400">(opsional)</span></label>
+                        <input type="text" name="nama_bank" value="<?= h($row['nama_bank'] ?? '') ?>" placeholder="cth. BCA, BNI, Mandiri">
                     </div>
                     <div>
                         <label>Status</label>

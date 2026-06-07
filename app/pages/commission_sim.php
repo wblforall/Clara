@@ -59,11 +59,13 @@ function _csim_build_data(PDO $pdo, string $period, int $pid): array
 
     // Referrer detail: per referrer × per PIC yang dibantu
     $s = $pdo->prepare(
-        "SELECT t.referrer_name, t.pic_name, COALESCE(SUM(a.amount),0) referred_amount
+        "SELECT t.referrer_name, t.pic_name, COALESCE(SUM(a.amount),0) referred_amount,
+                mr.jabatan, mr.no_rekening, mr.nama_bank
          FROM transaction_allocations a
          JOIN transactions t ON t.id = a.transaction_id
+         LEFT JOIN master_referrer mr ON mr.name = t.referrer_name
          WHERE a.period_key=? AND a.property_id=? AND t.referrer_name IS NOT NULL AND t.referrer_name != ''
-         GROUP BY t.referrer_name, t.pic_name
+         GROUP BY t.referrer_name, t.pic_name, mr.jabatan, mr.no_rekening, mr.nama_bank
          ORDER BY t.referrer_name ASC, referred_amount DESC"
     );
     $s->execute([$period, $pid]);
@@ -655,6 +657,12 @@ body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#1e293b;backgr
             <td style="vertical-align:top">
                 <?php if ($isFirst): ?>
                     <span class="ref-name"><?= h($row['referrer_name']) ?></span>
+                    <?php if (!empty($row['jabatan'])): ?>
+                        <div style="font-size:9px;color:#64748b"><?= h($row['jabatan']) ?><?= !empty($row['dept']) ? ' · ' . h($row['dept']) : '' ?></div>
+                    <?php endif; ?>
+                    <?php if (!empty($row['no_rekening'])): ?>
+                        <div style="font-size:9px;color:#374151;font-weight:600">Rek: <?= h($row['no_rekening']) ?><?= !empty($row['nama_bank']) ? ' (' . h($row['nama_bank']) . ')' : '' ?></div>
+                    <?php endif; ?>
                     <div style="font-size:9px;color:#64748b">Total komisi: <?= money($rowTotal * $referrerRate) ?></div>
                 <?php endif; ?>
             </td>
