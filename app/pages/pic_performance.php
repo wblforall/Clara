@@ -50,20 +50,56 @@ function pic_performance_page(PDO $pdo): void
              ORDER BY a.period_key ASC"
         );
         $s->execute([$picName, $pid, $fromPeriod, $toPeriod]);
-        $raw = $s->fetchAll();
+        $dbRows = [];
+        foreach ($s->fetchAll() as $r) {
+            $dbRows[$r['period_key']] = $r;
+        }
+
+        // Also fetch targets for months that have no allocations
+        $tgtStmt = $pdo->prepare(
+            "SELECT tm.period_key, tm.target_amount, mp.target_share
+             FROM targets_monthly tm
+             JOIN master_pic mp ON mp.property_id = tm.property_id AND mp.name = ?
+             WHERE tm.property_id = ? AND tm.period_key >= ? AND tm.period_key <= ?"
+        );
+        $tgtStmt->execute([$picName, $pid, $fromPeriod, $toPeriod]);
+        $tgtMap = [];
+        foreach ($tgtStmt->fetchAll() as $t) {
+            $tgtMap[$t['period_key']] = $t;
+        }
+
+        // Generate all months in range (fills gaps with 0)
+        $raw = [];
+        $cur = $fromPeriod;
+        while ($cur <= $toPeriod) {
+            $db  = $dbRows[$cur] ?? null;
+            $tgt = $tgtMap[$cur] ?? null;
+            $raw[] = [
+                'period_key'   => $cur,
+                'dealing'      => $db ? (float)$db['dealing']    : 0.0,
+                'trx_count'    => $db ? (int)$db['trx_count']    : 0,
+                'prop_target'  => $db ? (float)$db['prop_target'] : (float)($tgt['target_amount'] ?? 0),
+                'target_share' => $db ? (float)$db['target_share'] : (float)($tgt['target_share'] ?? 0),
+            ];
+            // advance one month
+            [$y, $m] = explode('-', $cur);
+            $m = (int)$m + 1;
+            if ($m > 12) { $m = 1; $y = (int)$y + 1; }
+            $cur = sprintf('%04d-%02d', $y, $m);
+        }
 
         // Compute derived fields in ASC order (oldest first)
         $prevDealing = null;
         foreach ($raw as &$r) {
             $r['pic_target'] = $r['prop_target'] > 0 && $r['target_share'] > 0
-                ? round((float)$r['prop_target'] * (float)$r['target_share'])
+                ? round($r['prop_target'] * $r['target_share'])
                 : 0;
             $r['pct']      = $r['pic_target'] > 0
-                ? round((float)$r['dealing'] / $r['pic_target'] * 100, 1)
+                ? round($r['dealing'] / $r['pic_target'] * 100, 1)
                 : null;
-            $r['achieved'] = $r['pic_target'] > 0 && (float)$r['dealing'] >= $r['pic_target'];
-            $r['mom_diff'] = $prevDealing !== null ? (float)$r['dealing'] - $prevDealing : null;
-            $prevDealing   = (float)$r['dealing'];
+            $r['achieved'] = $r['pic_target'] > 0 && $r['dealing'] >= $r['pic_target'];
+            $r['mom_diff'] = $prevDealing !== null ? $r['dealing'] - $prevDealing : null;
+            $prevDealing   = $r['dealing'];
         }
         unset($r);
 
@@ -157,7 +193,7 @@ function pic_performance_page(PDO $pdo): void
                 ? $mn[substr($summary['best_period'],5,2)] . ' ' . substr($summary['best_period'],0,4)
                 : '';
             $cards = [
-                ['Total ' . $months . ' Bulan',    money($summary['total']),  '#0891b2', ''],
+                [$mn[substr($fromPeriod,5,2)] . ' – ' . $mn[substr($toPeriod,5,2)] . ' ' . substr($toPeriod,0,4), money($summary['total']), '#0891b2', ''],
                 ['Rata-rata / Bulan',               money($summary['avg']),   '#6366f1', ''],
                 ['Bulan Terbaik',                   money($summary['best']),  '#0d9488', $bestLabel],
                 ['Streak Tercapai',                 $summary['streak'] . ' bulan berturut', $summary['streak'] >= 3 ? '#d97706' : '#94a3b8', $summary['streak'] >= 3 ? '🔥' : ''],
