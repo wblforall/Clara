@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 function master_referrer_page(PDO $pdo): void
 {
-    require_permission('manage_master');
+    require_permission('view_master');
 
     $action = getv('action', 'list');
     $id     = (int) getv('id', 0);
