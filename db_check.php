@@ -38,8 +38,9 @@ $expected = [
         'monthly_rate', 'projection_monthly', 'status', 'created_at', 'updated_at',
     ],
     'master_pic' => [
-        'id', 'property_id', 'name', 'role_name', 'target_share',
-        'status', 'user_id', 'created_at', 'updated_at',
+        'id', 'property_id', 'name', 'role_name',
+        'commission_cat', 'show_achievement',
+        'target_share', 'status', 'user_id', 'created_at', 'updated_at',
     ],
     'master_clients' => [
         'id', 'company_name', 'brand_name', 'npwp', 'address',
@@ -57,7 +58,9 @@ $expected = [
         'id', 'property_id', 'module', 'client_id', 'contact_id', 'master_code',
         'period_key', 'content_note', 'start_date', 'end_date', 'quantity', 'slots',
         'area_sqm', 'pricing_type', 'unit_rate', 'contract_months',
-        'billing_method', 'total_calculated', 'override_amount', 'final_amount', 'pic_name', 'remarks',
+        'billing_method', 'cycle_recognition',
+        'total_calculated', 'override_amount', 'final_amount',
+        'pic_name', 'referrer_name', 'remarks',
         'invoice_no', 'status', 'created_at', 'created_by', 'updated_at', 'updated_by',
         'deleted_at', 'deleted_by',
     ],
@@ -80,6 +83,8 @@ $expected = [
         'old_value', 'new_value', 'changed_by', 'changed_at', 'change_source',
     ],
     'schema_migrations' => ['id', 'migration', 'ran_at'],
+    'settings' => ['key', 'value', 'updated_at'],
+    'master_referrer' => ['id', 'name', 'dept', 'status', 'created_at'],
 ];
 
 $existingTables = $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);

@@ -78,6 +78,7 @@ function layout(string $title, callable $body, array $opts = []): void
         ['', 'pic_reward', 'Rewarding PIC', 'view_pic_report'],
         ['', 'commission_sim', 'Simulasi Komisi', 'view_commission_sim'],
         ['Admin', 'recurring_candidates', 'Konversi Recurring', 'manage_transactions'],
+        ['', 'master_referrer', 'Master Referrer', 'manage_master'],
         ['', 'lookup_manage', 'Kelola Opsi Dropdown', 'manage_master'],
         ['', 'users', 'Users & Role', 'manage_users'],
         ['', 'roles', 'Role & Permission', 'manage_users'],

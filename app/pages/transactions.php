@@ -297,6 +297,7 @@ function transaction_form(PDO $pdo): void
     $picsStmt2 = $pdo->prepare("SELECT name FROM master_pic WHERE status='active' AND property_id = ? ORDER BY name");
     $picsStmt2->execute([current_property_id()]);
     $pics = $picsStmt2->fetchAll();
+    $referrers = $pdo->query("SELECT name FROM master_referrer WHERE status='active' ORDER BY name")->fetchAll();
     $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
     $linkedPic = null;
     $uid = $_SESSION['user']['id'] ?? null;
@@ -305,7 +306,7 @@ function transaction_form(PDO $pdo): void
         $lpStmt->execute([$uid, current_property_id()]);
         $linkedPic = $lpStmt->fetchColumn() ?: null;
     }
-    layout('Tambah Transaksi ' . ($moduleLabel[$module] ?? strtoupper($module)), function () use ($module, $masters, $clients, $allContacts, $pics, $linkedPic) {
+    layout('Tambah Transaksi ' . ($moduleLabel[$module] ?? strtoupper($module)), function () use ($module, $masters, $clients, $allContacts, $pics, $linkedPic, $referrers) {
         ?>
         <form class="panel panel-anim" method="post" action="?r=transaction_save" style="animation-delay:.05s">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
@@ -362,6 +363,16 @@ function transaction_form(PDO $pdo): void
                             <option <?= $pic['name'] === $linkedPic ? 'selected' : '' ?>><?= h($pic['name']) ?></option>
                         <?php endforeach; ?>
                     </select>
+                </div>
+                <div>
+                    <label>Referral dari <span class="muted" style="font-weight:400">(opsional)</span></label>
+                    <select name="referrer_name">
+                        <option value="">- Tidak ada referral -</option>
+                        <?php foreach ($referrers as $ref): ?>
+                            <option><?= h($ref['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="help">Karyawan non-CL yang mereferensikan klien ini. Akan mendapat komisi 1% dari nilai dealing.</div>
                 </div>
                 <div id="recognition_month_wrap" style="display:none">
                     <label>Nilai Diakui di Bulan</label>
@@ -705,9 +716,10 @@ function transaction_save(PDO $pdo): void
         'contract_months' => $months ?: null,
         'billing_method'     => 'anchor_cycle',
         'cycle_recognition'  => post('cycle_recognition', 'cycle_start'),
-        'pic_name'     => post('pic_name'),
-        'remarks'      => post('remarks'),
-        'invoice_no'   => trim((string) post('invoice_no')) ?: null,
+        'pic_name'       => post('pic_name'),
+        'referrer_name'  => trim((string) post('referrer_name')) ?: null,
+        'remarks'        => post('remarks'),
+        'invoice_no'     => trim((string) post('invoice_no')) ?: null,
     ];
     $calculated = AllocationService::totalCalculated($trx);
     $override = post('override_amount') !== '' ? (float) post('override_amount') : null;
@@ -729,10 +741,10 @@ function transaction_save(PDO $pdo): void
     $stmt = $pdo->prepare(
         'INSERT INTO transactions
         (property_id, module, master_code, period_key, client_id, contact_id, content_note, start_date, end_date, quantity, slots, area_sqm,
-         pricing_type, unit_rate, contract_months, billing_method, cycle_recognition, total_calculated, override_amount, final_amount, pic_name, remarks, invoice_no, created_by)
+         pricing_type, unit_rate, contract_months, billing_method, cycle_recognition, total_calculated, override_amount, final_amount, pic_name, referrer_name, remarks, invoice_no, created_by)
          VALUES
         (:property_id, :module, :master_code, :period_key, :client_id, :contact_id, :content_note, :start_date, :end_date, :quantity, :slots, :area_sqm,
-         :pricing_type, :unit_rate, :contract_months, :billing_method, :cycle_recognition, :total_calculated, :override_amount, :final_amount, :pic_name, :remarks, :invoice_no, :created_by)'
+         :pricing_type, :unit_rate, :contract_months, :billing_method, :cycle_recognition, :total_calculated, :override_amount, :final_amount, :pic_name, :referrer_name, :remarks, :invoice_no, :created_by)'
     );
     $stmt->execute([
         ':property_id'       => current_property_id(),
@@ -756,6 +768,7 @@ function transaction_save(PDO $pdo): void
         ':override_amount'   => $trx['override_amount'],
         ':final_amount'      => $trx['final_amount'],
         ':pic_name'          => $trx['pic_name'],
+        ':referrer_name'     => $trx['referrer_name'],
         ':remarks'           => $trx['remarks'],
         ':invoice_no'        => $trx['invoice_no'],
         ':created_by'        => $createdBy,
@@ -796,6 +809,7 @@ function transaction_edit(PDO $pdo): void
     $picsStmt3 = $pdo->prepare("SELECT name FROM master_pic WHERE status='active' AND property_id = ? ORDER BY name");
     $picsStmt3->execute([current_property_id()]);
     $pics = $picsStmt3->fetchAll();
+    $referrers = $pdo->query("SELECT name FROM master_referrer WHERE status='active' ORDER BY name")->fetchAll();
     $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
 
     // Detect recognition_month from billing_method or existing allocations
@@ -824,7 +838,7 @@ function transaction_edit(PDO $pdo): void
         }
     }
 
-    layout('Edit Transaksi #' . $id . ' — ' . ($moduleLabel[$trx['module']] ?? strtoupper($trx['module'])), function () use ($id, $trx, $masters, $clients, $allContacts, $pics, $recognitionMonth, $startMonth, $endMonth, $existingAllocations) {
+    layout('Edit Transaksi #' . $id . ' — ' . ($moduleLabel[$trx['module']] ?? strtoupper($trx['module'])), function () use ($id, $trx, $masters, $clients, $allContacts, $pics, $referrers, $recognitionMonth, $startMonth, $endMonth, $existingAllocations) {
         ?>
         <form class="panel" method="post" action="?r=transaction_update">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
@@ -1259,6 +1273,7 @@ function transaction_update(PDO $pdo): void
         'billing_method'     => 'anchor_cycle',
         'cycle_recognition'  => post('cycle_recognition', 'cycle_start'),
         'pic_name'           => post('pic_name'),
+        'referrer_name'      => trim((string) post('referrer_name')) ?: null,
         'remarks'            => post('remarks'),
         'invoice_no'         => trim((string) post('invoice_no')) ?: null,
     ];
@@ -1285,7 +1300,7 @@ function transaction_update(PDO $pdo): void
          area_sqm=:area_sqm, pricing_type=:pricing_type, unit_rate=:unit_rate, contract_months=:contract_months,
          billing_method=:billing_method, cycle_recognition=:cycle_recognition,
          total_calculated=:total_calculated, override_amount=:override_amount, final_amount=:final_amount,
-         pic_name=:pic_name, remarks=:remarks, invoice_no=:invoice_no,
+         pic_name=:pic_name, referrer_name=:referrer_name, remarks=:remarks, invoice_no=:invoice_no,
          updated_at=CURRENT_TIMESTAMP, updated_by=:updated_by WHERE id=:id AND property_id=:property_id'
     )->execute([
         ':master_code'       => $trx['master_code'],
@@ -1306,12 +1321,13 @@ function transaction_update(PDO $pdo): void
         ':total_calculated'  => $trx['total_calculated'],
         ':override_amount'   => $trx['override_amount'],
         ':final_amount'      => $trx['final_amount'],
-        ':pic_name'         => $trx['pic_name'],
-        ':remarks'          => $trx['remarks'],
-        ':invoice_no'       => $trx['invoice_no'],
-        ':updated_by'       => $_SESSION['user']['name'] ?? 'system',
-        ':id'               => $id,
-        ':property_id'      => current_property_id(),
+        ':pic_name'          => $trx['pic_name'],
+        ':referrer_name'     => $trx['referrer_name'],
+        ':remarks'           => $trx['remarks'],
+        ':invoice_no'        => $trx['invoice_no'],
+        ':updated_by'        => $_SESSION['user']['name'] ?? 'system',
+        ':id'                => $id,
+        ':property_id'       => current_property_id(),
     ]);
 
     $monthOverrides = [];

@@ -11,6 +11,37 @@
 
 ---
 
+## Version 4.9 — 7 Juni 2026
+
+### Fitur Baru
+
+- **Sistem Referrer** — karyawan non-CL yang mereferensikan klien mendapat komisi 1% per dealing:
+  - **Master Referrer** (`Admin → Master Referrer`) — CRUD untuk mengelola daftar referrer (nama, departemen, status aktif/nonaktif).
+  - **Dropdown referrer** di form input & edit transaksi — opsional, bebas dikosongkan.
+  - Migration `009`: tabel `master_referrer` + kolom `referrer_name` di tabel `transactions`.
+
+- **Simulasi Komisi — update signifikan:**
+  - Referrer masuk ke perhitungan: komisi referrer = 1% × total dealing yang ia referensikan di periode itu.
+  - Komisi 1% referrer di-deduct langsung dari komisi sales PIC yang memegang deal tersebut.
+  - Jika rate tidak tercapai (0,65%) dan semua dealing PIC ada referrer, hasil komisi PIC bisa negatif — ini disengaja (PIC bertanggung jawab perform tanpa bergantung referrer). Ditampilkan merah dengan label "potongan melebihi komisi".
+  - Kolom **Potongan Referrer** di tabel PIC menampilkan nominal deduction + nama referrer yang menyebabkan potongan.
+  - **Tabel Komisi Referrer** baru — detail per referrer: membantu sales siapa, dealing direferensikan berapa, komisi 1%.
+  - Urutan tabel PIC: Manager → Asst. Manager → Sales Executive → Sales → Admin → Other.
+
+- **Form Pengajuan Komisi** (print) — tombol "Cetak / Ajukan" membuka dokumen siap cetak (`?r=commission_sim&action=print&period=...`):
+  - Letterhead PT. Wulandari Bangun Laksana Tbk., nomor dokumen otomatis, tanggal cetak.
+  - Info periode: target, revenue, % pencapaian, rate berlaku.
+  - Tabel A: Komisi PIC (lengkap dengan potongan referrer).
+  - Tabel B: Komisi Referrer (muncul hanya jika ada).
+  - Grand total gabungan PIC + Referrer.
+  - Blok tanda tangan: Dibuat oleh / Diperiksa oleh / Disetujui oleh.
+
+### Perbaikan
+
+- **`db_check.php`** diperbarui dengan skema terkini: kolom `commission_cat`, `show_achievement` (master_pic), `billing_method`, `cycle_recognition`, `referrer_name` (transactions), serta tabel `settings` dan `master_referrer` — sehingga schema drift ke hosting dapat terdeteksi lebih awal.
+
+---
+
 ## Version 4.8 — 4 Juni 2026
 
 ### Fitur Baru
