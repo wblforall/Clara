@@ -142,10 +142,6 @@ function _referrer_form(PDO $pdo, int $id): void
                         <input type="text" name="dept" value="<?= h($row['dept'] ?? '') ?>" placeholder="cth. Marketing, IT, F&B">
                     </div>
                     <div>
-                        <label>No. Rekening <span class="muted" style="font-weight:400">(opsional)</span></label>
-                        <input type="text" name="no_rekening" value="<?= h($row['no_rekening'] ?? '') ?>" placeholder="cth. 1234567890">
-                    </div>
-                    <div>
                         <label>Nama Bank <span class="muted" style="font-weight:400">(opsional)</span></label>
                         <select name="nama_bank">
                             <option value="">— Pilih Bank —</option>
@@ -153,6 +149,10 @@ function _referrer_form(PDO $pdo, int $id): void
                                 <option value="<?= $b ?>" <?= ($row['nama_bank'] ?? '') === $b ? 'selected' : '' ?>><?= $b ?></option>
                             <?php endforeach; ?>
                         </select>
+                    </div>
+                    <div>
+                        <label>No. Rekening <span class="muted" style="font-weight:400">(opsional)</span></label>
+                        <input type="text" name="no_rekening" value="<?= h($row['no_rekening'] ?? '') ?>" placeholder="cth. 1234567890">
                     </div>
                     <div>
                         <label>Status</label>
