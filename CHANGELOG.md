@@ -15,6 +15,17 @@
 
 ### Fitur Baru / Peningkatan
 
+- **Performa PIC** (`Analisa → Performa PIC`) — halaman baru untuk melihat performa historis per individu PIC:
+  - Filter PIC + rentang dari–sampai bulan (picker YYYY-MM).
+  - Kartu ringkasan: total dealing, rata-rata per bulan, bulan terbaik, streak bulan tercapai berturut-turut.
+  - Tabel historis per bulan: dealing, target individu (`target_share × property target`), % pencapaian ✅/❌, vs bulan lalu (↑/↓), TRX count, rata-rata per TRX.
+  - Semua bulan dalam rentang selalu tampil — bulan tanpa transaksi ditampilkan sebagai Rp 0 (tidak hilang dari tabel).
+
+- **Master Referrer — diperluas:**
+  - Tambah field: Jabatan, No. Rekening, Nama Bank (dropdown: BCA, BNI, BRI, Mandiri, CIMB Niaga, BSI, BTN, Maybank, Bankaltimtara, Mega).
+  - Dipindah dari section Admin ke **Master Data** dengan permission `view_master` — sales dapat input referrer sendiri tanpa perlu akses Admin.
+  - Print Komisi Tabel B kini menampilkan jabatan, departemen, no. rekening, dan nama bank referrer.
+
 - **Konversi Recurring — redesign besar:**
   - Nominal per bulan dari transaksi `anchor_cycle` lama kini dipertahankan **persis** (tidak dihitung ulang rata-rata) saat dikonversi ke spread — penting untuk kontrak dengan diskon berbeda tiap bulan.
   - Tombol **Kalkulasi & Preview Spread** menampilkan tabel preview per siklus beserta nominal masing-masing sebelum submit.
