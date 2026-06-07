@@ -78,6 +78,7 @@ function login_page(PDO $pdo): void
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Login — <?= h(env_value('APP_NAME', 'CLARA')) ?></title>
         <link rel="icon" type="image/png" href="assets/clara-logo.png">
+        <?php pwa_head(); ?>
         <link rel="stylesheet" href="assets/app.css?v=<?= CSS_VER ?>">
         <style>
             @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
@@ -216,6 +217,7 @@ function select_property_page(): void
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Pilih Properti — <?= h(env_value('APP_NAME', 'CLARA')) ?></title>
         <link rel="icon" type="image/png" href="assets/clara-logo.png">
+        <?php pwa_head(); ?>
         <link rel="stylesheet" href="assets/app.css?v=<?= CSS_VER ?>">
         <style>
             @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
@@ -287,6 +289,7 @@ function change_password_page(PDO $pdo): void
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Ganti Password — <?= h(env_value('APP_NAME', 'CLARA')) ?></title>
         <link rel="icon" type="image/png" href="assets/clara-logo.png">
+        <?php pwa_head(); ?>
         <link rel="stylesheet" href="assets/app.css?v=<?= CSS_VER ?>">
         <style>
             @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}

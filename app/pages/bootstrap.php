@@ -74,6 +74,7 @@ function layout(string $title, callable $body, array $opts = []): void
         ['', 'clients', 'Master Client', 'view_master'],
         ['', 'master_referrer', 'Master Referrer', 'view_master'],
         ['Analisa', 'daily_occupancy', 'Occupancy Harian', 'view_dashboard'],
+        ['', 'renewals', 'Renewal Kontrak', 'view_renewals'],
         ['', 'client_analysis', 'Analisa Market Client', 'view_master'],
         ['', 'pic_report', 'Laporan PIC', 'view_pic_report'],
         ['', 'pic_performance', 'Performa PIC', 'view_pic_report'],
@@ -99,6 +100,7 @@ function layout(string $title, callable $body, array $opts = []): void
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title><?= h($title) ?> — <?= h($appName) ?></title>
         <link rel="icon" type="image/png" href="assets/clara-logo.png">
+        <?php pwa_head(); ?>
         <link rel="stylesheet" href="assets/app.css?v=<?= CSS_VER ?>">
         <link rel="stylesheet" href="assets/flatpickr.min.css">
         <style>

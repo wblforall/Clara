@@ -132,6 +132,31 @@ function require_permission(string $permission): void
     }
 }
 
+/**
+ * Cetak tag <head> PWA (manifest, theme-color, ikon Apple) + registrasi service
+ * worker. Dipanggil di tiap halaman yang punya <head> sendiri (layout utama &
+ * halaman auth) agar aplikasi bisa di-install ke home screen HP.
+ */
+function pwa_head(): void
+{
+    ?>
+        <meta name="theme-color" content="#0D9488">
+        <link rel="manifest" href="manifest.webmanifest">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+        <meta name="apple-mobile-web-app-title" content="CLARA">
+        <link rel="apple-touch-icon" href="assets/icon-192.png">
+        <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('service-worker.js').catch(function () {});
+            });
+        }
+        </script>
+    <?php
+}
+
 function permission_for_route(string $route): string
 {
     return match ($route) {
@@ -152,6 +177,7 @@ function permission_for_route(string $route): string
         'client_analysis' => 'view_master',
         'pic_report', 'pic_report_print' => 'view_pic_report',
         'pic_reward', 'pic_reward_save'  => 'view_pic_report',
+        'renewals' => 'view_renewals',
         'lookup_manage', 'lookup_save', 'lookup_delete' => 'manage_master',
         'trend', 'comparison' => 'view_dashboard',
         'switch_property', 'select_property', 'set_property' => 'view_dashboard',

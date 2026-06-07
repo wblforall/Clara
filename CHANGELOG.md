@@ -11,6 +11,43 @@
 
 ---
 
+## Version 4.12 — 8 Juni 2026
+
+### Fitur Baru / Peningkatan
+
+- **PWA (Progressive Web App)** — CLARA kini bisa **di-install ke home screen HP** (Android/iOS) dan dijalankan layaknya aplikasi (fullscreen, tanpa address bar):
+  - `manifest.webmanifest` + ikon 192/512/maskable, warna tema teal CLARA.
+  - Service worker dengan strategi aman untuk aplikasi multi-user: **HTML hasil render tidak pernah di-cache** (tidak ada data basi / bocor antar user); hanya aset statis (CSS/JS/ikon) yang di-cache (cache-first).
+  - Halaman **offline** ber-branding saat tidak ada koneksi, dengan tombol "Coba lagi".
+  - Service worker & manifest di-set `no-cache` agar pembaruan PWA langsung diterima browser (tidak ikut aturan cache 1 tahun aset statis).
+  - Tidak mengubah logika apa pun — murni lapisan instalasi/offline di atas aplikasi yang sudah responsive.
+
+---
+
+## Version 4.11 — 8 Juni 2026
+
+### Fitur Baru / Peningkatan
+
+- **Renewal Kontrak** (`Analisa → Renewal Kontrak`) — papan baru untuk mencegah revenue bocor karena kontrak habis tanpa tindak lanjut:
+  - Menampilkan kontrak sewa & recurring yang berakhir dalam 30 hari ke depan (termasuk yang sudah lewat dan belum ditindaklanjuti).
+  - Cakupan: recurring (`billing_method=spread`) + modul Exhibition (CL) & Gudang. Booking media pendek diabaikan. Ada filter modul.
+  - Dua tingkat urgensi: 🔴 kritis (≤15 hari) · 🟠 perlu tindak lanjut (16–30 hari).
+  - Kartu ringkasan: total nilai at-risk per bulan, jumlah kontrak per tingkat urgensi.
+  - Status renewal dikelola manual oleh PIC: Belum dihubungi → Sudah dihubungi → Sedang nego → Akan perpanjang → Diperpanjang → Tidak lanjut. Kontrak yang ditandai "Diperpanjang" / "Tidak lanjut" otomatis hilang dari papan.
+  - **Visibilitas per-sales:** role `sales` hanya melihat kontrak milik PIC yang terhubung ke akunnya (`master_pic.user_id`); supervisor/finance/administrasi/admin/superadmin melihat semua. Sales juga tidak bisa mengubah status kontrak PIC lain (proteksi IDOR di handler).
+  - Tombol **+ Perpanjang** membuka form transaksi baru yang **sudah terisi** dari kontrak lama (unit, client, contact, PIC, rate, pricing, luas, materi) — tanggal mulai otomatis disarankan sehari setelah kontrak lama berakhir; tinggal sesuaikan tanggal selesai lalu simpan.
+  - Desain **mobile-first** (kartu, bukan tabel lebar) — dapat digunakan sales langsung dari HP di lapangan.
+  - Tidak mengubah logika transaksi/alokasi/komisi — hanya membaca `end_date` yang sudah ada + menambah kolom status renewal.
+  - Permission baru: `view_renewals` (lihat) & `manage_renewals` (ubah status) — perlu di-set di Role & Permission setelah deploy.
+
+- **Rewarding PIC — penyesuaian besaran tier:** Tier I Rp 250.000 · Tier II Rp 500.000 · Tier III Rp 750.000 · Tier IV Rp 1.000.000 (sebelumnya 500rb/750rb/1jt/1,5jt).
+
+### Database
+
+- Migration `011_add_renewal_tracking` — menambah kolom `renewal_status`, `renewal_note`, `renewal_updated_at`, `renewal_updated_by` ke tabel `transactions`.
+
+---
+
 ## Version 4.10 — 7 Juni 2026
 
 ### Fitur Baru / Peningkatan

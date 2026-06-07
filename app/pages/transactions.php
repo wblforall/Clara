@@ -306,8 +306,50 @@ function transaction_form(PDO $pdo): void
         $lpStmt->execute([$uid, current_property_id()]);
         $linkedPic = $lpStmt->fetchColumn() ?: null;
     }
-    layout('Tambah Transaksi ' . ($moduleLabel[$module] ?? strtoupper($module)), function () use ($module, $masters, $clients, $allContacts, $pics, $linkedPic, $referrers) {
+
+    // Prefill perpanjangan kontrak (dari Papan Renewal): muat transaksi sumber
+    $prefill = null;
+    $renewFrom = (int) getv('renew_from', 0);
+    if ($renewFrom) {
+        $rfStmt = $pdo->prepare(
+            "SELECT t.*, c.company_name, c.brand_name
+             FROM transactions t
+             LEFT JOIN master_clients c ON c.id = t.client_id
+             WHERE t.id = ? AND t.property_id = ? AND t.deleted_at IS NULL LIMIT 1"
+        );
+        $rfStmt->execute([$renewFrom, current_property_id()]);
+        if ($src = $rfStmt->fetch()) {
+            $clientLabel = (string)($src['company_name'] ?? '');
+            if (!empty($src['brand_name'])) $clientLabel .= ' (' . $src['brand_name'] . ')';
+            $masterLabels = array_column($masters, 'label', 'code');
+            // Tanggal mulai baru = sehari setelah kontrak lama berakhir
+            $nextStart = !empty($src['end_date'])
+                ? date('Y-m-d', strtotime($src['end_date'] . ' +1 day'))
+                : '';
+            $prefill = [
+                'master_code'   => (string)$src['master_code'],
+                'master_label'  => (string)($masterLabels[$src['master_code']] ?? $src['master_code']),
+                'client_id'     => (string)($src['client_id'] ?? ''),
+                'client_label'  => $clientLabel,
+                'contact_id'    => (string)($src['contact_id'] ?? ''),
+                'pic_name'      => (string)($src['pic_name'] ?? ''),
+                'area_sqm'      => (string)($src['area_sqm'] ?? ''),
+                'pricing_type'  => (string)($src['pricing_type'] ?? ''),
+                'unit_rate'     => (string)($src['unit_rate'] ?? ''),
+                'slots'         => (string)($src['slots'] ?? ''),
+                'content_note'  => (string)($src['content_note'] ?? ''),
+                'start_date'    => $nextStart,
+            ];
+        }
+    }
+
+    layout('Tambah Transaksi ' . ($moduleLabel[$module] ?? strtoupper($module)), function () use ($module, $masters, $clients, $allContacts, $pics, $linkedPic, $referrers, $prefill) {
         ?>
+        <?php if ($prefill): ?>
+        <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:#065f46">
+            <strong>🔄 Perpanjangan kontrak</strong> — data unit, client, PIC, dan rate sudah diisi dari kontrak sebelumnya. Periksa & sesuaikan <strong>Tanggal Mulai/Selesai</strong> lalu simpan.
+        </div>
+        <?php endif; ?>
         <form class="panel panel-anim" method="post" action="?r=transaction_save" style="animation-delay:.05s">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="module" value="<?= h($module) ?>">
@@ -315,16 +357,16 @@ function transaction_form(PDO $pdo): void
                 <div class="wide">
                     <label>Unit / Lokasi</label>
                     <div style="position:relative">
-                        <input type="text" id="masterSearch" autocomplete="off" placeholder="Ketik nama unit...">
-                        <input type="hidden" name="master_code" id="master_code" required>
+                        <input type="text" id="masterSearch" autocomplete="off" placeholder="Ketik nama unit..." value="<?= h($prefill['master_label'] ?? '') ?>">
+                        <input type="hidden" name="master_code" id="master_code" required value="<?= h($prefill['master_code'] ?? '') ?>">
                         <div id="masterDrop"></div>
                     </div>
                 </div>
                 <div>
                     <label>Client / Perusahaan</label>
                     <div style="position:relative" id="cliPicker">
-                        <input type="text" id="cliSearch" autocomplete="off" placeholder="Ketik nama client...">
-                        <input type="hidden" name="client_id" id="client_id">
+                        <input type="text" id="cliSearch" autocomplete="off" placeholder="Ketik nama client..." value="<?= h($prefill['client_label'] ?? '') ?>">
+                        <input type="hidden" name="client_id" id="client_id" value="<?= h($prefill['client_id'] ?? '') ?>">
                         <div id="cliDrop" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:500;max-height:220px;overflow-y:auto"></div>
                     </div>
                     <div class="help">Ketik nama atau brand untuk mencari, lalu pilih dari daftar.</div>
@@ -335,13 +377,13 @@ function transaction_form(PDO $pdo): void
                         <option value="">- Pilih Client dulu -</option>
                     </select>
                 </div>
-                <div><label>Luas m2</label><input type="number" step="0.01" name="area_sqm" id="area_sqm" value="0"></div>
-                <div><label>Tanggal Mulai</label><input type="date" name="start_date" required></div>
+                <div><label>Luas m2</label><input type="number" step="0.01" name="area_sqm" id="area_sqm" value="<?= h($prefill['area_sqm'] ?? '0') ?>"></div>
+                <div><label>Tanggal Mulai</label><input type="date" name="start_date" required value="<?= h($prefill['start_date'] ?? '') ?>"></div>
                 <div><label>Tanggal Selesai</label><input type="date" name="end_date" <?= $module === 'cl' ? 'required' : '' ?>></div>
                 <?php if ($module === 'media'): ?>
                 <div id="slots_wrap" style="display:none">
                     <label>Jumlah Slot</label>
-                    <input type="number" name="slots" id="slots_input" min="1" value="1">
+                    <input type="number" name="slots" id="slots_input" min="1" value="<?= h($prefill['slots'] ?? '1') ?>">
                     <div class="help">1 media = 12 slot video. Isi jumlah slot yang dibeli.</div>
                 </div>
                 <?php endif; ?>
@@ -349,18 +391,19 @@ function transaction_form(PDO $pdo): void
                     <label>Pricing Type</label>
                     <select name="pricing_type" id="pricing_type">
                         <?php foreach (['daily_point', 'daily_slot', 'daily_area', 'monthly', 'fixed'] as $opt): ?>
-                            <option value="<?= h($opt) ?>"><?= h($opt) ?></option>
+                            <option value="<?= h($opt) ?>" <?= ($prefill['pricing_type'] ?? '') === $opt ? 'selected' : '' ?>><?= h($opt) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div><label>Rate</label><input type="number" step="0.01" name="unit_rate" id="unit_rate" value="0"></div>
+                <div><label>Rate</label><input type="number" step="0.01" name="unit_rate" id="unit_rate" value="<?= h($prefill['unit_rate'] ?? '0') ?>"></div>
                 <div><label>Override Aktual</label><input type="text" inputmode="numeric" class="override-fmt" placeholder="Opsional"><input type="hidden" name="override_amount" class="override-val"></div>
                 <div>
                     <label>PIC Dealing <?php if ($linkedPic): ?><span style="font-size:11px;font-weight:400;color:var(--primary)">● auto</span><?php endif; ?></label>
+                    <?php $picSelected = ($prefill['pic_name'] ?? '') !== '' ? $prefill['pic_name'] : $linkedPic; ?>
                     <select name="pic_name" required>
                         <option value="">- Pilih PIC -</option>
                         <?php foreach ($pics as $pic): ?>
-                            <option <?= $pic['name'] === $linkedPic ? 'selected' : '' ?>><?= h($pic['name']) ?></option>
+                            <option <?= $pic['name'] === $picSelected ? 'selected' : '' ?>><?= h($pic['name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -391,7 +434,7 @@ function transaction_form(PDO $pdo): void
                     </select>
                     <div class="help">Revenue tiap siklus diakui di bulan awal atau akhir siklus tersebut.</div>
                 </div>
-                <div class="wide"><label>Materi / Keterangan</label><textarea name="content_note"></textarea></div>
+                <div class="wide"><label>Materi / Keterangan</label><textarea name="content_note"><?= h($prefill['content_note'] ?? '') ?></textarea></div>
                 <div><label>No. Invoice Accurate <span class="muted" style="font-weight:400">(opsional)</span></label><input type="text" name="invoice_no" placeholder="cth. INV-2026/04/001"></div>
             </div>
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px;animation:_fadeUp .35s cubic-bezier(.22,.68,0,1.2) both;animation-delay:.65s">
@@ -563,6 +606,19 @@ function transaction_form(PDO $pdo): void
             }
             document.getElementById('master_code').addEventListener('change', fillMaster);
             fillMaster();
+
+            <?php if ($prefill): ?>
+            // Re-apply prefill perpanjangan SETELAH fillMaster (yang memakai default master),
+            // supaya rate/pricing/luas mengikuti kontrak lama, bukan default unit.
+            (function(){
+                var p = <?= json_encode($prefill) ?>;
+                if (p.pricing_type) document.getElementById('pricing_type').value = p.pricing_type;
+                if (p.unit_rate !== '') document.getElementById('unit_rate').value = p.unit_rate;
+                if (p.area_sqm !== '')  document.getElementById('area_sqm').value  = p.area_sqm;
+                // Populate & pilih contact person dari client lama
+                if (p.client_id) filterContacts(p.contact_id);
+            })();
+            <?php endif; ?>
 
             function checkRecognitionMonth() {
                 const startVal = document.querySelector('[name=start_date]').value;

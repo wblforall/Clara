@@ -279,6 +279,7 @@ $pageFiles = [
     'daily_occupancy'             => 'daily_occupancy.php',
     'recurring_candidates'        => 'recurring_candidates.php',
     'recurring_merge_execute'     => 'recurring_candidates.php',
+    'renewals'                    => 'renewals.php',
 ];
 require_once APP_ROOT . '/app/pages/' . ($pageFiles[$route] ?? 'dashboard.php');
 match ($route) {
@@ -337,5 +338,6 @@ match ($route) {
     'daily_occupancy'             => daily_occupancy_page($pdo),
     'recurring_candidates'        => recurring_candidates_page($pdo),
     'recurring_merge_execute'     => recurring_merge_execute($pdo),
+    'renewals'                    => renewals_page($pdo),
     default                       => dashboard($pdo),
 };

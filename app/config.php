@@ -4,7 +4,7 @@ require_once __DIR__ . '/env.php';
 
 return [
     'app_name'      => env_value('APP_NAME', 'CLARA'),
-    'app_version'   => env_value('APP_VERSION', '4.10'),
+    'app_version'   => env_value('APP_VERSION', '4.12'),
     'app_env'       => env_value('APP_ENV', 'production'),
     'app_debug'     => env_value('APP_DEBUG', 'false') === 'true',
     'timezone'      => env_value('APP_TIMEZONE', 'Asia/Makassar'),

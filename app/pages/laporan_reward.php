@@ -3,10 +3,10 @@ declare(strict_types=1);
 
 function _reward_tier(int $streak): array
 {
-    if ($streak >= 12) return ['bonus' => 1_500_000, 'label' => 'Tier IV',  'color' => '#7c3aed'];
-    if ($streak >= 9)  return ['bonus' => 1_000_000, 'label' => 'Tier III', 'color' => '#0369a1'];
-    if ($streak >= 6)  return ['bonus' =>   750_000, 'label' => 'Tier II',  'color' => '#0891b2'];
-    if ($streak >= 3)  return ['bonus' =>   500_000, 'label' => 'Tier I',   'color' => '#16a34a'];
+    if ($streak >= 12) return ['bonus' => 1_000_000, 'label' => 'Tier IV',  'color' => '#7c3aed'];
+    if ($streak >= 9)  return ['bonus' =>   750_000, 'label' => 'Tier III', 'color' => '#0369a1'];
+    if ($streak >= 6)  return ['bonus' =>   500_000, 'label' => 'Tier II',  'color' => '#0891b2'];
+    if ($streak >= 3)  return ['bonus' =>   250_000, 'label' => 'Tier I',   'color' => '#16a34a'];
     return ['bonus' => 0, 'label' => '—', 'color' => '#94a3b8'];
 }
 
@@ -293,10 +293,10 @@ function pic_reward_page(PDO $pdo): void
         <div class="panel-title" style="margin-bottom:12px">Referensi Tier Reward</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
         <?php foreach ([
-            [3, 5,    500_000, 'Tier I',   '#16a34a'],
-            [6, 8,    750_000, 'Tier II',  '#0891b2'],
-            [9, 11, 1_000_000, 'Tier III', '#0369a1'],
-            [12, null, 1_500_000, 'Tier IV', '#7c3aed'],
+            [3, 5,    250_000, 'Tier I',   '#16a34a'],
+            [6, 8,    500_000, 'Tier II',  '#0891b2'],
+            [9, 11,   750_000, 'Tier III', '#0369a1'],
+            [12, null, 1_000_000, 'Tier IV', '#7c3aed'],
         ] as [$min, $max, $bonus, $label, $color]): ?>
         <div style="border:1px solid <?= $color ?>44;border-radius:8px;padding:12px 14px;background:<?= $color ?>11">
             <div style="font-weight:700;color:<?= $color ?>;font-size:13px;margin-bottom:2px"><?= $label ?></div>
