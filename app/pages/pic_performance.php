@@ -5,9 +5,14 @@ function pic_performance_page(PDO $pdo): void
 {
     require_permission('view_pic_report');
 
-    $pid     = current_property_id();
-    $picName = getv('pic', '');
-    $months  = max(3, min(24, (int) getv('months', 12)));
+    $pid      = current_property_id();
+    $picName  = getv('pic', '');
+    $today    = date('Y-m');
+    $fromPeriod = getv('from', date('Y-m', strtotime('first day of -5 months')));
+    $toPeriod   = getv('to',   $today);
+    // clamp to not exceed current month
+    if ($toPeriod > $today) $toPeriod = $today;
+    if ($fromPeriod > $toPeriod) $fromPeriod = $toPeriod;
 
     $picList = $pdo->prepare(
         "SELECT name, role_name FROM master_pic
@@ -26,8 +31,6 @@ function pic_performance_page(PDO $pdo): void
         $s->execute([$picName, $pid]);
         $picMeta = $s->fetch() ?: null;
 
-        $startPeriod = date('Y-m', strtotime('first day of -' . ($months - 1) . ' months'));
-
         // Monthly dealing per PIC + property target for that period
         $s = $pdo->prepare(
             "SELECT
@@ -41,11 +44,12 @@ function pic_performance_page(PDO $pdo): void
                     ON tm.period_key = a.period_key AND tm.property_id = a.property_id
              LEFT JOIN master_pic mp
                     ON mp.name = a.pic_name AND mp.property_id = a.property_id
-             WHERE a.pic_name = ? AND a.property_id = ? AND a.period_key >= ?
+             WHERE a.pic_name = ? AND a.property_id = ?
+               AND a.period_key >= ? AND a.period_key <= ?
              GROUP BY a.period_key
              ORDER BY a.period_key ASC"
         );
-        $s->execute([$picName, $pid, $startPeriod]);
+        $s->execute([$picName, $pid, $fromPeriod, $toPeriod]);
         $raw = $s->fetchAll();
 
         // Compute derived fields in ASC order (oldest first)
@@ -86,13 +90,12 @@ function pic_performance_page(PDO $pdo): void
         $rows = array_reverse($raw);
     }
 
-    $monthOptions = [3 => '3 Bulan', 6 => '6 Bulan', 12 => '12 Bulan', 24 => '24 Bulan'];
     $mn = ['01'=>'Jan','02'=>'Feb','03'=>'Mar','04'=>'Apr','05'=>'Mei','06'=>'Jun',
            '07'=>'Jul','08'=>'Ags','09'=>'Sep','10'=>'Okt','11'=>'Nov','12'=>'Des'];
 
     layout('Performa PIC', function () use (
         $picList, $picName, $picMeta, $rows, $summary,
-        $months, $monthOptions, $mn
+        $fromPeriod, $toPeriod, $mn
     ) {
         ?>
 
@@ -111,12 +114,12 @@ function pic_performance_page(PDO $pdo): void
                 </select>
             </div>
             <div>
-                <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">Rentang</label>
-                <select name="months" style="width:auto">
-                    <?php foreach ($monthOptions as $v => $l): ?>
-                        <option value="<?= $v ?>" <?= $months === $v ? 'selected' : '' ?>><?= $l ?></option>
-                    <?php endforeach; ?>
-                </select>
+                <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">Dari</label>
+                <input type="month" name="from" value="<?= h($fromPeriod) ?>" max="<?= date('Y-m') ?>">
+            </div>
+            <div>
+                <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">Sampai</label>
+                <input type="month" name="to" value="<?= h($toPeriod) ?>" max="<?= date('Y-m') ?>">
             </div>
             <div style="align-self:flex-end">
                 <button type="submit">Tampilkan</button>
