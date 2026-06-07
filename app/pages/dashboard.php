@@ -253,10 +253,10 @@ function dashboard(PDO $pdo): void
         </script>
 
         <div class="grid" style="grid-template-columns:repeat(5,minmax(0,1fr))">
-            <div class="card" style="border-top:3px solid var(--primary)"><div class="kpi-label">Potensi</div><div class="kpi-value" data-countup="<?= (int)$totalProjection ?>">Rp 0</div></div>
-            <div class="card" style="border-top:3px solid var(--green)"><div class="kpi-label">Target</div><div class="kpi-value" data-countup="<?= (int)$target ?>">Rp 0</div></div>
-            <div class="card" style="border-top:3px solid #3B82F6"><div class="kpi-label">Aktual</div><div class="kpi-value"<?= $target > 0 && $totalActual < $target ? ' style="color:#dc2626"' : '' ?> data-countup="<?= (int)$totalActual ?>">Rp 0</div></div>
-            <div class="card" style="border-top:3px solid #0369a1;background:<?= $totalRecurring > 0 ? '#f0f9ff' : '' ?>"><div class="kpi-label">Recurring</div><div class="kpi-value" style="color:<?= $totalRecurring > 0 ? '#0369a1' : 'var(--muted)' ?>" data-countup="<?= (int)$totalRecurring ?>"><?= $totalRecurring > 0 ? 'Rp 0' : '—' ?></div></div>
+            <div class="card" style="border-top:3px solid var(--primary)"><div class="kpi-label">Potensi</div><div class="kpi-value" data-countup="<?= (int)$totalProjection ?>"><?= money($totalProjection) ?></div></div>
+            <div class="card" style="border-top:3px solid var(--green)"><div class="kpi-label">Target</div><div class="kpi-value" data-countup="<?= (int)$target ?>"><?= money($target) ?></div></div>
+            <div class="card" style="border-top:3px solid #3B82F6"><div class="kpi-label">Aktual</div><div class="kpi-value"<?= $target > 0 && $totalActual < $target ? ' style="color:#dc2626"' : '' ?> data-countup="<?= (int)$totalActual ?>"><?= money($totalActual) ?></div></div>
+            <div class="card" style="border-top:3px solid #0369a1;background:<?= $totalRecurring > 0 ? '#f0f9ff' : '' ?>"><div class="kpi-label">Recurring</div><div class="kpi-value" style="color:<?= $totalRecurring > 0 ? '#0369a1' : 'var(--muted)' ?>" data-countup="<?= (int)$totalRecurring ?>"><?= $totalRecurring > 0 ? money($totalRecurring) : '—' ?></div></div>
             <div class="card <?= $achClass ?>" style="border-top:3px solid var(--amber)"><div class="kpi-label">% Aktual vs Potensi</div><div class="kpi-value"><?= pct($achPct) ?></div></div>
         </div>
 
@@ -387,7 +387,7 @@ function dashboard(PDO $pdo): void
                             </td>
                             <td><?= h($row['role_name']) ?></td>
                             <td><?= money($picTarget) ?></td>
-                            <td data-countup="<?= (int)$row['actual'] ?>">Rp 0</td>
+                            <td data-countup="<?= (int)$row['actual'] ?>"><?= money((float)$row['actual']) ?></td>
                             <td><span class="ach-badge <?= $achPicClass ?>"><?= pct($achPicPct) ?></span></td>
                             <td><?= pct($target > 0 ? $row['actual'] / $target : 0) ?></td>
                             <td style="font-weight:700"><?= (int)$row['new_clients'] ?></td>
