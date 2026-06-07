@@ -22,7 +22,9 @@ function _recurring_list_page(PDO $pdo): void
 {
     $moduleFilter     = getv('module', '');
     $confidenceFilter = getv('confidence', '');
-    $propertyFilter   = (int) getv('property_id', 0);
+    $propertyFilter   = isset($_GET['property_id'])
+        ? (int) $_GET['property_id']
+        : current_property_id();
 
     $properties = $pdo->query("SELECT id, name FROM properties WHERE status='active' ORDER BY id")->fetchAll();
 
@@ -66,9 +68,13 @@ function _recurring_list_page(PDO $pdo): void
          $having
          ORDER BY
              t.property_id ASC,
-             CASE t.module WHEN 'cl' THEN 1 WHEN 'media' THEN 2 WHEN 'gudang' THEN 3 ELSE 4 END,
-             ROUND(STDDEV(t.final_amount)) ASC,
-             jumlah_bulan DESC"
+             t.pic_name ASC,
+             CASE SUBSTRING_INDEX(t.master_code, '-', 1)
+                 WHEN 'LG' THEN 1 WHEN 'GF' THEN 2 WHEN 'UG' THEN 3
+                 WHEN 'FF' THEN 4 WHEN 'SF' THEN 5 ELSE 6
+             END,
+             CAST(SUBSTRING_INDEX(t.master_code, '-', -1) AS UNSIGNED),
+             t.master_code ASC"
     )->fetchAll();
 
     $totalGroups = count($rows);
@@ -130,7 +136,7 @@ function _recurring_list_page(PDO $pdo): void
             </div>
             <div style="display:flex;gap:6px;align-self:flex-end">
                 <button type="submit">Filter</button>
-                <?php if ($moduleFilter || $confidenceFilter || $propertyFilter): ?>
+                <?php if ($moduleFilter || $confidenceFilter || isset($_GET['property_id'])): ?>
                     <a class="btn secondary" href="?r=recurring_candidates">Reset</a>
                 <?php endif; ?>
             </div>
@@ -233,6 +239,8 @@ function _recurring_review_page(PDO $pdo): void
     $last        = end($trxList);
     $avgAmount   = round(array_sum(array_column($trxList, 'final_amount')) / count($trxList));
     $totalAmount = array_sum(array_column($trxList, 'final_amount'));
+    $oldAmounts  = array_values(array_map(fn($t) => (float)$t['final_amount'], $trxList));
+    $oldCount    = count($trxList);
     $prefillStartDate = $first['start_date'];
     $prefillEndDate   = $last['end_date'];
     $isCrossMonth     = substr($prefillStartDate, 8, 2) !== '01';
@@ -240,7 +248,8 @@ function _recurring_review_page(PDO $pdo): void
                     '07'=>'Jul','08'=>'Ags','09'=>'Sep','10'=>'Okt','11'=>'Nov','12'=>'Des'];
 
     layout('Review Konversi Recurring — ' . h($masterCode), function () use (
-        $trxList, $first, $last, $avgAmount, $totalAmount, $masterCode, $clientId, $propertyId, $monthNames, $prefillStartDate, $prefillEndDate, $isCrossMonth
+        $trxList, $first, $last, $avgAmount, $totalAmount, $masterCode, $clientId, $propertyId, $monthNames, $prefillStartDate, $prefillEndDate, $isCrossMonth,
+        $oldAmounts, $oldCount
     ) {
         ?>
         <div style="margin-bottom:12px">
@@ -325,18 +334,6 @@ function _recurring_review_page(PDO $pdo): void
                     </div>
                 </div>
                 <div>
-                    <label>Nilai per Bulan (Rp)</label>
-                    <input type="text" inputmode="numeric" id="amount_fmt" value="<?= number_format($avgAmount, 0, ',', '.') ?>" placeholder="Nilai per bulan...">
-                    <input type="hidden" name="amount_per_month" id="amount_per_month" value="<?= $avgAmount ?>">
-                    <div class="help">Pre-fill: rata-rata nilai <?= count($trxList) ?> transaksi lama.</div>
-                </div>
-                <div>
-                    <label>Override Total <span class="muted" style="font-weight:400">(opsional)</span></label>
-                    <input type="text" inputmode="numeric" id="override_fmt" placeholder="Kosongkan jika pakai nilai/bulan">
-                    <input type="hidden" name="override_amount" id="override_amount" value="">
-                    <div class="help">Isi jika total final berbeda dari perkalian nilai/bulan × jumlah bulan.</div>
-                </div>
-                <div>
                     <label>PIC Dealing</label>
                     <input type="text" name="pic_name" value="<?= h($first['pic_name'] ?? '') ?>" required>
                 </div>
@@ -347,18 +344,24 @@ function _recurring_review_page(PDO $pdo): void
             </div>
 
             <!-- PREVIEW SPREAD -->
+            <input type="hidden" name="amount_per_month" value="<?= $avgAmount ?>">
+            <input type="hidden" name="override_amount" value="">
+            <input type="hidden" name="total_calculated" id="total_calculated" value="">
+            <input type="hidden" name="cycle_amounts"   id="cycle_amounts"   value="">
+
             <div style="margin-top:16px">
                 <button type="button" class="btn light" onclick="previewSpread()" style="background:#0ea5e9;color:#fff">Kalkulasi & Preview Spread</button>
             </div>
-            <div id="preview-box" style="display:none;margin-top:12px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:14px 18px;font-size:13px"></div>
-            <input type="hidden" name="total_calculated" id="total_calculated" value="">
+            <div id="cycle-warn-box" style="display:none;margin-top:10px;padding:10px 14px;border-radius:8px;font-size:13px;border:1px solid"></div>
+            <div id="preview-box"    style="display:none;margin-top:12px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:14px 18px;font-size:13px"></div>
 
             <div style="margin-top:16px;padding:14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:13px;color:#991b1b">
                 ⚠ <strong>Konfirmasi:</strong> Tindakan ini akan <strong>soft-delete <?= count($trxList) ?> transaksi lama</strong>
                 dan membuat 1 transaksi recurring baru. Tidak bisa dibatalkan otomatis — pastikan preview sudah benar.
             </div>
             <p style="margin-top:14px">
-                <button type="submit" onclick="return confirm('Yakin merge <?= count($trxList) ?> transaksi ini menjadi 1 recurring?')">
+                <button type="submit" id="submit-btn" disabled
+                    onclick="return confirm('Yakin merge <?= count($trxList) ?> transaksi ini menjadi 1 recurring?')">
                     Konfirmasi & Merge Sekarang
                 </button>
                 <a class="btn secondary" href="?r=recurring_candidates">Batal</a>
@@ -366,36 +369,19 @@ function _recurring_review_page(PDO $pdo): void
         </form>
 
         <script>
-        const BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+        const BULAN      = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+        const OLD_AMOUNTS = <?= json_encode($oldAmounts) ?>;
+        const OLD_COUNT   = <?= $oldCount ?>;
+        var   extraAmounts = {};   // {cycleIndex: amount}
 
-        document.getElementById('amount_fmt').addEventListener('input', function() {
-            var raw = this.value.replace(/\D/g,'');
-            this.value = raw ? parseInt(raw,10).toLocaleString('id-ID') : '';
-            document.getElementById('amount_per_month').value = raw;
-        });
-        document.getElementById('override_fmt').addEventListener('input', function() {
-            var raw = this.value.replace(/\D/g,'');
-            this.value = raw ? parseInt(raw,10).toLocaleString('id-ID') : '';
-            document.getElementById('override_amount').value = raw;
-        });
-
-        // Hitung siklus bulanan dari start_date (mengikuti tanggal kontrak, bukan awal kalender)
         function buildCycles(startStr, endStr, recognition) {
-            var cycles = [];
-            var cursor = new Date(startStr);
-            var endDate = new Date(endStr);
-            var limit = 120;
+            var cycles = [], cursor = new Date(startStr), endDate = new Date(endStr), limit = 120;
             while (cursor <= endDate && limit-- > 0) {
                 var cycleEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, cursor.getDate() - 1);
                 if (cycleEnd > endDate) cycleEnd = new Date(endDate);
                 var periodDate = recognition === 'cycle_end' ? cycleEnd : cursor;
-                cycles.push({
-                    label: BULAN[periodDate.getMonth()] + ' ' + periodDate.getFullYear(),
-                    start: new Date(cursor),
-                    end:   new Date(cycleEnd),
-                });
-                cursor = new Date(cycleEnd);
-                cursor.setDate(cursor.getDate() + 1);
+                cycles.push({ label: BULAN[periodDate.getMonth()] + ' ' + periodDate.getFullYear() });
+                cursor = new Date(cycleEnd); cursor.setDate(cursor.getDate() + 1);
             }
             return cycles;
         }
@@ -403,31 +389,98 @@ function _recurring_review_page(PDO $pdo): void
         function previewSpread() {
             var startVal    = document.getElementById('start_date').value;
             var endVal      = document.getElementById('end_date').value;
-            var perMonth    = parseInt(document.getElementById('amount_per_month').value) || 0;
-            var overrideV   = parseInt(document.getElementById('override_amount').value) || 0;
             var recognition = document.getElementById('cycle_recognition').value;
-
             if (!startVal || !endVal) { alert('Isi tanggal mulai dan selesai dulu.'); return; }
 
             var cycles = buildCycles(startVal, endVal, recognition);
             if (!cycles.length) { alert('Range tanggal tidak valid.'); return; }
 
-            var total  = overrideV || (perMonth * cycles.length);
-            var perC   = Math.floor(total / cycles.length);
-            var rows   = '', running = 0;
+            var extraCount   = Math.max(0, cycles.length - OLD_COUNT);
+            var reducedCount = Math.max(0, OLD_COUNT - cycles.length);
+            var warnBox      = document.getElementById('cycle-warn-box');
+
+            if (reducedCount > 0) {
+                warnBox.style.cssText = 'display:block;margin-top:10px;padding:10px 14px;border-radius:8px;font-size:13px;background:#fef9c3;border:1px solid #fde047;color:#713f12';
+                warnBox.innerHTML = '<strong>⚠ Perhatian:</strong> Rentang tanggal dikurangi — <strong>' + reducedCount + ' bulan</strong> dari transaksi lama tidak akan dikonversi.';
+            } else if (extraCount > 0) {
+                warnBox.style.cssText = 'display:block;margin-top:10px;padding:10px 14px;border-radius:8px;font-size:13px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b';
+                warnBox.innerHTML = '<strong>⚠ Ada ' + extraCount + ' siklus baru</strong> yang tidak ada di data transaksi lama. Isi nilai untuk setiap siklus tambahan di bawah sebelum submit.';
+            } else {
+                warnBox.style.display = 'none';
+            }
+
+            var rows = '';
             cycles.forEach(function(c, i) {
-                var amt = (i === cycles.length-1) ? Math.round(total - running) : perC;
-                running += amt;
-                rows += '<tr><td style="padding:3px 16px 3px 0;color:#374151">'+c.label+'</td>'
-                      + '<td style="text-align:right;font-weight:600;color:#0369a1">Rp '+amt.toLocaleString('id-ID')+'</td></tr>';
+                if (i < OLD_COUNT) {
+                    var amt = OLD_AMOUNTS[i];
+                    rows += '<tr>' +
+                        '<td style="padding:4px 16px 4px 0;color:#374151">' + c.label + '</td>' +
+                        '<td style="text-align:right;font-weight:600;color:#0369a1">Rp ' + amt.toLocaleString('id-ID') + '</td>' +
+                        '</tr>';
+                } else {
+                    var existing = extraAmounts[i] || 0;
+                    rows += '<tr>' +
+                        '<td style="padding:4px 16px 4px 0;color:#374151">' + c.label +
+                            ' <span style="font-size:10px;background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:99px;font-weight:700">baru</span></td>' +
+                        '<td style="text-align:right">' +
+                            '<input type="text" inputmode="numeric" class="extra-amt" data-idx="' + i + '"' +
+                            ' value="' + (existing ? existing.toLocaleString('id-ID') : '') + '"' +
+                            ' placeholder="Rp ..."' +
+                            ' style="width:130px;text-align:right;font-size:12px;padding:3px 8px;border:1px solid #fca5a5;border-radius:6px">' +
+                        '</td></tr>';
+                }
             });
 
-            document.getElementById('total_calculated').value = total;
             document.getElementById('preview-box').innerHTML =
-                '<div style="font-weight:700;color:#0369a1;margin-bottom:8px">Estimasi Spread — '+cycles.length+' siklus | Total: Rp '+total.toLocaleString('id-ID')+'</div>'
-                + '<table style="border-collapse:collapse;width:100%;background:transparent">'+rows+'</table>';
+                '<div style="font-weight:700;color:#0369a1;margin-bottom:8px" id="preview-title">Preview Spread — ' + cycles.length + ' siklus</div>' +
+                '<table style="border-collapse:collapse;width:100%;background:transparent">' + rows + '</table>';
             document.getElementById('preview-box').style.display = 'block';
+
+            document.querySelectorAll('.extra-amt').forEach(function(inp) {
+                inp.addEventListener('input', function() {
+                    var raw = this.value.replace(/\D/g,'');
+                    this.value = raw ? parseInt(raw,10).toLocaleString('id-ID') : '';
+                    extraAmounts[parseInt(this.dataset.idx)] = raw ? parseInt(raw,10) : 0;
+                    refreshAmounts(cycles.length);
+                });
+            });
+
+            refreshAmounts(cycles.length);
         }
+
+        function refreshAmounts(totalCycles) {
+            var amounts = [], allFilled = true, total = 0;
+            for (var i = 0; i < totalCycles; i++) {
+                var amt = i < OLD_COUNT ? OLD_AMOUNTS[i] : (extraAmounts[i] || 0);
+                if (i >= OLD_COUNT && !extraAmounts[i]) allFilled = false;
+                amounts.push(amt);
+                total += amt;
+            }
+            document.getElementById('cycle_amounts').value   = allFilled ? JSON.stringify(amounts) : '';
+            document.getElementById('total_calculated').value = total;
+
+            var titleEl = document.getElementById('preview-title');
+            if (titleEl) titleEl.textContent = 'Preview Spread — ' + totalCycles + ' siklus | Total: Rp ' + total.toLocaleString('id-ID');
+
+            var btn = document.getElementById('submit-btn');
+            if (!allFilled) {
+                btn.disabled = true; btn.textContent = 'Isi nilai siklus tambahan dulu ↑';
+            } else {
+                btn.disabled = false; btn.textContent = 'Konfirmasi & Merge Sekarang';
+            }
+        }
+
+        // Reset preview jika field kunci berubah
+        ['start_date','end_date','cycle_recognition'].forEach(function(id) {
+            document.getElementById(id).addEventListener('change', function() {
+                document.getElementById('preview-box').style.display = 'none';
+                document.getElementById('cycle-warn-box').style.display = 'none';
+                document.getElementById('cycle_amounts').value = '';
+                extraAmounts = {};
+                var btn = document.getElementById('submit-btn');
+                btn.disabled = true; btn.textContent = 'Konfirmasi & Merge Sekarang';
+            });
+        });
         </script>
         <?php
     });
@@ -464,23 +517,38 @@ function recurring_merge_execute(PDO $pdo): void
         redirect_to('recurring_candidates');
     }
 
-    // Ambil transaksi lama
+    // Ambil transaksi lama (dengan amount per periode)
     $s = $pdo->prepare(
-        "SELECT id FROM transactions
+        "SELECT id, period_key, final_amount FROM transactions
          WHERE deleted_at IS NULL AND billing_method='anchor_cycle'
            AND master_code=? AND client_id=? AND property_id=?
          ORDER BY period_key ASC"
     );
     $s->execute([$masterCode, $clientId, $propertyId]);
-    $oldIds = $s->fetchAll(PDO::FETCH_COLUMN);
+    $oldTrxData = $s->fetchAll();
+    $oldIds     = array_column($oldTrxData, 'id');
 
     if (empty($oldIds)) {
         flash('Grup sudah dikonversi atau tidak ditemukan.');
         redirect_to('recurring_candidates');
     }
 
-    // Hitung total final
-    $finalAmount = $overrideAmount ?: ($amountPerMonth * _count_months($startDate, $endDate));
+    // Ambil cycle_amounts dari JS preview (posisi-ke-posisi dari transaksi lama)
+    $cycleAmountsJson = trim((string) post('cycle_amounts', ''));
+    $cycleAmounts     = [];
+    if ($cycleAmountsJson !== '') {
+        $decoded = json_decode($cycleAmountsJson, true);
+        if (is_array($decoded) && !empty($decoded)) {
+            $cycleAmounts = array_map('floatval', $decoded);
+        }
+    }
+    // Fallback: pakai final_amount tiap transaksi lama (jika JS tidak kirim)
+    if (empty($cycleAmounts)) {
+        $cycleAmounts = array_map('floatval', array_column($oldTrxData, 'final_amount'));
+    }
+
+    // Total adalah sum persis dari cycle amounts — tidak ada recalculate
+    $finalAmount = array_sum($cycleAmounts);
 
     $trx = [
         'property_id'      => $propertyId,
@@ -492,11 +560,11 @@ function recurring_merge_execute(PDO $pdo): void
         'area_sqm'         => $areaSqm,
         'slots'            => $slots,
         'quantity'         => 1,
-        'unit_rate'        => $amountPerMonth,
+        'unit_rate'        => count($cycleAmounts) > 0 ? round($finalAmount / count($cycleAmounts)) : $finalAmount,
         'billing_method'   => 'spread',
         'period_key'       => substr($startDate, 0, 7),
-        'total_calculated' => $totalCalculated ?: $finalAmount,
-        'override_amount'  => $overrideAmount,
+        'total_calculated' => $finalAmount,
+        'override_amount'  => null,
         'final_amount'     => $finalAmount,
         'pic_name'         => $picName,
         'invoice_no'       => $invoiceNo,
@@ -555,9 +623,9 @@ function recurring_merge_execute(PDO $pdo): void
         ]);
         $newId = (int) $pdo->lastInsertId();
 
-        // Hitung alokasi — cycle-aware untuk pricing monthly
+        // Hitung alokasi — gunakan per-cycle amounts dari transaksi lama (bukan distribusi merata)
         if ($pricingType === 'monthly' && in_array($cycleRecognition, ['cycle_start', 'cycle_end'])) {
-            _recurring_save_cycle_allocations($pdo, $newId, $trx, $cycleRecognition);
+            _recurring_save_cycle_allocations($pdo, $newId, $trx, $cycleRecognition, $cycleAmounts);
         } else {
             AllocationService::saveAllocations($pdo, $newId, $trx);
         }
@@ -583,12 +651,11 @@ function recurring_merge_execute(PDO $pdo): void
     redirect_to('allocation_detail', ['id' => $newId]);
 }
 
-function _recurring_save_cycle_allocations(PDO $pdo, int $trxId, array $trx, string $recognition): void
+function _recurring_save_cycle_allocations(PDO $pdo, int $trxId, array $trx, string $recognition, array $perCycleAmounts = []): void
 {
-    $cursor  = new DateTimeImmutable($trx['start_date']);
-    $endDt   = new DateTimeImmutable($trx['end_date']);
-    $final   = (float) $trx['final_amount'];
-    $pid     = (int) $trx['property_id'];
+    $cursor = new DateTimeImmutable($trx['start_date']);
+    $endDt  = new DateTimeImmutable($trx['end_date']);
+    $pid    = (int) $trx['property_id'];
 
     // Bangun siklus bulanan dari start_date
     $cycles = [];
@@ -612,15 +679,24 @@ function _recurring_save_cycle_allocations(PDO $pdo, int $trxId, array $trx, str
         $cursor = $cycleEnd->modify('+1 day');
     }
 
-    // Distribusi amount merata, selisih pembulatan ke siklus terakhir
-    $n       = count($cycles);
-    $perC    = (int) floor($final / $n);
-    $running = 0;
-    foreach ($cycles as $i => &$c) {
-        $c['amount'] = ($i === $n - 1) ? (int) round($final - $running) : $perC;
-        $running    += $c['amount'];
+    // Assign amount per posisi dari transaksi lama — tidak ada distribusi merata
+    $n = count($cycles);
+    if (!empty($perCycleAmounts)) {
+        foreach ($cycles as $i => &$c) {
+            $c['amount'] = (int) round($perCycleAmounts[$i] ?? end($perCycleAmounts));
+        }
+        unset($c);
+    } else {
+        // Fallback: distribusi merata (hanya jika perCycleAmounts tidak dikirim)
+        $final   = (float) $trx['final_amount'];
+        $perC    = (int) floor($final / $n);
+        $running = 0;
+        foreach ($cycles as $i => &$c) {
+            $c['amount'] = ($i === $n - 1) ? (int) round($final - $running) : $perC;
+            $running    += $c['amount'];
+        }
+        unset($c);
     }
-    unset($c);
 
     $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id=?')->execute([$trxId]);
 

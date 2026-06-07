@@ -127,9 +127,8 @@ function _pic_render_section(array $sec, string $period, array $moduleLabel, str
     </div>
 
     <style>.pic-tbl td{font-size:12px;padding:8px 10px;white-space:nowrap}.pic-tbl th{padding:8px 10px}</style>
-    <div class="panel" style="margin-bottom:8px">
-        <div class="table-wrap">
-            <table class="pic-tbl">
+    <div class="table-wrap" style="margin-bottom:8px;overflow-x:auto">
+        <table class="pic-tbl">
                 <thead>
                     <tr>
                         <th>Nama PIC</th><th>Role</th>
@@ -214,7 +213,6 @@ function _pic_render_section(array $sec, string $period, array $moduleLabel, str
                 </tr>
                 </tbody>
             </table>
-        </div>
     </div>
     <?php
 }

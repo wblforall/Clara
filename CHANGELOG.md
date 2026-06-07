@@ -11,6 +11,23 @@
 
 ---
 
+## Version 4.10 — 7 Juni 2026
+
+### Fitur Baru / Peningkatan
+
+- **Konversi Recurring — redesign besar:**
+  - Nominal per bulan dari transaksi `anchor_cycle` lama kini dipertahankan **persis** (tidak dihitung ulang rata-rata) saat dikonversi ke spread — penting untuk kontrak dengan diskon berbeda tiap bulan.
+  - Tombol **Kalkulasi & Preview Spread** menampilkan tabel preview per siklus beserta nominal masing-masing sebelum submit.
+  - Jika rentang tanggal diperluas (siklus bertambah dari jumlah transaksi lama), submit **diblokir** sampai user mengisi nominal siklus tambahan secara manual — mencegah angka 0 masuk ke data.
+  - Filter properti di halaman list kini mengikuti `current_property_id()` dari session; tab properti di header sekarang ikut memfilter data.
+  - Urutan list: Property → Nama PIC (A–Z) → Lantai (LG→GF→UG→FF→SF) → Nomor Unit (numerik).
+
+### Perbaikan
+
+- **Laporan PIC** — kolom TRX terpotong di kanan pada hosting karena wrapper `.panel` (padding 18px) mempersempit lebar efektif; wrapper dihapus dan `overflow-x:auto` diaplikasikan langsung di `.table-wrap`.
+
+---
+
 ## Version 4.9 — 7 Juni 2026
 
 ### Fitur Baru
