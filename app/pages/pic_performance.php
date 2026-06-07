@@ -26,7 +26,7 @@ function pic_performance_page(PDO $pdo): void
         $s->execute([$picName, $pid]);
         $picMeta = $s->fetch() ?: null;
 
-        $startPeriod = date('Y-m', mktime(0,0,0, (int)date('m') - $months + 1, 1));
+        $startPeriod = date('Y-m', strtotime('first day of -' . ($months - 1) . ' months'));
 
         // Monthly dealing per PIC + property target for that period
         $s = $pdo->prepare(
@@ -101,7 +101,7 @@ function pic_performance_page(PDO $pdo): void
             <input type="hidden" name="r" value="pic_performance">
             <div>
                 <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">PIC</label>
-                <select name="pic" style="min-width:200px" onchange="this.form.submit()">
+                <select name="pic" style="min-width:200px">
                     <option value="">— Pilih PIC —</option>
                     <?php foreach ($picList as $p): ?>
                         <option value="<?= h($p['name']) ?>" <?= $picName === $p['name'] ? 'selected' : '' ?>>
@@ -112,11 +112,14 @@ function pic_performance_page(PDO $pdo): void
             </div>
             <div>
                 <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">Rentang</label>
-                <select name="months" style="width:auto" onchange="this.form.submit()">
+                <select name="months" style="width:auto">
                     <?php foreach ($monthOptions as $v => $l): ?>
                         <option value="<?= $v ?>" <?= $months === $v ? 'selected' : '' ?>><?= $l ?></option>
                     <?php endforeach; ?>
                 </select>
+            </div>
+            <div style="align-self:flex-end">
+                <button type="submit">Tampilkan</button>
             </div>
         </form>
 
