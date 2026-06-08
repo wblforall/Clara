@@ -635,11 +635,31 @@ function display_json(PDO $pdo): void
 {
     $period = getv('period', date('Y-m'));
     $pid    = (int) getv('pid', 0) ?: null;
-    $data   = DashboardService::jsonReady(DashboardService::data($pdo, $period, $pid));
-    audit($pdo, 'display_ajax_refresh', 'dashboard_display', $period, ['period' => $period, 'pid' => $pid], [], 'display_tv');
+
+    // Cache ringan: data display jarang berubah & di-polling banyak panel/TV.
+    // Hasil dibagi antar request dalam jendela TTL → query berat tidak diulang
+    // tiap polling (penyebab utama proses PHP menumpuk di shared hosting).
+    $ttl       = 120; // detik
+    $cacheDir  = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'clara-cache';
+    $cacheFile = $cacheDir . DIRECTORY_SEPARATOR . 'display_' . preg_replace('/[^0-9a-zA-Z_-]/', '', $period) . '_' . ($pid ?? 'all') . '.json';
+
+    $json = false;
+    if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $ttl) {
+        $json = file_get_contents($cacheFile);
+    }
+    if ($json === false || $json === '') {
+        $data = DashboardService::jsonReady(DashboardService::data($pdo, $period, $pid));
+        $json = json_encode($data);
+        if (is_dir($cacheDir) || @mkdir($cacheDir, 0775, true)) {
+            @file_put_contents($cacheFile, $json, LOCK_EX);
+        }
+    }
+
+    // Catatan: audit per-refresh sengaja DIHAPUS — dulu menulis 1 baris log tiap
+    // polling (beban DB + bloat log) tanpa nilai jejak yang berarti.
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-    echo json_encode($data);
+    echo $json;
     exit;
 }
 
@@ -841,7 +861,7 @@ function display_page(PDO $pdo, array $config): void
                 } else {
                     statusEl.className   = 'tv-dot';
                     statusEl.textContent = 'Mencoba ulang...';
-                    retryTimer = setTimeout(refresh, 10000);
+                    retryTimer = setTimeout(refresh, 60000);
                 }
             }
         }
@@ -850,7 +870,7 @@ function display_page(PDO $pdo, array $config): void
         setClock();
         refresh();
         setInterval(setClock, 1000);
-        setInterval(refresh, 30000);
+        setInterval(refresh, 180000); // 3 menit (dulu 30 dtk) — kurangi beban polling di hosting
     </script>
     </body>
     </html>

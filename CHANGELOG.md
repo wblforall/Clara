@@ -13,6 +13,13 @@
 
 ## Version 4.12 — 8 Juni 2026
 
+### Performa / Hosting
+
+- **Pengurangan beban proses TV Display** (penyebab proses PHP menumpuk di shared hosting):
+  - Interval auto-refresh diperlambat **30 dtk → 3 menit**; retry saat gagal **10 dtk → 1 menit**.
+  - **Cache server-side** untuk `display_data` (TTL 120 dtk) — banyak panel/TV berbagi 1 hasil, query berat tidak dijalankan ulang tiap polling.
+  - Audit log **dihapus dari tiap refresh** (dulu menulis 1 baris ke DB tiap polling → beban + bloat log).
+
 ### Fitur Baru / Peningkatan
 
 - **PWA (Progressive Web App)** — CLARA kini bisa **di-install ke home screen HP** (Android/iOS) dan dijalankan layaknya aplikasi (fullscreen, tanpa address bar):
