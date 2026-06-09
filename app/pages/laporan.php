@@ -58,9 +58,9 @@ function _pic_fetch_section(PDO $pdo, string $period, int $pid): array
                 COALESCE(SUM(CASE WHEN a.module='media'  THEN a.amount ELSE 0 END),0) actual_media,
                 COALESCE(SUM(CASE WHEN a.module='gudang' THEN a.amount ELSE 0 END),0) actual_gudang,
                 COALESCE(SUM(a.amount),0) actual_total,
-                COALESCE(SUM(CASE WHEN t.billing_method='spread' THEN a.amount ELSE 0 END),0) actual_recurring,
+                COALESCE(SUM(CASE WHEN " . recurring_match_sql('t') . " THEN a.amount ELSE 0 END),0) actual_recurring,
                 COUNT(DISTINCT t.id) trx_count,
-                COUNT(DISTINCT CASE WHEN t.billing_method='spread' THEN t.id END) trx_recurring
+                COUNT(DISTINCT CASE WHEN " . recurring_match_sql('t') . " THEN t.id END) trx_recurring
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
          LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL AND t.property_id=?
@@ -288,9 +288,9 @@ function pic_report_print(PDO $pdo): void
                 COALESCE(SUM(CASE WHEN a.module='media'  THEN a.amount ELSE 0 END),0) actual_media,
                 COALESCE(SUM(CASE WHEN a.module='gudang' THEN a.amount ELSE 0 END),0) actual_gudang,
                 COALESCE(SUM(a.amount),0) actual_total,
-                COALESCE(SUM(CASE WHEN t.billing_method='spread' THEN a.amount ELSE 0 END),0) actual_recurring,
+                COALESCE(SUM(CASE WHEN " . recurring_match_sql('t') . " THEN a.amount ELSE 0 END),0) actual_recurring,
                 COUNT(DISTINCT t.id) trx_count,
-                COUNT(DISTINCT CASE WHEN t.billing_method='spread' THEN t.id END) trx_recurring
+                COUNT(DISTINCT CASE WHEN " . recurring_match_sql('t') . " THEN t.id END) trx_recurring
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
          LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL AND t.property_id=?

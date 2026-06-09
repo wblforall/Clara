@@ -41,7 +41,7 @@ function dashboard(PDO $pdo): void
     $recurringStmt = $pdo->prepare(
         "SELECT COALESCE(SUM(a.amount),0)
          FROM transaction_allocations a
-         JOIN transactions t ON t.id = a.transaction_id AND t.billing_method = 'spread' AND t.deleted_at IS NULL
+         JOIN transactions t ON t.id = a.transaction_id AND t.deleted_at IS NULL AND " . recurring_match_sql('t') . "
          WHERE a.period_key = ? AND a.property_id = ?"
     );
     $recurringStmt->execute([$period, $pid]);

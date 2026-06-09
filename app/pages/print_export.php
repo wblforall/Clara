@@ -40,7 +40,7 @@ function print_dashboard(PDO $pdo): void
         "SELECT p.name pic_name, COALESCE(p.role_name,'-') role_name, COALESCE(p.target_share,0) target_share,
                 COALESCE(SUM(a.amount),0) actual,
                 COUNT(DISTINCT t.id) trx_count,
-                COUNT(DISTINCT CASE WHEN t.billing_method='spread' THEN t.id END) trx_recurring,
+                COUNT(DISTINCT CASE WHEN " . recurring_match_sql('t') . " THEN t.id END) trx_recurring,
                 COUNT(DISTINCT CASE WHEN t.client_id IS NOT NULL AND prev.client_id IS NULL THEN t.client_id END) AS new_clients
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
@@ -462,7 +462,7 @@ function print_exec(PDO $pdo): void
         "SELECT p.name pic_name, COALESCE(p.role_name,'-') role_name, COALESCE(p.target_share,0) target_share,
                 COALESCE(SUM(a.amount),0) actual,
                 COUNT(DISTINCT t.id) trx_count,
-                COUNT(DISTINCT CASE WHEN t.billing_method='spread' THEN t.id END) trx_recurring,
+                COUNT(DISTINCT CASE WHEN " . recurring_match_sql('t') . " THEN t.id END) trx_recurring,
                 COUNT(DISTINCT CASE WHEN t.client_id IS NOT NULL AND prev.client_id IS NULL THEN t.client_id END) AS new_clients
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
@@ -850,7 +850,7 @@ function print_exec_summary(PDO $pdo): void
             "SELECT p.name pic_name, COALESCE(p.role_name,'-') role_name, COALESCE(p.target_share,0) target_share,
                     COALESCE(SUM(a.amount),0) actual,
                     COUNT(DISTINCT t.id) trx_count,
-                    COUNT(DISTINCT CASE WHEN t.billing_method='spread' THEN t.id END) trx_recurring,
+                    COUNT(DISTINCT CASE WHEN " . recurring_match_sql('t') . " THEN t.id END) trx_recurring,
                     COUNT(DISTINCT CASE WHEN t.client_id IS NOT NULL AND prev.client_id IS NULL THEN t.client_id END) AS new_clients
              FROM master_pic p
              LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
@@ -872,7 +872,7 @@ function print_exec_summary(PDO $pdo): void
                     COALESCE(SUM(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.area_sqm ELSE 0 END),0) area_total,
                     COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                     COALESCE(SUM(a.amount),0) actual_total,
-                    COALESCE(SUM(CASE WHEN t.billing_method='spread' THEN a.amount ELSE 0 END),0) recurring_total,
+                    COALESCE(SUM(CASE WHEN " . recurring_match_sql('t') . " THEN a.amount ELSE 0 END),0) recurring_total,
                     AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
                              THEN a.amount/a.allocated_days/m.area_sqm ELSE NULL END) avg_rate
              FROM master_cl_units m
@@ -891,7 +891,7 @@ function print_exec_summary(PDO $pdo): void
                     0 AS area_total,
                     COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                     COALESCE(SUM(a.amount),0) actual_total,
-                    COALESCE(SUM(CASE WHEN t.billing_method='spread' THEN a.amount ELSE 0 END),0) recurring_total,
+                    COALESCE(SUM(CASE WHEN " . recurring_match_sql('t') . " THEN a.amount ELSE 0 END),0) recurring_total,
                     AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
                              THEN a.amount/a.allocated_days ELSE NULL END) avg_rate
              FROM master_media m
@@ -910,7 +910,7 @@ function print_exec_summary(PDO $pdo): void
                     COALESCE(SUM(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.area_sqm ELSE 0 END),0) area_total,
                     COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
                     COALESCE(SUM(a.amount),0) actual_total,
-                    COALESCE(SUM(CASE WHEN t.billing_method='spread' THEN a.amount ELSE 0 END),0) recurring_total,
+                    COALESCE(SUM(CASE WHEN " . recurring_match_sql('t') . " THEN a.amount ELSE 0 END),0) recurring_total,
                     AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
                              THEN a.amount/m.area_sqm ELSE NULL END) avg_rate
              FROM master_gudang m

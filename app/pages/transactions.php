@@ -46,7 +46,8 @@ function transactions_page(PDO $pdo): void
     $page = min($page, $totalPages);
     $offset = ($page - 1) * $perPage;
 
-    $sql  = 'SELECT t.*, c.company_name, c.brand_name FROM transactions t
+    $sql  = 'SELECT t.*, c.company_name, c.brand_name, (' . recurring_match_sql('t') . ') AS is_recurring
+             FROM transactions t
              LEFT JOIN master_clients c ON c.id = t.client_id
              WHERE ' . $whereStr . '
              ORDER BY t.id DESC LIMIT ' . $perPage . ' OFFSET ' . $offset;
@@ -150,7 +151,13 @@ function transactions_page(PDO $pdo): void
                         <td style="white-space:nowrap"><?= h($row['start_date'] . ' s/d ' . $row['end_date']) ?></td>
                         <td>
                             <?= h($row['pricing_type']) ?>
-                            <?= ($row['billing_method'] ?? '') === 'spread' ? '<br><span class="badge" style="font-size:10px;background:var(--accent-light,#e8f4ff);color:var(--accent,#2563eb)">Recurring</span>' : '' ?>
+                            <?php if (($row['billing_method'] ?? '') === 'spread'): ?>
+                                <br><span class="badge" style="font-size:10px;background:var(--accent-light,#e8f4ff);color:var(--accent,#2563eb)">Recurring</span>
+                            <?php elseif (!empty($row['recurring_flag'])): ?>
+                                <br><span class="badge" title="Ditandai 'Diakui Recurring' oleh sales" style="font-size:10px;background:#dbeafe;color:#0369a1">Recurring</span>
+                            <?php elseif (!empty($row['is_recurring'])): ?>
+                                <br><span class="badge" title="Terdeteksi otomatis: pola berulang (unit+klien sama, bulan bersebelahan)" style="font-size:10px;background:#fef3c7;color:#92400e">Recurring otomatis</span>
+                            <?php endif; ?>
                         </td>
                         <td><?= money($row['final_amount']) ?></td>
                         <td><?= h($row['pic_name'] ?? '-') ?></td>
@@ -433,6 +440,13 @@ function transaction_form(PDO $pdo): void
                         <option value="cycle_end">Bulan Akhir siklus</option>
                     </select>
                     <div class="help">Revenue tiap siklus diakui di bulan awal atau akhir siklus tersebut.</div>
+                </div>
+                <div class="wide" style="display:flex;align-items:flex-start;gap:10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:11px 14px">
+                    <input type="checkbox" name="recurring_flag" id="recurring_flag" value="1" style="width:18px;height:18px;flex-shrink:0;margin-top:1px" <?= !empty($prefill['recurring_flag']) ? 'checked' : '' ?>>
+                    <label for="recurring_flag" style="margin:0;cursor:pointer">
+                        <span style="font-weight:700;color:#0369a1">Diakui Recurring</span>
+                        <span class="help" style="display:block;margin-top:2px;font-weight:400">Centang bila input bulanan ini bagian dari kontrak berulang. Akan dihitung sebagai recurring di laporan — tanpa mengubah atau meng-convert transaksi.</span>
+                    </label>
                 </div>
                 <div class="wide"><label>Materi / Keterangan</label><textarea name="content_note"><?= h($prefill['content_note'] ?? '') ?></textarea></div>
                 <div><label>No. Invoice Accurate <span class="muted" style="font-weight:400">(opsional)</span></label><input type="text" name="invoice_no" placeholder="cth. INV-2026/04/001"></div>
@@ -771,6 +785,7 @@ function transaction_save(PDO $pdo): void
         'unit_rate'    => (float) post('unit_rate', 0),
         'contract_months' => $months ?: null,
         'billing_method'     => 'anchor_cycle',
+        'recurring_flag'     => post('recurring_flag') ? 1 : 0,
         'cycle_recognition'  => post('cycle_recognition', 'cycle_start'),
         'pic_name'       => post('pic_name'),
         'referrer_name'  => trim((string) post('referrer_name')) ?: null,
@@ -797,10 +812,10 @@ function transaction_save(PDO $pdo): void
     $stmt = $pdo->prepare(
         'INSERT INTO transactions
         (property_id, module, master_code, period_key, client_id, contact_id, content_note, start_date, end_date, quantity, slots, area_sqm,
-         pricing_type, unit_rate, contract_months, billing_method, cycle_recognition, total_calculated, override_amount, final_amount, pic_name, referrer_name, remarks, invoice_no, created_by)
+         pricing_type, unit_rate, contract_months, billing_method, recurring_flag, cycle_recognition, total_calculated, override_amount, final_amount, pic_name, referrer_name, remarks, invoice_no, created_by)
          VALUES
         (:property_id, :module, :master_code, :period_key, :client_id, :contact_id, :content_note, :start_date, :end_date, :quantity, :slots, :area_sqm,
-         :pricing_type, :unit_rate, :contract_months, :billing_method, :cycle_recognition, :total_calculated, :override_amount, :final_amount, :pic_name, :referrer_name, :remarks, :invoice_no, :created_by)'
+         :pricing_type, :unit_rate, :contract_months, :billing_method, :recurring_flag, :cycle_recognition, :total_calculated, :override_amount, :final_amount, :pic_name, :referrer_name, :remarks, :invoice_no, :created_by)'
     );
     $stmt->execute([
         ':property_id'       => current_property_id(),
@@ -819,6 +834,7 @@ function transaction_save(PDO $pdo): void
         ':unit_rate'         => $trx['unit_rate'],
         ':contract_months'   => $trx['contract_months'],
         ':billing_method'    => $trx['billing_method'],
+        ':recurring_flag'    => $trx['recurring_flag'],
         ':cycle_recognition' => $trx['cycle_recognition'],
         ':total_calculated'  => $trx['total_calculated'],
         ':override_amount'   => $trx['override_amount'],
@@ -894,7 +910,22 @@ function transaction_edit(PDO $pdo): void
         }
     }
 
-    layout('Edit Transaksi #' . $id . ' — ' . ($moduleLabel[$trx['module']] ?? strtoupper($trx['module'])), function () use ($id, $trx, $masters, $clients, $allContacts, $pics, $referrers, $recognitionMonth, $startMonth, $endMonth, $existingAllocations) {
+    // Apakah transaksi ini TERDETEKSI recurring otomatis (pola berulang bulan
+    // bersebelahan)? Dipakai untuk menampilkan checkbox sebagai checked+terkunci.
+    $autoRecurring = false;
+    if (($trx['billing_method'] ?? '') === 'anchor_cycle' && empty($trx['recurring_flag'])) {
+        $arStmt = $pdo->prepare(
+            "SELECT EXISTS(
+                SELECT 1 FROM transactions rt2
+                WHERE rt2.deleted_at IS NULL AND rt2.billing_method='anchor_cycle'
+                  AND rt2.master_code=? AND rt2.client_id=? AND rt2.property_id=? AND rt2.id<>?
+                  AND ABS(PERIOD_DIFF(REPLACE(rt2.period_key,'-',''), REPLACE(?, '-',''))) = 1)"
+        );
+        $arStmt->execute([$trx['master_code'], $trx['client_id'], current_property_id(), $id, $trx['period_key']]);
+        $autoRecurring = (bool) $arStmt->fetchColumn();
+    }
+
+    layout('Edit Transaksi #' . $id . ' — ' . ($moduleLabel[$trx['module']] ?? strtoupper($trx['module'])), function () use ($id, $trx, $masters, $clients, $allContacts, $pics, $referrers, $recognitionMonth, $startMonth, $endMonth, $existingAllocations, $autoRecurring) {
         ?>
         <form class="panel" method="post" action="?r=transaction_update">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
@@ -991,6 +1022,16 @@ function transaction_edit(PDO $pdo): void
                         <option value="cycle_end"   <?= $cr === 'cycle_end'   ? 'selected' : '' ?>>Bulan Akhir siklus</option>
                     </select>
                     <div class="help">Revenue tiap siklus diakui di bulan awal atau akhir siklus tersebut.</div>
+                </div>
+                <div class="wide" style="display:flex;align-items:flex-start;gap:10px;background:<?= $autoRecurring ? '#fffbeb' : '#f0f9ff' ?>;border:1px solid <?= $autoRecurring ? '#fcd34d' : '#bae6fd' ?>;border-radius:8px;padding:11px 14px">
+                    <input type="checkbox" name="recurring_flag" id="recurring_flag" value="1" style="width:18px;height:18px;flex-shrink:0;margin-top:1px" <?= (!empty($trx['recurring_flag']) || $autoRecurring) ? 'checked' : '' ?> <?= $autoRecurring ? 'disabled' : '' ?>>
+                    <?php if ($autoRecurring): ?><input type="hidden" name="recurring_flag" value="0"><?php endif; ?>
+                    <label for="recurring_flag" style="margin:0;cursor:pointer">
+                        <span style="font-weight:700;color:<?= $autoRecurring ? '#92400e' : '#0369a1' ?>">Diakui Recurring<?= $autoRecurring ? ' — terdeteksi otomatis' : '' ?></span>
+                        <span class="help" style="display:block;margin-top:2px;font-weight:400"><?= $autoRecurring
+                            ? 'Transaksi ini sudah <strong>terdeteksi otomatis</strong> sebagai recurring (ada pengulangan di unit &amp; klien yang sama pada bulan bersebelahan), jadi sudah dihitung recurring tanpa perlu dicentang.'
+                            : 'Centang bila transaksi bulanan ini bagian dari kontrak berulang. Dihitung sebagai recurring di laporan — tanpa mengubah atau meng-convert transaksi.' ?></span>
+                    </label>
                 </div>
                 <div class="wide"><label>Materi / Keterangan</label><textarea name="content_note"><?= h($trx['content_note'] ?? '') ?></textarea></div>
                 <div><label>No. Invoice Accurate <span class="muted" style="font-weight:400">(opsional)</span></label><input type="text" name="invoice_no" value="<?= h($trx['invoice_no'] ?? '') ?>" placeholder="cth. INV-2026/04/001"></div>
@@ -1327,6 +1368,7 @@ function transaction_update(PDO $pdo): void
         'unit_rate'       => (float) post('unit_rate', 0),
         'contract_months' => $months ?: null,
         'billing_method'     => 'anchor_cycle',
+        'recurring_flag'     => post('recurring_flag') ? 1 : 0,
         'cycle_recognition'  => post('cycle_recognition', 'cycle_start'),
         'pic_name'           => post('pic_name'),
         'referrer_name'      => trim((string) post('referrer_name')) ?: null,
@@ -1354,7 +1396,7 @@ function transaction_update(PDO $pdo): void
          client_id=:client_id, contact_id=:contact_id,
          content_note=:content_note, start_date=:start_date, end_date=:end_date, quantity=:quantity, slots=:slots,
          area_sqm=:area_sqm, pricing_type=:pricing_type, unit_rate=:unit_rate, contract_months=:contract_months,
-         billing_method=:billing_method, cycle_recognition=:cycle_recognition,
+         billing_method=:billing_method, recurring_flag=:recurring_flag, cycle_recognition=:cycle_recognition,
          total_calculated=:total_calculated, override_amount=:override_amount, final_amount=:final_amount,
          pic_name=:pic_name, referrer_name=:referrer_name, remarks=:remarks, invoice_no=:invoice_no,
          updated_at=CURRENT_TIMESTAMP, updated_by=:updated_by WHERE id=:id AND property_id=:property_id'
@@ -1373,6 +1415,7 @@ function transaction_update(PDO $pdo): void
         ':unit_rate'         => $trx['unit_rate'],
         ':contract_months'   => $trx['contract_months'],
         ':billing_method'    => $trx['billing_method'],
+        ':recurring_flag'    => $trx['recurring_flag'],
         ':cycle_recognition' => $trx['cycle_recognition'],
         ':total_calculated'  => $trx['total_calculated'],
         ':override_amount'   => $trx['override_amount'],
