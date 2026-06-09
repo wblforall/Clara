@@ -93,6 +93,7 @@ function dashboard(PDO $pdo): void
                 COALESCE(p.role_name,'-') role_name,
                 COALESCE(p.target_share,0) target_share,
                 COALESCE(SUM(a.amount),0) actual,
+                COALESCE(SUM(CASE WHEN " . recurring_match_sql('t') . " THEN a.amount ELSE 0 END),0) actual_recurring,
                 COUNT(DISTINCT CASE WHEN t.client_id IS NOT NULL AND prev.client_id IS NULL THEN t.client_id END) AS new_clients
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name = p.name AND a.period_key = ? AND a.property_id = ?
@@ -360,7 +361,7 @@ function dashboard(PDO $pdo): void
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>#</th><th>PIC</th><th>Posisi</th><th>Target Posisi</th><th>Aktual</th><th>% vs Target Posisi</th><th>% thd Target Bulanan</th><th>Client Baru</th></tr></thead>
+                    <thead><tr><th>#</th><th>PIC</th><th>Posisi</th><th>Target Posisi</th><th>Aktual</th><th style="color:#0369a1">Rec %</th><th>% vs Target Posisi</th><th>% thd Target Bulanan</th><th>Client Baru</th></tr></thead>
                     <tbody>
                     <?php
                     $picRows   = $pic->fetchAll();
@@ -388,6 +389,8 @@ function dashboard(PDO $pdo): void
                             <td><?= h($row['role_name']) ?></td>
                             <td><?= money($picTarget) ?></td>
                             <td data-countup="<?= (int)$row['actual'] ?>"><?= money((float)$row['actual']) ?></td>
+                            <?php $recPicPct = (float)$row['actual'] > 0 ? (float)$row['actual_recurring'] / (float)$row['actual'] : 0; ?>
+                            <td style="color:#0369a1;font-weight:700"><?= (float)$row['actual'] > 0 ? pct($recPicPct) : '—' ?></td>
                             <td><span class="ach-badge <?= $achPicClass ?>"><?= pct($achPicPct) ?></span></td>
                             <td><?= pct($target > 0 ? $row['actual'] / $target : 0) ?></td>
                             <td style="font-weight:700"><?= (int)$row['new_clients'] ?></td>
