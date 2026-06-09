@@ -11,6 +11,19 @@
 
 ---
 
+## Version 4.13 — 9 Juni 2026
+
+### Fitur Baru / Peningkatan
+
+- **Profil Client** (halaman baru) — klik nama perusahaan di **Master Client** untuk membuka profil per-client. Berisi:
+  - **Header:** status hubungan (Aktif / Lapsed X bulan), chip industri/skala/segmen/kota, kontak & account manager, "client sejak".
+  - **6 KPI** (basis `start_date`): jumlah kontrak tahun ini + total sepanjang waktu, rata-rata durasi (all-time & tahun ini), rata-rata nilai, lifetime value, terakhir aktif s/d, dan pola (rasio recurring + jeda rata-rata antar kontrak). Durasi dihitung dari `start_date`→`end_date` (kolom `contract_months` tidak terisi di data).
+  - **Pola waktu:** breakdown produk per modul + PIC penangan, nilai per tahun, **heatmap bulan favorit berkontrak** (12 bulan, seluruh riwayat), dan **riwayat transaksi** dengan badge status (Aktif / Berakhir <30hr / Selesai) + link ke Detail Alokasi.
+  - **Recurring konsisten:** rasio & badge "R" memakai definisi recurring kanonik (`recurring_match_sql`) yang sama dengan dashboard/exec/laporan — termasuk `anchor_cycle` berulang (master_code+klien sama, bulan bersebelahan), bukan hanya `spread`/`recurring_flag`.
+  - **Scope per properti aktif** (agar konsisten dengan seluruh aplikasi & link Detail Alokasi tetap berfungsi); muncul banner bila client juga punya transaksi di properti lain yang boleh diakses. Read-only (`view_master`).
+
+- **PWA — klik transaksi membuka preview dulu:** di tampilan mobile, mengetuk kartu transaksi kini membuka **Detail Alokasi** (preview transaksi + breakdown bulanan), bukan langsung form edit. Tombol **Edit Transaksi** tersedia di halaman itu untuk yang ingin mengubah.
+
 ## Version 4.12 — 8 Juni 2026
 
 ### Performa / Hosting

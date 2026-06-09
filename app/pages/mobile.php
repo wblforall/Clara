@@ -575,7 +575,7 @@ function mobile_transactions_page(PDO $pdo): void
             <div class="m-card m-empty">Belum ada transaksi<?= $search !== '' ? ' untuk "' . h($search) . '"' : '' ?>.</div>
         <?php else: ?>
             <?php foreach ($rows as $t): ?>
-            <a class="m-tx" href="?r=transaction_edit&id=<?= (int)$t['id'] ?>&module=<?= h($t['module']) ?>">
+            <a class="m-tx" href="?r=allocation_detail&id=<?= (int)$t['id'] ?>&module=<?= h($t['module']) ?>">
                 <div class="top">
                     <span class="code"><?= h($t['master_code']) ?></span>
                     <span class="amt"><?= money($t['final_amount']) ?></span>

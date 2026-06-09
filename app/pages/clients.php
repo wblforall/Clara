@@ -90,7 +90,7 @@ function clients_page(PDO $pdo): void
                 <tbody>
                 <?php foreach ($clients as $row): ?>
                     <tr>
-                        <td><?= h($row['company_name']) ?></td>
+                        <td><a href="?r=client_profile&id=<?= h((string) $row['id']) ?>" style="font-weight:600;color:var(--primary,#0d9488)"><?= h($row['company_name']) ?></a></td>
                         <td><?= h($row['brand_name'] ?? '-') ?></td>
                         <td>
                             <?php if ($row['city'] ?? ''): ?><span style="font-weight:600"><?= h($row['city']) ?></span><?php else: ?><span class="muted">—</span><?php endif; ?>
@@ -1107,6 +1107,300 @@ function client_analysis_page(PDO $pdo): void
             });
         })();
         </script>
+        <?php endif; ?>
+        <?php
+    });
+}
+
+/**
+ * Profil per-client: ringkasan hubungan + pola kontrak.
+ * Di-scope ke properti aktif agar konsisten dengan seluruh aplikasi dan agar
+ * link ke Detail Alokasi (yang property-scoped) tetap berfungsi. Bila client
+ * punya transaksi di properti lain yang boleh diakses user, ditampilkan banner.
+ * Basis "tahun" = start_date kontrak (pilihan user).
+ */
+function client_profile_page(PDO $pdo): void
+{
+    require_permission('view_master');
+    $id  = (int) getv('id');
+    $pid = current_property_id();
+
+    $cs = $pdo->prepare(
+        "SELECT c.*,
+                (SELECT cc.name  FROM master_client_contacts cc WHERE cc.client_id=c.id AND cc.status='active' ORDER BY cc.is_primary DESC, cc.id ASC LIMIT 1) cp_name,
+                (SELECT cc.phone FROM master_client_contacts cc WHERE cc.client_id=c.id AND cc.status='active' ORDER BY cc.is_primary DESC, cc.id ASC LIMIT 1) cp_phone,
+                (SELECT u.name FROM users u WHERE u.id=c.pic_user_id) pic_user_name
+         FROM master_clients c WHERE c.id=?"
+    );
+    $cs->execute([$id]);
+    $client = $cs->fetch();
+    if (!$client) { flash('Client tidak ditemukan.'); redirect_to('clients'); }
+
+    // Transaksi client di properti aktif. Kolom is_recurring memakai definisi
+    // recurring kanonik (recurring_match_sql) agar konsisten dengan dashboard/
+    // laporan — termasuk anchor_cycle berulang (unit+klien sama, bulan bersebelahan).
+    $ts = $pdo->prepare(
+        'SELECT t.id, t.module, t.master_code, t.start_date, t.end_date, t.final_amount, t.pic_name,
+                t.billing_method, t.recurring_flag, t.pricing_type, t.status, t.invoice_no,
+                ' . recurring_match_sql('t') . ' AS is_recurring
+         FROM transactions t
+         WHERE t.client_id=? AND t.property_id=? AND t.deleted_at IS NULL
+         ORDER BY t.start_date ASC, t.id ASC'
+    );
+    $ts->execute([$id, $pid]);
+    $trx = $ts->fetchAll();
+
+    // Apakah ada transaksi di properti lain yang boleh diakses?
+    $otherProps = [];
+    $allowed = array_values(array_filter(allowed_property_ids(), fn($p) => (int)$p !== $pid));
+    if ($allowed) {
+        $ph = implode(',', array_fill(0, count($allowed), '?'));
+        $os = $pdo->prepare(
+            "SELECT p.name, COUNT(*) n FROM transactions t JOIN properties p ON p.id=t.property_id
+             WHERE t.client_id=? AND t.deleted_at IS NULL AND t.property_id IN ($ph)
+             GROUP BY t.property_id ORDER BY n DESC"
+        );
+        $os->execute(array_merge([$id], $allowed));
+        $otherProps = $os->fetchAll();
+    }
+
+    // ─── Agregasi di PHP ───────────────────────────────────────────────
+    $curYear = (int) date('Y');
+    $today   = new DateTimeImmutable('today');
+    $dur = function (?string $a, ?string $b): int {
+        if (!$a || !$b) return 0;
+        try { return (int)(new DateTimeImmutable($a))->diff(new DateTimeImmutable($b))->days + 1; }
+        catch (Exception $e) { return 0; }
+    };
+
+    $count = count($trx);
+    $lifeValue = 0.0; $firstStart = null; $lastEnd = null;
+    $yearCount = 0; $yearValue = 0.0; $yearDurDays = []; $yearVals = [];
+    $byMod = []; $byYear = []; $byMonth = array_fill(1, 12, 0);
+    $picCount = []; $recurring = 0; $startDates = [];
+
+    foreach ($trx as $t) {
+        $val = (float) $t['final_amount'];
+        $lifeValue += $val;
+        if ($t['start_date']) {
+            $sy = (int) substr($t['start_date'], 0, 4);
+            $sm = (int) substr($t['start_date'], 5, 2);
+            $byYear[$sy] = $byYear[$sy] ?? ['n' => 0, 'v' => 0.0];
+            $byYear[$sy]['n']++; $byYear[$sy]['v'] += $val;
+            if ($sm >= 1 && $sm <= 12) $byMonth[$sm]++;
+            $startDates[] = $t['start_date'];
+            if ($firstStart === null || $t['start_date'] < $firstStart) $firstStart = $t['start_date'];
+            if ($sy === $curYear) {
+                $yearCount++; $yearValue += $val;
+                $d = $dur($t['start_date'], $t['end_date']);
+                if ($d > 0) $yearDurDays[] = $d;
+                $yearVals[] = $val;
+            }
+        }
+        if ($t['end_date'] && ($lastEnd === null || $t['end_date'] > $lastEnd)) $lastEnd = $t['end_date'];
+        $m = $t['module'] ?: '?';
+        $byMod[$m] = $byMod[$m] ?? ['n' => 0, 'v' => 0.0];
+        $byMod[$m]['n']++; $byMod[$m]['v'] += $val;
+        if (!empty($t['is_recurring'])) $recurring++;
+        $p = $t['pic_name'] ?: '—';
+        $picCount[$p] = ($picCount[$p] ?? 0) + 1;
+    }
+
+    // Rata-rata seluruh masa (semua transaksi, bukan hanya tahun ini)
+    $allDur = array_filter(array_map(fn($t) => $dur($t['start_date'], $t['end_date']), $trx), fn($d) => $d > 0);
+    $avgDurAll = $allDur ? array_sum($allDur) / count($allDur) : 0;
+    $avgValAll = $count ? $lifeValue / $count : 0;
+    $avgDurYear = $yearDurDays ? array_sum($yearDurDays) / count($yearDurDays) : 0;
+    $avgValYear = $yearVals ? array_sum($yearVals) / count($yearVals) : 0;
+
+    // Jeda rata-rata antar kontrak (selisih start_date berurutan)
+    sort($startDates);
+    $gaps = [];
+    for ($i = 1; $i < count($startDates); $i++) {
+        try {
+            $g = (new DateTimeImmutable($startDates[$i - 1]))->diff(new DateTimeImmutable($startDates[$i]))->days;
+            if ($g > 0) $gaps[] = $g;
+        } catch (Exception $e) {}
+    }
+    $avgGap = $gaps ? array_sum($gaps) / count($gaps) : 0;
+
+    // Umur sebagai client & status retensi
+    $clientAgeDays = $firstStart ? $dur($firstStart, date('Y-m-d')) - 1 : 0;
+    $hasActive = $lastEnd && $lastEnd >= date('Y-m-d');
+    $lapsedDays = (!$hasActive && $lastEnd) ? (int)$today->diff(new DateTimeImmutable($lastEnd))->days : 0;
+
+    ksort($byYear);
+    arsort($picCount);
+    arsort($byMod);
+    $maxMonth = max($byMonth) ?: 1;
+    $maxYearV = $byYear ? max(array_column($byYear, 'v')) : 1;
+
+    $fmtDur = function (float $days): string {
+        if ($days <= 0) return '—';
+        if ($days >= 60) return number_format($days / 30.44, 1, ',', '.') . ' bln';
+        return round($days) . ' hr';
+    };
+    $fmtAge = function (int $days): string {
+        if ($days <= 0) return '—';
+        $y = intdiv($days, 365); $mo = intdiv($days % 365, 30);
+        if ($y > 0) return $y . ' th' . ($mo ? ' ' . $mo . ' bln' : '');
+        if ($mo > 0) return $mo . ' bln';
+        return $days . ' hr';
+    };
+
+    $modLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
+    $monthLabels = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+    layout('Profil Client — ' . ($client['company_name'] ?? ''), function () use (
+        $client, $trx, $count, $otherProps, $curYear,
+        $lifeValue, $firstStart, $lastEnd, $yearCount, $avgDurAll, $avgValAll,
+        $avgDurYear, $avgValYear, $byMod, $byYear, $byMonth, $picCount, $recurring,
+        $avgGap, $clientAgeDays, $hasActive, $lapsedDays, $maxMonth, $maxYearV,
+        $fmtDur, $fmtAge, $modLabel, $monthLabels, $dur
+    ) {
+        ?>
+        <style>
+        .cp-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
+        .cp-kpi { background:#fff; border:1px solid var(--line,#e5e7eb); border-radius:12px; padding:14px 16px; }
+        .cp-kpi .lbl { font-size:11.5px; color:var(--muted,#64748b); font-weight:600; text-transform:uppercase; letter-spacing:.02em; }
+        .cp-kpi .val { font-size:20px; font-weight:800; color:var(--ink,#0f172a); margin-top:4px; }
+        .cp-kpi .sub { font-size:11.5px; color:var(--muted,#64748b); margin-top:2px; }
+        .cp-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+        @media (max-width:760px){ .cp-grid2 { grid-template-columns:1fr; } }
+        .cp-bar-wrap { display:flex; align-items:center; gap:8px; margin:6px 0; font-size:12.5px; }
+        .cp-bar-wrap .nm { width:90px; flex-shrink:0; color:var(--ink,#0f172a); font-weight:600; }
+        .cp-bar { flex:1; height:18px; background:#f1f5f9; border-radius:5px; overflow:hidden; }
+        .cp-bar > span { display:block; height:100%; background:linear-gradient(90deg,var(--primary,#0d9488),var(--primary2,#14b8a6)); }
+        .cp-bar-wrap .amt { width:120px; text-align:right; flex-shrink:0; font-size:11.5px; color:var(--muted,#64748b); }
+        .cp-heat { display:grid; grid-template-columns:repeat(12,1fr); gap:5px; }
+        .cp-heat .cell { text-align:center; }
+        .cp-heat .box { height:34px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; }
+        .cp-heat .mo { font-size:10px; color:var(--muted,#64748b); margin-top:3px; }
+        .cp-chip { display:inline-block; background:#f1f5f9; border-radius:6px; padding:2px 9px; font-size:12px; margin:2px 4px 2px 0; }
+        </style>
+
+        <div class="toolbar" style="gap:8px">
+            <a class="btn light" href="?r=clients">← Master Client</a>
+            <?php if (can('manage_master')): ?><a class="btn light" href="?r=client_form&id=<?= (int)$client['id'] ?>">Edit Client</a><?php endif; ?>
+        </div>
+
+        <div class="panel">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+                <div>
+                    <h2 style="margin:0">
+                        <?= h($client['company_name']) ?>
+                        <?php if ($hasActive): ?><span class="badge" style="background:#dcfce7;color:#166534">Aktif</span>
+                        <?php elseif ($lastEnd): ?><span class="badge" style="background:#fee2e2;color:#991b1b">Lapsed <?= $fmtAge($lapsedDays) ?></span>
+                        <?php endif; ?>
+                    </h2>
+                    <?php if (!empty($client['brand_name'])): ?><p style="margin:3px 0;color:var(--muted)"><?= h($client['brand_name']) ?></p><?php endif; ?>
+                    <p style="margin:6px 0 0">
+                        <?php foreach (['business_type', 'business_scale', 'target_segment', 'brand_origin'] as $f): ?>
+                            <?php if (!empty($client[$f])): ?><span class="cp-chip"><?= h($client[$f]) ?></span><?php endif; ?>
+                        <?php endforeach; ?>
+                        <?php if (!empty($client['city']) || !empty($client['province'])): ?>
+                            <span class="cp-chip">📍 <?= h(trim(($client['city'] ?? '') . ', ' . ($client['province'] ?? ''), ', ')) ?></span>
+                        <?php endif; ?>
+                    </p>
+                    <p style="margin:8px 0 0;font-size:13px;color:var(--muted)">
+                        <?php if (!empty($client['cp_name'])): ?>Kontak: <strong style="color:var(--ink)"><?= h($client['cp_name']) ?></strong><?= $client['cp_phone'] ? ' · <a href="tel:' . h($client['cp_phone']) . '">' . h($client['cp_phone']) . '</a>' : '' ?><?php endif; ?>
+                        <?php if (!empty($client['pic_user_name'])): ?> &nbsp;|&nbsp; Account Manager: <strong style="color:var(--ink)"><?= h($client['pic_user_name']) ?></strong><?php endif; ?>
+                    </p>
+                </div>
+                <div style="text-align:right;font-size:12px;color:var(--muted)">
+                    <?= h(current_property()['name']) ?><br>
+                    Client sejak <strong style="color:var(--ink)"><?= $firstStart ? h(date('M Y', strtotime($firstStart))) : '—' ?></strong>
+                    <?php if ($clientAgeDays > 0): ?><br>(<?= $fmtAge($clientAgeDays) ?>)<?php endif; ?>
+                </div>
+            </div>
+            <?php if ($otherProps): ?>
+            <p style="margin:12px 0 0;padding:8px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12.5px;color:#92400e">
+                Client ini juga punya transaksi di properti lain:
+                <?php foreach ($otherProps as $op): ?><strong><?= h($op['name']) ?></strong> (<?= (int)$op['n'] ?>) <?php endforeach; ?>
+                — beralih properti untuk melihat detailnya.
+            </p>
+            <?php endif; ?>
+        </div>
+
+        <?php if ($count === 0): ?>
+        <div class="panel" style="margin-top:14px;text-align:center;color:var(--muted);padding:36px">Belum ada transaksi di properti ini.</div>
+        <?php else: ?>
+
+        <div class="cp-kpis" style="margin-top:16px">
+            <div class="cp-kpi"><div class="lbl">Kontrak <?= $curYear ?></div><div class="val"><?= $yearCount ?>×</div><div class="sub">total sepanjang waktu: <?= $count ?>×</div></div>
+            <div class="cp-kpi"><div class="lbl">Rata-rata durasi</div><div class="val"><?= $fmtDur($avgDurAll) ?></div><div class="sub"><?= $curYear ?>: <?= $fmtDur($avgDurYear) ?></div></div>
+            <div class="cp-kpi"><div class="lbl">Rata-rata nilai</div><div class="val"><?= money($avgValAll) ?></div><div class="sub"><?= $curYear ?>: <?= money($avgValYear) ?></div></div>
+            <div class="cp-kpi"><div class="lbl">Lifetime value</div><div class="val"><?= money($lifeValue) ?></div><div class="sub">di properti ini</div></div>
+            <div class="cp-kpi"><div class="lbl">Terakhir aktif s/d</div><div class="val" style="font-size:16px"><?= $lastEnd ? h(date('d M Y', strtotime($lastEnd))) : '—' ?></div><div class="sub"><?= $hasActive ? 'kontrak masih berjalan' : ($lapsedDays ? $fmtAge($lapsedDays) . ' lalu' : '') ?></div></div>
+            <div class="cp-kpi"><div class="lbl">Pola</div><div class="val" style="font-size:16px"><?= $recurring ?>/<?= $count ?> recurring</div><div class="sub">jeda antar kontrak ~<?= $fmtDur($avgGap) ?></div></div>
+        </div>
+
+        <div class="cp-grid2">
+            <div class="panel">
+                <h3 style="margin-top:0">Produk yang Diambil</h3>
+                <?php $maxModV = $byMod ? max(array_column($byMod, 'v')) : 1; ?>
+                <?php foreach ($byMod as $m => $d): ?>
+                <div class="cp-bar-wrap">
+                    <span class="nm"><?= h($modLabel[$m] ?? $m) ?></span>
+                    <span class="cp-bar"><span style="width:<?= $maxModV ? round($d['v'] / $maxModV * 100) : 0 ?>%"></span></span>
+                    <span class="amt"><?= $d['n'] ?>× · <?= money($d['v']) ?></span>
+                </div>
+                <?php endforeach; ?>
+                <p style="margin:10px 0 0;font-size:12px;color:var(--muted)">PIC penangan:
+                    <?php foreach (array_slice($picCount, 0, 4, true) as $p => $n): ?><span class="cp-chip"><?= h($p) ?> (<?= $n ?>)</span><?php endforeach; ?>
+                </p>
+            </div>
+            <div class="panel">
+                <h3 style="margin-top:0">Nilai per Tahun</h3>
+                <?php foreach ($byYear as $y => $d): ?>
+                <div class="cp-bar-wrap">
+                    <span class="nm"><?= $y ?></span>
+                    <span class="cp-bar"><span style="width:<?= $maxYearV ? round($d['v'] / $maxYearV * 100) : 0 ?>%"></span></span>
+                    <span class="amt"><?= $d['n'] ?>× · <?= money($d['v']) ?></span>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+
+        <div class="panel" style="margin-top:14px">
+            <h3 style="margin-top:0">Bulan Favorit Berkontrak <span style="font-weight:400;font-size:12px;color:var(--muted)">(berdasarkan start_date, seluruh riwayat)</span></h3>
+            <div class="cp-heat">
+                <?php for ($m = 1; $m <= 12; $m++): $n = $byMonth[$m]; $op = $n ? (0.25 + 0.75 * $n / $maxMonth) : 0; ?>
+                <div class="cell">
+                    <div class="box" style="background:<?= $n ? 'rgba(13,148,136,' . round($op, 2) . ')' : '#f1f5f9' ?>;color:<?= $n ? '#fff' : '#cbd5e1' ?>"><?= $n ?: '·' ?></div>
+                    <div class="mo"><?= $monthLabels[$m] ?></div>
+                </div>
+                <?php endfor; ?>
+            </div>
+        </div>
+
+        <div class="panel" style="margin-top:14px">
+            <h3 style="margin-top:0">Riwayat Transaksi <span style="font-weight:400;font-size:12px;color:var(--muted)">(<?= $count ?> kontrak)</span></h3>
+            <div class="table-wrap">
+                <table style="font-size:12.5px">
+                    <thead><tr><th>Kode</th><th>Modul</th><th>Periode</th><th>Durasi</th><th>Pricing</th><th>Nilai</th><th>PIC</th><th>Status</th><th></th></tr></thead>
+                    <tbody>
+                    <?php foreach (array_reverse($trx) as $t):
+                        $d = $dur($t['start_date'], $t['end_date']);
+                        $active = $t['end_date'] && $t['end_date'] >= date('Y-m-d');
+                        $soon = $active && $t['end_date'] <= date('Y-m-d', strtotime('+30 days'));
+                    ?>
+                        <tr>
+                            <td style="white-space:nowrap"><?= h($t['master_code']) ?></td>
+                            <td><?= h($modLabel[$t['module']] ?? $t['module']) ?><?= !empty($t['is_recurring']) ? ' <span class="badge" style="font-size:9px;background:#dbeafe;color:#0369a1" title="Recurring (definisi standar CLARA)">R</span>' : '' ?></td>
+                            <td style="white-space:nowrap"><?= h(date('d/m/y', strtotime($t['start_date']))) ?> – <?= h(date('d/m/y', strtotime($t['end_date']))) ?></td>
+                            <td><?= $fmtDur($d) ?></td>
+                            <td><?= h($t['pricing_type']) ?></td>
+                            <td style="white-space:nowrap"><?= money($t['final_amount']) ?></td>
+                            <td><?= h($t['pic_name'] ?? '—') ?></td>
+                            <td><?php if ($soon): ?><span class="badge" style="background:#fef3c7;color:#92400e">Berakhir &lt;30hr</span><?php elseif ($active): ?><span class="badge" style="background:#dcfce7;color:#166534">Aktif</span><?php else: ?><span class="badge" style="background:#f1f5f9;color:#64748b">Selesai</span><?php endif; ?></td>
+                            <td style="white-space:nowrap"><a class="btn light" href="?r=allocation_detail&id=<?= (int)$t['id'] ?>">Detail</a></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
         <?php endif; ?>
         <?php
     });

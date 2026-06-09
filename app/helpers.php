@@ -15,6 +15,32 @@ function pct($value): string
     return number_format(((float) $value) * 100, 1, ',', '.') . '%';
 }
 
+/**
+ * Kondisi SQL "transaksi dihitung recurring" — dipakai SERAGAM di semua angka
+ * recurring (dashboard, exec, occupancy, laporan, mobile). Recurring bila:
+ *   1) billing_method = 'spread' (kontrak spread), ATAU
+ *   2) ditandai manual oleh sales (recurring_flag = 1), ATAU
+ *   3) anchor_cycle yang TERDETEKSI berulang (unit+klien sama pada bulan
+ *      bersebelahan) — nominal & pricing_type per bulan boleh beda (diskon /
+ *      metode hitung beda), karena tetap satu sewa berulang yang sama.
+ * Murni pengukuran: TIDAK mengubah billing_method / nominal / meng-convert data.
+ *
+ * @param string $t alias tabel transactions di query pemanggil (default 't')
+ */
+function recurring_match_sql(string $t = 't'): string
+{
+    return "($t.billing_method = 'spread' OR $t.recurring_flag = 1 OR ($t.billing_method = 'anchor_cycle' AND EXISTS (
+        SELECT 1 FROM transactions rt2
+        WHERE rt2.deleted_at IS NULL
+          AND rt2.billing_method = 'anchor_cycle'
+          AND rt2.master_code  = $t.master_code
+          AND rt2.client_id    = $t.client_id
+          AND rt2.property_id  = $t.property_id
+          AND rt2.id <> $t.id
+          AND ABS(PERIOD_DIFF(REPLACE(rt2.period_key,'-',''), REPLACE($t.period_key,'-',''))) = 1
+    )))";
+}
+
 function redirect_to(string $route, array $params = []): never
 {
     $params = array_merge(['r' => $route], $params);
@@ -199,7 +225,7 @@ function permission_for_route(string $route): string
         'audit' => 'view_logs',
         'users', 'user_form', 'user_save', 'roles', 'roles_save' => 'manage_users',
         'clients', 'client_form', 'client_save' => 'manage_master',
-        'client_analysis' => 'view_master',
+        'client_analysis', 'client_profile' => 'view_master',
         'pic_report', 'pic_report_print' => 'view_pic_report',
         'pic_reward', 'pic_reward_save'  => 'view_pic_report',
         'renewals' => 'view_renewals',
