@@ -524,6 +524,7 @@ function mobile_transactions_page(PDO $pdo): void
     $offset     = ($page - 1) * $perPage;
 
     $sql = 'SELECT t.id, t.module, t.master_code, t.start_date, t.end_date, t.final_amount, t.pic_name,
+                   t.billing_method, t.recurring_flag, (' . recurring_match_sql('t') . ') AS is_recurring,
                    c.company_name, c.brand_name
             FROM transactions t LEFT JOIN master_clients c ON c.id=t.client_id
             WHERE ' . $whereStr . ' ORDER BY t.id DESC LIMIT ' . $perPage . ' OFFSET ' . $offset;
@@ -547,6 +548,9 @@ function mobile_transactions_page(PDO $pdo): void
         .m-tx { background:#fff; border:1px solid var(--line); border-radius:13px; padding:13px 15px; margin-bottom:10px; display:block; box-shadow:0 1px 3px rgba(16,24,40,.05); }
         .m-tx .top { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
         .m-tx .code { font-size:12px; font-weight:800; color:var(--primary-dark); }
+        .m-tx .rec { display:inline-block; margin-left:6px; font-size:9.5px; font-weight:800; padding:1px 6px; border-radius:6px; vertical-align:middle; }
+        .m-tx .rec.spread { background:#dbeafe; color:#0369a1; }
+        .m-tx .rec.auto { background:#fef3c7; color:#92400e; }
         .m-tx .amt { font-size:14px; font-weight:900; color:var(--ink); white-space:nowrap; }
         .m-tx .nm { font-size:14px; font-weight:700; color:var(--ink); margin-top:4px; }
         .m-tx .meta { display:flex; justify-content:space-between; gap:10px; font-size:11.5px; color:var(--muted); margin-top:7px; }
@@ -577,7 +581,10 @@ function mobile_transactions_page(PDO $pdo): void
             <?php foreach ($rows as $t): ?>
             <a class="m-tx" href="?r=allocation_detail&id=<?= (int)$t['id'] ?>&module=<?= h($t['module']) ?>">
                 <div class="top">
-                    <span class="code"><?= h($t['master_code']) ?></span>
+                    <span class="code"><?= h($t['master_code']) ?><?php
+                        if (($t['billing_method'] ?? '') === 'spread' || !empty($t['recurring_flag'])): ?><span class="rec spread">Recurring</span><?php
+                        elseif (!empty($t['is_recurring'])): ?><span class="rec auto">Recurring otomatis</span><?php
+                        endif; ?></span>
                     <span class="amt"><?= money($t['final_amount']) ?></span>
                 </div>
                 <div class="nm"><?= h($t['company_name'] ?? '—') ?></div>

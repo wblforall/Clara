@@ -1451,7 +1451,8 @@ function allocation_detail(PDO $pdo): void
 {
     $id = (int) getv('id');
     $stmt = $pdo->prepare(
-        'SELECT t.*, c.company_name, cc.name cp_name, cc.phone cp_phone
+        'SELECT t.*, (' . recurring_match_sql('t') . ') AS is_recurring,
+                c.company_name, cc.name cp_name, cc.phone cp_phone
          FROM transactions t
          LEFT JOIN master_clients c ON c.id = t.client_id
          LEFT JOIN master_client_contacts cc ON cc.id = t.contact_id
@@ -1471,7 +1472,10 @@ function allocation_detail(PDO $pdo): void
             <?php $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang']; ?>
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
                 <div>
-                    <h2><?= h($trx['company_name'] ?? '-') ?> <span class="badge"><?= h($moduleLabel[$trx['module']] ?? $trx['module']) ?></span><?= ($trx['billing_method'] ?? '') === 'spread' ? ' <span class="badge" style="background:var(--accent-light,#e8f4ff);color:var(--accent,#2563eb)">Recurring</span>' : '' ?></h2>
+                    <h2><?= h($trx['company_name'] ?? '-') ?> <span class="badge"><?= h($moduleLabel[$trx['module']] ?? $trx['module']) ?></span><?php
+                        if (($trx['billing_method'] ?? '') === 'spread' || !empty($trx['recurring_flag'])): ?> <span class="badge" style="background:var(--accent-light,#e8f4ff);color:var(--accent,#2563eb)">Recurring</span><?php
+                        elseif (!empty($trx['is_recurring'])): ?> <span class="badge" title="Terdeteksi otomatis: pola berulang (unit+klien sama, bulan bersebelahan)" style="background:#fef3c7;color:#92400e">Recurring otomatis</span><?php
+                        endif; ?></h2>
                     <p><?= h($trx['master_code']) ?> | <?= h($trx['start_date'] . ' s/d ' . $trx['end_date']) ?> | <?= h($trx['pricing_type']) ?></p>
                     <p>CP: <strong><?= h($trx['cp_name'] ?? '-') ?></strong><?= $trx['cp_phone'] ? ' · <a href="tel:' . h($trx['cp_phone']) . '">' . h($trx['cp_phone']) . '</a>' : '' ?></p>
                     <p>Total hitung: <strong><?= money($trx['total_calculated']) ?></strong> | Final: <strong><?= money($trx['final_amount']) ?></strong><?= $trx['invoice_no'] ? ' | No. Invoice: <strong>' . h($trx['invoice_no']) . '</strong>' : '' ?></p>
