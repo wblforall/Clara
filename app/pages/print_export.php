@@ -24,7 +24,7 @@ function print_dashboard(PDO $pdo): void
     $totalActual    = array_sum($actual);
     $recStmt = $pdo->prepare(
         "SELECT COALESCE(SUM(a.amount),0) FROM transaction_allocations a
-         JOIN transactions t ON t.id=a.transaction_id AND t.billing_method='spread' AND t.deleted_at IS NULL
+         JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL AND " . recurring_match_sql('t') . "
          WHERE a.period_key=? AND a.property_id=?"
     );
     $recStmt->execute([$period, $pid]);
@@ -451,7 +451,7 @@ function print_exec(PDO $pdo): void
     $totalActual     = array_sum($actual);
     $recExecStmt = $pdo->prepare(
         "SELECT COALESCE(SUM(a.amount),0) FROM transaction_allocations a
-         JOIN transactions t ON t.id=a.transaction_id AND t.billing_method='spread' AND t.deleted_at IS NULL
+         JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL AND " . recurring_match_sql('t') . "
          WHERE a.period_key=? AND a.property_id=?"
     );
     $recExecStmt->execute([$period, $pid]);
@@ -826,7 +826,7 @@ function print_exec_summary(PDO $pdo): void
         // Recurring
         $s = $pdo->prepare(
             "SELECT COALESCE(SUM(a.amount),0) FROM transaction_allocations a
-             JOIN transactions t ON t.id=a.transaction_id AND t.billing_method='spread' AND t.deleted_at IS NULL
+             JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL AND " . recurring_match_sql('t') . "
              WHERE a.period_key=? AND a.property_id=?"
         );
         $s->execute([$period, $pid]);

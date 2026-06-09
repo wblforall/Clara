@@ -41,7 +41,7 @@ function trend_page(PDO $pdo): void
     $recurStmt = $pdo->prepare(
         "SELECT ta.period_key, COALESCE(SUM(ta.amount),0) recurring
          FROM transaction_allocations ta
-         JOIN transactions t ON t.id = ta.transaction_id AND t.deleted_at IS NULL AND t.billing_method = 'spread'
+         JOIN transactions t ON t.id = ta.transaction_id AND t.deleted_at IS NULL AND " . recurring_match_sql('t') . "
          WHERE ta.property_id = ?
          GROUP BY ta.period_key"
     );

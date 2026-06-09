@@ -73,6 +73,7 @@ function _pic_fetch_section(PDO $pdo, string $period, int $pid): array
 
     $trxStmt = $pdo->prepare(
         "SELECT t.id, t.module, t.master_code, t.billing_method,
+                (" . recurring_match_sql('t') . ") AS is_recurring,
                 COALESCE(c.company_name,'-') company_name,
                 COALESCE(c.brand_name,'') brand_name,
                 t.start_date, t.end_date, COALESCE(t.pic_name,'Tanpa PIC') pic_name,
@@ -184,7 +185,7 @@ function _pic_render_section(array $sec, string $period, array $moduleLabel, str
                                 <td style="padding:5px 10px"><?= h($trx['master_code']) ?></td>
                                 <td style="padding:5px 10px">
                                     <?= h($trx['company_name']) ?>
-                                    <?= ($trx['billing_method'] ?? '') === 'spread' ? ' <span class="badge" style="font-size:10px;background:#e0f2fe;color:#0369a1">Recurring</span>' : '' ?>
+                                    <?= !empty($trx['is_recurring']) ? ' <span class="badge" style="font-size:10px;background:#e0f2fe;color:#0369a1">Recurring</span>' : '' ?>
                                 </td>
                                 <td style="padding:5px 10px"><?= h($moduleLabel[$trx['module']] ?? $trx['module']) ?></td>
                                 <td style="padding:5px 10px;white-space:nowrap"><?= h($trx['start_date'] . ' s/d ' . $trx['end_date']) ?></td>
@@ -303,6 +304,7 @@ function pic_report_print(PDO $pdo): void
 
     $trxStmt = $pdo->prepare(
         "SELECT t.id, t.module, t.master_code, t.billing_method,
+                (" . recurring_match_sql('t') . ") AS is_recurring,
                 COALESCE(c.company_name,'-') company_name,
                 COALESCE(c.brand_name,'') brand_name,
                 t.start_date, t.end_date, COALESCE(t.pic_name,'Tanpa PIC') pic_name,
@@ -493,7 +495,7 @@ td{padding:5px 8px;border:1px solid #E4E9F0;vertical-align:middle}
         </tr></thead>
         <tbody>
         <?php foreach ($trxByPic[$p['name']] as $trx):
-            $isRecurring = ($trx['billing_method'] ?? '') === 'spread';
+            $isRecurring = !empty($trx['is_recurring']);
         ?>
         <tr<?= $isRecurring ? ' style="background:#eff6ff"' : '' ?>>
             <td><?= h($trx['master_code']) ?></td>
