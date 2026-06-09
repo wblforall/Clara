@@ -475,6 +475,7 @@ function exec_dashboard(PDO $pdo): void
                                 <th style="padding:10px 14px;border-bottom:1px solid var(--line,#e2e8f0)">Jabatan</th>
                                 <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Target Posisi</th>
                                 <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Aktual</th>
+                                <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0);color:#0369a1">Rec %</th>
                                 <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Achievement</th>
                                 <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">TRX</th>
                                 <th style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--line,#e2e8f0)">Client Baru</th>
@@ -495,13 +496,15 @@ function exec_dashboard(PDO $pdo): void
                             <td style="padding:8px 14px;color:var(--muted)"><?= h($row['role_name']) ?></td>
                             <td style="padding:8px 14px;text-align:right"><?= $picTarget > 0 ? money($picTarget) : '<span style="color:var(--muted)">—</span>' ?></td>
                             <td style="padding:8px 14px;text-align:right;font-weight:700"><?= money($row['actual']) ?></td>
+                            <?php $recPicPct = (float)$row['actual'] > 0 ? (float)$row['actual_recurring'] / (float)$row['actual'] : 0; ?>
+                            <td style="padding:8px 14px;text-align:right;color:#0369a1;font-weight:700"><?= (float)$row['actual'] > 0 ? pct($recPicPct) : '—' ?></td>
                             <td style="padding:8px 14px;text-align:right"><?= $picTarget > 0 ? '<span class="ach-pill '.$achPillCls.'">'.pct($ach).'</span>' : '<span style="color:var(--muted)">—</span>' ?></td>
                             <td style="padding:8px 14px;text-align:right;font-size:12px"><span style="color:#0369a1;font-weight:700"><?= (int)$row['trx_recurring'] ?></span>/<?= (int)$row['trx_count'] ?></td>
                             <td style="padding:8px 14px;text-align:right;font-weight:700"><?= (int)$row['new_clients'] ?></td>
                         </tr>
                         <?php endforeach; ?>
                         <?php if (empty($d['pics'])): ?>
-                        <tr><td colspan="8" style="padding:24px;text-align:center;color:var(--muted)">Belum ada data PIC untuk periode ini.</td></tr>
+                        <tr><td colspan="9" style="padding:24px;text-align:center;color:var(--muted)">Belum ada data PIC untuk periode ini.</td></tr>
                         <?php endif; ?>
                         </tbody>
                     </table>
@@ -652,6 +655,7 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
     $s = $pdo->prepare(
         "SELECT p.name pic_name, COALESCE(p.role_name,'-') role_name, COALESCE(p.target_share,0) target_share,
                 COALESCE(SUM(a.amount),0) actual,
+                COALESCE(SUM(CASE WHEN " . recurring_match_sql('t') . " THEN a.amount ELSE 0 END),0) actual_recurring,
                 COUNT(DISTINCT t.id) trx_count,
                 COUNT(DISTINCT CASE WHEN " . recurring_match_sql('t') . " THEN t.id END) trx_recurring,
                 COUNT(DISTINCT CASE WHEN t.client_id IS NOT NULL AND prev.client_id IS NULL THEN t.client_id END) AS new_clients

@@ -85,10 +85,12 @@ function _m_pic_ach_rows(PDO $pdo, string $period, array $pids): array
         "SELECT p.name AS pic_name, COALESCE(p.role_name,'-') AS role_name,
                 COALESCE(p.target_share,0) AS share, pr.name AS prop_name,
                 COALESCE(SUM(a.amount),0) AS actual,
+                COALESCE(SUM(CASE WHEN " . recurring_match_sql('t') . " THEN a.amount ELSE 0 END),0) AS actual_recurring,
                 COALESCE(MAX(tm.target_amount),0) AS prop_target
          FROM master_pic p
          LEFT JOIN transaction_allocations a
                 ON a.pic_name=p.name AND a.period_key=? AND a.property_id=p.property_id
+         LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
          LEFT JOIN targets_monthly tm
                 ON tm.period_key=? AND tm.property_id=p.property_id
          LEFT JOIN properties pr ON pr.id=p.property_id
@@ -109,6 +111,7 @@ function _m_pic_ach_rows(PDO $pdo, string $period, array $pids): array
             'actual'    => $act,
             'target'    => $tgt,
             'ach'       => $tgt > 0 ? (int) round($act / $tgt * 100) : null,
+            'rec'       => $act > 0 ? (int) round((float) $r['actual_recurring'] / $act * 100) : null,
         ];
     }
     return $rows;
@@ -127,7 +130,7 @@ function _m_pic_ach_list(array $rows, bool $showProp): void
             <div class="m-rank r<?= $i ?>"><?= $i ?></div>
             <div class="m-it-main">
                 <div class="nm"><?= h($r['pic_name']) ?></div>
-                <div class="sub"><?= $showProp && !empty($r['prop_name']) ? h($r['prop_name']) . ' &middot; ' : '' ?><?= money($r['actual']) ?><?= $r['target'] > 0 ? ' / ' . money($r['target']) : '' ?></div>
+                <div class="sub"><?= $showProp && !empty($r['prop_name']) ? h($r['prop_name']) . ' &middot; ' : '' ?><?= money($r['actual']) ?><?= $r['target'] > 0 ? ' / ' . money($r['target']) : '' ?><?= $r['rec'] !== null ? ' &middot; <span style="color:#0369a1;font-weight:700">Rec ' . $r['rec'] . '%</span>' : '' ?></div>
             </div>
             <div class="m-it-val" style="color:<?= $c ?>;font-size:15px"><?= $ach === null ? '—' : $ach . '%' ?></div>
         </div>
