@@ -475,6 +475,19 @@ function transaction_form(PDO $pdo): void
             <p style="margin:0;color:#64748b"><strong>Catatan:</strong> Jika nilai tidak habis dibagi rata, selisih pembulatan dialokasikan ke bulan terakhir. Hasil alokasi final bisa dicek di halaman <em>Detail Alokasi</em> setelah disimpan.</p>
         </div>
         <script>
+            // Jaring pengaman: sebelum submit, salin nilai "Override Aktual" yang
+            // terlihat ke field tersembunyi (digit saja). Mencegah nilai override
+            // lama ikut tersimpan bila listener input per-ketikan gagal jalan.
+            (function () {
+                document.querySelectorAll('form').forEach(function (f) {
+                    f.addEventListener('submit', function () {
+                        f.querySelectorAll('.override-fmt').forEach(function (inp) {
+                            var hidden = inp.parentNode.querySelector('.override-val');
+                            if (hidden) hidden.value = (inp.value || '').replace(/\D/g, '');
+                        });
+                    });
+                });
+            })();
             const masters = <?= json_encode($masters) ?>;
             const byCode = Object.fromEntries(masters.map(m => [m.code, m]));
             const allContacts = <?= json_encode($allContacts) ?>;
@@ -1061,6 +1074,19 @@ function transaction_edit(PDO $pdo): void
             <p style="margin:0;color:#64748b"><strong>Catatan:</strong> Jika nilai tidak habis dibagi rata, selisih pembulatan dialokasikan ke bulan terakhir. Hasil alokasi final bisa dicek di halaman <em>Detail Alokasi</em> setelah disimpan.</p>
         </div>
         <script>
+            // Jaring pengaman: sebelum submit, salin nilai "Override Aktual" yang
+            // terlihat ke field tersembunyi (digit saja). Mencegah nilai override
+            // lama ikut tersimpan bila listener input per-ketikan gagal jalan.
+            (function () {
+                document.querySelectorAll('form').forEach(function (f) {
+                    f.addEventListener('submit', function () {
+                        f.querySelectorAll('.override-fmt').forEach(function (inp) {
+                            var hidden = inp.parentNode.querySelector('.override-val');
+                            if (hidden) hidden.value = (inp.value || '').replace(/\D/g, '');
+                        });
+                    });
+                });
+            })();
             const masters = <?= json_encode($masters) ?>;
             const byCode = Object.fromEntries(masters.map(m => [m.code, m]));
             const allContacts = <?= json_encode($allContacts) ?>;
