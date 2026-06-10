@@ -454,7 +454,7 @@ function transaction_form(PDO $pdo): void
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px;animation:_fadeUp .35s cubic-bezier(.22,.68,0,1.2) both;animation-delay:.65s">
                 <button type="button" class="btn light" onclick="kalkulasiTotal()" style="background:#0ea5e9;color:#fff">Kalkulasi Total</button>
                 <div id="kalkulasi-result" style="display:none;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 18px;font-size:15px">
-                    <span style="color:#166534">Total: <strong id="kalkulasi-nilai">-</strong> &nbsp;|&nbsp; <span id="kalkulasi-hari">-</span></span>
+                    <span style="color:#166534">Kalkulasi: <strong id="kalkulasi-nilai">-</strong> &nbsp;|&nbsp; <span id="kalkulasi-hari">-</span></span><span id="kalkulasi-override"></span>
                 </div>
             </div>
             <div id="kalkulasi-spread" style="display:none;margin-top:8px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 18px;font-size:13px;line-height:1.8"></div>
@@ -475,10 +475,20 @@ function transaction_form(PDO $pdo): void
             <p style="margin:0;color:#64748b"><strong>Catatan:</strong> Jika nilai tidak habis dibagi rata, selisih pembulatan dialokasikan ke bulan terakhir. Hasil alokasi final bisa dicek di halaman <em>Detail Alokasi</em> setelah disimpan.</p>
         </div>
         <script>
-            // Jaring pengaman: sebelum submit, salin nilai "Override Aktual" yang
-            // terlihat ke field tersembunyi (digit saja). Mencegah nilai override
-            // lama ikut tersimpan bila listener input per-ketikan gagal jalan.
+            // Override Aktual: format ribuan (titik) saat diketik + sinkron ke field
+            // tersembunyi. Ditaruh paling awal agar tetap jalan walau ada error JS lain.
             (function () {
+                document.querySelectorAll('.override-fmt').forEach(function (inp) {
+                    var hidden = inp.parentNode.querySelector('.override-val');
+                    var init = inp.dataset.init || '';
+                    if (init) inp.value = parseFloat(init).toLocaleString('id-ID');
+                    inp.addEventListener('input', function () {
+                        var raw = this.value.replace(/\D/g, '');
+                        this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                        if (hidden) hidden.value = raw;
+                    });
+                });
+                // Jaring pengaman saat submit: field tersembunyi = nilai terlihat (digit saja).
                 document.querySelectorAll('form').forEach(function (f) {
                     f.addEventListener('submit', function () {
                         f.querySelectorAll('.override-fmt').forEach(function (inp) {
@@ -732,6 +742,14 @@ function transaction_form(PDO $pdo): void
                 document.getElementById('kalkulasi-result').style.display = 'block';
                 document.getElementById('kalkulasi-nilai').textContent = 'Rp ' + Math.round(total).toLocaleString('id-ID');
                 document.getElementById('kalkulasi-hari').textContent = days + ' hari';
+                var _orFmt = document.querySelector('.override-fmt');
+                var _orVal = _orFmt ? (parseFloat((_orFmt.value || '').replace(/\D/g, '')) || 0) : 0;
+                var _orEl  = document.getElementById('kalkulasi-override');
+                if (_orEl) {
+                    _orEl.innerHTML = _orVal > 0
+                        ? ' &nbsp;|&nbsp; <strong style="color:#b45309">Override Aktual: Rp ' + _orVal.toLocaleString('id-ID') + '</strong> <span style="color:#64748b">(nilai final yang dipakai — bukan kalkulasi)</span>'
+                        : '';
+                }
 
                 const recogEl   = document.getElementById('recognition_month');
                 const spreadDiv = document.getElementById('kalkulasi-spread');
@@ -754,16 +772,6 @@ function transaction_form(PDO $pdo): void
                 }
             }
 
-            document.querySelectorAll('.override-fmt').forEach(function(inp) {
-                var hidden = inp.nextElementSibling;
-                var init = inp.dataset.init || '';
-                if (init) { inp.value = parseFloat(init).toLocaleString('id-ID'); }
-                inp.addEventListener('input', function() {
-                    var raw = this.value.replace(/\D/g, '');
-                    this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
-                    hidden.value = raw;
-                });
-            });
         </script>
         <?php
     });
@@ -1053,7 +1061,7 @@ function transaction_edit(PDO $pdo): void
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px">
                 <button type="button" class="btn light" onclick="kalkulasiTotal()" style="background:#0ea5e9;color:#fff">Kalkulasi Total</button>
                 <div id="kalkulasi-result" style="display:none;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 18px;font-size:15px">
-                    <span style="color:#166534">Total: <strong id="kalkulasi-nilai">-</strong> &nbsp;|&nbsp; <span id="kalkulasi-hari">-</span></span>
+                    <span style="color:#166534">Kalkulasi: <strong id="kalkulasi-nilai">-</strong> &nbsp;|&nbsp; <span id="kalkulasi-hari">-</span></span><span id="kalkulasi-override"></span>
                 </div>
             </div>
             <div id="kalkulasi-spread" style="display:none;margin-top:8px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 18px;font-size:13px;line-height:1.8"></div>
@@ -1074,10 +1082,20 @@ function transaction_edit(PDO $pdo): void
             <p style="margin:0;color:#64748b"><strong>Catatan:</strong> Jika nilai tidak habis dibagi rata, selisih pembulatan dialokasikan ke bulan terakhir. Hasil alokasi final bisa dicek di halaman <em>Detail Alokasi</em> setelah disimpan.</p>
         </div>
         <script>
-            // Jaring pengaman: sebelum submit, salin nilai "Override Aktual" yang
-            // terlihat ke field tersembunyi (digit saja). Mencegah nilai override
-            // lama ikut tersimpan bila listener input per-ketikan gagal jalan.
+            // Override Aktual: format ribuan (titik) saat diketik + sinkron ke field
+            // tersembunyi. Ditaruh paling awal agar tetap jalan walau ada error JS lain.
             (function () {
+                document.querySelectorAll('.override-fmt').forEach(function (inp) {
+                    var hidden = inp.parentNode.querySelector('.override-val');
+                    var init = inp.dataset.init || '';
+                    if (init) inp.value = parseFloat(init).toLocaleString('id-ID');
+                    inp.addEventListener('input', function () {
+                        var raw = this.value.replace(/\D/g, '');
+                        this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                        if (hidden) hidden.value = raw;
+                    });
+                });
+                // Jaring pengaman saat submit: field tersembunyi = nilai terlihat (digit saja).
                 document.querySelectorAll('form').forEach(function (f) {
                     f.addEventListener('submit', function () {
                         f.querySelectorAll('.override-fmt').forEach(function (inp) {
@@ -1314,6 +1332,14 @@ function transaction_edit(PDO $pdo): void
                 document.getElementById('kalkulasi-result').style.display = 'block';
                 document.getElementById('kalkulasi-nilai').textContent = 'Rp ' + Math.round(total).toLocaleString('id-ID');
                 document.getElementById('kalkulasi-hari').textContent = days + ' hari';
+                var _orFmt = document.querySelector('.override-fmt');
+                var _orVal = _orFmt ? (parseFloat((_orFmt.value || '').replace(/\D/g, '')) || 0) : 0;
+                var _orEl  = document.getElementById('kalkulasi-override');
+                if (_orEl) {
+                    _orEl.innerHTML = _orVal > 0
+                        ? ' &nbsp;|&nbsp; <strong style="color:#b45309">Override Aktual: Rp ' + _orVal.toLocaleString('id-ID') + '</strong> <span style="color:#64748b">(nilai final yang dipakai — bukan kalkulasi)</span>'
+                        : '';
+                }
 
                 const recogEl   = document.getElementById('recognition_month');
                 const spreadDiv = document.getElementById('kalkulasi-spread');
@@ -1336,16 +1362,6 @@ function transaction_edit(PDO $pdo): void
                 }
             }
 
-            document.querySelectorAll('.override-fmt').forEach(function(inp) {
-                var hidden = inp.nextElementSibling;
-                var init = inp.dataset.init || '';
-                if (init) { inp.value = parseFloat(init).toLocaleString('id-ID'); }
-                inp.addEventListener('input', function() {
-                    var raw = this.value.replace(/\D/g, '');
-                    this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
-                    hidden.value = raw;
-                });
-            });
 
             // Auto-tampilkan spread table saat buka edit form transaksi recurring
             <?php if (($trx['billing_method'] ?? '') === 'spread'): ?>
