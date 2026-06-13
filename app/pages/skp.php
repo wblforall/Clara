@@ -516,8 +516,13 @@ function _skp_create_transaction(PDO $pdo, array $skp, array $src, int $pid): in
     $months = (int) ($src['contract_months'] ?? 1);
     $total  = (float) ($src['final_amount'] ?: $src['total_calculated']);
     $crossMonth = substr($start, 0, 7) !== substr($end, 0, 7);
-    // Multi-bulan / lintas bulan → spread (recurring); selain itu anchor_cycle.
-    $spread = $months > 1 || $crossMonth;
+    // Pengakuan ditentukan di penawaran (billing_method). Bila tak ada (legacy),
+    // jatuh ke tebakan: multi-bulan/lintas bulan → spread.
+    $bm = $src['billing_method'] ?? '';
+    $spread = in_array($bm, ['spread', 'anchor_cycle'], true)
+        ? $bm === 'spread'
+        : ($months > 1 || $crossMonth);
+    $cycleRec = ($src['cycle_recognition'] ?? '') === 'cycle_end' ? 'cycle_end' : 'cycle_start';
 
     $trx = [
         'property_id'      => $pid,
@@ -536,8 +541,8 @@ function _skp_create_transaction(PDO $pdo, array $skp, array $src, int $pid): in
         'unit_rate'        => (float) ($src['unit_rate'] ?? 0),
         'contract_months'  => $months ?: null,
         'billing_method'   => $spread ? 'spread' : 'anchor_cycle',
-        'recurring_flag'   => 0,
-        'cycle_recognition'=> 'cycle_start',
+        'recurring_flag'   => (int) ($src['recurring_flag'] ?? 0),
+        'cycle_recognition'=> $cycleRec,
         'total_calculated' => $total,
         'override_amount'  => $total,
         'final_amount'     => $total,

@@ -11,6 +11,19 @@
 
 ---
 
+## Version 4.16 — 13 Juni 2026
+
+### Penyempurnaan — Surat Penawaran setara Input Transaksi
+
+Form Surat Penawaran kini memakai **mesin perhitungan & kontrol recurring yang sama** dengan form Input Transaksi, agar nilai penawaran konsisten dengan transaksi yang terbit nanti.
+
+- **Mesin pricing** — total dihitung otomatis dari **Pricing Type** (`daily_area` = rate × luas × hari, `daily_slot` = rate × slot × hari, `daily_point` = rate × hari, `monthly`/`fixed` = rate), dengan tombol **Kalkulasi Total** + ringkasan hari/bulan. **Harga / Bulan** kini turunan otomatis (total ÷ masa kontrak), tidak diinput manual.
+- **Harga Nego Final (override)** — bila ada diskon/nego, isi nominal final yang menimpa hasil kalkulasi (format ribuan otomatis).
+- **Pengakuan & Recurring** — sales menentukan **Metode Pengakuan** (Sekaligus/anchor atau **Spread per Bulan**), **Pengakuan per Siklus**, dan menandai **Diakui Recurring** langsung di penawaran. Nilai ini **diteruskan ke transaksi** saat konfirmasi disetujui — sebelumnya recurring selalu ditebak sistem & flag recurring tidak pernah ikut tertandai.
+- **Jumlah Slot** (khusus Media) muncul otomatis untuk media berbasis slot (TVC/LED).
+- **Referral** — field referral (komisi 1%) ikut di penawaran dan diteruskan ke transaksi.
+- **Cek overlap unit** — peringatan otomatis bila unit sudah punya transaksi yang bertabrakan tanggal, sejak tahap penawaran.
+
 ## Version 4.15 — 13 Juni 2026
 
 ### Fitur Baru — Tata Kelola Penawaran & Analisa Aktivitas PIC

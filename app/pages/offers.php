@@ -92,12 +92,37 @@ function _offer_months(?string $start, ?string $end): int
     return max(1, $months);
 }
 
+/** Jumlah hari inklusif. */
+function _offer_days(?string $start, ?string $end): int
+{
+    if (!$start || !$end) return 0;
+    $s = strtotime($start); $e = strtotime($end);
+    if ($s === false || $e === false || $e < $s) return 0;
+    return (int) floor(($e - $s) / 86400) + 1;
+}
+
+/**
+ * Mesin pricing — SAMA dengan kalkulasiTotal() di form transaksi agar nilai
+ * penawaran konsisten dengan transaksi yang terbit nanti.
+ */
+function _offer_calc_total(string $pricing, float $rate, float $area, float $slots, int $days): float
+{
+    return match ($pricing) {
+        'daily_point' => $rate * $days,
+        'daily_slot'  => $rate * max(1, $slots) * $days,
+        'daily_area'  => $rate * max(1, $area) * $days,
+        'monthly', 'fixed' => $rate,
+        default       => 0.0,
+    };
+}
+
 /** Field ekonomi yang di-snapshot tiap revisi. */
 function _offer_fields(): array
 {
-    return ['module', 'client_id', 'contact_id', 'pic_name', 'master_code', 'keterangan',
+    return ['module', 'client_id', 'contact_id', 'pic_name', 'referrer_name', 'master_code', 'keterangan',
             'pricing_type', 'unit_rate', 'area_sqm', 'quantity', 'slots',
-            'start_date', 'end_date', 'contract_months', 'monthly_amount', 'total_calculated',
+            'start_date', 'end_date', 'contract_months', 'monthly_amount', 'total_calculated', 'override_amount',
+            'billing_method', 'recurring_flag', 'cycle_recognition',
             'dp_months', 'dp_amount', 'deposit_months', 'deposit_amount', 'perihal', 'offer_date'];
 }
 
@@ -208,6 +233,7 @@ function offer_form(PDO $pdo): void
     $picsStmt = $pdo->prepare("SELECT name FROM master_pic WHERE status='active' AND property_id=? ORDER BY name");
     $picsStmt->execute([$pid]);
     $pics = $picsStmt->fetchAll();
+    $referrers = $pdo->query("SELECT name FROM master_referrer WHERE status='active' ORDER BY name")->fetchAll();
     $linkedPic = null;
     if ($uid = $_SESSION['user']['id'] ?? null) {
         $lp = $pdo->prepare("SELECT name FROM master_pic WHERE user_id=? AND status='active' AND property_id=? LIMIT 1");
@@ -216,7 +242,7 @@ function offer_form(PDO $pdo): void
     }
     $v = fn(string $k, $def = '') => h((string) ($offer[$k] ?? $def));
 
-    layout(($offer ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran', function () use ($pdo, $offer, $id, $module, $editable, $masters, $clients, $contacts, $pics, $linkedPic, $v) {
+    layout(($offer ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran', function () use ($pdo, $offer, $id, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v) {
         $picSel = $offer['pic_name'] ?? $linkedPic;
         $disabled = $editable ? '' : 'disabled';
         ?>
@@ -300,6 +326,14 @@ function offer_form(PDO $pdo): void
                         <?php foreach ($pics as $p): ?><option <?= ($p['name'] === $picSel) ? 'selected' : '' ?>><?= h($p['name']) ?></option><?php endforeach; ?>
                     </select>
                 </div>
+                <div>
+                    <label>Referral dari <span class="muted" style="font-weight:400">(opsional)</span></label>
+                    <select name="referrer_name" <?= $disabled ?>>
+                        <option value="">- Tidak ada referral -</option>
+                        <?php foreach ($referrers as $ref): ?><option <?= ($offer['referrer_name'] ?? '') === $ref['name'] ? 'selected' : '' ?>><?= h($ref['name']) ?></option><?php endforeach; ?>
+                    </select>
+                    <div class="help">Karyawan yang mereferensikan — komisi 1% saat deal.</div>
+                </div>
             </div>
 
             <h3>Objek Sewa</h3>
@@ -322,12 +356,21 @@ function offer_form(PDO $pdo): void
                     <?php endif; ?>
                 </div>
                 <div><label>Luas (m²)</label><input type="number" step="0.01" name="area_sqm" id="area_sqm" value="<?= $v('area_sqm') ?>" <?= $disabled ?>></div>
+                <?php if ($module === 'media'): ?>
+                <div id="slots_wrap" style="display:none">
+                    <label>Jumlah Slot</label>
+                    <input type="number" name="slots" id="slots_input" min="1" value="<?= $v('slots', '1') ?>" <?= $disabled ?>>
+                    <div class="help">1 media = 12 slot video. Isi jumlah slot yang dibeli.</div>
+                </div>
+                <?php else: ?>
+                <input type="hidden" name="slots" value="1">
+                <?php endif; ?>
                 <div><label>Pricing Type</label>
                     <select name="pricing_type" id="pricing_type" <?= $disabled ?>>
                         <?php foreach (['daily_area', 'daily_slot', 'daily_point', 'monthly', 'fixed'] as $o): ?><option <?= ($offer['pricing_type'] ?? '') === $o ? 'selected' : '' ?>><?= $o ?></option><?php endforeach; ?>
                     </select>
                 </div>
-                <div><label>Rate (referensi /m/bln)</label><input type="number" step="0.01" name="unit_rate" id="unit_rate" value="<?= $v('unit_rate') ?>" <?= $disabled ?>></div>
+                <div><label>Rate</label><input type="number" step="0.01" name="unit_rate" id="unit_rate" value="<?= $v('unit_rate') ?>" <?= $disabled ?>></div>
                 <div class="wide"><label>Keterangan</label><input name="keterangan" value="<?= $v('keterangan') ?>" <?= $disabled ?>></div>
             </div>
 
@@ -335,8 +378,44 @@ function offer_form(PDO $pdo): void
             <div class="form-grid">
                 <div><label>Tanggal Mulai</label><input type="date" name="start_date" id="start_date" value="<?= $v('start_date') ?>" required <?= $disabled ?>></div>
                 <div><label>Tanggal Selesai</label><input type="date" name="end_date" id="end_date" value="<?= $v('end_date') ?>" required <?= $disabled ?>></div>
-                <div><label>Harga / Bulan (nego)</label><input type="number" step="1" name="monthly_amount" id="monthly_amount" value="<?= $v('monthly_amount') ?>" required <?= $disabled ?>></div>
-                <div><label>Total Kontrak</label><input type="number" id="total_calc" value="<?= $v('total_calculated') ?>" readonly><input type="hidden" name="total_calculated" id="total_calc_h" value="<?= $v('total_calculated') ?>"></div>
+                <div><label>Harga Nego Final <span class="muted" style="font-weight:400">(opsional)</span></label><input type="text" inputmode="numeric" id="override_fmt" placeholder="Kosongkan = pakai kalkulasi"><input type="hidden" name="override_amount" id="override_amount" value="<?= (int)($offer['override_amount'] ?? 0) ?: '' ?>"><div class="help">Isi bila ada diskon/nego yang menimpa hasil kalkulasi.</div></div>
+                <div><label>Total Kontrak</label><input type="text" id="total_calc" value="" readonly><input type="hidden" name="total_calculated" id="total_calc_h" value="<?= $v('total_calculated') ?>"></div>
+                <div><label>Harga / Bulan <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="monthly_disp" value="" readonly><input type="hidden" name="monthly_amount" id="monthly_amount" value="<?= $v('monthly_amount') ?>"></div>
+            </div>
+            <?php if ($editable): ?>
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px">
+                <button type="button" class="btn light" id="btn-kalkulasi" style="background:#0ea5e9;color:#fff">Kalkulasi Total</button>
+                <div id="kalkulasi-result" style="display:none;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:8px 14px;font-size:13px;color:#166534"></div>
+            </div>
+            <div id="kalkulasi-spread" style="display:none;margin-top:8px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 16px;font-size:12.5px;line-height:1.7"></div>
+            <div id="overlap-warn" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-top:10px;font-size:12.5px;color:#92400e"></div>
+            <?php endif; ?>
+
+            <h3>Pengakuan & Recurring</h3>
+            <div class="form-grid">
+                <div>
+                    <label>Metode Pengakuan</label>
+                    <select name="billing_method" id="billing_method" <?= $disabled ?>>
+                        <?php $bm = $offer['billing_method'] ?? ''; ?>
+                        <option value="anchor_cycle" <?= $bm === 'anchor_cycle' ? 'selected' : '' ?>>Sekaligus (anchor) — diakui 1 bulan</option>
+                        <option value="spread" <?= $bm === 'spread' ? 'selected' : '' ?>>Spread per Bulan (recurring)</option>
+                    </select>
+                    <div class="help">Spread = nilai dibagi rata ke tiap bulan kontrak.</div>
+                </div>
+                <div id="cycle_wrap">
+                    <label>Pengakuan per Siklus</label>
+                    <select name="cycle_recognition" id="cycle_recognition" <?= $disabled ?>>
+                        <option value="cycle_start" <?= ($offer['cycle_recognition'] ?? 'cycle_start') === 'cycle_start' ? 'selected' : '' ?>>Bulan Awal siklus</option>
+                        <option value="cycle_end" <?= ($offer['cycle_recognition'] ?? '') === 'cycle_end' ? 'selected' : '' ?>>Bulan Akhir siklus</option>
+                    </select>
+                </div>
+                <div class="wide" style="display:flex;align-items:flex-start;gap:10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:11px 14px">
+                    <input type="checkbox" name="recurring_flag" id="recurring_flag" value="1" style="width:18px;height:18px;flex-shrink:0;margin-top:1px" <?= !empty($offer['recurring_flag']) ? 'checked' : '' ?> <?= $disabled ?>>
+                    <label for="recurring_flag" style="margin:0;cursor:pointer">
+                        <span style="font-weight:700;color:#0369a1">Diakui Recurring</span>
+                        <span class="help" style="display:block;margin-top:2px;font-weight:400">Centang bila kontrak ini berulang. Diteruskan ke transaksi saat konfirmasi disetujui.</span>
+                    </label>
+                </div>
             </div>
 
             <h3>Pembayaran <span style="font-weight:400;font-size:12px;color:var(--muted)">(DP minimal 2 bulan; deposit adjustable)</span></h3>
@@ -377,12 +456,23 @@ function offer_form(PDO $pdo): void
             // ── Picker unit (searchable, sama seperti input transaksi) ──
             var masters = <?= json_encode(array_values($masters)) ?>;
             var byCode = Object.fromEntries(masters.map(function (m) { return [m.code, m]; }));
+            function parseSizeM2(size) {
+                var m = String(size || '').replace(/[mM²]/g, '').match(/(\d+\.?\d*)\s*[×xX]\s*(\d+\.?\d*)/);
+                return m ? parseFloat(m[1]) * parseFloat(m[2]) : 0;
+            }
             function fillMaster(code) {
                 var m = byCode[code]; if (!m) return;
                 var area = document.getElementById('area_sqm'), rate = document.getElementById('unit_rate'), pt = document.getElementById('pricing_type');
-                if (m.area_sqm && area && !area.value) area.value = m.area_sqm;
                 if (m.rate && rate && !rate.value) rate.value = m.rate;
                 if (m.pricing_type && pt) pt.value = m.pricing_type;
+                if (area && !area.value) area.value = m.area_sqm || 0;
+                <?php if ($module === 'media'): ?>
+                var a = parseSizeM2(m.size); if (a > 0 && area) area.value = a.toFixed(2);
+                var mt = (m.media_type || '').toLowerCase(), isSlot = mt === 'tvc' || mt.indexOf('led') === 0;
+                var sw = document.getElementById('slots_wrap');
+                if (sw) { sw.style.display = isSlot ? '' : 'none'; var si = document.getElementById('slots_input'); if (isSlot && si && (!si.value || si.value == '1')) si.value = m.slots || 1; }
+                <?php endif; ?>
+                if (typeof kalkulasi === 'function') kalkulasi();
             }
             (function () {
                 var src = document.getElementById('masterSearch'), hid = document.getElementById('master_code'), dd = document.getElementById('masterDrop');
@@ -449,6 +539,8 @@ function offer_form(PDO $pdo): void
             })();
 
             function num(id) { return parseFloat((document.getElementById(id) || {}).value || '0') || 0; }
+            function rp(v) { return 'Rp ' + Math.round(v).toLocaleString('id-ID'); }
+            function daysBetween(s, e) { if (!s || !e) return 0; var d = Math.round((new Date(e) - new Date(s)) / 86400000) + 1; return d > 0 ? d : 0; }
             // Masa kontrak otomatis dari rentang tanggal (cermin _offer_months di PHP).
             function monthsFromDates() {
                 var s = (document.getElementById('start_date') || {}).value, e = (document.getElementById('end_date') || {}).value;
@@ -459,22 +551,94 @@ function offer_form(PDO $pdo): void
                 if (de.getDate() >= ds.getDate()) m++;
                 return Math.max(1, m);
             }
-            function recalc() {
-                var monthly = num('monthly_amount'), months = monthsFromDates();
-                var disp = document.getElementById('contract_months_disp');
-                if (disp) disp.value = months + ' bulan';
-                var total = Math.round(monthly * months);
-                document.getElementById('total_calc').value = total;
+            // ── Override (harga nego final): format ribuan → hidden ──
+            (function () {
+                var fmt = document.getElementById('override_fmt'), hid = document.getElementById('override_amount');
+                if (!fmt || !hid) return;
+                if (hid.value) fmt.value = parseInt(hid.value, 10).toLocaleString('id-ID');
+                fmt.addEventListener('input', function () {
+                    var raw = this.value.replace(/\D/g, '');
+                    this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                    hid.value = raw;
+                    kalkulasi();
+                });
+            })();
+            // ── Mesin pricing (sama dgn input transaksi) ──
+            function kalkulasi() {
+                var s = (document.getElementById('start_date') || {}).value, e = (document.getElementById('end_date') || {}).value;
+                var rate = num('unit_rate'), area = num('area_sqm'), pricing = (document.getElementById('pricing_type') || {}).value;
+                var si = document.getElementById('slots_input');
+                var slots = (si && si.closest('#slots_wrap') && si.closest('#slots_wrap').style.display !== 'none') ? (parseFloat(si.value) || 1) : 1;
+                var days = daysBetween(s, e), months = monthsFromDates();
+                var calc = 0;
+                switch (pricing) {
+                    case 'daily_point': calc = rate * days; break;
+                    case 'daily_slot':  calc = rate * Math.max(1, slots) * days; break;
+                    case 'daily_area':  calc = rate * Math.max(1, area) * days; break;
+                    case 'monthly': case 'fixed': calc = rate; break;
+                }
+                calc = Math.round(calc);
+                var override = parseFloat((document.getElementById('override_amount') || {}).value || '0') || 0;
+                var total = override > 0 ? override : calc;
+                var monthly = months > 0 ? Math.round(total / months) : total;
+                document.getElementById('total_calc').value = rp(total);
                 document.getElementById('total_calc_h').value = total;
+                document.getElementById('monthly_disp').value = rp(monthly);
+                document.getElementById('monthly_amount').value = monthly;
+                // DP/deposit auto bila kosong/0 (nego manual tidak ketimpa)
                 var dp = document.getElementById('dp_amount'), dep = document.getElementById('deposit_amount');
-                // auto-isi DP/deposit hanya bila kosong/0 (biar nego manual tidak ketimpa)
                 if (dp && (!dp.value || dp.value === '0')) dp.value = Math.round(monthly * num('dp_months'));
                 if (dep && (!dep.value || dep.value === '0')) dep.value = Math.round(monthly * num('deposit_months'));
+                // Ringkasan + estimasi spread
+                var res = document.getElementById('kalkulasi-result');
+                if (res) { res.style.display = ''; res.innerHTML = 'Kalkulasi: <strong>' + rp(calc) + '</strong> · ' + days + ' hari · ' + months + ' bulan' + (override > 0 ? ' · <span style="color:#b45309">override ' + rp(override) + '</span>' : ''); }
+                var sp = document.getElementById('kalkulasi-spread');
+                if (sp) {
+                    if ((document.getElementById('billing_method') || {}).value === 'spread' && months > 1) {
+                        sp.style.display = ''; sp.innerHTML = '<strong>Estimasi spread:</strong> ' + rp(monthly) + ' / bulan × ' + months + ' bulan (selisih pembulatan ke bulan terakhir).';
+                    } else { sp.style.display = 'none'; }
+                }
             }
-            ['monthly_amount', 'start_date', 'end_date', 'dp_months', 'deposit_months'].forEach(function (id) {
-                var el = document.getElementById(id); if (el) el.addEventListener('input', recalc);
-            });
-            recalc();
+            // ── Pengakuan: toggle siklus + saran spread ──
+            function syncRecognition(suggest) {
+                var bm = document.getElementById('billing_method'), cw = document.getElementById('cycle_wrap');
+                if (suggest && bm && !bm.dataset.touched) {
+                    var s = (document.getElementById('start_date') || {}).value, e = (document.getElementById('end_date') || {}).value;
+                    var cross = s && e && s.substring(0, 7) !== e.substring(0, 7);
+                    bm.value = (monthsFromDates() > 1 || cross) ? 'spread' : 'anchor_cycle';
+                }
+                if (cw && bm) cw.style.display = bm.value === 'spread' ? '' : 'none';
+            }
+            var bmEl = document.getElementById('billing_method');
+            if (bmEl) bmEl.addEventListener('change', function () { this.dataset.touched = '1'; syncRecognition(false); kalkulasi(); });
+            ['unit_rate', 'area_sqm', 'slots_input', 'dp_months', 'deposit_months'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('input', kalkulasi); });
+            var ptEl = document.getElementById('pricing_type'); if (ptEl) ptEl.addEventListener('change', kalkulasi);
+            ['start_date', 'end_date'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('change', function () { syncRecognition(true); kalkulasi(); checkOverlap(); }); });
+            var btn = document.getElementById('btn-kalkulasi'); if (btn) btn.addEventListener('click', kalkulasi);
+
+            // ── Cek overlap unit (reuse endpoint transaksi) ──
+            var overlapTimer = null;
+            function checkOverlap() {
+                var warn = document.getElementById('overlap-warn'); if (!warn) return;
+                clearTimeout(overlapTimer);
+                overlapTimer = setTimeout(function () {
+                    var code = (document.getElementById('master_code') || {}).value, s = (document.getElementById('start_date') || {}).value, e = (document.getElementById('end_date') || {}).value;
+                    if (!code || !s || !e) { warn.style.display = 'none'; return; }
+                    fetch('?r=transaction_overlap_check&master_code=' + encodeURIComponent(code) + '&start_date=' + encodeURIComponent(s) + '&end_date=' + encodeURIComponent(e), { cache: 'no-store' })
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            if (data.overlaps && data.overlaps.length) {
+                                var rows = data.overlaps.map(function (o) { return '<li><strong>' + o.company_name + '</strong> · ' + o.start_date + ' s/d ' + o.end_date + ' · PIC: ' + o.pic_name + '</li>'; }).join('');
+                                warn.innerHTML = '⚠ Unit ini sudah punya <strong>' + data.overlaps.length + '</strong> transaksi yang overlap tanggal. Tetap bisa lanjut bila memang dibagi slot/luasan.<ul style="margin:6px 0 0 16px">' + rows + '</ul>';
+                                warn.style.display = '';
+                            } else { warn.style.display = 'none'; }
+                        }).catch(function () {});
+                }, 400);
+            }
+
+            syncRecognition(false);
+            kalkulasi();
+            checkOverlap();
         })();
         </script>
         <?php
@@ -490,28 +654,52 @@ function offer_save(PDO $pdo): void
     $id  = (int) post('id');
     $uname = $_SESSION['user']['name'] ?? 'system';
 
+    $module   = in_array(post('module'), ['cl', 'media', 'gudang'], true) ? post('module') : 'cl';
+    $start    = post('start_date') ?: null;
+    $end      = post('end_date') ?: null;
+    $months   = _offer_months($start, $end);
+    $days     = _offer_days($start, $end);
+    $pricing  = post('pricing_type') ?: 'daily_area';
+    $rate     = (float) post('unit_rate', 0);
+    $area     = (float) post('area_sqm', 0);
+    $slots    = max(1, (float) post('slots', 1));
+    // Total kalkulasi (mesin pricing) → ditimpa harga nego final bila ada.
+    $calc     = round(_offer_calc_total($pricing, $rate, $area, $slots, $days));
+    $override = (float) preg_replace('/\D/', '', (string) post('override_amount', '')) ?: 0.0;
+    $final    = $override > 0 ? $override : $calc;
+    $monthly  = $months > 0 ? round($final / $months) : $final;
+    // Recurring/pengakuan ditentukan sales; default spread bila multi-bulan/lintas bulan.
+    $crossMonth = $start && $end && substr($start, 0, 7) !== substr($end, 0, 7);
+    $billing  = post('billing_method') === 'anchor_cycle' ? 'anchor_cycle'
+              : (post('billing_method') === 'spread' ? 'spread' : (($months > 1 || $crossMonth) ? 'spread' : 'anchor_cycle'));
+
     $data = [
-        'module'          => in_array(post('module'), ['cl', 'media', 'gudang'], true) ? post('module') : 'cl',
+        'module'          => $module,
         'client_id'       => (int) post('client_id') ?: null,
         'contact_id'      => (int) post('contact_id') ?: null,
         'pic_name'        => trim((string) post('pic_name')) ?: null,
+        'referrer_name'   => trim((string) post('referrer_name')) ?: null,
         'master_code'     => trim((string) post('master_code')) ?: null,
         'keterangan'      => trim((string) post('keterangan')) ?: null,
-        'pricing_type'    => post('pricing_type') ?: null,
-        'unit_rate'       => (float) post('unit_rate', 0),
-        'area_sqm'        => (float) post('area_sqm', 0),
+        'pricing_type'    => $pricing,
+        'unit_rate'       => $rate,
+        'area_sqm'        => $area,
         'quantity'        => 1,
-        'slots'           => 1,
-        'start_date'      => post('start_date') ?: null,
-        'end_date'        => post('end_date') ?: null,
-        'contract_months' => _offer_months(post('start_date') ?: null, post('end_date') ?: null),
-        'monthly_amount'  => (float) post('monthly_amount', 0),
-        'total_calculated' => (float) post('total_calculated', 0),
+        'slots'           => $slots,
+        'start_date'      => $start,
+        'end_date'        => $end,
+        'contract_months' => $months,
+        'monthly_amount'  => $monthly,
+        'total_calculated' => $final,
+        'override_amount' => $override ?: null,
+        'billing_method'  => $billing,
+        'recurring_flag'  => post('recurring_flag') ? 1 : 0,
+        'cycle_recognition' => post('cycle_recognition') === 'cycle_end' ? 'cycle_end' : 'cycle_start',
         'dp_months'       => max(2, (float) post('dp_months', 2)),
         'dp_amount'       => (float) post('dp_amount', 0),
         'deposit_months'  => (float) post('deposit_months', 1),
         'deposit_amount'  => (float) post('deposit_amount', 0),
-        'perihal'         => 'Surat Penawaran Sewa Kontrak ' . _offer_months(post('start_date') ?: null, post('end_date') ?: null) . ' bulan',
+        'perihal'         => 'Surat Penawaran Sewa Kontrak ' . $months . ' bulan',
         'offer_date'      => date('Y-m-d'),
     ];
 
