@@ -446,6 +446,61 @@ function skp_save(PDO $pdo): void
     redirect_to('skp_form', ['id' => $newId]);
 }
 
+/**
+ * Buat transaksi + alokasi dari konfirmasi yang di-approve (offer-based).
+ * Ini titik di mana deal masuk ke analitik CLARA (Dashboard/Achievement/Recurring).
+ */
+function _skp_create_transaction(PDO $pdo, array $skp, array $src, int $pid): int
+{
+    $start  = (string) $src['start_date'];
+    $end    = (string) $src['end_date'];
+    $months = (int) ($src['contract_months'] ?? 1);
+    $total  = (float) ($src['final_amount'] ?: $src['total_calculated']);
+    $crossMonth = substr($start, 0, 7) !== substr($end, 0, 7);
+    // Multi-bulan / lintas bulan → spread (recurring); selain itu anchor_cycle.
+    $spread = $months > 1 || $crossMonth;
+
+    $trx = [
+        'property_id'      => $pid,
+        'module'           => $src['module'],
+        'client_id'        => $src['client_id'] ?: null,
+        'contact_id'       => $src['contact_id'] ?: null,
+        'master_code'      => $src['master_code'],
+        'period_key'       => substr($start, 0, 7),
+        'content_note'     => $src['content_note'] ?? null,
+        'start_date'       => $start,
+        'end_date'         => $end,
+        'quantity'         => (float) ($src['quantity'] ?? 1),
+        'slots'            => (float) ($src['slots'] ?? 1),
+        'area_sqm'         => (float) ($src['area_sqm'] ?? 0),
+        'pricing_type'     => $src['pricing_type'],
+        'unit_rate'        => (float) ($src['unit_rate'] ?? 0),
+        'contract_months'  => $months ?: null,
+        'billing_method'   => $spread ? 'spread' : 'anchor_cycle',
+        'recurring_flag'   => 0,
+        'cycle_recognition'=> 'cycle_start',
+        'total_calculated' => $total,
+        'override_amount'  => $total,
+        'final_amount'     => $total,
+        'pic_name'         => $src['pic_name'] ?? null,
+        'referrer_name'    => $src['referrer_name'] ?? null,
+        'remarks'          => 'Dari ' . (($skp['doc_type'] ?? 'skp') === 'sks' ? 'SKS' : 'SKP') . ' ' . ($skp['skp_no'] ?? ''),
+        'invoice_no'       => null,
+        'created_by'       => $_SESSION['user']['name'] ?? 'system',
+    ];
+    $cols = array_keys($trx);
+    $ph   = array_map(fn($c) => ':' . $c, $cols);
+    $vals = [];
+    foreach ($trx as $k => $v) $vals[':' . $k] = $v;
+    $pdo->prepare('INSERT INTO transactions (' . implode(', ', $cols) . ') VALUES (' . implode(', ', $ph) . ')')->execute($vals);
+    $tid = (int) $pdo->lastInsertId();
+    // Alokasi bulanan (spread membagi final_amount; anchor_cycle 1 bulan)
+    $trx['id'] = $tid;
+    if (!$spread) $trx['recognition_period'] = $trx['period_key'];
+    AllocationService::saveAllocations($pdo, $tid, $trx, []);
+    return $tid;
+}
+
 // ─── Approve (manager) ───────────────────────────────────────────────────────
 function skp_approve(PDO $pdo): void
 {
@@ -495,8 +550,22 @@ function skp_approve(PDO $pdo): void
         'UPDATE skp_documents SET status=\'approved\', skp_no=?, approved_by=?, approved_at=CURRENT_TIMESTAMP,
          snapshot_json=?, sign_token=? WHERE id=? AND property_id=?'
     )->execute([$skpNo, $_SESSION['user']['name'] ?? 'manager', json_encode($snapshot, JSON_UNESCAPED_UNICODE), $signToken, $id, $pid]);
+
+    // Transaksi + alokasi terbit saat approve (offer-based, bila belum ada).
+    // Inilah titik deal masuk ke Dashboard/Achievement/Recurring.
+    $trxMsg = '';
+    if (empty($skp['transaction_id']) && !empty($skp['offer_id'])) {
+        try {
+            $newTrxId = _skp_create_transaction($pdo, array_merge($skp, ['skp_no' => $skpNo]), $src, $pid);
+            $pdo->prepare('UPDATE skp_documents SET transaction_id=? WHERE id=? AND property_id=?')->execute([$newTrxId, $id, $pid]);
+            audit($pdo, 'create', 'transactions', (string) $newTrxId, ['from_skp' => $id, 'skp_no' => $skpNo]);
+            $trxMsg = ' Transaksi #' . $newTrxId . ' terbit & masuk laporan.';
+        } catch (Throwable $e) {
+            $trxMsg = ' (Catatan: transaksi gagal dibuat otomatis — ' . $e->getMessage() . ')';
+        }
+    }
     audit($pdo, 'approve', 'skp_documents', (string) $id, ['skp_no' => $skpNo]);
-    flash("SKP disetujui. Nomor terbit: $skpNo");
+    flash("Disetujui. Nomor terbit: $skpNo." . $trxMsg);
     redirect_to('skp_form', ['id' => $id]);
 }
 

@@ -298,6 +298,13 @@ function deleted_transactions_page(PDO $pdo): void
 function transaction_form(PDO $pdo): void
 {
     $module = getv('module', 'media');
+    // Offer-first: input transaksi manual baru dinonaktifkan — mulai dari Surat
+    // Penawaran → DEAL → Buat Konfirmasi (approve = transaksi terbit). Perpanjangan
+    // kontrak (renew_from) tetap diizinkan.
+    if (!getv('renew_from') && get_setting($pdo, 'offer_first', '1') === '1') {
+        flash('Input transaksi langsung dinonaktifkan (offer-first). Mulai dari Surat Penawaran → DEAL → Buat Konfirmasi.');
+        redirect_to(can('manage_offers') ? 'offers' : 'dashboard');
+    }
     $masters = masterOptions($pdo, $module);
     $clients = $pdo->query("SELECT id, company_name, brand_name FROM master_clients WHERE status='active' ORDER BY company_name")->fetchAll();
     $allContacts = $pdo->query("SELECT id, client_id, name FROM master_client_contacts WHERE status='active' ORDER BY name")->fetchAll();

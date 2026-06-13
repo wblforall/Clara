@@ -58,6 +58,21 @@ function getv(string $key, $default = null)
     return $_GET[$key] ?? $default;
 }
 
+/** Baca setting key/value (tabel settings). Default bila tidak ada. */
+function get_setting(PDO $pdo, string $key, ?string $default = null): ?string
+{
+    static $cache = [];
+    if (array_key_exists($key, $cache)) return $cache[$key];
+    try {
+        $st = $pdo->prepare('SELECT value FROM settings WHERE `key` = ? LIMIT 1');
+        $st->execute([$key]);
+        $v = $st->fetchColumn();
+        return $cache[$key] = ($v === false ? $default : (string) $v);
+    } catch (Throwable $e) {
+        return $default;
+    }
+}
+
 // ─── Mobile view ─────────────────────────────────────────────────────────────
 
 /** Deteksi perangkat HP dari User-Agent (tablet tetap dianggap desktop). */
