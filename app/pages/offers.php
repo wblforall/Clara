@@ -122,7 +122,11 @@ function offer_form(PDO $pdo): void
         $picSel = $offer['pic_name'] ?? $linkedPic;
         $disabled = $editable ? '' : 'disabled';
         ?>
-        <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=offers">← Daftar Penawaran</a><?php if ($offer && $offer['offer_no']): ?><a class="btn light" href="?r=offer_print&id=<?= (int)$offer['id'] ?>" target="_blank">🖨 PDF</a><?php endif; ?></div>
+        <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=offers">← Daftar Penawaran</a><?php if ($offer && $offer['offer_no']): ?><a class="btn light" href="?r=offer_print&id=<?= (int)$offer['id'] ?>" target="_blank">🖨 PDF</a><?php endif; ?>
+            <?php if ($offer && $offer['status'] === 'deal' && can('manage_skp')): ?>
+            <a class="btn" style="background:#0369a1;margin-left:auto" href="?r=skp_form&offer_id=<?= (int)$offer['id'] ?>">→ Buat <?= $offer['module'] === 'cl' ? 'SKP' : 'SKS' ?> (Konfirmasi)</a>
+            <?php endif; ?>
+        </div>
 
         <?php if ($offer): ?>
         <div class="panel" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">

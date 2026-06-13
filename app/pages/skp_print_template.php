@@ -66,7 +66,7 @@ table.pay tr.grand td { background: #f0fdfa; font-weight: 800; color: #0f766e; }
         <img src="assets/skp/logo2.png" alt="e-Walk">
         <img src="assets/skp/logo1.png" alt="Pentacity">
     </div>
-    <div class="doc-title">Surat Konfirmasi Pameran</div>
+    <div class="doc-title"><?= ($skp['doc_type'] ?? 'skp') === 'sks' ? 'Surat Konfirmasi Sewa' : 'Surat Konfirmasi Pameran' ?></div>
     <div class="doc-no">No. <?= $h($skp['skp_no']) ?></div>
 
     <div class="sec">Identitas Penyewa</div>
