@@ -24,16 +24,25 @@ $today = date('d') . ' ' . ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Inter', Arial, sans-serif; font-size: 11px; color: #111; background: #f3f4f6; }
-@page { size: A4 portrait; margin: 0; }
-/* Kop surat (letterhead) sbg background A4; konten di area kosong tengah. */
-.sheet { width: 210mm; min-height: 297mm; margin: 16px auto; padding: 40mm 20mm 32mm;
-         background: #fff url('assets/letterhead-a4.jpg') top center no-repeat; background-size: 210mm 297mm;
-         box-shadow: 0 4px 24px rgba(0,0,0,.12); }
+/* Kop surat: header ~28mm, footer ~32mm. Ruang aman via margin halaman. */
+@page { size: A4 portrait; margin: 28mm 17mm 32mm; }
+/* Cetak: kop MELAYANG (fixed) → otomatis berulang di tiap halaman. */
+.letterhead { position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+         background: url('assets/letterhead-a4.jpg') top center no-repeat; background-size: 100% 100%; z-index: -1; }
+.sheet { position: relative; z-index: 1; }
 .no-print { position: fixed; top: 14px; right: 14px; display: flex; gap: 8px; z-index: 99; }
 .no-print button { padding: 9px 18px; border: none; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; }
 .btn-print { background: #0D9488; color: #fff; } .btn-close { background: #e5e7eb; color: #374151; }
-@media print { .no-print { display: none; } body { background: #fff; } .sheet { margin: 0; box-shadow: none; } }
+@media screen {
+  body { background: #9ca3af; }
+  .letterhead { display: none; }
+  .sheet { width: 210mm; min-height: 297mm; margin: 16px auto; padding: 28mm 17mm 32mm;
+           background: #fff url('assets/letterhead-a4.jpg') top center no-repeat; background-size: 210mm 297mm;
+           box-shadow: 0 4px 24px rgba(0,0,0,.12); }
+}
+@media print { .no-print { display: none; } }
 * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.sign { page-break-inside: avoid; }
 
 .doc-title { text-align: center; font-size: 16px; font-weight: 800; letter-spacing: .5px; margin: 0 0 2px; text-transform: uppercase; }
 .doc-no { text-align: center; font-size: 11px; color: #555; margin-bottom: 14px; }
@@ -62,6 +71,7 @@ table.pay tr.grand td { background: #f0fdfa; font-weight: 800; color: #0f766e; }
 </style>
 </head>
 <body>
+<div class="letterhead"></div>
 <div class="no-print">
     <button class="btn-print" onclick="window.print()">🖨 Cetak / Simpan PDF</button>
     <button class="btn-close" onclick="window.close()">✕ Tutup</button>
