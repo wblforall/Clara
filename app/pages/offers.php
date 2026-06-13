@@ -80,6 +80,18 @@ function offer_fiktif_assess(array $o, int $dupCount = 0, bool $clientHasPhone =
     return ['score' => $score, 'level' => $level, 'flags' => $flags];
 }
 
+/** Hitung masa kontrak (bulan) dari rentang tanggal. Min 1. */
+function _offer_months(?string $start, ?string $end): int
+{
+    if (!$start || !$end) return 1;
+    $s = strtotime($start); $e = strtotime($end);
+    if ($s === false || $e === false || $e < $s) return 1;
+    $months = ((int) date('Y', $e) - (int) date('Y', $s)) * 12
+            + ((int) date('n', $e) - (int) date('n', $s));
+    if ((int) date('j', $e) >= (int) date('j', $s)) $months++; // hari akhir ≥ hari awal → bulan penuh
+    return max(1, $months);
+}
+
 /** Field ekonomi yang di-snapshot tiap revisi. */
 function _offer_fields(): array
 {
@@ -94,17 +106,32 @@ function offers_list_page(PDO $pdo): void
 {
     require_permission('manage_offers');
     $pid = current_property_id();
-    $status = getv('status', '');
-    $where = ['o.property_id = ?']; $params = [$pid];
-    if (in_array($status, ['draft', 'sent', 'nego', 'deal', 'cancelled'], true)) { $where[] = 'o.status = ?'; $params[] = $status; }
+    // Tab grup: on_going (proses/tunggu client) · deal · closed (tidak deal).
+    $tab = getv('tab', 'on_going');
+    $tabStatuses = [
+        'on_going' => ['draft', 'sent', 'nego'],
+        'deal'     => ['deal'],
+        'closed'   => ['cancelled'],
+    ];
+    if (!isset($tabStatuses[$tab])) $tab = 'on_going';
+
+    // Hitung jumlah per tab (badge).
+    $counts = ['on_going' => 0, 'deal' => 0, 'closed' => 0];
+    $cs = $pdo->prepare('SELECT status, COUNT(*) c FROM offers WHERE property_id = ? GROUP BY status');
+    $cs->execute([$pid]);
+    foreach ($cs->fetchAll() as $r) {
+        foreach ($tabStatuses as $t => $sts) if (in_array($r['status'], $sts, true)) $counts[$t] += (int)$r['c'];
+    }
+
+    $in = implode(',', array_fill(0, count($tabStatuses[$tab]), '?'));
     $stmt = $pdo->prepare(
-        'SELECT o.*, c.company_name FROM offers o LEFT JOIN master_clients c ON c.id = o.client_id
-         WHERE ' . implode(' AND ', $where) . ' ORDER BY o.id DESC'
+        "SELECT o.*, c.company_name FROM offers o LEFT JOIN master_clients c ON c.id = o.client_id
+         WHERE o.property_id = ? AND o.status IN ($in) ORDER BY o.id DESC"
     );
-    $stmt->execute($params);
+    $stmt->execute(array_merge([$pid], $tabStatuses[$tab]));
     $rows = $stmt->fetchAll();
 
-    layout('Surat Penawaran', function () use ($rows, $status) {
+    layout('Surat Penawaran', function () use ($rows, $tab, $counts) {
         $badge = [
             'draft'     => ['Draft', '#64748b', '#f1f5f9'],
             'sent'      => ['Terkirim', '#0369a1', '#e0f2fe'],
@@ -116,8 +143,16 @@ function offers_list_page(PDO $pdo): void
         <div class="toolbar" style="gap:8px;flex-wrap:wrap">
             <a class="btn" href="?r=offer_form">+ Buat Penawaran</a>
             <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
-                <?php foreach (['' => 'Semua', 'draft' => 'Draft', 'sent' => 'Terkirim', 'nego' => 'Nego', 'deal' => 'Deal', 'cancelled' => 'Tidak Deal'] as $k => $lbl): ?>
-                    <a class="btn light" style="<?= $status === $k ? 'background:var(--primary,#0d9488);color:#fff' : '' ?>" href="?r=offers<?= $k ? '&status=' . $k : '' ?>"><?= $lbl ?></a>
+                <?php
+                $tabs = [
+                    'on_going' => ['On Going', '#0d9488'],
+                    'deal'     => ['Deal', '#166534'],
+                    'closed'   => ['Tidak Deal', '#991b1b'],
+                ];
+                foreach ($tabs as $k => [$lbl, $clr]): $active = $tab === $k; ?>
+                    <a class="btn light" style="<?= $active ? 'background:' . $clr . ';color:#fff' : '' ?>" href="?r=offers&tab=<?= $k ?>">
+                        <?= $lbl ?> <span class="badge" style="<?= $active ? 'background:rgba(255,255,255,.25);color:#fff' : '' ?>"><?= (int)$counts[$k] ?></span>
+                    </a>
                 <?php endforeach; ?>
             </div>
         </div>
@@ -234,16 +269,25 @@ function offer_form(PDO $pdo): void
             <input type="hidden" name="id" value="<?= (int)($offer['id'] ?? 0) ?>">
             <input type="hidden" name="module" value="<?= h($module) ?>">
 
+            <?php
+            $cliLabel = '';
+            foreach ($clients as $cl) if ((int)$cl['id'] === (int)($offer['client_id'] ?? 0)) { $cliLabel = $cl['company_name'] . ($cl['brand_name'] ? ' (' . $cl['brand_name'] . ')' : ''); break; }
+            ?>
             <h3 style="margin-top:0">Penerima</h3>
             <div class="form-grid">
                 <div>
                     <label>Client / Perusahaan</label>
-                    <select name="client_id" id="client_id" required <?= $disabled ?>>
-                        <option value="">- Pilih Client -</option>
-                        <?php foreach ($clients as $cl): ?>
-                            <option value="<?= (int)$cl['id'] ?>" <?= (int)($offer['client_id'] ?? 0) === (int)$cl['id'] ? 'selected' : '' ?>><?= h($cl['company_name']) ?><?= $cl['brand_name'] ? ' (' . h($cl['brand_name']) . ')' : '' ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <?php if ($editable): ?>
+                    <div style="position:relative" id="cliPicker">
+                        <input type="text" id="cliSearch" autocomplete="off" placeholder="Ketik nama client..." value="<?= h($cliLabel) ?>">
+                        <input type="hidden" name="client_id" id="client_id" value="<?= (int)($offer['client_id'] ?? 0) ?: '' ?>">
+                        <div id="cliDrop" style="display:none"></div>
+                    </div>
+                    <div class="help">Ketik nama atau brand untuk mencari, lalu pilih dari daftar.</div>
+                    <?php else: ?>
+                    <input type="text" value="<?= h($cliLabel) ?>" disabled>
+                    <input type="hidden" name="client_id" id="client_id" value="<?= (int)($offer['client_id'] ?? 0) ?>">
+                    <?php endif; ?>
                 </div>
                 <div>
                     <label>Up. (Contact Person)</label>
@@ -260,14 +304,22 @@ function offer_form(PDO $pdo): void
 
             <h3>Objek Sewa</h3>
             <div class="form-grid">
+                <?php
+                $unitLabel = '';
+                foreach ($masters as $m) if ($m['code'] === ($offer['master_code'] ?? '')) { $unitLabel = $m['code'] . ' — ' . $m['label']; break; }
+                ?>
                 <div>
                     <label>Unit / Lokasi</label>
-                    <select name="master_code" id="master_code" required <?= $disabled ?>>
-                        <option value="">- Pilih Unit -</option>
-                        <?php foreach ($masters as $m): ?>
-                            <option value="<?= h($m['code']) ?>" data-rate="<?= h($m['rate']) ?>" data-area="<?= h($m['area_sqm']) ?>" data-pricing="<?= h($m['pricing_type']) ?>" <?= ($offer['master_code'] ?? '') === $m['code'] ? 'selected' : '' ?>><?= h($m['code'] . ' — ' . $m['label']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <?php if ($editable): ?>
+                    <div style="position:relative">
+                        <input type="text" id="masterSearch" autocomplete="off" placeholder="Ketik nama unit..." value="<?= h($unitLabel) ?>">
+                        <input type="hidden" name="master_code" id="master_code" required value="<?= h($offer['master_code'] ?? '') ?>">
+                        <div id="masterDrop"></div>
+                    </div>
+                    <?php else: ?>
+                    <input type="text" value="<?= h($unitLabel) ?>" disabled>
+                    <input type="hidden" name="master_code" id="master_code" value="<?= h($offer['master_code'] ?? '') ?>">
+                    <?php endif; ?>
                 </div>
                 <div><label>Luas (m²)</label><input type="number" step="0.01" name="area_sqm" id="area_sqm" value="<?= $v('area_sqm') ?>" <?= $disabled ?>></div>
                 <div><label>Pricing Type</label>
@@ -283,7 +335,7 @@ function offer_form(PDO $pdo): void
             <div class="form-grid">
                 <div><label>Tanggal Mulai</label><input type="date" name="start_date" id="start_date" value="<?= $v('start_date') ?>" required <?= $disabled ?>></div>
                 <div><label>Tanggal Selesai</label><input type="date" name="end_date" id="end_date" value="<?= $v('end_date') ?>" required <?= $disabled ?>></div>
-                <div><label>Masa Kontrak (bulan)</label><input type="number" step="1" min="1" name="contract_months" id="contract_months" value="<?= $v('contract_months', '1') ?>" <?= $disabled ?>></div>
+                <div><label>Masa Kontrak (otomatis)</label><input type="text" id="contract_months_disp" value="<?= (int)($offer['contract_months'] ?? 1) ?> bulan" readonly><span class="help" style="font-size:11px">Dihitung dari periode tanggal.</span></div>
                 <div><label>Harga / Bulan (nego)</label><input type="number" step="1" name="monthly_amount" id="monthly_amount" value="<?= $v('monthly_amount') ?>" required <?= $disabled ?>></div>
                 <div><label>Total Kontrak</label><input type="number" id="total_calc" value="<?= $v('total_calculated') ?>" readonly><input type="hidden" name="total_calculated" id="total_calc_h" value="<?= $v('total_calculated') ?>"></div>
             </div>
@@ -309,10 +361,11 @@ function offer_form(PDO $pdo): void
         <script>
         (function () {
             var contacts = <?= json_encode($contacts) ?>;
-            var clientSel = document.getElementById('client_id'), contactSel = document.getElementById('contact_id');
+            var clientHid = document.getElementById('client_id'), contactSel = document.getElementById('contact_id');
             var curContact = <?= (int)($offer['contact_id'] ?? 0) ?>;
             function fillContacts() {
-                var cid = parseInt(clientSel.value || '0', 10);
+                var cid = parseInt((clientHid && clientHid.value) || '0', 10);
+                if (!contactSel) return;
                 contactSel.innerHTML = '<option value="">- Pilih -</option>';
                 contacts.filter(function (c) { return parseInt(c.client_id, 10) === cid; }).forEach(function (c) {
                     var o = document.createElement('option'); o.value = c.id; o.textContent = c.name;
@@ -320,20 +373,97 @@ function offer_form(PDO $pdo): void
                     contactSel.appendChild(o);
                 });
             }
-            if (clientSel) { clientSel.addEventListener('change', function () { curContact = 0; fillContacts(); }); fillContacts(); }
+            fillContacts();
 
-            var unit = document.getElementById('master_code');
-            if (unit) unit.addEventListener('change', function () {
-                var o = this.options[this.selectedIndex];
-                if (!o.value) return;
-                if (o.dataset.area && !document.getElementById('area_sqm').value) document.getElementById('area_sqm').value = o.dataset.area;
-                if (o.dataset.rate && !document.getElementById('unit_rate').value) document.getElementById('unit_rate').value = o.dataset.rate;
-                if (o.dataset.pricing) document.getElementById('pricing_type').value = o.dataset.pricing;
-            });
+            // ── Picker unit (searchable, sama seperti input transaksi) ──
+            var masters = <?= json_encode(array_values($masters)) ?>;
+            var byCode = Object.fromEntries(masters.map(function (m) { return [m.code, m]; }));
+            function fillMaster(code) {
+                var m = byCode[code]; if (!m) return;
+                var area = document.getElementById('area_sqm'), rate = document.getElementById('unit_rate'), pt = document.getElementById('pricing_type');
+                if (m.area_sqm && area && !area.value) area.value = m.area_sqm;
+                if (m.rate && rate && !rate.value) rate.value = m.rate;
+                if (m.pricing_type && pt) pt.value = m.pricing_type;
+            }
+            (function () {
+                var src = document.getElementById('masterSearch'), hid = document.getElementById('master_code'), dd = document.getElementById('masterDrop');
+                if (!src || !hid || !dd) return;
+                document.body.appendChild(dd);
+                dd.style.cssText = 'display:none;position:fixed;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:9000;max-height:260px;overflow-y:auto';
+                function pos() { var r = src.getBoundingClientRect(); dd.style.top = (r.bottom + 2) + 'px'; dd.style.left = r.left + 'px'; dd.style.width = r.width + 'px'; }
+                function render(q) {
+                    pos(); var lq = q.toLowerCase().trim();
+                    var list = lq ? masters.filter(function (m) { return m.label.toLowerCase().includes(lq) || m.code.toLowerCase().includes(lq); }) : masters;
+                    dd.innerHTML = '';
+                    list.slice(0, 80).forEach(function (m) {
+                        var d = document.createElement('div');
+                        d.style.cssText = 'padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:8px';
+                        d.innerHTML = '<span style="font-weight:600">' + m.label + '</span><span style="color:var(--muted);font-size:11px;flex-shrink:0">' + m.code + '</span>';
+                        d.addEventListener('mouseover', function () { this.style.background = '#f0fdf4'; });
+                        d.addEventListener('mouseout', function () { this.style.background = ''; });
+                        d.addEventListener('mousedown', function (e) { e.preventDefault(); src.value = m.code + ' — ' + m.label; hid.value = m.code; src.style.outline = ''; dd.style.display = 'none'; fillMaster(m.code); });
+                        dd.appendChild(d);
+                    });
+                    if (!list.length) dd.innerHTML = '<div style="padding:10px 14px;font-size:13px;color:var(--muted)">Tidak ditemukan</div>';
+                    dd.style.display = '';
+                }
+                src.addEventListener('input', function () { hid.value = ''; render(this.value); });
+                src.addEventListener('focus', function () { render(this.value); });
+                src.addEventListener('blur', function () { setTimeout(function () { dd.style.display = 'none'; }, 200); });
+                window.addEventListener('scroll', function () { if (dd.style.display !== 'none') pos(); }, true);
+                document.querySelectorAll('#offer-form button[type=submit]').forEach(function (btn) {
+                    btn.addEventListener('click', function (e) { if (!hid.value) { e.preventDefault(); e.stopImmediatePropagation(); src.style.outline = '2px solid #EF4444'; src.focus(); } });
+                });
+            })();
+
+            // ── Picker client (searchable, sama seperti input transaksi) ──
+            (function () {
+                var cliData = <?= json_encode(array_values($clients)) ?>;
+                var src = document.getElementById('cliSearch'), hid = document.getElementById('client_id'), dd = document.getElementById('cliDrop');
+                if (!src || !hid || !dd) return;
+                document.body.appendChild(dd);
+                dd.style.cssText = 'display:none;position:fixed;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:9000;max-height:220px;overflow-y:auto';
+                function pos() { var r = src.getBoundingClientRect(); dd.style.top = (r.bottom + 2) + 'px'; dd.style.left = r.left + 'px'; dd.style.width = r.width + 'px'; }
+                function render(q) {
+                    pos(); var lq = q.toLowerCase().trim();
+                    var list = lq ? cliData.filter(function (c) { return c.company_name.toLowerCase().includes(lq) || (c.brand_name && c.brand_name.toLowerCase().includes(lq)); }) : cliData;
+                    dd.innerHTML = '';
+                    list.slice(0, 60).forEach(function (c) {
+                        var d = document.createElement('div');
+                        d.style.cssText = 'padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9';
+                        d.innerHTML = '<strong>' + c.company_name + '</strong>' + (c.brand_name ? ' <span style="color:var(--muted);font-size:11px">(' + c.brand_name + ')</span>' : '');
+                        d.addEventListener('mouseover', function () { this.style.background = '#f0fdf4'; });
+                        d.addEventListener('mouseout', function () { this.style.background = ''; });
+                        d.addEventListener('mousedown', function (e) { e.preventDefault(); src.value = c.company_name + (c.brand_name ? ' (' + c.brand_name + ')' : ''); hid.value = c.id; src.style.outline = ''; dd.style.display = 'none'; curContact = 0; fillContacts(); });
+                        dd.appendChild(d);
+                    });
+                    if (!list.length) dd.innerHTML = '<div style="padding:10px 14px;font-size:13px;color:var(--muted)">Tidak ditemukan</div>';
+                    dd.style.display = '';
+                }
+                src.addEventListener('input', function () { hid.value = ''; render(this.value); });
+                src.addEventListener('focus', function () { render(this.value); });
+                src.addEventListener('blur', function () { setTimeout(function () { dd.style.display = 'none'; }, 200); });
+                window.addEventListener('scroll', function () { if (dd.style.display !== 'none') pos(); }, true);
+                document.querySelectorAll('#offer-form button[type=submit]').forEach(function (btn) {
+                    btn.addEventListener('click', function (e) { if (!hid.value) { e.preventDefault(); e.stopImmediatePropagation(); src.style.outline = '2px solid #EF4444'; src.focus(); } });
+                });
+            })();
 
             function num(id) { return parseFloat((document.getElementById(id) || {}).value || '0') || 0; }
+            // Masa kontrak otomatis dari rentang tanggal (cermin _offer_months di PHP).
+            function monthsFromDates() {
+                var s = (document.getElementById('start_date') || {}).value, e = (document.getElementById('end_date') || {}).value;
+                if (!s || !e) return 1;
+                var ds = new Date(s), de = new Date(e);
+                if (isNaN(ds) || isNaN(de) || de < ds) return 1;
+                var m = (de.getFullYear() - ds.getFullYear()) * 12 + (de.getMonth() - ds.getMonth());
+                if (de.getDate() >= ds.getDate()) m++;
+                return Math.max(1, m);
+            }
             function recalc() {
-                var monthly = num('monthly_amount'), months = num('contract_months');
+                var monthly = num('monthly_amount'), months = monthsFromDates();
+                var disp = document.getElementById('contract_months_disp');
+                if (disp) disp.value = months + ' bulan';
                 var total = Math.round(monthly * months);
                 document.getElementById('total_calc').value = total;
                 document.getElementById('total_calc_h').value = total;
@@ -342,9 +472,10 @@ function offer_form(PDO $pdo): void
                 if (dp && (!dp.value || dp.value === '0')) dp.value = Math.round(monthly * num('dp_months'));
                 if (dep && (!dep.value || dep.value === '0')) dep.value = Math.round(monthly * num('deposit_months'));
             }
-            ['monthly_amount', 'contract_months', 'dp_months', 'deposit_months'].forEach(function (id) {
+            ['monthly_amount', 'start_date', 'end_date', 'dp_months', 'deposit_months'].forEach(function (id) {
                 var el = document.getElementById(id); if (el) el.addEventListener('input', recalc);
             });
+            recalc();
         })();
         </script>
         <?php
@@ -374,14 +505,14 @@ function offer_save(PDO $pdo): void
         'slots'           => 1,
         'start_date'      => post('start_date') ?: null,
         'end_date'        => post('end_date') ?: null,
-        'contract_months' => (int) post('contract_months', 1) ?: 1,
+        'contract_months' => _offer_months(post('start_date') ?: null, post('end_date') ?: null),
         'monthly_amount'  => (float) post('monthly_amount', 0),
         'total_calculated' => (float) post('total_calculated', 0),
         'dp_months'       => max(2, (float) post('dp_months', 2)),
         'dp_amount'       => (float) post('dp_amount', 0),
         'deposit_months'  => (float) post('deposit_months', 1),
         'deposit_amount'  => (float) post('deposit_amount', 0),
-        'perihal'         => 'Surat Penawaran Sewa Kontrak ' . ((int) post('contract_months', 1)) . ' bulan',
+        'perihal'         => 'Surat Penawaran Sewa Kontrak ' . _offer_months(post('start_date') ?: null, post('end_date') ?: null) . ' bulan',
         'offer_date'      => date('Y-m-d'),
     ];
 

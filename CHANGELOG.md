@@ -21,6 +21,12 @@
 - **Funnel & analisa nego** (di laporan yang sama) — corong pipeline **Dibuat → Dikirim → Nego → Deal** dengan % lanjut tiap tahap, **breakdown alasan tidak deal** (kategori mana paling sering), dan tabel **effort nego vs konversi** (apakah penawaran yang lebih banyak direvisi lebih sering deal).
 - **Pakai ulang lampiran** — saat membuat SKP/SKS untuk client yang **sudah pernah** punya dokumen, scan **KTP/NPWP** lama otomatis ditawarkan untuk dipakai ulang (centang) sehingga tidak perlu unggah scan yang sama berkali-kali. Hapus centang bila ingin unggah baru.
 
+### Peningkatan UX — Surat Penawaran
+
+- **Dropdown Client & Unit pakai pencarian ketik** (sama seperti form input transaksi) — tinggal ketik nama client/unit lalu pilih dari daftar, tidak perlu scroll panjang.
+- **Tab di daftar penawaran**: **On Going** (draft/terkirim/nego — masih proses & menunggu konfirmasi client), **Deal**, dan **Tidak Deal**. Penawaran yang ditutup otomatis pindah ke tab "Tidak Deal" sehingga tab "On Going" hanya berisi yang benar-benar masih berjalan. Tiap tab menampilkan jumlahnya.
+- **Masa kontrak otomatis** — field "Masa Kontrak (bulan)" tidak perlu diisi manual lagi; **dihitung otomatis dari periode tanggal mulai–selesai** dan langsung dipakai untuk menghitung total kontrak.
+
 ## Version 4.14 — 13 Juni 2026
 
 ### Fitur Baru — Pipeline Penawaran (alur baru input transaksi)

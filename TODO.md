@@ -146,3 +146,15 @@
 ---
 
 *Terakhir diperbarui: 2026-05-15 — Semua Fase 1–5 selesai. Fase 6 testing & go-live menunggu UAT.*
+
+---
+
+## Backlog — Pipeline Penawaran (Offer-First)
+
+Pipeline penawaran (Surat Penawaran → Konfirmasi SKP/SKS → Transaksi) sudah lengkap (Phase 1–5b). Peluang lanjutan:
+
+- [ ] **Reminder follow-up penawaran nganggur** — notifikasi/pengingat untuk penawaran yang lama tidak ada pergerakan (mis. status `sent`/`nego` > N hari tanpa update) agar PIC menindaklanjuti atau menutupnya.
+- [ ] **Export laporan pipeline** — export Excel/PDF untuk laporan Aktivitas & Pipeline PIC (leaderboard, funnel, alasan tidak deal, penawaran berisiko).
+- [ ] **Target aktivitas PIC** — target jumlah penawaran/aktivitas per PIC per bulan (mis. minimal X penawaran dikirim), dibandingkan realisasi di laporan pipeline.
+
+*Ditambahkan: 2026-06-13.*
