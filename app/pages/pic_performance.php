@@ -83,10 +83,33 @@ function pic_pipeline_page(PDO $pdo): void
     $tot['high'] = count(array_filter($risky, fn($r) => $r['fa']['level'] === 'tinggi'));
     $tot['conv'] = $tot['offers'] > 0 ? round($tot['deal'] / $tot['offers'] * 100, 1) : 0.0;
 
+    // ── Funnel pipeline (cumulative): Dibuat → Dikirim → Nego → Deal ──
+    $funnel = ['dibuat' => count($offers), 'dikirim' => 0, 'nego' => 0, 'deal' => 0];
+    // ── Analisa nego: alasan tidak deal + hubungan jumlah revisi vs konversi ──
+    $lost = [];                       // lost_category => count
+    $revBuckets = [];                 // bucket => ['total'=>,'deal'=>]
+    foreach (['0' => '0 (tanpa nego)', '1' => '1×', '2' => '2×', '3+' => '3× atau lebih'] as $bk => $bl) {
+        $revBuckets[$bk] = ['label' => $bl, 'total' => 0, 'deal' => 0];
+    }
+    foreach ($offers as $o) {
+        $stt = $o['status'];
+        $everSent = !empty($o['sent_at']) || !empty($o['nego_at']) || $stt === 'deal';
+        $everNego = !empty($o['nego_at']) || $stt === 'nego';
+        if ($everSent) $funnel['dikirim']++;
+        if ($everNego) $funnel['nego']++;
+        if ($stt === 'deal') $funnel['deal']++;
+        if ($stt === 'cancelled') { $c = $o['lost_category'] ?: 'lainnya'; $lost[$c] = ($lost[$c] ?? 0) + 1; }
+        $rev = (int) $o['revision_count'];
+        $bk = $rev >= 3 ? '3+' : (string) $rev;
+        $revBuckets[$bk]['total']++;
+        if ($stt === 'deal') $revBuckets[$bk]['deal']++;
+    }
+    arsort($lost);
+
     $mn = ['01'=>'Jan','02'=>'Feb','03'=>'Mar','04'=>'Apr','05'=>'Mei','06'=>'Jun',
            '07'=>'Jul','08'=>'Ags','09'=>'Sep','10'=>'Okt','11'=>'Nov','12'=>'Des'];
 
-    layout('Aktivitas & Pipeline PIC', function () use ($pics, $risky, $tot, $from, $to, $mn) {
+    layout('Aktivitas & Pipeline PIC', function () use ($pics, $risky, $tot, $funnel, $lost, $revBuckets, $from, $to, $mn) {
         $rl = function ($lvl) {
             return ['tinggi' => ['#991b1b', '#fee2e2', 'Tinggi'], 'sedang' => ['#92400e', '#fef3c7', 'Sedang'], 'rendah' => ['#166534', '#dcfce7', 'Rendah']][$lvl];
         };
@@ -112,6 +135,65 @@ function pic_pipeline_page(PDO $pdo): void
                 <?php if ($sub): ?><div style="font-size:11px;color:var(--muted);margin-top:2px"><?= $sub ?></div><?php endif; ?>
             </div>
             <?php endforeach; ?>
+        </div>
+
+        <!-- Funnel + Analisa Nego -->
+        <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:14px;margin-bottom:16px" class="pipe-grid">
+            <div class="panel">
+                <h3 style="margin:0 0 10px">Funnel Pipeline</h3>
+                <?php
+                $base = max(1, $funnel['dibuat']);
+                $steps = [
+                    ['Dibuat',   $funnel['dibuat'],  '#0891b2'],
+                    ['Dikirim',  $funnel['dikirim'], '#6366f1'],
+                    ['Nego',     $funnel['nego'],    '#d97706'],
+                    ['Deal',     $funnel['deal'],    '#0d9488'],
+                ];
+                $prev = null;
+                foreach ($steps as [$lbl, $val, $clr]):
+                    $w = round($val / $base * 100);
+                    $drop = $prev !== null && $prev > 0 ? round($val / $prev * 100) : null;
+                ?>
+                <div style="margin-bottom:9px">
+                    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+                        <span style="font-weight:600"><?= $lbl ?></span>
+                        <span><strong><?= $val ?></strong><?php if ($drop !== null): ?> <span style="color:var(--muted)">· <?= $drop ?>% lanjut</span><?php endif; ?></span>
+                    </div>
+                    <div style="background:#f1f5f9;border-radius:6px;height:16px;overflow:hidden"><div style="width:<?= max(3,$w) ?>%;height:100%;background:<?= $clr ?>"></div></div>
+                </div>
+                <?php $prev = $val; endforeach; ?>
+                <p style="margin:6px 0 0;font-size:11px;color:var(--muted)">Konversi akhir Dibuat→Deal: <strong><?= $tot['conv'] ?>%</strong></p>
+            </div>
+            <div class="panel">
+                <h3 style="margin:0 0 10px">Alasan Tidak Deal</h3>
+                <?php if (!$lost): ?>
+                    <div style="color:var(--muted);padding:8px 0">Belum ada penawaran ditutup di rentang ini.</div>
+                <?php else: $lostMax = max($lost); foreach ($lost as $cat => $cnt): ?>
+                <div style="margin-bottom:7px">
+                    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px"><span><?= h(offer_lost_label($cat)) ?></span><strong><?= $cnt ?></strong></div>
+                    <div style="background:#f1f5f9;border-radius:6px;height:10px;overflow:hidden"><div style="width:<?= round($cnt / $lostMax * 100) ?>%;height:100%;background:<?= $cat === 'fiktif' ? '#dc2626' : '#94a3b8' ?>"></div></div>
+                </div>
+                <?php endforeach; endif; ?>
+            </div>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px">
+            <h3 style="margin:0 0 4px">Effort Nego vs Konversi</h3>
+            <p style="margin:0 0 10px;font-size:12px;color:var(--muted)">Apakah penawaran yang direvisi/dinego lebih sering deal? (jumlah revisi penawaran)</p>
+            <div class="table-wrap"><table style="font-size:12.5px">
+                <thead><tr><th>Jumlah Revisi</th><th style="text-align:center">Penawaran</th><th style="text-align:center">Deal</th><th style="text-align:center">Konversi</th></tr></thead>
+                <tbody>
+                <?php foreach ($revBuckets as $b):
+                    $rate = $b['total'] > 0 ? round($b['deal'] / $b['total'] * 100, 1) : null; ?>
+                <tr>
+                    <td style="font-weight:600"><?= h($b['label']) ?></td>
+                    <td style="text-align:center"><?= $b['total'] ?></td>
+                    <td style="text-align:center;color:#0d9488;font-weight:600"><?= $b['deal'] ?></td>
+                    <td style="text-align:center"><?= $rate === null ? '<span style="color:var(--muted)">—</span>' : '<strong>' . number_format($rate, 1, ',', '.') . '%</strong>' ?></td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table></div>
         </div>
 
         <div class="panel">

@@ -189,9 +189,11 @@ function skp_form(PDO $pdo): void
         $as->execute([(int)$skp['id']]);
         foreach ($as->fetchAll() as $a) $atts[$a['kind']] = $a;
     }
+    // Scan KTP/NPWP dari dokumen client yang sama sebelumnya → bisa dipakai ulang.
+    $reuse = $editable ? _skp_reusable_attachments($pdo, (int) ($src['client_id'] ?? 0), (int) ($skp['id'] ?? 0)) : [];
     $val = fn(string $k, $def = '') => h((string) ($skp[$k] ?? $def));
 
-    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . ($docType === 'sks' ? 'SKS' : 'SKP'), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $atts, $val, $pid) {
+    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . ($docType === 'sks' ? 'SKS' : 'SKP'), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $atts, $reuse, $val, $pid) {
         $statusSewaDefault = !empty($src['renewal_status']) && $src['renewal_status'] !== 'none' ? 'Perpanjangan' : 'Baru';
         ?>
         <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=<?= $offerId ? 'offer_form&id=' . (int)$offerId : 'allocation_detail&id=' . (int)$trxId ?>">← <?= $offerId ? 'Penawaran' : 'Detail Alokasi' ?></a><a class="btn light" href="?r=skp">Daftar Dokumen</a> <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h($docLabel) ?></span></div>
@@ -233,6 +235,15 @@ function skp_form(PDO $pdo): void
                     <label><?= $lbl ?></label>
                     <?php if ($has): ?>
                         <div style="font-size:12px"><a href="<?= h($has['file_path']) ?>" target="_blank">📎 <?= h($has['original_name'] ?: 'lihat') ?></a></div>
+                    <?php endif; ?>
+                    <?php
+                    $prev = (!$has && $editable) ? ($reuse[$kind] ?? null) : null;
+                    if ($prev): ?>
+                        <label style="font-size:12px;display:flex;align-items:center;gap:6px;background:#f0fdfa;border:1px solid #99f6e4;border-radius:7px;padding:5px 8px;margin-bottom:5px">
+                            <input type="checkbox" name="reuse_<?= $kind ?>" value="1" checked>
+                            Pakai ulang: 📎 <?= h($prev['original_name'] ?: 'scan sebelumnya') ?>
+                        </label>
+                        <span class="help" style="font-size:11px;color:var(--muted)">Hapus centang bila ingin unggah baru.</span>
                     <?php endif; ?>
                     <?php if ($editable): ?><input type="file" name="att_<?= $kind ?>" accept="image/*,application/pdf"><?php endif; ?>
                 </div>
@@ -342,11 +353,12 @@ function skp_form(PDO $pdo): void
 
 // ─── Simpan (insert/update draft) ────────────────────────────────────────────
 /** Simpan lampiran upload (folder) → skp_attachments. Ganti file kind yg sama. */
-function _skp_handle_uploads(PDO $pdo, int $skpId, string $uname): void
+function _skp_handle_uploads(PDO $pdo, int $skpId, string $uname, int $clientId = 0): void
 {
     $dir = dirname(__DIR__, 2) . '/public/uploads/skp';
     if (!is_dir($dir)) @mkdir($dir, 0777, true);
     $kinds = ['att_ktp' => 'ktp', 'att_npwp' => 'npwp', 'att_bukti_transfer' => 'bukti_transfer', 'att_pengajuan' => 'pengajuan'];
+    $uploaded = [];
     foreach ($kinds as $field => $kind) {
         if (empty($_FILES[$field]['tmp_name']) || !is_uploaded_file($_FILES[$field]['tmp_name'])) continue;
         $f = $_FILES[$field];
@@ -358,7 +370,44 @@ function _skp_handle_uploads(PDO $pdo, int $skpId, string $uname): void
         $pdo->prepare('DELETE FROM skp_attachments WHERE skp_id=? AND kind=?')->execute([$skpId, $kind]);
         $pdo->prepare('INSERT INTO skp_attachments (skp_id, kind, file_path, original_name, uploaded_by) VALUES (?,?,?,?,?)')
             ->execute([$skpId, $kind, 'uploads/skp/' . $fname, substr((string) $f['name'], 0, 190), $uname]);
+        $uploaded[$kind] = true;
     }
+    // Pakai-ulang scan KTP/NPWP dari dokumen client sebelumnya (referensi file sama).
+    $reuse = $clientId > 0 ? _skp_reusable_attachments($pdo, $clientId, $skpId) : [];
+    foreach (['ktp', 'npwp'] as $kind) {
+        if (!empty($uploaded[$kind]) || empty($_POST['reuse_' . $kind]) || empty($reuse[$kind])) continue;
+        $exists = $pdo->prepare('SELECT 1 FROM skp_attachments WHERE skp_id=? AND kind=?');
+        $exists->execute([$skpId, $kind]);
+        if ($exists->fetchColumn()) continue;
+        $pdo->prepare('INSERT INTO skp_attachments (skp_id, kind, file_path, original_name, uploaded_by) VALUES (?,?,?,?,?)')
+            ->execute([$skpId, $kind, $reuse[$kind]['file_path'], $reuse[$kind]['original_name'], $uname . ' (reuse)']);
+    }
+}
+
+/**
+ * Lampiran KTP/NPWP yang bisa dipakai-ulang dari dokumen client yang sama
+ * sebelumnya (hemat: tak perlu scan ulang). Return [kind => {file_path, original_name}].
+ */
+function _skp_reusable_attachments(PDO $pdo, int $clientId, int $excludeSkpId = 0): array
+{
+    if ($clientId <= 0) return [];
+    $st = $pdo->prepare(
+        "SELECT a.kind, a.file_path, a.original_name
+         FROM skp_attachments a
+         JOIN skp_documents d ON d.id = a.skp_id
+         LEFT JOIN offers o       ON o.id = d.offer_id
+         LEFT JOIN transactions t ON t.id = d.transaction_id
+         WHERE a.kind IN ('ktp','npwp')
+           AND COALESCE(o.client_id, t.client_id) = ?
+           AND d.id <> ?
+         ORDER BY a.id DESC"
+    );
+    $st->execute([$clientId, $excludeSkpId]);
+    $out = [];
+    foreach ($st->fetchAll() as $r) {
+        if (!isset($out[$r['kind']])) $out[$r['kind']] = $r; // ambil terbaru per kind
+    }
+    return $out;
 }
 
 /** Daftar lampiran terunggah utk snapshot (kind + nama file). */
@@ -429,7 +478,7 @@ function skp_save(PDO $pdo): void
                 updated_at=CURRENT_TIMESTAMP, updated_by=:uname
                 WHERE id=:id AND property_id=:pid';
         $pdo->prepare($sql)->execute(array_merge($fields, [':status' => $newStatus, ':uname' => $uname, ':id' => $id, ':pid' => $pid]));
-        _skp_handle_uploads($pdo, $id, $uname);
+        _skp_handle_uploads($pdo, $id, $uname, $clientId);
         _skp_update_master($pdo, $clientId, $ktp, $npwp);
         audit($pdo, $doSubmit ? 'submit' : 'update', 'skp_documents', (string) $id, $fields);
         flash($doSubmit ? 'Dokumen disubmit untuk approval.' : 'Draft disimpan.');
@@ -449,7 +498,7 @@ function skp_save(PDO $pdo): void
         ':trx' => $offerId ? null : ($trxId ?: null), ':status' => $newStatus, ':uname' => $uname,
     ]));
     $newId = (int) $pdo->lastInsertId();
-    _skp_handle_uploads($pdo, $newId, $uname);
+    _skp_handle_uploads($pdo, $newId, $uname, $clientId);
     _skp_update_master($pdo, $clientId, $ktp, $npwp);
     audit($pdo, 'create', 'skp_documents', (string) $newId, $fields);
     flash($doSubmit ? 'Dokumen dibuat & disubmit.' : 'Draft dibuat.');
