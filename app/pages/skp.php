@@ -731,3 +731,29 @@ function skp_sign_page(PDO $pdo): void
     $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
     include __DIR__ . '/skp_sign_template.php';
 }
+
+/**
+ * Halaman validasi dokumen publik (read-only) yang dibuka saat QR di-scan.
+ * Ringkas: konfirmasi keaslian + siapa membuat/menyetujui + waktu (tanpa TTD).
+ */
+function skp_verify_page(PDO $pdo): void
+{
+    $token = (string) getv('token', '');
+    $skp = _skp_by_token($pdo, $token);
+    $valid = $skp && in_array($skp['status'], ['approved', 'signed'], true) && !empty($skp['skp_no']);
+    $d = $valid ? (json_decode($skp['snapshot_json'], true) ?: []) : [];
+    $a = $d['amounts'] ?? [];
+    $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+    $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
+    // "TTD terdaftar?" → sales (master_pic) & manager (users)
+    $salesReg = $mgrReg = false;
+    if ($valid) {
+        $sp = $pdo->prepare("SELECT signature_path FROM master_pic WHERE name=? AND property_id=? LIMIT 1");
+        $sp->execute([$d['sales'] ?? '', (int) $skp['property_id']]);
+        $salesReg = !empty($sp->fetchColumn());
+        $mp = $pdo->prepare("SELECT signature_path FROM users WHERE name=? LIMIT 1");
+        $mp->execute([$skp['approved_by'] ?? '']);
+        $mgrReg = !empty($mp->fetchColumn());
+    }
+    include __DIR__ . '/skp_verify_template.php';
+}

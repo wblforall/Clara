@@ -201,6 +201,13 @@ if (in_array($route, ['skp_sign', 'skp_sign_save'], true)) {
     exit;
 }
 
+// ─── Validasi dokumen via QR (publik, read-only, akses via token) ─────────────
+if ($route === 'doc_verify') {
+    require_once APP_ROOT . '/app/pages/skp.php';
+    skp_verify_page($pdo);
+    exit;
+}
+
 // ─── Authenticated area ───────────────────────────────────────────────────────
 require_login();
 
@@ -280,6 +287,8 @@ $pageFiles = [
     'commission_sim'              => 'commission_sim.php',
     'pic_performance'             => 'pic_performance.php',
     'pic_pipeline'                => 'pic_performance.php',
+    'my_signature'                => 'signature.php',
+    'my_signature_save'           => 'signature.php',
     'master_sort_save'            => 'master.php',
     'clients'                     => 'clients.php',
     'client_form'                 => 'clients.php',
@@ -353,6 +362,8 @@ match ($route) {
     'commission_sim'              => commission_sim($pdo),
     'pic_performance'             => pic_performance_page($pdo),
     'pic_pipeline'                => pic_pipeline_page($pdo),
+    'my_signature'                => my_signature_page($pdo),
+    'my_signature_save'           => my_signature_save($pdo),
     'master_sort_save'            => master_sort_save($pdo, $masterConfig),
     'master_referrer'             => master_referrer_page($pdo),
     'lookup_manage'               => lookup_manage_page($pdo),

@@ -54,6 +54,9 @@ table.pay tr.grand td { background: #f0fdfa; font-weight: 800; color: #0f766e; }
 .sign .col { flex: 1; font-size: 10.5px; }
 .sign .role { color: #6b7280; margin-bottom: 52px; }
 .sign .name { font-weight: 700; border-top: 1px solid #111; padding-top: 3px; display: inline-block; min-width: 150px; }
+.qrbox { width: 70px; height: 70px; margin: 0 auto 3px; }
+.qrbox img, .qrbox svg { width: 70px !important; height: 70px !important; display: block; }
+.qrhint { font-size: 7.5px; color: #6b7280; margin-bottom: 3px; }
 .muted { color: #6b7280; }
 </style>
 </head>
@@ -131,10 +134,23 @@ table.pay tr.grand td { background: #f0fdfa; font-weight: 800; color: #0f766e; }
         <?php foreach ($notes as $i => $n): ?><li><span class="n"><?= $i + 1 ?>.</span><?= $h($n) ?></li><?php endforeach; ?>
     </ol>
 
+    <?php
+    // URL validasi untuk QR (dibuka saat di-scan). Read-only via sign_token.
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+    $verifyUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/?r=doc_verify&token=' . ($skp['sign_token'] ?? '');
+    $hasQr = !empty($skp['sign_token']);
+    ?>
     <div style="text-align:right;margin-top:16px;font-size:10.5px">Balikpapan, <?= $h($today) ?></div>
     <div class="sign">
-        <div class="col"><div class="role">Dibuat Oleh,</div><div class="name"><?= $h($d['sales'] ?? '-') ?><br><span class="muted" style="font-weight:400">Sales Executive</span></div></div>
-        <div class="col"><div class="role">Mengetahui,</div><div class="name"><?= $h($skp['approved_by'] ?? '-') ?><br><span class="muted" style="font-weight:400">Casual Leasing Manager</span></div></div>
+        <div class="col"><div class="role">Dibuat Oleh,</div>
+            <?php if ($hasQr): ?><div class="qrbox" data-qr="<?= $h($verifyUrl) ?>"></div><div class="qrhint">Scan untuk validasi</div><?php endif; ?>
+            <div class="name"<?= $hasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($d['sales'] ?? '-') ?><br><span class="muted" style="font-weight:400">Sales Executive</span></div>
+        </div>
+        <div class="col"><div class="role">Mengetahui,</div>
+            <?php if ($hasQr): ?><div class="qrbox" data-qr="<?= $h($verifyUrl) ?>"></div><div class="qrhint">Scan untuk validasi</div><?php endif; ?>
+            <div class="name"<?= $hasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($skp['approved_by'] ?? '-') ?><br><span class="muted" style="font-weight:400">Casual Leasing Manager</span></div>
+        </div>
         <div class="col"><div class="role">Menyetujui,</div>
             <?php if (($skp['status'] ?? '') === 'signed' && !empty($skp['signature_data'])): ?>
                 <div style="margin-bottom:2px"><img src="<?= $h($skp['signature_data']) ?>" alt="TTD" style="max-height:48px;max-width:150px;object-fit:contain"></div>
@@ -145,6 +161,20 @@ table.pay tr.grand td { background: #f0fdfa; font-weight: 800; color: #0f766e; }
         </div>
     </div>
 </div>
+<script src="assets/qrcode.min.js"></script>
+<script>
+(function () {
+    if (typeof qrcode !== 'function') return;
+    document.querySelectorAll('.qrbox[data-qr]').forEach(function (box) {
+        try {
+            var qr = qrcode(0, 'M');
+            qr.addData(box.getAttribute('data-qr'));
+            qr.make();
+            box.innerHTML = qr.createSvgTag({ cellSize: 2, margin: 0, scalable: true });
+        } catch (e) {}
+    });
+})();
+</script>
 </body>
 </html>
 <?php exit; ?>

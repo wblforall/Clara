@@ -116,6 +116,7 @@ function layout(string $title, callable $body, array $opts = []): void
         ['', 'roles', 'Role & Permission', 'manage_users'],
         ['', 'audit', 'Activity Log', 'view_logs'],
         ['', 'deleted_transactions', 'Transaksi Dihapus', 'manage_deleted'],
+        ['Akun', 'my_signature', 'Tanda Tangan Saya', 'view_dashboard'],
     ];
 
     $currentProp  = current_property();

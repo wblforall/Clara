@@ -11,6 +11,14 @@
 
 ---
 
+## Version 4.17 — 13 Juni 2026
+
+### Fitur Baru — Tanda Tangan QR & Validasi Dokumen
+
+- **Tanda Tangan Saya** (menu *Akun*) — sales & manager mengunggah gambar tanda tangan (PNG/JPG, maks 2 MB) sekali di akun masing-masing.
+- **QR di PDF, bukan gambar TTD** — pada PDF SKP/SKS, blok **"Dibuat Oleh" (sales)** dan **"Mengetahui" (manager)** kini tampil sebagai **QR code**, sehingga tanda tangan tidak mudah dijiplak dari dokumen.
+- **Validasi via scan** — memindai QR membuka halaman publik yang menampilkan **"✅ DOKUMEN SAH"** beserta nomor dokumen, penyewa, nilai, siapa membuat & menyetujui + waktunya, status TTD customer, dan penanda **"TTD terdaftar ✓"**. Token tak dikenal → **"✕ DOKUMEN TIDAK VALID"**. TTD customer tetap berupa tanda tangan tangan (kanvas) seperti sebelumnya.
+
 ## Version 4.16 — 13 Juni 2026
 
 ### Penyempurnaan — Surat Penawaran setara Input Transaksi
