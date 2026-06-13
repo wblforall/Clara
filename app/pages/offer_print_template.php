@@ -53,16 +53,13 @@ body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111;background:#
 /* Kop surat dibelah jadi header & footer (potongan dari 1 gambar A4), masing-masing
    position:fixed → BERULANG tiap halaman saat cetak. Ruang konten via margin halaman. */
 @page{size:A4 portrait;margin:0}
-/* thead/tfoot berulang tiap halaman → mem-booking ruang header/footer.
-   Kop digambar via elemen fixed yang mengisi ruang itu. */
+/* Kop di dalam thead/tfoot tabel → otomatis berulang & posisinya benar
+   (header tiap atas halaman, footer tiap bawah) baik di layar maupun cetak. */
 table.paper{width:100%;border-collapse:collapse}
 table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:0}
-.sp-top{height:30mm}.sp-bot{height:32mm}
-.lh-header{position:fixed;top:0;left:0;width:100%;height:30mm;
-       background:url('assets/letterhead-a4.jpg') no-repeat top center;background-size:100% auto;z-index:0}
-.lh-footer{position:fixed;bottom:0;left:0;width:100%;height:32mm;
-       background:url('assets/letterhead-a4.jpg') no-repeat bottom center;background-size:100% auto;z-index:0}
-.sheet{position:relative;z-index:1;padding:0 16mm}
+.sp-top{height:30mm;background:url('assets/letterhead-a4.jpg') no-repeat top center;background-size:210mm auto}
+.sp-bot{height:32mm;background:url('assets/letterhead-a4.jpg') no-repeat bottom center;background-size:210mm auto}
+.sheet{padding:0 16mm}
 .no-print{position:fixed;top:14px;right:14px;display:flex;gap:8px;z-index:9}
 .no-print button{padding:9px 18px;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer}
 .btn-print{background:#0D9488;color:#fff}.btn-close{background:#e5e7eb;color:#374151}
@@ -70,12 +67,8 @@ table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:
 @media screen{
   body{background:#9ca3af}
   .letterhead{display:none}
-  .lh-header,.lh-footer{display:none}
-  table.paper>thead,table.paper>tfoot{display:none}
-  /* Layar: 1 lembar, kop di atas (tanpa repeat agar tak ada pita di tengah). Cetak tetap paginasi. */
-  table.paper{display:block;width:210mm;margin:16px auto;box-shadow:0 4px 24px rgba(0,0,0,.12)}
-  .sheet{min-height:297mm;padding:30mm 16mm 32mm;
-         background:#fff url('assets/letterhead-a4.jpg') top center no-repeat;background-size:210mm 297mm}
+  /* Layar: kop header di atas (thead), footer di bawah konten (tfoot) — tak ada pita di tengah. */
+  table.paper{width:210mm;margin:16px auto;box-shadow:0 4px 24px rgba(0,0,0,.12);background:#fff}
 }
 @media print{.no-print{display:none}}
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -106,8 +99,6 @@ li{margin-bottom:3px;line-height:1.45}
 </style>
 </head>
 <body>
-<div class="lh-header"></div>
-<div class="lh-footer"></div>
 <div class="no-print">
     <button class="btn-print" onclick="window.print()">🖨 Cetak / Simpan PDF</button>
     <button class="btn-close" onclick="window.close()">✕ Tutup</button>
