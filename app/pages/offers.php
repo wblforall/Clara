@@ -378,7 +378,7 @@ function offer_form(PDO $pdo): void
             <div class="form-grid">
                 <div><label>Tanggal Mulai</label><input type="date" name="start_date" id="start_date" value="<?= $v('start_date') ?>" required <?= $disabled ?>></div>
                 <div><label>Tanggal Selesai</label><input type="date" name="end_date" id="end_date" value="<?= $v('end_date') ?>" required <?= $disabled ?>></div>
-                <div><label>Harga Nego Final <span class="muted" style="font-weight:400">(opsional)</span></label><input type="text" inputmode="numeric" id="override_fmt" placeholder="Kosongkan = pakai kalkulasi"><input type="hidden" name="override_amount" id="override_amount" value="<?= (int)($offer['override_amount'] ?? 0) ?: '' ?>"><div class="help">Isi bila ada diskon/nego yang menimpa hasil kalkulasi.</div></div>
+                <div><label>Harga Nego Final <span class="muted" style="font-weight:400">(opsional — override)</span></label><input type="text" inputmode="numeric" id="override_fmt" placeholder="Kosongkan = pakai kalkulasi"><input type="hidden" name="override_amount" id="override_amount" value="<?= (int)($offer['override_amount'] ?? 0) ?: '' ?>"><div class="help">Override: isi bila ada diskon/nego yang <strong>menimpa</strong> hasil kalkulasi.</div></div>
                 <div><label>Total Kontrak</label><input type="text" id="total_calc" value="" readonly><input type="hidden" name="total_calculated" id="total_calc_h" value="<?= $v('total_calculated') ?>"></div>
                 <div><label>Harga / Bulan <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="monthly_disp" value="" readonly><input type="hidden" name="monthly_amount" id="monthly_amount" value="<?= $v('monthly_amount') ?>"></div>
             </div>
@@ -595,8 +595,18 @@ function offer_form(PDO $pdo): void
                 if (res) { res.style.display = ''; res.innerHTML = 'Kalkulasi: <strong>' + rp(calc) + '</strong> · ' + days + ' hari · ' + months + ' bulan' + (override > 0 ? ' · <span style="color:#b45309">override ' + rp(override) + '</span>' : ''); }
                 var sp = document.getElementById('kalkulasi-spread');
                 if (sp) {
-                    if (effectiveBilling() === 'spread' && months > 1) {
-                        sp.style.display = ''; sp.innerHTML = '<strong>Estimasi spread:</strong> ' + rp(monthly) + ' / bulan × ' + months + ' bulan (selisih pembulatan ke bulan terakhir).';
+                    if (effectiveBilling() === 'spread' && months > 1 && total > 0 && s) {
+                        var mnames = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des'];
+                        var per = Math.floor(total / months), last = total - per * (months - 1);
+                        var d0 = new Date(s), rows = '';
+                        for (var i = 0; i < months; i++) {
+                            var yy = d0.getFullYear() + Math.floor((d0.getMonth() + i) / 12);
+                            var mm = (d0.getMonth() + i) % 12;
+                            var amt = (i === months - 1) ? last : per;
+                            rows += '<div style="display:flex;justify-content:space-between;gap:12px"><span>' + mnames[mm] + ' ' + yy + '</span><strong>' + rp(amt) + '</strong></div>';
+                        }
+                        sp.style.display = '';
+                        sp.innerHTML = '<div style="font-weight:700;margin-bottom:4px">Preview Spread (recurring) — ' + months + ' bulan</div>' + rows + '<div style="font-size:11px;color:var(--muted);margin-top:4px">Pembagian rata; selisih pembulatan masuk ke bulan terakhir. Alokasi final dihitung saat transaksi terbit.</div>';
                     } else { sp.style.display = 'none'; }
                 }
             }
