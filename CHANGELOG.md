@@ -11,6 +11,20 @@
 
 ---
 
+## Version 4.14 — 13 Juni 2026
+
+### Fitur Baru — Pipeline Penawaran (alur baru input transaksi)
+
+Titik masuk transaksi baru kini berbasis **Surat Penawaran**, bukan input transaksi manual. Alur lengkap: **Surat Penawaran → Dokumen Konfirmasi (SKP/SKS) → Transaksi terbit otomatis**.
+
+- **Surat Penawaran** (menu baru, grup *Input*) — buat penawaran ke calon penyewa, **revisi berkali-kali** (tiap revisi tersimpan untuk catatan nego), cetak PDF, lalu tandai **DEAL** saat disepakati. Penomoran otomatis (mis. `001/QT-CL/e-Walk/BSB-BPN/VI/2026`). DP minimal 2 bulan, deposit dapat disesuaikan, total/DP/deposit terhitung otomatis.
+- **Dokumen Konfirmasi dari penawaran** — dari penawaran DEAL, tekan **Buat SKP/SKS**. Nilai mengikuti penawaran final. Jenis dokumen otomatis: **SKP** (Pameran/Casual Leasing) atau **SKS** (Media/Gudang).
+- **Lampiran dokumen** — unggah **KTP, NPWP, bukti transfer, dan dokumen pengajuan** (gambar/PDF, maks 5 MB) langsung pada konfirmasi. **Surat penawaran final otomatis menjadi rujukan lampiran**. KTP & NPWP otomatis tersimpan ke **Master Client** sehingga otomatis terisi pada dokumen berikutnya.
+- **Lampiran tampil di PDF & halaman tanda tangan** — daftar lampiran (penawaran final + dokumen yang diunggah) kini muncul di PDF konfirmasi dan di halaman TTD customer, agar penyewa tahu persis dokumen apa saja yang menyertai.
+- **Transaksi terbit saat manajer menyetujui** — saat konfirmasi di-approve, **transaksi + alokasi bulanan terbit otomatis** dan langsung masuk Dashboard / Achievement / laporan recurring. Inilah satu-satunya titik deal masuk analitik.
+- **Tanda tangan customer online** — penyewa menandatangani konfirmasi lewat tautan (judul & teks persetujuan menyesuaikan SKP/SKS), hasil tertanam di PDF final.
+- **Offer-first** — input transaksi manual untuk transaksi baru dinonaktifkan (diarahkan ke Surat Penawaran). **Perpanjangan** tetap bisa lewat jalur lama.
+
 ## Version 4.13 — 9 Juni 2026
 
 ### Fitur Baru / Peningkatan

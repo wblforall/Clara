@@ -361,6 +361,16 @@ function _skp_handle_uploads(PDO $pdo, int $skpId, string $uname): void
     }
 }
 
+/** Daftar lampiran terunggah utk snapshot (kind + nama file). */
+function _skp_attachment_list(PDO $pdo, int $skpId): array
+{
+    $st = $pdo->prepare('SELECT kind, original_name FROM skp_attachments WHERE skp_id = ? ORDER BY id');
+    $st->execute([$skpId]);
+    $out = [];
+    foreach ($st->fetchAll() as $r) $out[$r['kind']] = $r['original_name'];
+    return $out;
+}
+
 /** Auto-update KTP/NPWP ke master client (reusable berikutnya). */
 function _skp_update_master(PDO $pdo, int $clientId, ?string $ktp, ?string $npwp): void
 {
@@ -543,6 +553,9 @@ function skp_approve(PDO $pdo): void
         'status_sewa' => $skp['status_sewa'],
         'admin_siup' => (int)$skp['admin_siup'], 'admin_npwp' => (int)$skp['admin_npwp'], 'admin_ktp' => (int)$skp['admin_ktp'],
         'amounts' => $amt, 'sales' => $src['pic_name'], 'property_name' => $prop['name'] ?? '',
+        // Referensi penawaran (offer-based) + daftar lampiran terunggah → tampil di PDF & TTD.
+        'offer_no' => $src['offer_no'] ?? null,
+        'attachments' => _skp_attachment_list($pdo, $id),
     ];
 
     $signToken = bin2hex(random_bytes(20));

@@ -1,13 +1,14 @@
 <?php
 /** Halaman publik tanda tangan customer. Vars: $skp, $d, $a, $signed, $rp, $h, $token. */
 if (!isset($skp)) { http_response_code(400); exit('Konteks tidak valid.'); }
+$docTitle = ($skp['doc_type'] ?? 'skp') === 'sks' ? 'Surat Konfirmasi Sewa' : 'Surat Konfirmasi Pameran';
 ?>
 <!doctype html>
 <html lang="id">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Tanda Tangan SKP — <?= $h($skp['skp_no']) ?></title>
+<title>Tanda Tangan — <?= $h($skp['skp_no']) ?></title>
 <link rel="icon" type="image/png" href="assets/clara-logo.png">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -42,7 +43,7 @@ input[type=text]{flex:1;min-width:200px;padding:10px 12px;border:1px solid #cbd5
 <div class="wrap">
     <div class="card">
         <div class="hdr"><img src="assets/skp/logo2.png" alt="e-Walk"><img src="assets/skp/logo1.png" alt="Pentacity"></div>
-        <div class="title">Surat Konfirmasi Pameran</div>
+        <div class="title"><?= $h($docTitle) ?></div>
         <div class="no">No. <?= $h($skp['skp_no']) ?></div>
 
         <div class="sec">Identitas Penyewa</div>
@@ -66,6 +67,19 @@ input[type=text]{flex:1;min-width:200px;padding:10px 12px;border:1px solid #cbd5
             <tr><td>Jaminan / Security Deposit</td><td class="amt"><?= $rp($a['deposit'] ?? 0) ?></td></tr>
             <tr class="grand"><td>Grand Total</td><td class="amt"><?= $rp($a['grand_total'] ?? 0) ?></td></tr>
         </table>
+
+        <?php
+        $att = $d['attachments'] ?? [];
+        $labels = ['ktp' => 'Copy KTP', 'npwp' => 'Copy NPWP', 'bukti_transfer' => 'Bukti Transfer', 'pengajuan' => 'Dokumen Pengajuan'];
+        if (!empty($d['offer_no']) || $att): ?>
+        <div class="sec">Lampiran Dokumen</div>
+        <table class="kv">
+            <?php if (!empty($d['offer_no'])): ?><tr><td class="l">Surat Penawaran Final</td><td class="v">☑ No. <?= $h($d['offer_no']) ?></td></tr><?php endif; ?>
+            <?php foreach ($labels as $k => $lbl): if (isset($att[$k])): ?>
+            <tr><td class="l"><?= $h($lbl) ?></td><td class="v">☑ <span class="muted"><?= $h($att[$k]) ?></span></td></tr>
+            <?php endif; endforeach; ?>
+        </table>
+        <?php endif; ?>
     </div>
 
     <div class="card">
@@ -86,7 +100,7 @@ input[type=text]{flex:1;min-width:200px;padding:10px 12px;border:1px solid #cbd5
                 <div class="row">
                     <input type="text" name="sign_name" id="sign-name" placeholder="Nama lengkap penanda tangan" required>
                 </div>
-                <div class="consent">Dengan menekan tombol di bawah, saya menyatakan <strong>menyetujui</strong> isi Surat Konfirmasi Pameran ini. Tanda tangan elektronik ini sah dan mengikat sesuai UU ITE. Sistem mencatat nama, waktu, dan alamat IP Anda.</div>
+                <div class="consent">Dengan menekan tombol di bawah, saya menyatakan <strong>menyetujui</strong> isi <?= $h($docTitle) ?> ini. Tanda tangan elektronik ini sah dan mengikat sesuai UU ITE. Sistem mencatat nama, waktu, dan alamat IP Anda.</div>
                 <div class="row"><button type="submit" class="btn btn-primary" id="submit" style="width:100%">Setujui & Tanda Tangani</button></div>
             </form>
         <?php endif; ?>

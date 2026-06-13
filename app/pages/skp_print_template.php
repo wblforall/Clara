@@ -18,7 +18,8 @@ $today = date('d') . ' ' . ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<title><?= $h($skp['skp_no']) ?> — Surat Konfirmasi Pameran</title>
+<?php $docTitle = ($skp['doc_type'] ?? 'skp') === 'sks' ? 'Surat Konfirmasi Sewa' : 'Surat Konfirmasi Pameran'; ?>
+<title><?= $h($skp['skp_no']) ?> — <?= $docTitle ?></title>
 <link rel="icon" type="image/png" href="assets/clara-logo.png">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -78,12 +79,28 @@ table.pay tr.grand td { background: #f0fdfa; font-weight: 800; color: #0f766e; }
         <tr><td class="l">Nomor Telepon</td><td class="c">:</td><td class="v"><?= $h($d['phone'] ?? '-') ?></td></tr>
     </table>
 
+    <?php
+    $att = $d['attachments'] ?? [];
+    $hasOffer = !empty($d['offer_no']);
+    if ($hasOffer || $att):
+        $fn = fn($k) => isset($att[$k]) ? ' <span class="muted" style="font-weight:400">(' . $h($att[$k]) . ')</span>' : '';
+    ?>
+    <div class="sec">Lampiran Dokumen</div>
+    <table class="kv">
+        <?php if ($hasOffer): ?><tr><td class="l">Surat Penawaran Final</td><td class="c">:</td><td class="v chk">☑ <span class="muted" style="font-weight:400">No. <?= $h($d['offer_no']) ?></span></td></tr><?php endif; ?>
+        <tr><td class="l">Copy KTP Penanggung Jawab</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['ktp']) || ($d['admin_ktp'] ?? 0)) ?><?= $fn('ktp') ?></td></tr>
+        <tr><td class="l">Copy NPWP</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['npwp']) || ($d['admin_npwp'] ?? 0)) ?> <span class="muted" style="font-weight:400"><?= $d['npwp'] ? '(' . $h($d['npwp']) . ')' : '' ?></span><?= $fn('npwp') ?></td></tr>
+        <tr><td class="l">Bukti Transfer</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['bukti_transfer'])) ?><?= $fn('bukti_transfer') ?></td></tr>
+        <?php if (isset($att['pengajuan'])): ?><tr><td class="l">Dokumen Pengajuan</td><td class="c">:</td><td class="v chk">☑<?= $fn('pengajuan') ?></td></tr><?php endif; ?>
+    </table>
+    <?php else: ?>
     <div class="sec">Kelengkapan Administrasi</div>
     <table class="kv">
         <tr><td class="l">Copy SIUP</td><td class="c">:</td><td class="v chk"><?= $chk($d['admin_siup'] ?? 0) ?></td></tr>
         <tr><td class="l">Copy NPWP</td><td class="c">:</td><td class="v chk"><?= $chk($d['admin_npwp'] ?? 0) ?> <span class="muted" style="font-weight:400"><?= $d['npwp'] ? '(' . $h($d['npwp']) . ')' : '' ?></span></td></tr>
         <tr><td class="l">Copy KTP Penanggung Jawab</td><td class="c">:</td><td class="v chk"><?= $chk($d['admin_ktp'] ?? 0) ?></td></tr>
     </table>
+    <?php endif; ?>
 
     <div class="sec">Spesifikasi Tempat & Periode Sewa</div>
     <table class="kv">
