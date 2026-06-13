@@ -335,7 +335,6 @@ function offer_form(PDO $pdo): void
             <div class="form-grid">
                 <div><label>Tanggal Mulai</label><input type="date" name="start_date" id="start_date" value="<?= $v('start_date') ?>" required <?= $disabled ?>></div>
                 <div><label>Tanggal Selesai</label><input type="date" name="end_date" id="end_date" value="<?= $v('end_date') ?>" required <?= $disabled ?>></div>
-                <div><label>Masa Kontrak (otomatis)</label><input type="text" id="contract_months_disp" value="<?= (int)($offer['contract_months'] ?? 1) ?> bulan" readonly><span class="help" style="font-size:11px">Dihitung dari periode tanggal.</span></div>
                 <div><label>Harga / Bulan (nego)</label><input type="number" step="1" name="monthly_amount" id="monthly_amount" value="<?= $v('monthly_amount') ?>" required <?= $disabled ?>></div>
                 <div><label>Total Kontrak</label><input type="number" id="total_calc" value="<?= $v('total_calculated') ?>" readonly><input type="hidden" name="total_calculated" id="total_calc_h" value="<?= $v('total_calculated') ?>"></div>
             </div>
