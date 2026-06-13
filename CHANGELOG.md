@@ -11,6 +11,14 @@
 
 ---
 
+## Version 4.15 — 13 Juni 2026
+
+### Fitur Baru — Tata Kelola Penawaran & Analisa Aktivitas PIC
+
+- **Penawaran wajib di-*close* dengan alasan** — penawaran yang tidak jadi deal **tidak boleh digantung**. Tombol "Batalkan" diganti **"Tutup (Tidak Deal)"** yang mewajibkan **kategori alasan** (harga, pilih kompetitor, budget client batal, tidak respon, jadwal, lokasi, tidak valid/internal, lainnya) **+ catatan kronologi**. Alasan tampil di daftar & detail penawaran sehingga bisa dianalisa.
+- **Laporan baru: Aktivitas & Pipeline PIC** (menu *Analisa*) — menghitung **semua** penawaran yang dibuat tiap PIC (deal **maupun** tidak deal), bukan hanya yang berhasil. Leaderboard per PIC: jumlah penawaran, berapa yang **benar-benar dikirim** ke client (indikator kerja nyata), nego, deal, tidak deal, **konversi %**, nilai deal & nilai pipeline, rata-rata revisi, dan skor risiko. Sehingga terlihat PIC mana yang aktif sungguhan.
+- **Deteksi penawaran murni vs fiktif** — tiap penawaran dinilai **skor risiko fiktif (0–100)** dari sinyal aktivitas: tidak pernah ditandai terkirim ke client, ditutup instan (< 1 jam) tanpa revisi, ditandai tidak valid/internal, tanpa contact person, client tanpa nomor telepon, dan **duplikat** (client+unit+nilai sama). Penawaran berisiko (skor ≥ 25) muncul di daftar **"Perlu Ditinjau"** lengkap dengan sinyal-nya untuk konfirmasi manual — bukan tuduhan, tapi alat bantu pengawasan.
+
 ## Version 4.14 — 13 Juni 2026
 
 ### Fitur Baru — Pipeline Penawaran (alur baru input transaksi)

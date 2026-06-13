@@ -17,6 +17,69 @@ function _offer_module_label(string $m): string
     return ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'][$m] ?? strtoupper($m);
 }
 
+/** Kategori alasan penawaran ditutup tanpa deal (untuk analisa). */
+function offer_lost_categories(): array
+{
+    return [
+        'harga'          => 'Harga terlalu tinggi',
+        'kompetitor'     => 'Pilih kompetitor / mall lain',
+        'budget'         => 'Budget / keputusan internal client batal',
+        'tidak_respon'   => 'Client tidak merespon / hilang kontak',
+        'jadwal'         => 'Periode / jadwal tidak cocok',
+        'lokasi'         => 'Lokasi / unit tidak sesuai',
+        'fiktif'         => 'Tidak valid / dibatalkan internal',
+        'lainnya'        => 'Lainnya',
+    ];
+}
+function offer_lost_label(?string $k): string
+{
+    return offer_lost_categories()[$k] ?? '—';
+}
+
+/**
+ * Skor risiko "fiktif" sebuah penawaran (0–100) + daftar sinyal.
+ * Heuristik aktivitas: penawaran asli umumnya benar-benar DIKIRIM ke client,
+ * punya effort (revisi/nego), data kontak lengkap, & tidak ditutup instan.
+ * $o = baris offers. $dupCount = jumlah penawaran lain identik oleh PIC sama.
+ * $clientHasPhone = apakah client punya nomor telepon.
+ */
+function offer_fiktif_assess(array $o, int $dupCount = 0, bool $clientHasPhone = true): array
+{
+    $score = 0; $flags = [];
+    $status   = $o['status'] ?? 'draft';
+    $closed   = $status === 'cancelled';
+    $everSent = !empty($o['sent_at']) || !empty($o['nego_at']) || in_array($status, ['deal'], true);
+    $revs     = (int) ($o['revision_count'] ?? 0);
+
+    // 1) Tidak pernah benar-benar dikirim ke client, tapi sudah closed/deal.
+    if (!$everSent && in_array($status, ['cancelled', 'deal'], true)) {
+        $score += 30; $flags[] = 'Tidak pernah ditandai terkirim ke client';
+    }
+    // 2) Ditutup tanpa effort sama sekali (0 revisi).
+    if ($closed && $revs === 0) {
+        $score += 15; $flags[] = 'Ditutup tanpa revisi/nego';
+    }
+    // 3) Ditutup sangat cepat setelah dibuat (< 1 jam).
+    if ($closed && !empty($o['created_at']) && !empty($o['cancelled_at'])) {
+        $secs = strtotime($o['cancelled_at']) - strtotime($o['created_at']);
+        if ($secs >= 0 && $secs < 3600) { $score += 20; $flags[] = 'Ditutup < 1 jam sejak dibuat'; }
+    }
+    // 4) Kategori tutup = fiktif/internal (diakui sendiri).
+    if ($closed && ($o['lost_category'] ?? '') === 'fiktif') {
+        $score += 25; $flags[] = 'Ditandai tidak valid / dibatalkan internal';
+    }
+    // 5) Tanpa contact person.
+    if (empty($o['contact_id'])) { $score += 10; $flags[] = 'Tanpa contact person'; }
+    // 6) Client tanpa nomor telepon.
+    if (!$clientHasPhone) { $score += 10; $flags[] = 'Client tanpa nomor telepon'; }
+    // 7) Duplikat (client+unit+nilai sama oleh PIC sama).
+    if ($dupCount > 0) { $score += 20; $flags[] = 'Duplikat penawaran identik (' . $dupCount . '×)'; }
+
+    $score = min(100, $score);
+    $level = $score >= 50 ? 'tinggi' : ($score >= 25 ? 'sedang' : 'rendah');
+    return ['score' => $score, 'level' => $level, 'flags' => $flags];
+}
+
 /** Field ekonomi yang di-snapshot tiap revisi. */
 function _offer_fields(): array
 {
@@ -47,13 +110,13 @@ function offers_list_page(PDO $pdo): void
             'sent'      => ['Terkirim', '#0369a1', '#e0f2fe'],
             'nego'      => ['Negosiasi', '#92400e', '#fef3c7'],
             'deal'      => ['DEAL', '#166534', '#dcfce7'],
-            'cancelled' => ['Batal', '#991b1b', '#fee2e2'],
+            'cancelled' => ['Tidak Deal', '#991b1b', '#fee2e2'],
         ];
         ?>
         <div class="toolbar" style="gap:8px;flex-wrap:wrap">
             <a class="btn" href="?r=offer_form">+ Buat Penawaran</a>
             <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
-                <?php foreach (['' => 'Semua', 'draft' => 'Draft', 'sent' => 'Terkirim', 'nego' => 'Nego', 'deal' => 'Deal', 'cancelled' => 'Batal'] as $k => $lbl): ?>
+                <?php foreach (['' => 'Semua', 'draft' => 'Draft', 'sent' => 'Terkirim', 'nego' => 'Nego', 'deal' => 'Deal', 'cancelled' => 'Tidak Deal'] as $k => $lbl): ?>
                     <a class="btn light" style="<?= $status === $k ? 'background:var(--primary,#0d9488);color:#fff' : '' ?>" href="?r=offers<?= $k ? '&status=' . $k : '' ?>"><?= $lbl ?></a>
                 <?php endforeach; ?>
             </div>
@@ -72,7 +135,7 @@ function offers_list_page(PDO $pdo): void
                             <td style="white-space:nowrap;font-size:11.5px"><?= $r['start_date'] ? h(date('d/m/y', strtotime($r['start_date'])) . '–' . date('d/m/y', strtotime($r['end_date']))) : '—' ?></td>
                             <td style="white-space:nowrap"><?= money($r['monthly_amount']) ?></td>
                             <td style="text-align:center"><?= (int)$r['revision_count'] ?>×</td>
-                            <td><span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span></td>
+                            <td><span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span><?php if ($r['status'] === 'cancelled' && !empty($r['lost_category'])): ?><div style="font-size:10.5px;color:#991b1b;margin-top:2px"><?= h(offer_lost_label($r['lost_category'])) ?></div><?php endif; ?></td>
                             <td style="white-space:nowrap">
                                 <a class="btn light" href="?r=offer_form&id=<?= (int)$r['id'] ?>"><?= in_array($r['status'], ['deal', 'cancelled'], true) ? 'Lihat' : 'Edit' ?></a>
                                 <?php if ($r['offer_no']): ?><a class="btn light" href="?r=offer_print&id=<?= (int)$r['id'] ?>" target="_blank">PDF</a><?php endif; ?>
@@ -132,16 +195,38 @@ function offer_form(PDO $pdo): void
         <div class="panel" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
             <div><strong style="font-size:15px"><?= h($offer['offer_no'] ?? '(no. terbit saat disimpan)') ?></strong> · <span class="badge"><?= h(_offer_module_label($offer['module'])) ?></span> · Revisi/nego: <strong><?= (int)$offer['revision_count'] ?>×</strong></div>
             <?php if ($editable): ?>
-            <div style="display:flex;gap:6px;flex-wrap:wrap">
-                <?php foreach (['sent' => 'Tandai Terkirim', 'nego' => 'Tandai Nego', 'deal' => 'Tandai DEAL', 'cancelled' => 'Batalkan'] as $s => $lbl): if ($offer['status'] === $s) continue; ?>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                <?php foreach (['sent' => 'Tandai Terkirim', 'nego' => 'Tandai Nego', 'deal' => 'Tandai DEAL'] as $s => $lbl): if ($offer['status'] === $s) continue; ?>
                 <form method="post" action="?r=offer_status" style="display:inline" onsubmit="return confirm('Ubah status ke <?= $lbl ?>?')">
                     <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$offer['id'] ?>"><input type="hidden" name="status" value="<?= $s ?>">
-                    <button class="btn light" style="<?= $s === 'deal' ? 'background:#16a34a;color:#fff' : ($s === 'cancelled' ? 'background:#fee2e2;color:#991b1b' : '') ?>"><?= $lbl ?></button>
+                    <button class="btn light" style="<?= $s === 'deal' ? 'background:#16a34a;color:#fff' : '' ?>"><?= $lbl ?></button>
                 </form>
                 <?php endforeach; ?>
+                <details style="display:inline-block">
+                    <summary class="btn light" style="background:#fee2e2;color:#991b1b;list-style:none;cursor:pointer">Tutup (Tidak Deal)</summary>
+                    <form method="post" action="?r=offer_close" style="position:absolute;z-index:20;margin-top:6px;background:#fff;border:1px solid var(--line,#e5e7eb);border-radius:10px;padding:12px;box-shadow:0 6px 24px rgba(0,0,0,.12);width:320px">
+                        <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$offer['id'] ?>">
+                        <label style="font-size:12px;font-weight:700">Alasan tidak deal</label>
+                        <select name="lost_category" required style="width:100%;margin:4px 0 8px">
+                            <option value="">- Pilih alasan -</option>
+                            <?php foreach (offer_lost_categories() as $k => $lbl): ?><option value="<?= h($k) ?>"><?= h($lbl) ?></option><?php endforeach; ?>
+                        </select>
+                        <label style="font-size:12px;font-weight:700">Catatan (wajib)</label>
+                        <textarea name="status_note" required rows="2" placeholder="Jelaskan kronologi singkat kenapa tidak deal…" style="width:100%;margin-top:4px"></textarea>
+                        <button class="btn" style="background:#991b1b;width:100%;margin-top:8px" onclick="return confirm('Tutup penawaran ini sebagai TIDAK DEAL? Tidak bisa diubah lagi.')">Tutup Penawaran</button>
+                    </form>
+                </details>
             </div>
             <?php endif; ?>
         </div>
+        <?php if ($offer['status'] === 'cancelled'): ?>
+        <div class="panel" style="margin-top:10px;background:#fef2f2;border-color:#fecaca">
+            <strong style="color:#991b1b">Ditutup — Tidak Deal</strong>
+            · Alasan: <strong><?= h(offer_lost_label($offer['lost_category'] ?? null)) ?></strong>
+            <?php if (!empty($offer['cancelled_at'])): ?><span style="color:var(--muted)"> · <?= h(date('d/m/Y H:i', strtotime($offer['cancelled_at']))) ?></span><?php endif; ?>
+            <?php if (!empty($offer['status_note'])): ?><div style="margin-top:6px;font-size:13px">“<?= h($offer['status_note']) ?>”</div><?php endif; ?>
+        </div>
+        <?php endif; ?>
         <?php endif; ?>
 
         <form class="panel" method="post" action="?r=offer_save" style="margin-top:12px" id="offer-form">
@@ -350,15 +435,44 @@ function offer_status(PDO $pdo): void
     $pid = current_property_id();
     $id  = (int) post('id');
     $to  = post('status');
-    if (!in_array($to, ['sent', 'nego', 'deal', 'cancelled'], true)) { redirect_to('offer_form', ['id' => $id]); }
+    // 'cancelled' (tutup/tidak deal) ditangani offer_close (wajib alasan).
+    if (!in_array($to, ['sent', 'nego', 'deal'], true)) { redirect_to('offer_form', ['id' => $id]); }
+    $cur = $pdo->prepare('SELECT status, sent_at, nego_at FROM offers WHERE id=? AND property_id=?');
+    $cur->execute([$id, $pid]);
+    $row = $cur->fetch();
+    if (!$row || in_array($row['status'], ['deal', 'cancelled'], true)) { flash('Status terkunci.'); redirect_to('offer_form', ['id' => $id]); }
+    // Stempel engagement (sekali, tidak ditimpa) untuk analisa aktivitas PIC.
+    $extra = '';
+    if ($to === 'sent' && empty($row['sent_at'])) $extra .= ', sent_at=CURRENT_TIMESTAMP';
+    if ($to === 'nego') { if (empty($row['sent_at'])) $extra .= ', sent_at=CURRENT_TIMESTAMP'; if (empty($row['nego_at'])) $extra .= ', nego_at=CURRENT_TIMESTAMP'; }
+    if ($to === 'deal') $extra .= ', deal_at=CURRENT_TIMESTAMP';
+    $pdo->prepare("UPDATE offers SET status=? $extra WHERE id=? AND property_id=?")->execute([$to, $id, $pid]);
+    audit($pdo, 'status_' . $to, 'offers', (string) $id, ['status' => $to]);
+    flash('Status penawaran diperbarui: ' . $to);
+    redirect_to('offer_form', ['id' => $id]);
+}
+
+// ─── Tutup penawaran (tidak deal) — WAJIB alasan, untuk analisa ───────────────
+function offer_close(PDO $pdo): void
+{
+    require_permission('manage_offers');
+    verify_csrf();
+    $pid = current_property_id();
+    $id  = (int) post('id');
+    $cat = (string) post('lost_category');
+    $note = trim((string) post('status_note'));
+    if (!array_key_exists($cat, offer_lost_categories())) { flash('Pilih alasan penawaran ditutup.'); redirect_to('offer_form', ['id' => $id]); }
+    if ($note === '') { flash('Catatan alasan wajib diisi agar bisa dianalisa.'); redirect_to('offer_form', ['id' => $id]); }
     $cur = $pdo->prepare('SELECT status FROM offers WHERE id=? AND property_id=?');
     $cur->execute([$id, $pid]);
     $st = $cur->fetchColumn();
     if ($st === false || in_array($st, ['deal', 'cancelled'], true)) { flash('Status terkunci.'); redirect_to('offer_form', ['id' => $id]); }
-    $extra = $to === 'deal' ? ', deal_at=CURRENT_TIMESTAMP' : ($to === 'cancelled' ? ', cancelled_at=CURRENT_TIMESTAMP' : '');
-    $pdo->prepare("UPDATE offers SET status=? $extra WHERE id=? AND property_id=?")->execute([$to, $id, $pid]);
-    audit($pdo, 'status_' . $to, 'offers', (string) $id, ['status' => $to]);
-    flash('Status penawaran diperbarui: ' . $to);
+    $pdo->prepare(
+        "UPDATE offers SET status='cancelled', cancelled_at=CURRENT_TIMESTAMP,
+                lost_category=?, status_note=?, closed_by=? WHERE id=? AND property_id=?"
+    )->execute([$cat, $note, $_SESSION['user']['name'] ?? 'system', $id, $pid]);
+    audit($pdo, 'close', 'offers', (string) $id, ['lost_category' => $cat, 'note' => $note]);
+    flash('Penawaran ditutup (tidak deal) dengan alasan: ' . offer_lost_label($cat) . '.');
     redirect_to('offer_form', ['id' => $id]);
 }
 

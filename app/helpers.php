@@ -243,6 +243,8 @@ function permission_for_route(string $route): string
         'client_analysis', 'client_profile' => 'view_master',
         'pic_report', 'pic_report_print' => 'view_pic_report',
         'pic_reward', 'pic_reward_save'  => 'view_pic_report',
+        'pic_performance', 'pic_pipeline' => 'view_pic_report',
+        'offer_close' => 'manage_offers',
         'renewals' => 'view_renewals',
         'skp', 'skp_form', 'skp_save', 'skp_print' => 'manage_skp',
         'skp_approve', 'skp_reject' => 'approve_skp',
