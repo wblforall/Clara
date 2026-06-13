@@ -97,8 +97,9 @@ li{margin-bottom:3px;line-height:1.45}
 .pay li{font-size:10.5px}
 .rek{background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;margin-top:6px;font-size:11px;line-height:1.7}
 .tnc li{font-size:9.7px;color:#374151}
-.sign{margin-top:26px}
-.sign .nm{font-weight:700;border-top:1px solid #111;display:inline-block;padding-top:3px;margin-top:46px;min-width:170px}
+.sign{margin-top:22px;page-break-inside:avoid}
+.sign .ttd-img{display:block;max-height:64px;max-width:200px;object-fit:contain;margin:4px 0}
+.sign .nm{font-weight:700;border-top:1px solid #111;display:inline-block;padding-top:3px;min-width:200px}
 .muted{color:#6b7280}
 </style>
 </head>
@@ -178,7 +179,13 @@ li{margin-bottom:3px;line-height:1.45}
     <p style="margin-top:6px">Demikian surat penawaran ini kami buat. Atas perhatian dan kerjasamanya kami ucapkan terima kasih.</p>
 
     <div class="sign">
-        Hormat kami,<br>PT. Wulandari Bangun Laksana, Tbk.
+        <div>Hormat kami,</div>
+        <div style="font-weight:600">PT. Wulandari Bangun Laksana, Tbk.</div>
+        <?php if (!empty($o['pic_signature'])): ?>
+            <img class="ttd-img" src="<?= $h($o['pic_signature']) ?>" alt="Tanda tangan">
+        <?php else: ?>
+            <div style="height:46px"></div>
+        <?php endif; ?>
         <div class="nm"><?= $h($o['pic_name'] ?: '-') ?><br><span class="muted" style="font-weight:400">Sales <?= $h($propShort) ?></span></div>
     </div>
 </div>

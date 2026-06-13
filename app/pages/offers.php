@@ -843,7 +843,7 @@ function offer_print(PDO $pdo): void
         "SELECT o.*, c.company_name, c.brand_name, c.address,
                 ct.name cp_name,
                 u.location_name, u.floor,
-                p.email pic_email, p.phone pic_phone
+                p.email pic_email, p.phone pic_phone, p.signature_path pic_signature
          FROM offers o
          LEFT JOIN master_clients c ON c.id = o.client_id
          LEFT JOIN master_client_contacts ct ON ct.id = o.contact_id
