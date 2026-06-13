@@ -105,13 +105,14 @@ function _offer_days(?string $start, ?string $end): int
  * Mesin pricing — SAMA dengan kalkulasiTotal() di form transaksi agar nilai
  * penawaran konsisten dengan transaksi yang terbit nanti.
  */
-function _offer_calc_total(string $pricing, float $rate, float $area, float $slots, int $days): float
+function _offer_calc_total(string $pricing, float $rate, float $area, float $slots, int $days, int $months = 1): float
 {
     return match ($pricing) {
         'daily_point' => $rate * $days,
         'daily_slot'  => $rate * max(1, $slots) * $days,
         'daily_area'  => $rate * max(1, $area) * $days,
-        'monthly', 'fixed' => $rate,
+        'monthly'     => $rate * max(1, $months), // gudang: harga/bulan × jumlah bulan
+        'fixed'       => $rate,                    // nilai tetap sekali kontrak
         default       => 0.0,
     };
 }
@@ -166,7 +167,14 @@ function offers_list_page(PDO $pdo): void
         ];
         ?>
         <div class="toolbar" style="gap:8px;flex-wrap:wrap">
-            <a class="btn" href="?r=offer_form">+ Buat Penawaran</a>
+            <details style="position:relative;display:inline-block">
+                <summary class="btn" style="list-style:none;cursor:pointer">+ Buat Penawaran ▾</summary>
+                <div style="position:absolute;z-index:30;margin-top:4px;background:#fff;border:1px solid var(--line,#e5e7eb);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.12);min-width:180px;overflow:hidden">
+                    <a class="dd-item" href="?r=offer_form&module=cl" style="display:block;padding:9px 14px;font-size:13px">🏬 Exhibition (SKP)</a>
+                    <a class="dd-item" href="?r=offer_form&module=media" style="display:block;padding:9px 14px;font-size:13px;border-top:1px solid #f1f5f9">📺 Media (SKS)</a>
+                    <a class="dd-item" href="?r=offer_form&module=gudang" style="display:block;padding:9px 14px;font-size:13px;border-top:1px solid #f1f5f9">📦 Gudang (SKS)</a>
+                </div>
+            </details>
             <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
                 <?php
                 $tabs = [
@@ -242,7 +250,7 @@ function offer_form(PDO $pdo): void
     }
     $v = fn(string $k, $def = '') => h((string) ($offer[$k] ?? $def));
 
-    layout(($offer ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran', function () use ($pdo, $offer, $id, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v) {
+    layout(($offer ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v) {
         $picSel = $offer['pic_name'] ?? $linkedPic;
         $disabled = $editable ? '' : 'disabled';
         ?>
@@ -576,7 +584,8 @@ function offer_form(PDO $pdo): void
                     case 'daily_point': calc = rate * days; break;
                     case 'daily_slot':  calc = rate * Math.max(1, slots) * days; break;
                     case 'daily_area':  calc = rate * Math.max(1, area) * days; break;
-                    case 'monthly': case 'fixed': calc = rate; break;
+                    case 'monthly': calc = rate * Math.max(1, months); break;
+                    case 'fixed':   calc = rate; break;
                 }
                 calc = Math.round(calc);
                 var override = parseFloat((document.getElementById('override_amount') || {}).value || '0') || 0;
@@ -684,7 +693,7 @@ function offer_save(PDO $pdo): void
     $area     = (float) post('area_sqm', 0);
     $slots    = max(1, (float) post('slots', 1));
     // Total kalkulasi (mesin pricing) → ditimpa harga nego final bila ada.
-    $calc     = round(_offer_calc_total($pricing, $rate, $area, $slots, $days));
+    $calc     = round(_offer_calc_total($pricing, $rate, $area, $slots, $days, $months));
     $override = (float) preg_replace('/\D/', '', (string) post('override_amount', '')) ?: 0.0;
     $final    = $override > 0 ? $override : $calc;
     $monthly  = $months > 0 ? round($final / $months) : $final;
