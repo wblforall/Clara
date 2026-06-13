@@ -50,11 +50,12 @@ $ketentuan = [
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111;background:#f3f4f6}
-/* Kop surat: header ~28mm, footer ~32mm. Ruang aman via margin halaman. */
-@page{size:A4 portrait;margin:28mm 17mm 32mm}
-/* Cetak: kop MELAYANG (fixed) → otomatis berulang di tiap halaman. */
-.letterhead{position:fixed;top:0;left:0;width:100%;height:100%;
-       background:url('assets/letterhead-a4.jpg') top center no-repeat;background-size:100% 100%;z-index:-1}
+/* Kop surat: header ~26mm, footer ~30mm. Ruang aman konten via margin halaman. */
+@page{size:A4 portrait;margin:30mm 17mm 33mm}
+/* Cetak: kop MELAYANG (fixed) berulang tiap halaman. Offset negatif = margin
+   halaman supaya kop tetap full-bleed (Chrome menaruh fixed di dalam margin). */
+.letterhead{position:fixed;top:-30mm;left:-17mm;width:210mm;height:297mm;
+       background:url('assets/letterhead-a4.jpg') top left no-repeat;background-size:210mm 297mm;z-index:-1}
 .sheet{position:relative;z-index:1}
 .no-print{position:fixed;top:14px;right:14px;display:flex;gap:8px;z-index:9}
 .no-print button{padding:9px 18px;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer}
@@ -63,8 +64,9 @@ body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111;background:#
 @media screen{
   body{background:#9ca3af}
   .letterhead{display:none}
-  .sheet{width:210mm;min-height:297mm;margin:16px auto;padding:28mm 17mm 32mm;
-         background:#fff url('assets/letterhead-a4.jpg') top center no-repeat;background-size:210mm 297mm;
+  /* Layar: kop berulang tiap 297mm → preview tampak berhalaman (mengikuti cetak). */
+  .sheet{width:210mm;min-height:297mm;margin:16px auto;padding:30mm 17mm 33mm;
+         background:#fff url('assets/letterhead-a4.jpg') top center repeat-y;background-size:210mm 297mm;
          box-shadow:0 4px 24px rgba(0,0,0,.12)}
 }
 @media print{.no-print{display:none}}
@@ -105,7 +107,6 @@ li{margin-bottom:3px;line-height:1.45}
     <div class="meta">
         <div><b>Nomor</b>: <?= $h($o['offer_no']) ?></div>
         <div><b>Perihal</b>: <?= $h($o['perihal'] ?: 'Surat Penawaran Sewa') ?></div>
-        <div class="validbox">Penawaran berlaku s/d <?= $h($berlaku) ?></div>
     </div>
     <div class="meta">
         Kepada Yth,<br>
@@ -160,6 +161,7 @@ li{margin-bottom:3px;line-height:1.45}
 
     <div class="sec">Ketentuan &amp; Persyaratan</div>
     <ol class="tnc"><?php foreach ($ketentuan as $t): ?><li><?= $h($t) ?></li><?php endforeach; ?></ol>
+    <div class="validbox" style="margin-top:8px">Penawaran ini berlaku s/d <?= $h($berlaku) ?></div>
 
     <p style="margin-top:12px">Untuk keterangan lebih lanjut dapat menghubungi <strong><?= $h($o['pic_name'] ?: 'tim Casual Leasing') ?></strong><?= $o['pic_phone'] ? ' (' . $h($o['pic_phone']) . ')' : '' ?> atau kantor kami <strong><?= $h($OFFICE_PHONE) ?></strong>.</p>
     <p style="margin-top:6px">Demikian surat penawaran ini kami buat. Atas perhatian dan kerjasamanya kami ucapkan terima kasih.</p>
