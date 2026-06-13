@@ -392,9 +392,9 @@ function offer_form(PDO $pdo): void
             <div class="form-grid">
                 <div><label>Tanggal Mulai</label><input type="date" name="start_date" id="start_date" value="<?= $v('start_date') ?>" required <?= $disabled ?>></div>
                 <div><label>Tanggal Selesai</label><input type="date" name="end_date" id="end_date" value="<?= $v('end_date') ?>" required <?= $disabled ?>></div>
-                <div><label>Harga Nego Final <span class="muted" style="font-weight:400">(opsional — override)</span></label><input type="text" inputmode="numeric" id="override_fmt" placeholder="Kosongkan = pakai kalkulasi"><input type="hidden" name="override_amount" id="override_amount" value="<?= (int)($offer['override_amount'] ?? 0) ?: '' ?>"><div class="help">Override: isi bila nilai tidak sama dengan hasil kalkulasi.</div></div>
-                <div><label>Total Kontrak</label><input type="text" id="total_calc" value="" readonly><input type="hidden" name="total_calculated" id="total_calc_h" value="<?= $v('total_calculated') ?>"></div>
+                <div><label>Total Kontrak <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="total_calc" value="" readonly><input type="hidden" name="total_calculated" id="total_calc_h" value="<?= $v('total_calculated') ?>"></div>
                 <div><label>Harga / Bulan <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="monthly_disp" value="" readonly><input type="hidden" name="monthly_amount" id="monthly_amount" value="<?= $v('monthly_amount') ?>"></div>
+                <div class="wide"><label>Harga Nego Final <span class="muted" style="font-weight:400">(opsional — override)</span></label><input type="text" inputmode="numeric" id="override_fmt" placeholder="Kosongkan = pakai hasil kalkulasi di atas"><input type="hidden" name="override_amount" id="override_amount" value="<?= (int)($offer['override_amount'] ?? 0) ?: '' ?>"><div class="help">Override: isi bila nilai final tidak sama dengan hasil kalkulasi.</div></div>
             </div>
             <?php if ($editable): ?>
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px">
@@ -436,9 +436,9 @@ function offer_form(PDO $pdo): void
             <h3>Pembayaran <span style="font-weight:400;font-size:12px;color:var(--muted)">(DP & deposit dihitung dari harga/bulan; bisa di-override)</span></h3>
             <div class="form-grid">
                 <div><label>DP (bulan, min 1)</label><input type="number" step="0.5" min="1" name="dp_months" id="dp_months" value="<?= $v('dp_months', '2') ?>" <?= $disabled ?>></div>
-                <div><label>Nominal DP <span class="muted" style="font-weight:400">(otomatis, bisa diubah)</span></label><input type="number" step="1" name="dp_amount" id="dp_amount" value="<?= $v('dp_amount') ?>" <?= $disabled ?>></div>
+                <div><label>Nominal DP <span class="muted" style="font-weight:400">(otomatis, bisa diubah)</span></label><input type="text" inputmode="numeric" id="dp_fmt" placeholder="0" <?= $disabled ?>><input type="hidden" name="dp_amount" id="dp_amount" value="<?= (int)($offer['dp_amount'] ?? 0) ?: '' ?>"></div>
                 <div><label>Deposit (bulan)</label><input type="number" step="0.5" min="0" name="deposit_months" id="deposit_months" value="<?= $v('deposit_months', '1') ?>" <?= $disabled ?>></div>
-                <div><label>Nominal Deposit <span class="muted" style="font-weight:400">(otomatis, bisa diubah)</span></label><input type="number" step="1" name="deposit_amount" id="deposit_amount" value="<?= $v('deposit_amount') ?>" <?= $disabled ?>></div>
+                <div><label>Nominal Deposit <span class="muted" style="font-weight:400">(otomatis, bisa diubah)</span></label><input type="text" inputmode="numeric" id="dep_fmt" placeholder="0" <?= $disabled ?>><input type="hidden" name="deposit_amount" id="deposit_amount" value="<?= (int)($offer['deposit_amount'] ?? 0) ?: '' ?>"></div>
             </div>
 
             <?php if ($offer && $editable): ?>
@@ -566,18 +566,29 @@ function offer_form(PDO $pdo): void
                 if (de.getDate() >= ds.getDate()) m++;
                 return Math.max(1, m);
             }
-            // ── Override (harga nego final): format ribuan → hidden ──
-            (function () {
-                var fmt = document.getElementById('override_fmt'), hid = document.getElementById('override_amount');
+            // ── Input nominal ber-format ribuan (titik) → simpan angka ke hidden ──
+            function fmtNum(n) { return Math.round(n).toLocaleString('id-ID'); }
+            function bindMoney(fmtId, hidId, onChange) {
+                var fmt = document.getElementById(fmtId), hid = document.getElementById(hidId);
                 if (!fmt || !hid) return;
-                if (hid.value) fmt.value = parseInt(hid.value, 10).toLocaleString('id-ID');
+                if (hid.value && hid.value !== '0') { fmt.value = fmtNum(parseInt(hid.value, 10)); fmt.dataset.touched = '1'; }
                 fmt.addEventListener('input', function () {
                     var raw = this.value.replace(/\D/g, '');
-                    this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                    this.value = raw ? fmtNum(parseInt(raw, 10)) : '';
                     hid.value = raw;
-                    kalkulasi();
+                    this.dataset.touched = raw ? '1' : '';
+                    if (onChange) onChange();
                 });
-            })();
+            }
+            // Set nominal otomatis (hidden + tampilan) bila belum diisi manual.
+            function setMoneyAuto(fmtId, hidId, val) {
+                var fmt = document.getElementById(fmtId), hid = document.getElementById(hidId);
+                if (!fmt || !hid || fmt.dataset.touched) return;
+                var r = Math.round(val); hid.value = r || ''; fmt.value = r ? fmtNum(r) : '';
+            }
+            bindMoney('override_fmt', 'override_amount', function () { kalkulasi(); });
+            bindMoney('dp_fmt', 'dp_amount');
+            bindMoney('dep_fmt', 'deposit_amount');
             // ── Mesin pricing (sama dgn input transaksi) ──
             function kalkulasi() {
                 var s = (document.getElementById('start_date') || {}).value, e = (document.getElementById('end_date') || {}).value;
@@ -603,9 +614,8 @@ function offer_form(PDO $pdo): void
                 document.getElementById('monthly_amount').value = monthly;
                 // DP/deposit auto bila kosong/0 (nego manual tidak ketimpa)
                 // DP & deposit = harga/bulan × jumlah bulan (otomatis), kecuali diisi manual.
-                var dp = document.getElementById('dp_amount'), dep = document.getElementById('deposit_amount');
-                if (dp && !dp.dataset.touched) dp.value = Math.round(monthly * num('dp_months'));
-                if (dep && !dep.dataset.touched) dep.value = Math.round(monthly * num('deposit_months'));
+                setMoneyAuto('dp_fmt', 'dp_amount', monthly * num('dp_months'));
+                setMoneyAuto('dep_fmt', 'deposit_amount', monthly * num('deposit_months'));
                 // Ringkasan + estimasi spread
                 var res = document.getElementById('kalkulasi-result');
                 if (res) { res.style.display = ''; res.innerHTML = 'Kalkulasi: <strong>' + rp(calc) + '</strong> · ' + days + ' hari · ' + months + ' bulan' + (override > 0 ? ' · <span style="color:#b45309">override ' + rp(override) + '</span>' : ''); }
@@ -644,12 +654,6 @@ function offer_form(PDO $pdo): void
             var ptEl = document.getElementById('pricing_type'); if (ptEl) ptEl.addEventListener('change', kalkulasi);
             ['start_date', 'end_date'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('change', function () { syncRecognition(); kalkulasi(); checkOverlap(); }); });
             var btn = document.getElementById('btn-kalkulasi'); if (btn) btn.addEventListener('click', kalkulasi);
-            // DP/Deposit nominal: tandai "diisi manual" agar tidak ditimpa auto; kosong = ikut auto lagi.
-            ['dp_amount', 'deposit_amount'].forEach(function (id) {
-                var el = document.getElementById(id); if (!el) return;
-                if (el.value && el.value !== '0') el.dataset.touched = '1'; // nilai tersimpan (edit) → jangan ditimpa
-                el.addEventListener('input', function () { this.dataset.touched = (this.value.trim() !== '' && this.value.trim() !== '0') ? '1' : ''; });
-            });
 
             // ── Cek overlap unit (reuse endpoint transaksi) ──
             var overlapTimer = null;
