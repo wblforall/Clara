@@ -32,6 +32,7 @@ Form Surat Penawaran kini memakai **mesin perhitungan & kontrol recurring yang s
 - **Referral** — field referral (komisi 1%) ikut di penawaran dan diteruskan ke transaksi.
 - **Cek overlap unit** — peringatan otomatis bila unit sudah punya transaksi yang bertabrakan tanggal, sejak tahap penawaran.
 - **Preview spread per bulan** — saat metode Spread, klik *Kalkulasi Total* menampilkan rincian nilai **tiap bulan** (mis. Ags 2026 … Jan 2027) sebelum disimpan. Field harga nego diberi keterangan **(override)** agar jelas fungsinya menimpa hasil kalkulasi.
+- **DP & Deposit** — DP minimal **1 bulan** (bukan 2). Nominal DP & deposit kini **dihitung otomatis dari harga/bulan** (yang sudah mengikuti override bila diisi) × jumlah bulan, dan **tetap bisa di-override manual** — bila diisi sendiri tidak akan ditimpa, bila dikosongkan kembali mengikuti hitungan otomatis.
 
 ## Version 4.15 — 13 Juni 2026
 
