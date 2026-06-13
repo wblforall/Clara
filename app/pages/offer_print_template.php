@@ -50,13 +50,19 @@ $ketentuan = [
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111;background:#f3f4f6}
-/* Kop surat: header ~26mm, footer ~30mm. Ruang aman konten via margin halaman. */
-@page{size:A4 portrait;margin:30mm 17mm 33mm}
-/* Cetak: kop MELAYANG (fixed) berulang tiap halaman. Offset negatif = margin
-   halaman supaya kop tetap full-bleed (Chrome menaruh fixed di dalam margin). */
-.letterhead{position:fixed;top:-30mm;left:-17mm;width:210mm;height:297mm;
-       background:url('assets/letterhead-a4.jpg') top left no-repeat;background-size:210mm 297mm;z-index:-1}
-.sheet{position:relative;z-index:1}
+/* Kop surat dibelah jadi header & footer (potongan dari 1 gambar A4), masing-masing
+   position:fixed → BERULANG tiap halaman saat cetak. Ruang konten via margin halaman. */
+@page{size:A4 portrait;margin:0}
+/* thead/tfoot berulang tiap halaman → mem-booking ruang header/footer.
+   Kop digambar via elemen fixed yang mengisi ruang itu. */
+table.paper{width:100%;border-collapse:collapse}
+table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:0}
+.sp-top{height:30mm}.sp-bot{height:32mm}
+.lh-header{position:fixed;top:0;left:0;width:100%;height:30mm;
+       background:url('assets/letterhead-a4.jpg') no-repeat top center;background-size:100% auto;z-index:0}
+.lh-footer{position:fixed;bottom:0;left:0;width:100%;height:32mm;
+       background:url('assets/letterhead-a4.jpg') no-repeat bottom center;background-size:100% auto;z-index:0}
+.sheet{position:relative;z-index:1;padding:0 16mm}
 .no-print{position:fixed;top:14px;right:14px;display:flex;gap:8px;z-index:9}
 .no-print button{padding:9px 18px;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer}
 .btn-print{background:#0D9488;color:#fff}.btn-close{background:#e5e7eb;color:#374151}
@@ -64,10 +70,10 @@ body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111;background:#
 @media screen{
   body{background:#9ca3af}
   .letterhead{display:none}
+  .lh-header,.lh-footer{display:none}
   /* Layar: kop berulang tiap 297mm → preview tampak berhalaman (mengikuti cetak). */
-  .sheet{width:210mm;min-height:297mm;margin:16px auto;padding:30mm 17mm 33mm;
-         background:#fff url('assets/letterhead-a4.jpg') top center repeat-y;background-size:210mm 297mm;
-         box-shadow:0 4px 24px rgba(0,0,0,.12)}
+  table.paper{width:210mm;margin:16px auto;box-shadow:0 4px 24px rgba(0,0,0,.12);
+         background:#fff url('assets/letterhead-a4.jpg') top center repeat-y;background-size:210mm 297mm}
 }
 @media print{.no-print{display:none}}
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -97,11 +103,16 @@ li{margin-bottom:3px;line-height:1.45}
 </style>
 </head>
 <body>
-<div class="letterhead"></div>
+<div class="lh-header"></div>
+<div class="lh-footer"></div>
 <div class="no-print">
     <button class="btn-print" onclick="window.print()">🖨 Cetak / Simpan PDF</button>
     <button class="btn-close" onclick="window.close()">✕ Tutup</button>
 </div>
+<table class="paper">
+<thead><tr><td><div class="sp-top"></div></td></tr></thead>
+<tfoot><tr><td><div class="sp-bot"></div></td></tr></tfoot>
+<tbody><tr><td>
 <div class="sheet">
     <div style="text-align:right;margin-bottom:8px">Balikpapan, <?= $h($tanggal) ?></div>
     <div class="meta">
@@ -171,6 +182,8 @@ li{margin-bottom:3px;line-height:1.45}
         <div class="nm"><?= $h($o['pic_name'] ?: '-') ?><br><span class="muted" style="font-weight:400">Sales <?= $h($propShort) ?></span></div>
     </div>
 </div>
+</td></tr></tbody>
+</table>
 </body>
 </html>
 <?php exit; ?>
