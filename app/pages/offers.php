@@ -397,10 +397,11 @@ function offer_form(PDO $pdo): void
                     <label>Metode Pengakuan</label>
                     <select name="billing_method" id="billing_method" <?= $disabled ?>>
                         <?php $bm = $offer['billing_method'] ?? ''; ?>
+                        <option value="" <?= $bm === '' ? 'selected' : '' ?>>Otomatis (ikut periode)</option>
                         <option value="anchor_cycle" <?= $bm === 'anchor_cycle' ? 'selected' : '' ?>>Sekaligus (anchor) — diakui 1 bulan</option>
                         <option value="spread" <?= $bm === 'spread' ? 'selected' : '' ?>>Spread per Bulan (recurring)</option>
                     </select>
-                    <div class="help">Spread = nilai dibagi rata ke tiap bulan kontrak.</div>
+                    <div class="help" id="billing_help">Otomatis: multi-bulan/lintas bulan → Spread (recurring); selainnya → Sekaligus.</div>
                 </div>
                 <div id="cycle_wrap">
                     <label>Pengakuan per Siklus</label>
@@ -594,26 +595,28 @@ function offer_form(PDO $pdo): void
                 if (res) { res.style.display = ''; res.innerHTML = 'Kalkulasi: <strong>' + rp(calc) + '</strong> · ' + days + ' hari · ' + months + ' bulan' + (override > 0 ? ' · <span style="color:#b45309">override ' + rp(override) + '</span>' : ''); }
                 var sp = document.getElementById('kalkulasi-spread');
                 if (sp) {
-                    if ((document.getElementById('billing_method') || {}).value === 'spread' && months > 1) {
+                    if (effectiveBilling() === 'spread' && months > 1) {
                         sp.style.display = ''; sp.innerHTML = '<strong>Estimasi spread:</strong> ' + rp(monthly) + ' / bulan × ' + months + ' bulan (selisih pembulatan ke bulan terakhir).';
                     } else { sp.style.display = 'none'; }
                 }
             }
-            // ── Pengakuan: toggle siklus + saran spread ──
-            function syncRecognition(suggest) {
-                var bm = document.getElementById('billing_method'), cw = document.getElementById('cycle_wrap');
-                if (suggest && bm && !bm.dataset.touched) {
-                    var s = (document.getElementById('start_date') || {}).value, e = (document.getElementById('end_date') || {}).value;
-                    var cross = s && e && s.substring(0, 7) !== e.substring(0, 7);
-                    bm.value = (monthsFromDates() > 1 || cross) ? 'spread' : 'anchor_cycle';
-                }
-                if (cw && bm) cw.style.display = bm.value === 'spread' ? '' : 'none';
+            // ── Pengakuan: hitung metode efektif (Otomatis → ikut periode), toggle siklus ──
+            function effectiveBilling() {
+                var bm = (document.getElementById('billing_method') || {}).value;
+                if (bm === 'spread' || bm === 'anchor_cycle') return bm;
+                var s = (document.getElementById('start_date') || {}).value, e = (document.getElementById('end_date') || {}).value;
+                var cross = s && e && s.substring(0, 7) !== e.substring(0, 7);
+                return (monthsFromDates() > 1 || cross) ? 'spread' : 'anchor_cycle';
+            }
+            function syncRecognition() {
+                var cw = document.getElementById('cycle_wrap');
+                if (cw) cw.style.display = effectiveBilling() === 'spread' ? '' : 'none';
             }
             var bmEl = document.getElementById('billing_method');
-            if (bmEl) bmEl.addEventListener('change', function () { this.dataset.touched = '1'; syncRecognition(false); kalkulasi(); });
+            if (bmEl) bmEl.addEventListener('change', function () { syncRecognition(); kalkulasi(); });
             ['unit_rate', 'area_sqm', 'slots_input', 'dp_months', 'deposit_months'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('input', kalkulasi); });
             var ptEl = document.getElementById('pricing_type'); if (ptEl) ptEl.addEventListener('change', kalkulasi);
-            ['start_date', 'end_date'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('change', function () { syncRecognition(true); kalkulasi(); checkOverlap(); }); });
+            ['start_date', 'end_date'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('change', function () { syncRecognition(); kalkulasi(); checkOverlap(); }); });
             var btn = document.getElementById('btn-kalkulasi'); if (btn) btn.addEventListener('click', kalkulasi);
 
             // ── Cek overlap unit (reuse endpoint transaksi) ──
@@ -636,7 +639,7 @@ function offer_form(PDO $pdo): void
                 }, 400);
             }
 
-            syncRecognition(false);
+            syncRecognition();
             kalkulasi();
             checkOverlap();
         })();
