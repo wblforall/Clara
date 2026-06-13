@@ -11,6 +11,16 @@
 
 ---
 
+## Version 4.19 — 13 Juni 2026
+
+### Isi Surat Penawaran lebih rapi & jelas
+
+- **Tabel Rincian Biaya** — biaya kini disajikan dalam tabel: sewa/bulan, masa sewa, subtotal, **PPN 12%**, total setelah PPN, security deposit, dan **Grand Total** — tidak lagi berserak di paragraf.
+- **Durasi nyata** — "Masa sewa" menampilkan durasi sebenarnya (mis. *7 hari*, atau *6 bulan · 184 hari*), tidak lagi memaksa "1 bulan" untuk sewa harian.
+- **Masa berlaku penawaran** — ditambah label *"Penawaran berlaku s/d <tanggal>"* (14 hari sejak tanggal penawaran).
+- **Kontak rapi** — bila email/WA PIC kosong, otomatis pakai kontak kantor; tidak ada lagi tanda "‑" kosong di bagian pembayaran/penutup.
+- Bagian tanda tangan dijaga tidak terpotong antar-halaman.
+
 ## Version 4.18 — 13 Juni 2026
 
 ### Tampilan — Kop Surat (Letterhead) di semua surat

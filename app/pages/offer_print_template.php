@@ -7,6 +7,23 @@ $months = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', '
 $od = $o['offer_date'] ? strtotime($o['offer_date']) : time();
 $tanggal = (int) date('d', $od) . ' ' . $months[(int) date('n', $od)] . ' ' . date('Y', $od);
 $periode = $o['start_date'] ? (date('d/m/Y', strtotime($o['start_date'])) . ' s/d ' . date('d/m/Y', strtotime($o['end_date']))) : '-';
+// Durasi nyata: pakai "hari" bila < 28 hari, selain itu "bulan" (+ hari).
+$contractMonths = (int) ($o['contract_months'] ?: 1);
+$days = ($o['start_date'] && $o['end_date']) ? ((int) floor((strtotime($o['end_date']) - strtotime($o['start_date'])) / 86400) + 1) : 0;
+$durasi = ($days > 0 && $days < 28) ? ($days . ' hari') : ($contractMonths . ' bulan' . ($days ? ' · ' . $days . ' hari' : ''));
+// Rincian biaya
+$total    = (float) $o['total_calculated'];
+$ppn      = round($total * 11 / 12 * 0.12);
+$afterPpn = $total + $ppn;
+$deposit  = (float) $o['deposit_amount'];
+$grand    = $afterPpn + $deposit;
+$dpBulan  = rtrim(rtrim(number_format((float) $o['dp_months'], 1, ',', ''), '0'), ',');
+$depBulan = rtrim(rtrim(number_format((float) $o['deposit_months'], 1, ',', ''), '0'), ',');
+// Masa berlaku penawaran: 14 hari sejak tanggal penawaran
+$validTs  = strtotime(($o['offer_date'] ?: date('Y-m-d')) . ' +14 days');
+$berlaku  = (int) date('d', $validTs) . ' ' . $months[(int) date('n', $validTs)] . ' ' . date('Y', $validTs);
+// Kontak pembayaran: fallback ke kantor bila PIC kosong
+$payWa    = $o['pic_phone'] ?: $OFFICE_PHONE;
 $ketentuan = [
     'Penyewa / peserta pameran dilarang menjual produk yang melanggar Hak Cipta, seperti produk bajakan atau barang palsu.',
     'Wajib menyerahkan design (gambar) booth yang akan digunakan ke pihak Manajemen.',
@@ -58,6 +75,14 @@ body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111;background:#
 table.obj{width:100%;border-collapse:collapse;margin:10px 0}
 table.obj th,table.obj td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left;font-size:11px}
 table.obj th{background:#f1f5f9}
+table.cost{width:100%;border-collapse:collapse;margin:8px 0}
+table.cost td{border:1px solid #e5e7eb;padding:5px 10px;font-size:11px}
+table.cost td.lbl{width:62%;color:#374151}
+table.cost td.amt{text-align:right;font-weight:600;white-space:nowrap}
+table.cost tr.sub td{background:#f8fafc}
+table.cost tr.tot td{background:#f1f5f9;font-weight:700}
+table.cost tr.grand td{background:#f0fdfa;color:#0f766e;font-weight:800;font-size:11.5px}
+.validbox{display:inline-block;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;border-radius:6px;padding:3px 10px;font-size:10.5px;font-weight:600;margin-top:4px}
 .sec{font-weight:800;margin:14px 0 5px;color:#0D9488;text-transform:uppercase;font-size:11px;letter-spacing:.03em}
 ul,ol{margin:0 0 0 18px}
 li{margin-bottom:3px;line-height:1.45}
@@ -80,6 +105,7 @@ li{margin-bottom:3px;line-height:1.45}
     <div class="meta">
         <div><b>Nomor</b>: <?= $h($o['offer_no']) ?></div>
         <div><b>Perihal</b>: <?= $h($o['perihal'] ?: 'Surat Penawaran Sewa') ?></div>
+        <div class="validbox">Penawaran berlaku s/d <?= $h($berlaku) ?></div>
     </div>
     <div class="meta">
         Kepada Yth,<br>
@@ -99,12 +125,22 @@ li{margin-bottom:3px;line-height:1.45}
             <td><?= $h($o['keterangan'] ?? '-') ?></td>
         </tr></tbody>
     </table>
-    <div style="line-height:1.7">
-        Masa sewa: <strong><?= (int)$o['contract_months'] ?> bulan</strong> &nbsp;·&nbsp; Periode: <strong><?= $h($periode) ?></strong><br>
-        <?= $o['unit_rate'] ? 'Harga sewa Rp ' . number_format((float)$o['unit_rate'], 0, ',', '.') . '/m/bulan<br>' : '' ?>
-        Harga belum termasuk biaya listrik · Harga belum termasuk PPN 12%<br>
-        <span class="muted" style="font-size:10px">(PPN 12% sesuai PMK No. 131/2024 dengan perhitungan Nilai Sewa × 11/12 × 12%)</span>
+    <div style="line-height:1.7;margin-top:4px">
+        Masa sewa: <strong><?= $h($durasi) ?></strong> &nbsp;·&nbsp; Periode: <strong><?= $h($periode) ?></strong>
+        <?= $o['unit_rate'] ? '<br>Harga dasar Rp ' . number_format((float)$o['unit_rate'], 0, ',', '.') . ' /m²/' . (($o['pricing_type'] ?? '') === 'monthly' ? 'bulan' : 'hari') : '' ?>
     </div>
+
+    <div class="sec">Rincian Biaya</div>
+    <table class="cost">
+        <tr><td class="lbl">Biaya sewa / bulan</td><td class="amt"><?= $rp($o['monthly_amount']) ?></td></tr>
+        <tr><td class="lbl">Masa sewa</td><td class="amt"><?= $h($durasi) ?></td></tr>
+        <tr class="sub"><td class="lbl">Subtotal sewa</td><td class="amt"><?= $rp($total) ?></td></tr>
+        <tr><td class="lbl">PPN 12% <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppn) ?></td></tr>
+        <tr class="tot"><td class="lbl">Total setelah PPN</td><td class="amt"><?= $rp($afterPpn) ?></td></tr>
+        <tr><td class="lbl">Security Deposit (<?= $h($depBulan) ?> bln, dikembalikan 100%)</td><td class="amt"><?= $rp($deposit) ?></td></tr>
+        <tr class="grand"><td class="lbl">Grand Total (pembayaran awal + deposit)</td><td class="amt"><?= $rp($grand) ?></td></tr>
+    </table>
+    <div class="muted" style="font-size:9.5px">Harga belum termasuk biaya listrik. PPN 12% sesuai PMK No. 131/2024.</div>
 
     <div class="sec">Fasilitas</div>
     <ul><li>Standar area pameran</li><li>Stop kontak listrik</li><li>Media promosi: media sosial mall &amp; pembagian flyer di area event</li></ul>
@@ -119,13 +155,13 @@ li{margin-bottom:3px;line-height:1.45}
     <div class="rek">
         Pembayaran ditransfer ke rekening:<br>
         <strong>PT. Wulandari Bangun Laksana</strong> · Bank Rakyat Indonesia (BRI) · No. Rek <strong>2078-01-000560-30-4</strong><br>
-        Bukti pembayaran di-email ke <strong><?= $h($o['pic_email'] ?: '-') ?></strong> atau WhatsApp ke <strong><?= $h($o['pic_phone'] ?: '-') ?></strong>
+        Bukti pembayaran dikirim via WhatsApp ke <strong><?= $h($payWa) ?></strong><?= $o['pic_email'] ? ' atau email <strong>' . $h($o['pic_email']) . '</strong>' : '' ?>.
     </div>
 
     <div class="sec">Ketentuan &amp; Persyaratan</div>
     <ol class="tnc"><?php foreach ($ketentuan as $t): ?><li><?= $h($t) ?></li><?php endforeach; ?></ol>
 
-    <p style="margin-top:12px">Untuk keterangan lebih lanjut dapat menghubungi kantor kami <strong><?= $h($OFFICE_PHONE) ?></strong> atau <strong><?= $h($o['pic_name'] ?: '-') ?> <?= $h($o['pic_phone'] ?: '') ?></strong>.</p>
+    <p style="margin-top:12px">Untuk keterangan lebih lanjut dapat menghubungi <strong><?= $h($o['pic_name'] ?: 'tim Casual Leasing') ?></strong><?= $o['pic_phone'] ? ' (' . $h($o['pic_phone']) . ')' : '' ?> atau kantor kami <strong><?= $h($OFFICE_PHONE) ?></strong>.</p>
     <p style="margin-top:6px">Demikian surat penawaran ini kami buat. Atas perhatian dan kerjasamanya kami ucapkan terima kasih.</p>
 
     <div class="sign">
