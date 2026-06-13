@@ -316,6 +316,8 @@ function roles_page(PDO $pdo): void
         'view_commission_sim' => 'Simulasi Komisi',
         'view_renewals'       => 'Lihat Renewal',
         'manage_renewals'     => 'Kelola Renewal',
+        'manage_skp'          => 'Kelola SKP',
+        'approve_skp'         => 'Approve SKP',
         'view_logs'           => 'Activity Log',
         'manage_users'        => 'Kelola Users',
         'manage_deleted'      => 'Hapus Transaksi',
@@ -384,7 +386,7 @@ function roles_save(PDO $pdo): void
         'view_dashboard', 'view_exec_summary', 'view_transactions', 'manage_transactions',
         'view_master', 'manage_master', 'import_master',
         'export_reports', 'view_pic_report', 'view_commission_sim',
-        'view_renewals', 'manage_renewals', 'view_logs', 'manage_users', 'manage_deleted',
+        'view_renewals', 'manage_renewals', 'manage_skp', 'approve_skp', 'view_logs', 'manage_users', 'manage_deleted',
     ];
 
     $submitted = $_POST['perms'] ?? [];

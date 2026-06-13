@@ -192,6 +192,14 @@ if ($route === 'switch_property') {
     exit;
 }
 
+// ─── SKP: tanda tangan customer (publik, akses via sign_token, tanpa login) ───
+if (in_array($route, ['skp_sign', 'skp_sign_save'], true)) {
+    require_once APP_ROOT . '/app/pages/skp.php';
+    if ($route === 'skp_sign_save') skp_sign_save($pdo);
+    skp_sign_page($pdo);
+    exit;
+}
+
 // ─── Authenticated area ───────────────────────────────────────────────────────
 require_login();
 
@@ -276,6 +284,12 @@ $pageFiles = [
     'client_save'                 => 'clients.php',
     'client_analysis'             => 'clients.php',
     'client_profile'              => 'clients.php',
+    'skp'                         => 'skp.php',
+    'skp_form'                    => 'skp.php',
+    'skp_save'                    => 'skp.php',
+    'skp_approve'                 => 'skp.php',
+    'skp_reject'                  => 'skp.php',
+    'skp_print'                   => 'skp.php',
     'users'                       => 'users.php',
     'user_form'                   => 'users.php',
     'user_save'                   => 'users.php',
@@ -310,6 +324,12 @@ match ($route) {
     'client_save'                 => client_save($pdo),
     'client_analysis'             => client_analysis_page($pdo),
     'client_profile'              => client_profile_page($pdo),
+    'skp'                         => skp_list_page($pdo),
+    'skp_form'                    => skp_form($pdo),
+    'skp_save'                    => skp_save($pdo),
+    'skp_approve'                 => skp_approve($pdo),
+    'skp_reject'                  => skp_reject($pdo),
+    'skp_print'                   => skp_print($pdo),
     'export_client_analysis_xlsx' => export_client_analysis_xlsx($pdo),
     'pic_report'                  => pic_report_page($pdo),
     'pic_report_print'            => pic_report_print($pdo),

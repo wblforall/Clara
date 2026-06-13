@@ -1527,6 +1527,9 @@ function allocation_detail(PDO $pdo): void
                     <a class="btn light" href="?r=transaction_edit&id=<?= h((string) $trx['id']) ?>">Edit Transaksi</a>
                     <?php endif; ?>
                     <a class="btn light" href="?r=transaction_history&id=<?= h((string) $trx['id']) ?>">Riwayat</a>
+                    <?php if (($trx['module'] ?? '') === 'cl' && can('manage_skp')): ?>
+                    <a class="btn" href="?r=skp_form&transaction_id=<?= h((string) $trx['id']) ?>" style="background:#0369a1">Buat / Lihat SKP</a>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
