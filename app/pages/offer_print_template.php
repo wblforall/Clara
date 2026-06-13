@@ -49,7 +49,7 @@ $ketentuan = [
 <link rel="icon" type="image/png" href="assets/clara-logo.png">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111;background:#f3f4f6}
+body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111;background:#fff}
 /* Kop surat dibelah jadi header & footer (potongan dari 1 gambar A4), masing-masing
    position:fixed → BERULANG tiap halaman saat cetak. Ruang konten via margin halaman. */
 @page{size:A4 portrait;margin:0}

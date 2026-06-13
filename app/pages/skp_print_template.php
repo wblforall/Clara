@@ -23,7 +23,7 @@ $today = date('d') . ' ' . ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 
 <link rel="icon" type="image/png" href="assets/clara-logo.png">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Inter', Arial, sans-serif; font-size: 11px; color: #111; background: #f3f4f6; }
+body { font-family: 'Inter', Arial, sans-serif; font-size: 11px; color: #111; background: #fff; }
 @page { size: A4 portrait; margin: 0; }
 /* Kop di dalam thead/tfoot tabel → otomatis berulang & posisinya benar
    (header tiap atas halaman, footer tiap bawah) baik di layar maupun cetak. */
