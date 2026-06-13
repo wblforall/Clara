@@ -71,9 +71,11 @@ table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:
   body{background:#9ca3af}
   .letterhead{display:none}
   .lh-header,.lh-footer{display:none}
-  /* Layar: kop berulang tiap 297mm → preview tampak berhalaman (mengikuti cetak). */
-  table.paper{width:210mm;margin:16px auto;box-shadow:0 4px 24px rgba(0,0,0,.12);
-         background:#fff url('assets/letterhead-a4.jpg') top center repeat-y;background-size:210mm 297mm}
+  table.paper>thead,table.paper>tfoot{display:none}
+  /* Layar: 1 lembar, kop di atas (tanpa repeat agar tak ada pita di tengah). Cetak tetap paginasi. */
+  table.paper{display:block;width:210mm;margin:16px auto;box-shadow:0 4px 24px rgba(0,0,0,.12)}
+  .sheet{min-height:297mm;padding:30mm 16mm 32mm;
+         background:#fff url('assets/letterhead-a4.jpg') top center no-repeat;background-size:210mm 297mm}
 }
 @media print{.no-print{display:none}}
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
