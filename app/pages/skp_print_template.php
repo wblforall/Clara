@@ -24,17 +24,18 @@ $today = date('d') . ' ' . ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Inter', Arial, sans-serif; font-size: 11px; color: #111; background: #f3f4f6; }
-@page { size: A4 portrait; margin: 12mm 14mm; }
-.sheet { background: #fff; max-width: 800px; margin: 16px auto; padding: 22px 28px 30px; }
+@page { size: A4 portrait; margin: 0; }
+/* Kop surat (letterhead) sbg background A4; konten di area kosong tengah. */
+.sheet { width: 210mm; min-height: 297mm; margin: 16px auto; padding: 40mm 20mm 32mm;
+         background: #fff url('assets/letterhead-a4.jpg') top center no-repeat; background-size: 210mm 297mm;
+         box-shadow: 0 4px 24px rgba(0,0,0,.12); }
 .no-print { position: fixed; top: 14px; right: 14px; display: flex; gap: 8px; z-index: 99; }
 .no-print button { padding: 9px 18px; border: none; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; }
 .btn-print { background: #0D9488; color: #fff; } .btn-close { background: #e5e7eb; color: #374151; }
-@media print { .no-print { display: none; } body { background: #fff; } .sheet { margin: 0; max-width: none; padding: 0; } }
+@media print { .no-print { display: none; } body { background: #fff; } .sheet { margin: 0; box-shadow: none; } }
 * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-.hdr { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #0D9488; padding-bottom: 10px; }
-.hdr img { height: 42px; width: auto; object-fit: contain; }
-.doc-title { text-align: center; font-size: 16px; font-weight: 800; letter-spacing: .5px; margin: 14px 0 2px; text-transform: uppercase; }
+.doc-title { text-align: center; font-size: 16px; font-weight: 800; letter-spacing: .5px; margin: 0 0 2px; text-transform: uppercase; }
 .doc-no { text-align: center; font-size: 11px; color: #555; margin-bottom: 14px; }
 .sec { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #0D9488; border-bottom: 1px solid #d1d5db; padding-bottom: 3px; margin: 14px 0 7px; }
 table.kv { width: 100%; border-collapse: collapse; }
@@ -66,10 +67,6 @@ table.pay tr.grand td { background: #f0fdfa; font-weight: 800; color: #0f766e; }
     <button class="btn-close" onclick="window.close()">✕ Tutup</button>
 </div>
 <div class="sheet">
-    <div class="hdr">
-        <img src="assets/skp/logo2.png" alt="e-Walk">
-        <img src="assets/skp/logo1.png" alt="Pentacity">
-    </div>
     <div class="doc-title"><?= ($skp['doc_type'] ?? 'skp') === 'sks' ? 'Surat Konfirmasi Sewa' : 'Surat Konfirmasi Pameran' ?></div>
     <div class="doc-no">No. <?= $h($skp['skp_no']) ?></div>
 

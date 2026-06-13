@@ -11,6 +11,12 @@
 
 ---
 
+## Version 4.18 — 13 Juni 2026
+
+### Tampilan — Kop Surat (Letterhead) di semua surat
+
+- **Background kop surat A4** — Surat Penawaran dan SKP/SKS kini memakai **kop surat resmi e-Walk × Pentacity** (header logo + footer alamat) sebagai latar A4 penuh. Logo & garis lama dihapus karena sudah menyatu di kop; isi surat ditempatkan rapi di area tengah kosong. Tampil sama di layar maupun saat dicetak/PDF.
+
 ## Version 4.17 — 13 Juni 2026
 
 ### Fitur Baru — Tanda Tangan QR & Validasi Dokumen

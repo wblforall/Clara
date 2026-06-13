@@ -33,15 +33,16 @@ $ketentuan = [
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111;background:#f3f4f6}
-@page{size:A4 portrait;margin:14mm 16mm}
-.sheet{background:#fff;max-width:800px;margin:16px auto;padding:24px 30px 34px}
+@page{size:A4 portrait;margin:0}
+/* Kop surat (letterhead) sbg background A4; konten di area kosong tengah. */
+.sheet{width:210mm;min-height:297mm;margin:16px auto;padding:40mm 20mm 32mm;
+       background:#fff url('assets/letterhead-a4.jpg') top center no-repeat;background-size:210mm 297mm;
+       box-shadow:0 4px 24px rgba(0,0,0,.12)}
 .no-print{position:fixed;top:14px;right:14px;display:flex;gap:8px;z-index:9}
 .no-print button{padding:9px 18px;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer}
 .btn-print{background:#0D9488;color:#fff}.btn-close{background:#e5e7eb;color:#374151}
-@media print{.no-print{display:none}body{background:#fff}.sheet{margin:0;max-width:none;padding:0}}
+@media print{.no-print{display:none}body{background:#fff}.sheet{margin:0;box-shadow:none}}
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.hdr{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #0D9488;padding-bottom:10px;margin-bottom:14px}
-.hdr img{height:40px;width:auto;object-fit:contain}
 .meta{margin-bottom:10px;line-height:1.7}
 .meta b{display:inline-block;min-width:70px}
 table.obj{width:100%;border-collapse:collapse;margin:10px 0}
@@ -64,8 +65,6 @@ li{margin-bottom:3px;line-height:1.45}
     <button class="btn-close" onclick="window.close()">✕ Tutup</button>
 </div>
 <div class="sheet">
-    <div class="hdr"><img src="assets/skp/logo2.png" alt="e-Walk"><img src="assets/skp/logo1.png" alt="Pentacity"></div>
-
     <div style="text-align:right;margin-bottom:8px">Balikpapan, <?= $h($tanggal) ?></div>
     <div class="meta">
         <div><b>Nomor</b>: <?= $h($o['offer_no']) ?></div>
