@@ -238,7 +238,8 @@ function offer_form(PDO $pdo): void
     $masters  = masterOptions($pdo, $module);
     $clients  = $pdo->query("SELECT id, company_name, brand_name FROM master_clients WHERE status='active' ORDER BY company_name")->fetchAll();
     $contacts = $pdo->query("SELECT id, client_id, name FROM master_client_contacts WHERE status='active' ORDER BY name")->fetchAll();
-    $picsStmt = $pdo->prepare("SELECT name FROM master_pic WHERE status='active' AND property_id=? ORDER BY name");
+    // Hanya PIC yang ditandai "tampil di penawaran" (toggle di Master PIC).
+    $picsStmt = $pdo->prepare("SELECT name FROM master_pic WHERE status='active' AND property_id=? AND show_in_offer=1 ORDER BY name");
     $picsStmt->execute([$pid]);
     $pics = $picsStmt->fetchAll();
     $referrers = $pdo->query("SELECT name FROM master_referrer WHERE status='active' ORDER BY name")->fetchAll();
@@ -247,6 +248,11 @@ function offer_form(PDO $pdo): void
         $lp = $pdo->prepare("SELECT name FROM master_pic WHERE user_id=? AND status='active' AND property_id=? LIMIT 1");
         $lp->execute([$uid, $pid]);
         $linkedPic = $lp->fetchColumn() ?: null;
+    }
+    // Pastikan PIC tertaut akun & PIC penawaran lama tetap bisa terpilih walau di-hide.
+    $picNames = array_column($pics, 'name');
+    foreach ([$linkedPic, $offer['pic_name'] ?? null] as $must) {
+        if ($must && !in_array($must, $picNames, true)) { $pics[] = ['name' => $must]; $picNames[] = $must; }
     }
     $v = fn(string $k, $def = '') => h((string) ($offer[$k] ?? $def));
 

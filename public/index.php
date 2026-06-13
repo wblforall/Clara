@@ -124,6 +124,7 @@ $masterConfig = [
             'name' => 'Nama PIC', 'role_name' => 'Jabatan',
             'email' => 'Email (untuk surat penawaran)', 'phone' => 'No. WhatsApp (untuk surat penawaran)',
             'commission_cat' => 'Kategori Komisi', 'show_achievement' => 'Tampil di Achievement PIC',
+            'show_in_offer' => 'Tampil di pilihan Penawaran',
             'target_share' => 'Porsi Target', 'user_id' => 'User Akun', 'status' => 'Status',
         ],
     ],

@@ -356,6 +356,12 @@ function master_form(PDO $pdo, array $masterConfig): void
                                 <option value="0" <?= ($row['show_achievement'] ?? 1) == 0 ? 'selected' : '' ?>>Tidak — Sembunyikan</option>
                             </select>
                             <div class="help">Sembunyikan dari tabel Achievement di Dashboard, Exec Summary, dan Laporan PIC.</div>
+                        <?php elseif ($name === 'show_in_offer'): ?>
+                            <select name="show_in_offer">
+                                <option value="1" <?= ($row['show_in_offer'] ?? 1) == 1 ? 'selected' : '' ?>>Ya — Muncul di dropdown PIC Penawaran</option>
+                                <option value="0" <?= ($row['show_in_offer'] ?? 1) == 0 ? 'selected' : '' ?>>Tidak — Sembunyikan dari pilihan</option>
+                            </select>
+                            <div class="help">Hanya yang dicentang "Ya" yang muncul saat memilih PIC di Surat Penawaran.</div>
                         <?php elseif ($name === 'status'): ?>
                             <select name="<?= h($name) ?>">
                                 <?php foreach (['active', 'inactive', 'archived'] as $opt): ?>
