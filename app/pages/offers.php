@@ -282,23 +282,34 @@ function offer_view(PDO $pdo): void
                     <button class="btn light" style="<?= $s === 'deal' ? 'background:#16a34a;color:#fff' : '' ?>"><?= $lbl ?></button>
                 </form>
                 <?php endforeach; ?>
-                <details style="display:inline-block">
-                    <summary class="btn light" style="background:#fee2e2;color:#991b1b;list-style:none;cursor:pointer">Tutup (Tidak Deal)</summary>
-                    <form method="post" action="?r=offer_close" style="position:absolute;z-index:20;margin-top:6px;background:#fff;border:1px solid var(--line,#e5e7eb);border-radius:10px;padding:12px;box-shadow:0 6px 24px rgba(0,0,0,.12);width:320px">
-                        <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$offer['id'] ?>">
-                        <label style="font-size:12px;font-weight:700">Alasan tidak deal</label>
-                        <select name="lost_category" required style="width:100%;margin:4px 0 8px">
-                            <option value="">- Pilih alasan -</option>
-                            <?php foreach (offer_lost_categories() as $k => $lbl): ?><option value="<?= h($k) ?>"><?= h($lbl) ?></option><?php endforeach; ?>
-                        </select>
-                        <label style="font-size:12px;font-weight:700">Catatan (wajib)</label>
-                        <textarea name="status_note" required rows="2" placeholder="Jelaskan kronologi singkat kenapa tidak deal…" style="width:100%;margin-top:4px"></textarea>
-                        <button class="btn" style="background:#991b1b;width:100%;margin-top:8px" onclick="return confirm('Tutup penawaran ini sebagai TIDAK DEAL? Tidak bisa diubah lagi.')">Tutup Penawaran</button>
-                    </form>
-                </details>
+                <button type="button" class="btn light" style="background:#fee2e2;color:#991b1b" onclick="document.getElementById('closeModal').style.display='flex'">Tutup (Tidak Deal)</button>
             </div>
             <?php endif; ?>
         </div>
+
+        <?php if ($editable): ?>
+        <div id="closeModal" onclick="if(event.target===this)this.style.display='none'"
+             style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(17,24,39,.55);align-items:center;justify-content:center;padding:16px">
+            <form method="post" action="?r=offer_close" style="background:#fff;border-radius:14px;padding:20px 22px;box-shadow:0 20px 60px rgba(0,0,0,.3);width:100%;max-width:420px">
+                <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$offer['id'] ?>">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                    <strong style="font-size:15px;color:#991b1b">Tutup Penawaran (Tidak Deal)</strong>
+                    <span style="cursor:pointer;font-size:20px;color:#9ca3af;line-height:1" onclick="document.getElementById('closeModal').style.display='none'">&times;</span>
+                </div>
+                <label style="font-size:12px;font-weight:700">Alasan tidak deal</label>
+                <select name="lost_category" required style="width:100%;margin:4px 0 10px">
+                    <option value="">- Pilih alasan -</option>
+                    <?php foreach (offer_lost_categories() as $k => $lbl): ?><option value="<?= h($k) ?>"><?= h($lbl) ?></option><?php endforeach; ?>
+                </select>
+                <label style="font-size:12px;font-weight:700">Catatan (wajib)</label>
+                <textarea name="status_note" required rows="3" placeholder="Jelaskan kronologi singkat kenapa tidak deal…" style="width:100%;margin-top:4px"></textarea>
+                <div style="display:flex;gap:8px;margin-top:14px">
+                    <button type="button" class="btn secondary" style="flex:1" onclick="document.getElementById('closeModal').style.display='none'">Batal</button>
+                    <button class="btn" style="background:#991b1b;flex:1" onclick="return confirm('Tutup penawaran ini sebagai TIDAK DEAL? Tidak bisa diubah lagi.')">Tutup Penawaran</button>
+                </div>
+            </form>
+        </div>
+        <?php endif; ?>
 
         <?php if ($offer['status'] === 'cancelled'): ?>
         <div class="panel" style="margin-top:10px;background:#fef2f2;border-color:#fecaca">
