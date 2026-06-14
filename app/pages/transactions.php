@@ -892,6 +892,23 @@ function transaction_save(PDO $pdo): void
     redirect_to('allocation_detail', ['id' => $id]);
 }
 
+/**
+ * Apakah transaksi ini "terkunci" karena terbit dari SKP/SKS yang sudah
+ * DISETUJUI / DITANDATANGANI? (offer-first: nilai sudah final & bertanda tangan).
+ * Return ['skp_no','status','doc_type'] atau null bila bebas diubah.
+ */
+function _trx_locking_skp(PDO $pdo, int $trxId, int $pid): ?array
+{
+    if ($trxId <= 0) return null;
+    $st = $pdo->prepare(
+        "SELECT skp_no, status, doc_type FROM skp_documents
+         WHERE transaction_id = ? AND property_id = ? AND status IN ('approved','signed')
+         ORDER BY id DESC LIMIT 1"
+    );
+    $st->execute([$trxId, $pid]);
+    return $st->fetch() ?: null;
+}
+
 function transaction_edit(PDO $pdo): void
 {
     $id = (int) getv('id');
@@ -953,9 +970,16 @@ function transaction_edit(PDO $pdo): void
         $autoRecurring = (bool) $arStmt->fetchColumn();
     }
 
-    layout('Edit Transaksi #' . $id . ' — ' . ($moduleLabel[$trx['module']] ?? strtoupper($trx['module'])), function () use ($id, $trx, $masters, $clients, $allContacts, $pics, $referrers, $recognitionMonth, $startMonth, $endMonth, $existingAllocations, $autoRecurring) {
+    $lockSkp = _trx_locking_skp($pdo, $id, current_property_id());
+
+    layout('Edit Transaksi #' . $id . ' — ' . ($moduleLabel[$trx['module']] ?? strtoupper($trx['module'])), function () use ($id, $trx, $masters, $clients, $allContacts, $pics, $referrers, $recognitionMonth, $startMonth, $endMonth, $existingAllocations, $autoRecurring, $lockSkp) {
         ?>
-        <form class="panel" method="post" action="?r=transaction_update">
+        <?php if ($lockSkp): $docL = $lockSkp['doc_type'] === 'sks' ? 'SKS' : 'SKP'; ?>
+        <div class="panel" style="background:#fffbeb;border:1px solid #fcd34d;color:#92400e;margin-bottom:12px">
+            🔒 <strong>Nilai transaksi terkunci.</strong> Transaksi ini terbit dari <?= $docL ?> <strong>No. <?= h($lockSkp['skp_no']) ?></strong> yang sudah disetujui &amp; ditandatangani. Field <strong>nilai</strong> (harga, tanggal, unit, luas, recurring, override, alokasi) dikunci agar tetap sama dengan dokumen. Yang masih bisa diubah: <strong>PIC, Referrer, No. Invoice, Catatan</strong>. Untuk mengubah nilai, revisi/batalkan <?= $docL ?>-nya terlebih dahulu.
+        </div>
+        <?php endif; ?>
+        <form class="panel" method="post" action="?r=transaction_update" id="trx-edit-form" data-locked="<?= $lockSkp ? '1' : '0' ?>">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="id" value="<?= h((string) $id) ?>">
             <input type="hidden" name="module" value="<?= h($trx['module']) ?>">
@@ -1073,8 +1097,25 @@ function transaction_edit(PDO $pdo): void
             </div>
             <div id="kalkulasi-spread" style="display:none;margin-top:8px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 18px;font-size:13px;line-height:1.8"></div>
             <div id="overlap-warn" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:13px;color:#92400e"></div>
-            <p style="margin-top:14px"><button type="submit">Simpan & Hitung Ulang Alokasi</button> <a class="btn secondary" href="?r=allocation_detail&id=<?= h((string) $id) ?>">Kembali</a></p>
+            <p style="margin-top:14px"><button type="submit"><?= $lockSkp ? 'Simpan (PIC / Invoice / Catatan)' : 'Simpan & Hitung Ulang Alokasi' ?></button> <a class="btn secondary" href="?r=allocation_detail&id=<?= h((string) $id) ?>">Kembali</a></p>
         </form>
+        <?php if ($lockSkp): ?>
+        <script>
+        /* Lock offer-first: kunci field NILAI di form (UX). Enforcement utama tetap
+           di server (transaction_update). Hanya PIC/referrer/invoice/catatan/kontak boleh diubah. */
+        (function () {
+            var f = document.getElementById('trx-edit-form');
+            if (!f || f.getAttribute('data-locked') !== '1') return;
+            var allow = { '_csrf':1, 'id':1, 'module':1, 'pic_name':1, 'referrer_name':1, 'remarks':1, 'invoice_no':1, 'contact_id':1 };
+            f.querySelectorAll('input, select, textarea').forEach(function (e) {
+                if (e.type === 'submit' || e.type === 'button') return;
+                if (allow[e.name]) return;
+                e.disabled = true; e.style.background = '#f1f5f9'; e.style.color = '#94a3b8';
+            });
+            f.querySelectorAll('.override-fmt').forEach(function (e) { e.disabled = true; e.style.background = '#f1f5f9'; });
+        })();
+        </script>
+        <?php endif; ?>
         <div style="margin-top:24px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:18px 22px;font-size:13px;color:#374151">
             <p style="font-weight:700;margin:0 0 10px;font-size:14px;color:#1e293b">Panduan Input Transaksi Recurring (Spread per Bulan)</p>
             <p style="margin:0 0 8px;color:#64748b">Gunakan mode ini untuk kontrak yang revenue-nya dibagi rata ke setiap bulan yang dicakup, bukan diakui sekaligus di satu bulan.</p>
@@ -1440,6 +1481,23 @@ function transaction_update(PDO $pdo): void
         }
     }
 
+    // ── LOCK offer-first ─────────────────────────────────────────────────────
+    // Transaksi yang terbit dari SKP approved/signed → field NILAI dikunci agar
+    // tak menyimpang dari dokumen bertanda tangan. Hanya PIC / referrer / no.
+    // invoice / catatan / kontak yang boleh berubah. Paksa nilai lama (server-
+    // side; tak percaya form). Alokasi bulanan TIDAK disentuh.
+    $lockSkp = _trx_locking_skp($pdo, $id, current_property_id());
+    if ($lockSkp) {
+        foreach (['master_code', 'content_note', 'start_date', 'end_date', 'quantity', 'slots',
+                  'area_sqm', 'pricing_type', 'unit_rate', 'contract_months', 'billing_method',
+                  'recurring_flag', 'cycle_recognition', 'total_calculated', 'override_amount',
+                  'final_amount'] as $f) {
+            $trx[$f] = $existing[$f];
+        }
+        $trx['period_key'] = $existing['period_key'];
+        $clientId = (int) $existing['client_id'];
+    }
+
     $pdo->prepare(
         'UPDATE transactions SET master_code=:master_code, period_key=:period_key,
          client_id=:client_id, contact_id=:contact_id,
@@ -1478,21 +1536,25 @@ function transaction_update(PDO $pdo): void
         ':property_id'       => current_property_id(),
     ]);
 
-    $monthOverrides = [];
-    foreach (($_POST['month_overrides'] ?? []) as $k => $v) {
-        if (preg_match('/^\d{4}-\d{2}$/', (string) $k) && $v !== '') {
-            $monthOverrides[(string) $k] = (float) $v;
+    if (!$lockSkp) {
+        $monthOverrides = [];
+        foreach (($_POST['month_overrides'] ?? []) as $k => $v) {
+            if (preg_match('/^\d{4}-\d{2}$/', (string) $k) && $v !== '') {
+                $monthOverrides[(string) $k] = (float) $v;
+            }
+        }
+        AllocationService::saveAllocations($pdo, $id, $trx, $monthOverrides);
+        if ($monthOverrides) {
+            $s = $pdo->prepare('SELECT SUM(amount) FROM transaction_allocations WHERE transaction_id=? AND property_id=?');
+            $s->execute([$id, current_property_id()]);
+            $newFinal = (float) ($s->fetchColumn() ?: $trx['final_amount']);
+            $pdo->prepare('UPDATE transactions SET final_amount=? WHERE id=?')->execute([$newFinal, $id]);
         }
     }
-    AllocationService::saveAllocations($pdo, $id, $trx, $monthOverrides);
-    if ($monthOverrides) {
-        $s = $pdo->prepare('SELECT SUM(amount) FROM transaction_allocations WHERE transaction_id=? AND property_id=?');
-        $s->execute([$id, current_property_id()]);
-        $newFinal = (float) ($s->fetchColumn() ?: $trx['final_amount']);
-        $pdo->prepare('UPDATE transactions SET final_amount=? WHERE id=?')->execute([$newFinal, $id]);
-    }
     audit($pdo, 'update', 'transactions', (string) $id, $trx, (array) $existing);
-    flash('Transaksi diperbarui dan alokasi dihitung ulang.');
+    flash($lockSkp
+        ? ('Transaksi diperbarui (PIC/invoice/catatan). Nilai dikunci oleh ' . ($lockSkp['doc_type'] === 'sks' ? 'SKS' : 'SKP') . ' No. ' . $lockSkp['skp_no'] . '.')
+        : 'Transaksi diperbarui dan alokasi dihitung ulang.');
     redirect_to('allocation_detail', ['id' => $id]);
 }
 
@@ -1515,7 +1577,8 @@ function allocation_detail(PDO $pdo): void
     }
     $alloc = $pdo->prepare('SELECT * FROM transaction_allocations WHERE transaction_id = ? AND property_id = ? ORDER BY period_key, allocation_start');
     $alloc->execute([$id, current_property_id()]);
-    layout('Detail Alokasi Transaksi #' . $id, function () use ($trx, $alloc) {
+    $lockSkp = _trx_locking_skp($pdo, $id, current_property_id());
+    layout('Detail Alokasi Transaksi #' . $id, function () use ($trx, $alloc, $lockSkp) {
         ?>
         <div class="panel">
             <?php $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang']; ?>
@@ -1531,7 +1594,7 @@ function allocation_detail(PDO $pdo): void
                 </div>
                 <div style="display:flex;gap:8px">
                     <?php if (can('manage_transactions')): ?>
-                    <a class="btn light" href="?r=transaction_edit&id=<?= h((string) $trx['id']) ?>">Edit Transaksi</a>
+                    <a class="btn light" href="?r=transaction_edit&id=<?= h((string) $trx['id']) ?>"><?= $lockSkp ? '🔒 Edit (PIC/Invoice/Catatan)' : 'Edit Transaksi' ?></a>
                     <?php endif; ?>
                     <a class="btn light" href="?r=transaction_history&id=<?= h((string) $trx['id']) ?>">Riwayat</a>
                     <?php if (($trx['module'] ?? '') === 'cl' && can('manage_skp')): ?>
@@ -1550,7 +1613,7 @@ function allocation_detail(PDO $pdo): void
                     </tr></thead>
                     <tbody>
                     <?php
-                    $isSpreadEditable = ($trx['billing_method'] ?? '') === 'spread' && can('manage_transactions');
+                    $isSpreadEditable = ($trx['billing_method'] ?? '') === 'spread' && can('manage_transactions') && !$lockSkp;
                     $csrfToken = csrf_token();
                     foreach ($alloc->fetchAll() as $row):
                     ?>
@@ -1642,6 +1705,12 @@ function allocation_amount_override(PDO $pdo): void
 
     if (!$row) {
         flash('Alokasi tidak ditemukan atau bukan transaksi recurring.');
+        redirect_to('allocation_detail', ['id' => $trxId]);
+    }
+
+    // Lock offer-first: transaksi turunan SKP approved/signed tak boleh diubah nilainya.
+    if ($lockSkp = _trx_locking_skp($pdo, $trxId, $pid)) {
+        flash('Nilai transaksi dikunci oleh ' . ($lockSkp['doc_type'] === 'sks' ? 'SKS' : 'SKP') . ' No. ' . $lockSkp['skp_no'] . ' (sudah bertanda tangan) — override alokasi tidak diizinkan.');
         redirect_to('allocation_detail', ['id' => $trxId]);
     }
 

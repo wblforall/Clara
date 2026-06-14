@@ -11,6 +11,15 @@
 
 ---
 
+## Version 4.22 — 15 Juni 2026
+
+### Kontrol — kunci nilai transaksi yang sudah ber-SKP (offer-first)
+
+- Transaksi yang **terbit dari SKP/SKS yang sudah disetujui & ditandatangani** kini **terkunci nilainya**: harga, tanggal, unit, luas, recurring, override, dan alokasi bulanan **tidak bisa diubah** lagi (di form maupun via override per-bulan) agar selalu **sama dengan dokumen bertanda tangan**.
+- Yang masih boleh diperbaiki: **PIC, Referrer, No. Invoice, Catatan** (administratif).
+- Halaman Edit menampilkan **banner kunci** + tombol "Edit (PIC/Invoice/Catatan)"; penegakan utama di **server** (bukan sekadar form), jadi tak bisa ditembus dari sisi tampilan. Semua perubahan tetap **ter-audit**.
+- Untuk mengubah nilai, dokumen SKP/SKS harus direvisi/dibatalkan dulu (alur resmi).
+
 ## Version 4.21 — 15 Juni 2026
 
 ### PDF surat 1-ketuk, sama persis di HP & PC (server-side mPDF)
