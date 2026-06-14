@@ -14,6 +14,22 @@ function _cr_contract_types(): array
     return ['spk' => 'SPK', 'sewa_menyewa' => 'Sewa Menyewa', 'kerja_sama' => 'Kerja Sama'];
 }
 
+/** Semua lampiran terkait permintaan: dari SKP (KTP/NPWP/Bukti/Pengajuan) + form (Akta/Surat Kuasa). */
+function _cr_all_attachments(PDO $pdo, array $cr): array
+{
+    $at = $pdo->prepare('SELECT kind, file_path FROM skp_attachments WHERE skp_id = ?');
+    $at->execute([(int) ($cr['skp_id'] ?? 0)]);
+    $m = [];
+    foreach ($at->fetchAll() as $a) $m[$a['kind']] = $a['file_path'];
+    $out = [];
+    foreach (['ktp' => 'KTP Penanggung Jawab/Direktur', 'npwp' => 'NPWP', 'bukti_transfer' => 'Bukti Transfer', 'pengajuan' => 'Pengajuan'] as $k => $l) {
+        if (!empty($m[$k])) $out[] = [$l, $m[$k]];
+    }
+    if (!empty($cr['akta_path']))        $out[] = ['Akta Pendirian dan/atau Akta Perubahan', $cr['akta_path']];
+    if (!empty($cr['surat_kuasa_path'])) $out[] = ['Surat Kuasa', $cr['surat_kuasa_path']];
+    return $out;
+}
+
 /** Ambil SKP (harus signed) + data ringkas utk autofill formulir. */
 function _cr_skp_context(PDO $pdo, int $skpId, int $pid): ?array
 {
@@ -355,7 +371,13 @@ function contract_request_print(PDO $pdo): void
     $st->execute([$id, $pid]);
     $cr = $st->fetch();
     if (!$cr) { http_response_code(404); exit('Formulir tidak ditemukan.'); }
-    $ctx  = _cr_skp_context($pdo, (int) $cr['skp_id'], $pid);
+    // Token utk QR validasi (terbit sekali, dipakai ulang).
+    if (empty($cr['share_token'])) {
+        $cr['share_token'] = bin2hex(random_bytes(20));
+        $pdo->prepare('UPDATE contract_requests SET share_token=? WHERE id=? AND property_id=?')->execute([$cr['share_token'], $id, $pid]);
+    }
+    $ctx     = _cr_skp_context($pdo, (int) $cr['skp_id'], $pid);
+    $allAtts = _cr_all_attachments($pdo, $cr);
     $prop = current_property();
     $types = _cr_contract_types();
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
@@ -416,9 +438,12 @@ function contract_legal_page(PDO $pdo): void
     .muted{color:#6b7280;font-size:12px}
     </style></head><body>
     <div class="card">
-        <div class="hd">
-            <h1>Formulir Permintaan Pembuatan/Review Kontrak</h1>
-            <p>Kepada Departemen Legal · No. <?= $h($cr['req_no']) ?></p>
+        <div class="hd" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+            <div>
+                <h1>Formulir Permintaan Pembuatan/Review Kontrak</h1>
+                <p>Kepada Departemen Legal · No. <?= $h($cr['req_no']) ?></p>
+            </div>
+            <a href="?r=contract_legal_print&token=<?= $h($cr['share_token']) ?>" target="_blank" style="background:#fff;color:#6d28d9;text-decoration:none;border-radius:8px;padding:9px 16px;font-weight:700;white-space:nowrap">🖨 Cetak (formulir + lampiran)</a>
         </div>
         <div class="bd">
             <div class="sec">Informasi Umum</div>
@@ -535,4 +560,19 @@ function contract_legal_approve(PDO $pdo): void
     $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
     header('Location: ' . $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/?r=contract_legal&token=' . urlencode($token));
     exit;
+}
+
+// ─── Print publik untuk Legal (via token): formulir + SEMUA lampiran ──────────
+function contract_legal_print(PDO $pdo): void
+{
+    $token = (string) getv('token', '');
+    $st = $pdo->prepare('SELECT * FROM contract_requests WHERE share_token = ? AND status IN ("sent","approved") LIMIT 1');
+    $st->execute([$token]);
+    $cr = $token !== '' ? $st->fetch() : false;
+    if (!$cr) { http_response_code(404); exit('Tautan tidak valid.'); }
+    $ctx     = _cr_skp_context($pdo, (int) $cr['skp_id'], (int) $cr['property_id']);
+    $allAtts = _cr_all_attachments($pdo, $cr);
+    $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+    $chk = fn($b) => !empty($b) ? '☑' : '☐';
+    include __DIR__ . '/contract_request_template.php';
 }

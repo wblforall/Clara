@@ -4,7 +4,6 @@ if (!isset($cr)) { http_response_code(400); exit('Konteks tidak valid.'); }
 $months = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 $rd = $cr['request_date'] ? strtotime($cr['request_date']) : time();
 $tglAju = (int) date('d', $rd) . ' ' . $months[(int) date('n', $rd)] . ' ' . date('Y', $rd);
-$typeLabel = $types[$cr['contract_type']] ?? '-';
 ?>
 <!doctype html>
 <html lang="id">
@@ -49,6 +48,10 @@ table.leg .note{display:block;font-size:8.5px;font-style:italic;color:#6b7280;ma
 table.sign{width:100%;border-collapse:collapse;margin-top:2px;text-align:center}
 table.sign td{width:50%;font-size:11px;padding-top:6px;vertical-align:top}
 .sign .paren{margin-top:56px}
+.sign .qrbox{width:64px;height:64px;margin:6px auto 2px}
+.sign .qrbox img,.sign .qrbox svg{width:64px!important;height:64px!important;display:block}
+.sign .qrhint{font-size:7.5px;color:#6b7280}
+.sign .pnm{margin-top:4px;font-weight:700}
 </style>
 </head>
 <body>
@@ -104,19 +107,33 @@ table.sign td{width:50%;font-size:11px;padding-top:6px;vertical-align:top}
 
     <div class="stmt">Dengan ini saya menyatakan bahwa informasi yang diberikan adalah benar dan lengkap.</div>
     <div class="appr">Disetujui oleh,</div>
+    <?php
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $cdir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+    $verifyUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $cdir . '/?r=contract_legal&token=' . ($cr['share_token'] ?? '');
+    $hasQr = !empty($cr['share_token']);
+    $legalApproved = ($cr['status'] ?? '') === 'approved';
+    ?>
     <table class="sign">
         <tr>
-            <td>Departemen Pemohon,<div class="paren">( <?= $h($cr['requester_name'] ?: '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;') ?> )</div></td>
-            <td>Departemen Legal<div class="paren">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div></td>
+            <td>Departemen Pemohon,
+                <?php if ($hasQr): ?><div class="qrbox" data-qr="<?= $h($verifyUrl) ?>"></div><div class="qrhint">Scan untuk validasi</div><?php endif; ?>
+                <div class="pnm"><?= $h($cr['requester_name'] ?: '________') ?></div>
+            </td>
+            <td>Departemen Legal
+                <?php if ($legalApproved): ?>
+                    <div class="paren" style="margin-top:38px">( <?= $h($cr['legal_by'] ?: 'Disetujui') ?> )</div>
+                    <div class="qrhint">✓ Disetujui <?= $h(substr((string) $cr['legal_approved_at'], 0, 16)) ?></div>
+                <?php else: ?>
+                    <div class="paren">(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</div>
+                <?php endif; ?>
+            </td>
         </tr>
     </table>
 
     <?php
-    // Lampiran dokumen pelengkap — tampil di bawah formulir (boleh multi-halaman).
-    $lampiran = [];
-    if (!empty($cr['akta_path']))        $lampiran[] = ['Akta Pendirian dan/atau Akta Perubahan', $cr['akta_path']];
-    if (!empty($cr['surat_kuasa_path'])) $lampiran[] = ['Surat Kuasa', $cr['surat_kuasa_path']];
-    foreach ($lampiran as [$lbl, $path]):
+    // Lampiran dokumen — SEMUA (KTP/NPWP/Bukti dari SKP + Akta/Surat Kuasa).
+    foreach (($allAtts ?? []) as [$lbl, $path]):
         $ext = strtolower(pathinfo((string) $path, PATHINFO_EXTENSION));
         $isImg = in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true);
     ?>
@@ -125,13 +142,23 @@ table.sign td{width:50%;font-size:11px;padding-top:6px;vertical-align:top}
         <?php if ($isImg): ?>
             <img src="<?= $h($path) ?>" alt="<?= $h($lbl) ?>" style="display:block;max-width:100%;max-height:215mm;margin:0 auto;object-fit:contain">
         <?php else: ?>
-            <div style="border:1px solid #111;padding:14px;font-size:11px;color:#374151">Berkas dalam format <strong><?= $h(strtoupper($ext)) ?></strong> (<?= $h(basename((string) $path)) ?>). Dilampirkan sebagai berkas terpisah / dapat diakses melalui tautan formulir.</div>
+            <div style="border:1px solid #111;padding:14px;font-size:11px;color:#374151">Berkas dalam format <strong><?= $h(strtoupper($ext)) ?></strong> (<?= $h(basename((string) $path)) ?>). Tidak dapat disisipkan otomatis ke PDF — silakan buka via tautan/berkas terpisah.</div>
         <?php endif; ?>
     </div>
     <?php endforeach; ?>
 </div>
 </td></tr></tbody>
 </table>
+<script src="assets/qrcode.min.js"></script>
+<script>
+(function () {
+    if (typeof qrcode !== 'function') return;
+    document.querySelectorAll('.qrbox[data-qr]').forEach(function (box) {
+        try { var qr = qrcode(0, 'M'); qr.addData(box.getAttribute('data-qr')); qr.make();
+            box.innerHTML = qr.createSvgTag({ cellSize: 2, margin: 0, scalable: true }); } catch (e) {}
+    });
+})();
+</script>
 </body>
 </html>
 <?php exit; ?>
