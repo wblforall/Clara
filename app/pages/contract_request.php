@@ -145,16 +145,23 @@ function contract_request_form(PDO $pdo): void
             $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
             $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
             $legalUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/?r=contract_legal&token=' . $cr['share_token'];
-            $waText = rawurlencode("Mohon dibantu pembuatan/review kontrak. Formulir & lampiran (Akta/Surat Kuasa) dapat diakses di: " . $legalUrl);
+            $waMsg = "Yth. Departemen Legal,\n\n"
+                . "Mohon dibantu pembuatan/review kontrak atas Permintaan No. " . ($cr['req_no'] ?: '-') . " (" . ($ctx['company_name'] ?: '-') . ").\n\n"
+                . "Formulir beserta lampiran (Akta / Surat Kuasa) dapat diakses pada tautan berikut:\n" . $legalUrl . "\n\n"
+                . "SKP & Surat Penawaran final menyusul terpisah. Terima kasih.";
+            $waText = rawurlencode($waMsg);
         ?>
         <div class="panel" style="margin-top:12px;border:1px solid #ddd6fe;background:#f5f3ff">
             <h3 style="margin-top:0;color:#6d28d9">Kirim ke Legal (link)</h3>
             <p style="margin:0 0 8px;color:#374151">Bagikan tautan ini ke Departemen Legal — mereka bisa membuka formulir &amp; mengunduh lampiran (Akta / Surat Kuasa) tanpa login.</p>
+            <textarea id="cr-wa-msg" style="position:absolute;left:-9999px" readonly><?= h($waMsg) ?></textarea>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
                 <input id="cr-legal-url" value="<?= h($legalUrl) ?>" readonly style="flex:1;min-width:260px;font-size:12px" onclick="this.select()">
                 <button type="button" class="btn light" onclick="navigator.clipboard.writeText(document.getElementById('cr-legal-url').value);this.textContent='Tersalin ✓'">Salin Link</button>
+                <button type="button" class="btn light" onclick="navigator.clipboard.writeText(document.getElementById('cr-wa-msg').value);this.textContent='Pesan tersalin ✓'">Salin Pesan</button>
                 <a class="btn" style="background:#16a34a" target="_blank" href="https://wa.me/?text=<?= $waText ?>">Kirim via WhatsApp</a>
             </div>
+            <p style="margin:8px 0 0;font-size:11.5px;color:#64748b"><strong>Jika lewat WhatsApp Desktop hanya link yang terkirim</strong>, gunakan <strong>Salin Pesan</strong> lalu tempel (paste) di chat.</p>
         </div>
         <?php endif; ?>
 
