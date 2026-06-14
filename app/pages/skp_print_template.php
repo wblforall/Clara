@@ -49,14 +49,23 @@ table.paper > thead > tr > td, table.paper > tfoot > tr > td, table.paper > tbod
   body{overflow-x:hidden}
   table.paper{margin:0 !important;transform-origin:top left}
 }
+/* Petunjuk "Simpan sebagai PDF" — hanya muncul di layar HP, tak ikut tercetak. */
+.pdf-hint{display:none}
+@media screen and (max-width:820px){
+  .pdf-hint{display:block;position:fixed;left:10px;right:10px;bottom:12px;z-index:99;
+    background:#fffbeb;border:1px solid #fcd34d;color:#92400e;font-size:12px;line-height:1.45;
+    padding:9px 13px;border-radius:10px;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.12)}
+}
+@media print{.pdf-hint{display:none}}
 * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 </style>
 </head>
 <body>
 <div class="no-print">
-    <button class="btn-print" onclick="window.print()">🖨 Cetak / Simpan PDF</button>
+    <button class="btn-print" onclick="window.print()" title="Di HP: pilih 'Simpan sebagai PDF' di dialog cetak">🖨 Simpan PDF / Cetak</button>
     <button class="btn-close" onclick="window.close()">✕ Tutup</button>
 </div>
+<div class="pdf-hint">📄 Ketuk <b>Simpan PDF / Cetak</b> di atas, lalu pilih <b>“Simpan sebagai PDF”</b> sebagai tujuan pada dialog cetak.</div>
 <div class="lh-footer"></div>
 <table class="paper">
 <thead><tr><td><div class="sp-top"></div></td></tr></thead>
