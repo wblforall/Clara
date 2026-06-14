@@ -70,8 +70,11 @@ function clara_letterhead_mpdf(): \Mpdf\Mpdf
         'margin_left'   => 16, 'margin_right'  => 16,
         'margin_header' => 0,  'margin_footer' => 0,
     ]);
-    if (is_file($head)) $mpdf->SetHTMLHeader('<img src="' . $head . '" style="width:100%">');
-    if (is_file($foot)) $mpdf->SetHTMLFooter('<img src="' . $foot . '" style="width:100%">');
+    // Kop FULL-BLEED (tembus tepi A4): header/footer di mPDF default ikut margin
+    // kiri/kanan konten (16mm) → ada border putih. Margin negatif -16mm + lebar
+    // 210mm membuat gambar kop menutup penuh lebar halaman, konten tetap inset.
+    if (is_file($head)) $mpdf->SetHTMLHeader('<div style="margin:0 -16mm"><img src="' . $head . '" style="width:210mm;display:block"></div>');
+    if (is_file($foot)) $mpdf->SetHTMLFooter('<div style="margin:0 -16mm"><img src="' . $foot . '" style="width:210mm;display:block"></div>');
     return $mpdf;
 }
 
