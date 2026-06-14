@@ -158,3 +158,38 @@ Pipeline penawaran (Surat Penawaran → Konfirmasi SKP/SKS → Transaksi) sudah 
 - [ ] **Target aktivitas PIC** — target jumlah penawaran/aktivitas per PIC per bulan (mis. minimal X penawaran dikirim), dibandingkan realisasi di laporan pipeline.
 
 *Ditambahkan: 2026-06-13.*
+
+---
+
+## Backlog — PWA / Tampilan Mobile (menyesuaikan pipeline & fitur baru)
+
+**Konteks:** PWA mobile (`app/pages/mobile.php`: `mobile_home_page`, `mobile_transactions_page`, `mobile_exec_page`; bottom-nav Beranda/Transaksi/Eksekutif; `public/manifest.webmanifest` + `public/service-worker.js`) dibangun **sebelum** pipeline offer-first. Banyak alur kini berubah → mobile perlu disesuaikan agar sales bisa kerja penuh dari HP.
+
+### A. Navigasi & Quick Action
+- [ ] **Quick action "Transaksi" → "Penawaran"**: tombol beranda (`_m_quick_actions`) masih `?r=transaction_form&module=cl` (input transaksi langsung). Offer-first menjadikan transaksi sebagai OUTPUT — ganti jadi "+ Buat Penawaran" (cl/media/gudang) atau arahkan ke daftar penawaran.
+- [ ] **Bottom-nav**: pertimbangkan tab **"Penawaran"** (gantikan/menemani "Transaksi"), karena titik masuk sales kini penawaran. Sesuaikan `_m_active_tab()` & nav di `bootstrap.php`.
+
+### B. Modul baru di mobile (saat ini desktop-only)
+- [ ] **Daftar + Preview Penawaran** mobile: tab On Going/Deal/Tidak Deal, filter modul (badge Exhibition/Media/Gudang), kartu ringkas; klik → preview (status, Buat SKP, Tutup, PDF).
+- [ ] **Buat/Edit Penawaran** mobile (form panjang — perlu layout HP nyaman: picker client/unit, pricing, recurring, DP/deposit, override).
+- [ ] **Daftar SKP/SKS** mobile + aksi: submit approval (cek lampiran wajib KTP/NPWP/Bukti), approve/reject (manager), TTD online link, **upload TTD basah**, Scan TTD.
+- [ ] **Permintaan Kontrak ke Legal** mobile: buat dari SKP signed, upload Akta/Surat Kuasa, kirim link/PDF, status (Terkirim/Disetujui Legal).
+- [ ] **Tanda Tangan Saya** (upload TTD PNG) mobile.
+
+### C. Penyesuaian aturan yang sudah berubah
+- [ ] **Visibilitas per-sales**: mobile harus ikut `current_sales_scope()` — sales hanya lihat penawaran/SKP miliknya (beranda, daftar, KPI). Cek `mobile_home_page` agar metrik tidak bocor lintas-sales.
+- [ ] **Badge & filter modul** Exhibition/Media/Gudang di daftar mobile, warna konsisten dgn desktop.
+- [ ] **Offer-first enforcement**: tak ada jalan pintas input transaksi baru dari mobile (kecuali renewal) — samakan dgn guard `transaction_form`.
+
+### D. PWA teknis
+- [ ] **Service worker / cache**: review `service-worker.js` — versi cache, jangan cache halaman dinamis (penawaran/SKP/print), pastikan update terdeteksi (skipWaiting / versi baru).
+- [ ] **Upload dari kamera HP**: lampiran SKP & scan TTD basah pakai `<input capture>` agar bisa foto langsung.
+- [ ] **Manifest**: cek ikon/nama; tambah shortcut "Buat Penawaran".
+- [ ] **PDF di mobile**: pastikan cetak/preview surat (penawaran/SKP/kontrak A4) terbaca enak di HP.
+- [ ] **Offline draft** (opsional): simpan draft penawaran/SKP saat sinyal jelek.
+
+### E. Verifikasi
+- [ ] Uji alur penuh sales dari HP: buat penawaran → DEAL → SKP → lampiran → submit → (manager approve) → TTD → ajukan kontrak ke Legal.
+- [ ] Uji per-sales: 2 akun sales berbeda tidak saling melihat data.
+
+*Ditambahkan: 2026-06-14. Dikerjakan setelah pipeline offer-first + per-sales stabil.*
