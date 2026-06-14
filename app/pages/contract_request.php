@@ -53,7 +53,11 @@ function contract_request_list(PDO $pdo): void
     $rows = $stmt->fetchAll();
 
     layout('Permintaan Kontrak ke Legal', function () use ($rows) {
-        $badge = ['draft' => ['Draft', '#64748b', '#f1f5f9'], 'sent' => ['Terkirim ke Legal', '#166534', '#dcfce7']];
+        $badge = [
+            'draft'    => ['Draft', '#64748b', '#f1f5f9'],
+            'sent'     => ['Terkirim ke Legal', '#92400e', '#fef3c7'],
+            'approved' => ['Disetujui Legal', '#166534', '#dcfce7'],
+        ];
         $types = _cr_contract_types();
         ?>
         <div class="toolbar" style="gap:8px;flex-wrap:wrap">
@@ -136,10 +140,20 @@ function contract_request_form(PDO $pdo): void
             · SKP: <strong><?= h($ctx['skp_no'] ?: '-') ?></strong>
             · Penyewa: <strong><?= h($ctx['company_name'] ?: '-') ?></strong>
             <?php if ($cr && $cr['req_no']): ?> · No: <strong><?= h($cr['req_no']) ?></strong><?php endif; ?>
-            <?php if ($cr && $cr['status'] === 'sent'): ?> · <span class="badge" style="color:#166534;background:#dcfce7">Terkirim ke Legal</span><?php endif; ?>
+            <?php if ($cr && $cr['status'] === 'sent'): ?> · <span class="badge" style="color:#92400e;background:#fef3c7">Terkirim ke Legal</span><?php endif; ?>
+            <?php if ($cr && $cr['status'] === 'approved'): ?> · <span class="badge" style="color:#166534;background:#dcfce7">✓ Disetujui Legal</span><?php endif; ?>
         </div>
 
-        <?php if ($cr && $cr['status'] === 'sent' && !empty($cr['share_token'])):
+        <?php if ($cr && $cr['status'] === 'approved'): ?>
+        <div class="panel" style="margin-top:10px;background:#ecfdf5;border-color:#a7f3d0">
+            <strong style="color:#047857">✓ Disetujui Departemen Legal</strong>
+            <?php if (!empty($cr['legal_by'])): ?> oleh <strong><?= h($cr['legal_by']) ?></strong><?php endif; ?>
+            <?php if (!empty($cr['legal_approved_at'])): ?> pada <?= h(date('d/m/Y H:i', strtotime($cr['legal_approved_at']))) ?><?php endif; ?>.
+            <?php if (!empty($cr['legal_note'])): ?><div style="margin-top:6px;font-size:13px">Catatan Legal: “<?= h($cr['legal_note']) ?>”</div><?php endif; ?>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($cr && in_array($cr['status'], ['sent', 'approved'], true) && !empty($cr['share_token'])):
             $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
             $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
             $legalUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/?r=contract_legal&token=' . $cr['share_token'];
@@ -353,16 +367,21 @@ function contract_request_print(PDO $pdo): void
 function contract_legal_page(PDO $pdo): void
 {
     $token = (string) getv('token', '');
-    $st = $pdo->prepare('SELECT * FROM contract_requests WHERE share_token = ? AND status = "sent" LIMIT 1');
+    $st = $pdo->prepare('SELECT * FROM contract_requests WHERE share_token = ? AND status IN ("sent","approved") LIMIT 1');
     $st->execute([$token]);
-    $cr = $st->fetch();
-    if (!$cr || $token === '') { http_response_code(404); exit('Tautan tidak valid atau formulir belum dikirim.'); }
+    $cr = $token !== '' ? $st->fetch() : false;
+    if (!$cr) { http_response_code(404); exit('Tautan tidak valid atau formulir belum dikirim.'); }
 
     // Konteks SKP (lintas-properti aman: token rahasia).
     $sk = $pdo->prepare('SELECT skp_no, snapshot_json FROM skp_documents WHERE id = ?');
     $sk->execute([(int) $cr['skp_id']]);
     $skp = $sk->fetch() ?: [];
     $d = json_decode($skp['snapshot_json'] ?? '', true) ?: [];
+    // Lampiran SKP (KTP/NPWP/Bukti Transfer/Pengajuan) — Legal butuh ini juga.
+    $at = $pdo->prepare('SELECT kind, file_path, original_name FROM skp_attachments WHERE skp_id = ?');
+    $at->execute([(int) $cr['skp_id']]);
+    $skpAtts = [];
+    foreach ($at->fetchAll() as $a) $skpAtts[$a['kind']] = $a;
     $types = _cr_contract_types();
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
     $chk = fn($b) => !empty($b) ? '☑' : '☐';
@@ -446,13 +465,16 @@ function contract_legal_page(PDO $pdo): void
                 <div class="col">Departemen Legal<div class="paren">( ________ )</div></div>
             </div>
 
-            <div class="sec">Lampiran Dokumen Pelengkap</div>
+            <div class="sec">Lampiran Dokumen</div>
             <?php
             $lampiran = [];
+            foreach (['ktp' => 'KTP Penanggung Jawab/Direktur', 'npwp' => 'NPWP', 'bukti_transfer' => 'Bukti Transfer', 'pengajuan' => 'Pengajuan'] as $k => $lbl) {
+                if (!empty($skpAtts[$k]['file_path'])) $lampiran[] = [$lbl, $skpAtts[$k]['file_path']];
+            }
             if (!empty($cr['akta_path']))        $lampiran[] = ['Akta Pendirian dan/atau Akta Perubahan', $cr['akta_path']];
             if (!empty($cr['surat_kuasa_path'])) $lampiran[] = ['Surat Kuasa', $cr['surat_kuasa_path']];
             if (!$lampiran): ?>
-                <span class="muted">Tidak ada lampiran Akta/Surat Kuasa. KTP &amp; NPWP terlampir pada SKP.</span>
+                <span class="muted">Belum ada lampiran dokumen.</span>
             <?php else: foreach ($lampiran as [$lbl, $path]):
                 $ext = strtolower(pathinfo((string) $path, PATHINFO_EXTENSION));
                 $isImg = in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true);
@@ -467,10 +489,50 @@ function contract_legal_page(PDO $pdo): void
                 </div>
             <?php endforeach; endif; ?>
 
+            <div class="sec">Persetujuan Legal</div>
+            <?php if ($cr['status'] === 'approved'): ?>
+                <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:14px 16px">
+                    <strong style="color:#047857">✓ Sudah disetujui Legal</strong>
+                    <?php if (!empty($cr['legal_by'])): ?> oleh <strong><?= $h($cr['legal_by']) ?></strong><?php endif; ?>
+                    <?php if (!empty($cr['legal_approved_at'])): ?> pada <?= $h(date('d/m/Y H:i', strtotime($cr['legal_approved_at']))) ?><?php endif; ?>.
+                    <?php if (!empty($cr['legal_note'])): ?><div style="margin-top:6px">Catatan: <?= $h($cr['legal_note']) ?></div><?php endif; ?>
+                </div>
+            <?php else: ?>
+                <form method="post" action="?r=contract_legal_approve&token=<?= $h($cr['share_token']) ?>" style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:14px 16px" onsubmit="return confirm('Setujui permintaan kontrak ini? Pemohon akan melihat status disetujui.')">
+                    <p style="margin:0 0 8px;color:#374151">Setelah dokumen ditinjau, klik tombol di bawah untuk menyetujui. Pemohon (sales) akan melihat status <strong>Disetujui Legal</strong>.</p>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+                        <div><label style="font-size:12px;font-weight:700;display:block">Nama Petugas Legal</label><input name="legal_by" placeholder="Nama Anda" style="min-width:200px;padding:8px"></div>
+                        <div style="flex:1;min-width:220px"><label style="font-size:12px;font-weight:700;display:block">Catatan (opsional)</label><input name="legal_note" placeholder="mis. lanjut buat draft kontrak" style="width:100%;padding:8px"></div>
+                        <button type="submit" style="background:#6d28d9;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-weight:700;cursor:pointer">✓ Setujui Permintaan</button>
+                    </div>
+                </form>
+            <?php endif; ?>
+
             <p class="muted" style="margin-top:18px">Dokumen ini dibagikan oleh Departemen Pemohon untuk keperluan pembuatan/review kontrak. SKP &amp; Surat Penawaran final disertakan terpisah.</p>
         </div>
     </div>
     </body></html>
     <?php
+    exit;
+}
+
+// ─── Legal menyetujui via link publik (tanpa login, validasi share_token) ─────
+function contract_legal_approve(PDO $pdo): void
+{
+    $token = (string) (getv('token', '') ?: post('token', ''));
+    $st = $pdo->prepare('SELECT id, status FROM contract_requests WHERE share_token = ? LIMIT 1');
+    $st->execute([$token]);
+    $cr = $token !== '' ? $st->fetch() : false;
+    if (!$cr) { http_response_code(404); exit('Tautan tidak valid.'); }
+    if ($cr['status'] === 'sent') {
+        $by   = trim((string) post('legal_by')) ?: 'Departemen Legal';
+        $note = trim((string) post('legal_note')) ?: null;
+        $pdo->prepare("UPDATE contract_requests SET status='approved', legal_by=?, legal_note=?, legal_approved_at=CURRENT_TIMESTAMP WHERE id=?")
+            ->execute([substr($by, 0, 120), $note ? substr($note, 0, 500) : null, (int) $cr['id']]);
+    }
+    // Kembali ke halaman legal (kini menampilkan status disetujui).
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+    header('Location: ' . $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/?r=contract_legal&token=' . urlencode($token));
     exit;
 }
