@@ -39,8 +39,9 @@ $skpHasQr = !empty($skp['sign_token']);
 .skpdoc table.notes { width: 100%; border-collapse: collapse; margin-top: 4px; }
 .skpdoc table.notes td.nn { width: 20px; vertical-align: top; font-weight: 700; font-size: 9.5px; color: #374151; }
 .skpdoc table.notes td.nt { font-size: 9.5px; color: #374151; line-height: 1.45; padding-bottom: 3px; text-align: justify; }
-.skpdoc table.sign { width: 100%; border-collapse: collapse; margin-top: 22px; page-break-inside: avoid; }
+.skpdoc table.sign { width: 100%; border-collapse: collapse; margin-top: 22px; page-break-inside: avoid; table-layout: fixed; }
 .skpdoc table.sign td.col { width: 33.33%; font-size: 10.5px; text-align: center; vertical-align: top; padding: 0 6px; }
+.skpdoc table.sign td.col img { max-width: 100%; height: auto; }
 .skpdoc .sign .role { color: #6b7280; margin-bottom: 52px; }
 .skpdoc .sign .name { font-weight: 700; border-top: 1px solid #111; padding-top: 3px; display: inline-block; min-width: 150px; }
 .skpdoc .qrbox { width: 70px; height: 70px; margin: 0 auto 3px; }
@@ -118,7 +119,7 @@ $skpHasQr = !empty($skp['sign_token']);
         </td>
         <td class="col"><div class="role">Menyetujui,</div>
             <?php if (($skp['status'] ?? '') === 'signed' && !empty($skp['signature_data'])): ?>
-                <div style="margin-bottom:2px"><img src="<?= $h($skp['signature_data']) ?>" alt="TTD" style="max-height:48px;max-width:150px;object-fit:contain"></div>
+                <div style="margin-bottom:2px"><img src="<?= $h($skp['signature_data']) ?>" alt="TTD" style="max-height:48px;max-width:100%"></div>
                 <div class="name"><?= $h($skp['sign_name'] ?: ($d['cp_name'] ?? '-')) ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span><br><span class="muted" style="font-weight:400;font-size:8px"><span style="color:#16a34a">■</span> Ditandatangani elektronik <?= $h(substr($skp['signed_at'] ?? '', 0, 16)) ?></span></div>
             <?php elseif (($skp['sign_method'] ?? '') === 'wet' && ($skp['status'] ?? '') === 'signed'): ?>
                 <div class="name"><?= $h($skp['sign_name'] ?: ($d['cp_name'] ?? '-')) ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span><br><span class="muted" style="font-weight:400;font-size:8px"><span style="color:#16a34a">■</span> Ditandatangani basah (scan terlampir)</span></div>

@@ -87,9 +87,19 @@ function clara_render_letterhead_pdf(string $html, string $filename): void
 {
     $mpdf = clara_letterhead_mpdf();
     $mpdf->WriteHTML($html);
-    while (ob_get_level() > 0) ob_end_clean();
+    $pdf  = $mpdf->Output('', \Mpdf\Output\Destination::STRING_RETURN);
     $safe = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $filename) ?: 'dokumen';
-    $mpdf->Output($safe . '.pdf', \Mpdf\Output\Destination::INLINE);
+    while (ob_get_level() > 0) ob_end_clean();
+    // Header sendiri (bukan dari mPDF) → ANTI-CACHE. mPDF default kirim
+    // Cache-Control: public + Last-Modified tetap → Chrome Android bisa
+    // menyajikan PDF LAMA yang ter-cache. no-store memaksa selalu ambil terbaru.
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: inline; filename="' . $safe . '.pdf"');
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+    header('Content-Length: ' . strlen($pdf));
+    echo $pdf;
     exit;
 }
 
