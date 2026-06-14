@@ -135,7 +135,6 @@ li{margin-bottom:3px;line-height:1.45}
     </table>
     <div style="line-height:1.7;margin-top:4px">
         Masa sewa: <strong><?= $h($durasi) ?></strong> &nbsp;·&nbsp; Periode: <strong><?= $h($periode) ?></strong>
-        <?= $o['unit_rate'] ? '<br>Harga dasar Rp ' . number_format((float)$o['unit_rate'], 0, ',', '.') . ' /m²/' . (($o['pricing_type'] ?? '') === 'monthly' ? 'bulan' : 'hari') : '' ?>
     </div>
 
     <div class="sec">Rincian Biaya</div>
