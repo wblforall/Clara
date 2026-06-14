@@ -144,7 +144,7 @@ li{margin-bottom:3px;line-height:1.45}
         <tr class="sub"><td class="lbl">Subtotal sewa</td><td class="amt"><?= $rp($total) ?></td></tr>
         <tr><td class="lbl">PPN 12% <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppn) ?></td></tr>
         <tr class="tot"><td class="lbl">Total setelah PPN</td><td class="amt"><?= $rp($afterPpn) ?></td></tr>
-        <tr><td class="lbl">Security Deposit (setara nilai sewa, dikembalikan 100%)</td><td class="amt"><?= $rp($deposit) ?></td></tr>
+        <tr><td class="lbl">Security Deposit (dikembalikan 100%)</td><td class="amt"><?= $rp($deposit) ?></td></tr>
         <tr class="grand"><td class="lbl">Grand Total (pembayaran awal + deposit)</td><td class="amt"><?= $rp($grand) ?></td></tr>
     </table>
     <div class="muted" style="font-size:9.5px">Harga belum termasuk biaya listrik. PPN 12% sesuai PMK No. 131/2024.</div>
@@ -155,7 +155,7 @@ li{margin-bottom:3px;line-height:1.45}
     <div class="sec">Cara Pembayaran</div>
     <ol class="pay">
         <li>Wajib membayar <strong>biaya sewa</strong> senilai <strong><?= $rp($o['dp_amount'] ?: $total) ?></strong> (Exc. PPN 12%) maksimal 1 minggu setelah penawaran disetujui, dan pelunasan paling lambat H-7 sebelum pelaksanaan sewa.</li>
-        <li>Wajib membayar <strong>Security Deposit</strong> (uang jaminan) senilai <strong><?= $rp($o['deposit_amount']) ?></strong> setara nilai sewa, sebagai jaminan kerusakan / pengakhiran kontrak sebelum masa sewa berakhir.</li>
+        <li>Wajib membayar <strong>Security Deposit</strong> (uang jaminan) senilai <strong><?= $rp($o['deposit_amount']) ?></strong> sebagai jaminan kerusakan / pengakhiran kontrak sebelum masa sewa berakhir.</li>
         <li>Apabila tidak terjadi kerusakan setelah masa sewa berakhir, Security Deposit dikembalikan 100%.</li>
     </ol>
     <div class="rek">
