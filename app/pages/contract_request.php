@@ -436,6 +436,7 @@ function contract_legal_page(PDO $pdo): void
     $rd = $cr['request_date'] ? strtotime($cr['request_date']) : time();
     $tglAju = (int) date('d', $rd) . ' ' . $months[(int) date('n', $rd)] . ' ' . date('Y', $rd);
     // Base URL utk unduh lampiran (relatif ke /public).
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
     $asset = fn($p) => $dir . '/' . ltrim((string) $p, '/');
     ?>
@@ -457,6 +458,8 @@ function contract_legal_page(PDO $pdo): void
     table.leg td.c{text-align:center;width:84px;font-size:16px}
     .note{display:block;font-size:11px;font-style:italic;color:#6b7280;margin-top:2px}
     .sign{display:flex;gap:20px;margin-top:6px;text-align:center} .sign .col{flex:1} .sign .paren{margin-top:44px}
+    .sign .qrbox{width:84px;height:84px;margin:8px auto 2px} .sign .qrbox svg,.sign .qrbox img{width:84px!important;height:84px!important;display:block}
+    .sign .qrhint{font-size:10px;color:#6b7280} .sign .pnm{margin-top:4px;font-weight:700}
     .att a{display:inline-flex;align-items:center;gap:6px;background:#ede9fe;color:#5b21b6;text-decoration:none;border-radius:8px;padding:9px 14px;font-weight:700;margin:4px 8px 0 0}
     .lampimg{display:block;max-width:100%;border:1px solid #e5e7eb;border-radius:8px;margin:8px 0}
     .pts{border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;white-space:pre-wrap;line-height:1.6;background:#fafafa}
@@ -510,9 +513,21 @@ function contract_legal_page(PDO $pdo): void
 
             <p style="margin-top:16px">Dengan ini saya menyatakan bahwa informasi yang diberikan adalah benar dan lengkap.</p>
             <div style="text-align:right;font-size:13px">Disetujui oleh,</div>
+            <?php $crVerifyUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/?r=contract_legal&token=' . $cr['share_token']; ?>
             <div class="sign">
-                <div class="col">Departemen Pemohon,<div class="paren">( <?= $h($cr['requester_name'] ?: '________') ?> )</div></div>
-                <div class="col">Departemen Legal<div class="paren">( ________ )</div></div>
+                <div class="col">Departemen Pemohon,
+                    <div class="qrbox" data-qr="<?= $h($crVerifyUrl) ?>"></div>
+                    <div class="qrhint">Scan untuk validasi</div>
+                    <div class="pnm">( <?= $h($cr['requester_name'] ?: '________') ?> )</div>
+                </div>
+                <div class="col">Departemen Legal
+                    <?php if (($cr['status'] ?? '') === 'approved'): ?>
+                        <div class="paren" style="margin-top:30px">( <?= $h($cr['legal_by'] ?: 'Disetujui') ?> )</div>
+                        <div class="qrhint" style="color:#047857">✓ Disetujui <?= $h(substr((string) $cr['legal_approved_at'], 0, 16)) ?></div>
+                    <?php else: ?>
+                        <div class="paren">( ________ )</div>
+                    <?php endif; ?>
+                </div>
             </div>
 
             <?php if (!empty($skpFinal)): $sf = $skpFinal; $sd = $sf['snap']; $sa = $sd['amounts'] ?? [];
@@ -578,6 +593,16 @@ function contract_legal_page(PDO $pdo): void
             <p class="muted" style="margin-top:18px">Dokumen ini dibagikan oleh Departemen Pemohon untuk keperluan pembuatan/review kontrak. SKP &amp; Surat Penawaran final disertakan terpisah.</p>
         </div>
     </div>
+    <script src="<?= $h($asset('assets/qrcode.min.js')) ?>"></script>
+    <script>
+    (function () {
+        if (typeof qrcode !== 'function') return;
+        document.querySelectorAll('.qrbox[data-qr]').forEach(function (box) {
+            try { var qr = qrcode(0, 'M'); qr.addData(box.getAttribute('data-qr')); qr.make();
+                box.innerHTML = qr.createSvgTag({ cellSize: 2, margin: 0, scalable: true }); } catch (e) {}
+        });
+    })();
+    </script>
     </body></html>
     <?php
     exit;
