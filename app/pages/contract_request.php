@@ -70,7 +70,7 @@ function contract_request_list(PDO $pdo): void
                         <tr>
                             <td style="white-space:nowrap;font-weight:600"><?= h($r['req_no'] ?? '—') ?></td>
                             <td style="white-space:nowrap"><?= h($r['skp_no'] ?? '—') ?></td>
-                            <td><?= h($types[$r['contract_type']] ?? '-') ?></td>
+                            <td><?= h($types[$r['contract_type']] ?? 'Sewa Menyewa') ?></td>
                             <td><span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span></td>
                             <td style="font-size:11.5px;color:var(--muted)"><?= h($r['created_by'] ?? '-') ?><br><?= h(substr($r['created_at'] ?? '', 0, 16)) ?></td>
                             <td style="white-space:nowrap">
@@ -118,14 +118,12 @@ function contract_request_form(PDO $pdo): void
     $v = fn(string $k, $def = '') => h((string) ($cr[$k] ?? $def));
 
     layout(($cr ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Permintaan Kontrak', function () use ($pdo, $cr, $id, $skpId, $ctx, $editable, $me, $v) {
-        $types = _cr_contract_types();
         $dis = $editable ? '' : 'disabled';
         // Default checklist: KTP/NPWP ikut lampiran SKP.
         $ktp  = $cr ? !empty($cr['doc_ktp'])  : $ctx['has_ktp'];
         $npwp = $cr ? !empty($cr['doc_npwp']) : $ctx['has_npwp'];
         $akta = !empty($cr['doc_akta']);
         $sk   = !empty($cr['doc_surat_kuasa']);
-        $ctype = $cr['contract_type'] ?? '';
         ?>
         <div class="toolbar" style="gap:8px;flex-wrap:wrap">
             <a class="btn light" href="?r=skp_form&id=<?= (int)$skpId ?>">← SKP</a>
@@ -177,15 +175,6 @@ function contract_request_form(PDO $pdo): void
                 <div><label>Tanggal Pengajuan</label><input type="date" name="request_date" value="<?= $v('request_date', date('Y-m-d')) ?>" <?= $dis ?>></div>
                 <div><label>Nama Penanggung Jawab</label><input name="requester_name" value="<?= $v('requester_name', $me) ?>" <?= $dis ?>></div>
                 <div><label>Jabatan</label><input name="requester_position" value="<?= $v('requester_position') ?>" placeholder="mis. Staff Marketing" <?= $dis ?>></div>
-            </div>
-
-            <h3>Jenis Kontrak</h3>
-            <div style="display:flex;gap:18px;flex-wrap:wrap">
-                <?php foreach ($types as $k => $lbl): ?>
-                <label style="display:flex;align-items:center;gap:6px;font-weight:600;cursor:pointer">
-                    <input type="radio" name="contract_type" value="<?= h($k) ?>" <?= $ctype === $k ? 'checked' : '' ?> <?= $dis ?>> <?= h($lbl) ?>
-                </label>
-                <?php endforeach; ?>
             </div>
 
             <h3>Kelengkapan Dokumen Legalitas</h3>
@@ -283,7 +272,7 @@ function contract_request_save(PDO $pdo): void
         'requester_name'     => trim((string) post('requester_name')) ?: null,
         'requester_position' => trim((string) post('requester_position')) ?: null,
         'request_date'       => post('request_date') ?: date('Y-m-d'),
-        'contract_type'      => in_array(post('contract_type'), ['spk', 'sewa_menyewa', 'kerja_sama'], true) ? post('contract_type') : null,
+        'contract_type'      => 'sewa_menyewa',  // CLARA hanya menangani sewa — default tetap.
         'doc_ktp'            => post('doc_ktp') ? 1 : 0,
         'doc_npwp'           => post('doc_npwp') ? 1 : 0,
         'doc_akta'           => post('doc_akta') ? 1 : 0,
