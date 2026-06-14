@@ -152,12 +152,17 @@ function offers_list_page(PDO $pdo): void
     // Filter modul (Exhibition/Media/Gudang).
     $module = getv('module', '');
     if (!in_array($module, ['cl', 'media', 'gudang'], true)) $module = '';
+    // Pembatasan per-sales: role 'sales' hanya lihat miliknya sendiri.
+    $scope = current_sales_scope($pdo, $pid);
+    $scopeSql = $scope ? ' AND (o.pic_name = ? OR o.created_by = ?)' : '';
+    $scopeSqlC = $scope ? ' AND (pic_name = ? OR created_by = ?)' : '';
+    $scopeP = $scope ? [$scope['pic'], $scope['uname']] : [];
 
-    // Hitung jumlah per tab (badge) — ikut filter modul bila ada.
+    // Hitung jumlah per tab (badge) — ikut filter modul + scope sales.
     $counts = ['on_going' => 0, 'deal' => 0, 'closed' => 0];
-    $cq = 'SELECT status, COUNT(*) c FROM offers WHERE property_id = ?' . ($module ? ' AND module = ?' : '') . ' GROUP BY status';
+    $cq = 'SELECT status, COUNT(*) c FROM offers WHERE property_id = ?' . ($module ? ' AND module = ?' : '') . $scopeSqlC . ' GROUP BY status';
     $cs = $pdo->prepare($cq);
-    $cs->execute($module ? [$pid, $module] : [$pid]);
+    $cs->execute(array_merge([$pid], $module ? [$module] : [], $scopeP));
     foreach ($cs->fetchAll() as $r) {
         foreach ($tabStatuses as $t => $sts) if (in_array($r['status'], $sts, true)) $counts[$t] += (int)$r['c'];
     }
@@ -165,9 +170,9 @@ function offers_list_page(PDO $pdo): void
     $in = implode(',', array_fill(0, count($tabStatuses[$tab]), '?'));
     $stmt = $pdo->prepare(
         "SELECT o.*, c.company_name FROM offers o LEFT JOIN master_clients c ON c.id = o.client_id
-         WHERE o.property_id = ? AND o.status IN ($in)" . ($module ? ' AND o.module = ?' : '') . " ORDER BY o.id DESC"
+         WHERE o.property_id = ? AND o.status IN ($in)" . ($module ? ' AND o.module = ?' : '') . $scopeSql . " ORDER BY o.id DESC"
     );
-    $stmt->execute(array_merge([$pid], $tabStatuses[$tab], $module ? [$module] : []));
+    $stmt->execute(array_merge([$pid], $tabStatuses[$tab], $module ? [$module] : [], $scopeP));
     $rows = $stmt->fetchAll();
 
     layout('Surat Penawaran', function () use ($rows, $tab, $counts, $module) {
@@ -259,6 +264,7 @@ function offer_view(PDO $pdo): void
     $st->execute([$id, $pid]);
     $offer = $st->fetch();
     if (!$offer) { flash('Penawaran tidak ditemukan.'); redirect_to('offers'); }
+    if (($sc = current_sales_scope($pdo, $pid)) && $offer['pic_name'] !== $sc['pic'] && $offer['created_by'] !== $sc['uname']) { flash('Penawaran ini bukan milik Anda.'); redirect_to('offers'); }
 
     $editable = !in_array($offer['status'], ['deal', 'cancelled'], true);
     $days  = _offer_days($offer['start_date'] ?? null, $offer['end_date'] ?? null);
@@ -380,6 +386,7 @@ function offer_form(PDO $pdo): void
         $st->execute([$id, $pid]);
         $offer = $st->fetch();
         if (!$offer) { flash('Penawaran tidak ditemukan.'); redirect_to('offers'); }
+        if (($sc = current_sales_scope($pdo, $pid)) && $offer['pic_name'] !== $sc['pic'] && $offer['created_by'] !== $sc['uname']) { flash('Penawaran ini bukan milik Anda.'); redirect_to('offers'); }
     }
     $module  = $offer['module'] ?? getv('module', 'cl');
     if (!in_array($module, ['cl', 'media', 'gudang'], true)) $module = 'cl';

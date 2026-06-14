@@ -89,6 +89,11 @@ function skp_list_page(PDO $pdo): void
     $module = getv('module', '');
     if (!in_array($module, ['cl', 'media', 'gudang'], true)) $module = '';
     if ($module) { $where[] = 'COALESCE(t.module, o.module) = ?'; $params[] = $module; }
+    // Pembatasan per-sales: hanya SKP dari penawaran miliknya atau yang ia buat.
+    if ($scope = current_sales_scope($pdo, $pid)) {
+        $where[] = '(o.pic_name = ? OR s.created_by = ?)';
+        $params[] = $scope['pic']; $params[] = $scope['uname'];
+    }
     // SKP bisa berasal dari penawaran (offer-first, transaksi belum terbit) ATAU
     // dari transaksi lama. LEFT JOIN keduanya + fallback datanya.
     $stmt = $pdo->prepare(
@@ -200,6 +205,12 @@ function skp_form(PDO $pdo): void
     // Sumber data: dari Penawaran (alur baru) atau Transaksi (legacy)
     $src = $offerId ? _skp_source_from_offer($pdo, $offerId, $pid) : _skp_source($pdo, $trxId, $pid);
     if (!$src) { flash('Sumber (penawaran/transaksi) tidak ditemukan / belum DEAL.'); redirect_to($offerId ? 'offers' : 'transactions'); }
+    // Pembatasan per-sales: hanya boleh akses SKP dari penawaran miliknya / yang ia buat.
+    if ($sc = current_sales_scope($pdo, $pid)) {
+        $ownPic = ($src['pic_name'] ?? '') === $sc['pic'];
+        $ownBy  = ($skp['created_by'] ?? '') === $sc['uname'];
+        if (!$ownPic && !$ownBy) { flash('SKP ini bukan milik Anda.'); redirect_to('skp'); }
+    }
     $docType = $skp['doc_type'] ?? ($src['doc_type'] ?? (($src['module'] ?? '') === 'cl' ? 'skp' : 'sks'));
     $docLabel = $docType === 'sks' ? 'SKS (Surat Konfirmasi Sewa)' : 'SKP (Surat Konfirmasi Pameran)';
 

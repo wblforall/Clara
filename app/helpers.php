@@ -172,6 +172,25 @@ function current_role(): string
     return $_SESSION['user']['role'] ?? 'guest';
 }
 
+/**
+ * Pembatasan visibilitas per-sales. Role 'sales' hanya melihat data miliknya
+ * (penawaran/SKP dengan PIC = dirinya, atau yang ia buat). Role lain → null
+ * (lihat semua). Return ['pic'=>nama PIC tertaut|'', 'uname'=>nama user] atau null.
+ */
+function current_sales_scope(PDO $pdo, int $pid): ?array
+{
+    if (current_role() !== 'sales') return null;
+    $uid   = (int) ($_SESSION['user']['id'] ?? 0);
+    $uname = (string) ($_SESSION['user']['name'] ?? '');
+    $pic = '';
+    if ($uid) {
+        $st = $pdo->prepare("SELECT name FROM master_pic WHERE user_id = ? AND status = 'active' AND property_id = ? LIMIT 1");
+        $st->execute([$uid, $pid]);
+        $pic = (string) ($st->fetchColumn() ?: '');
+    }
+    return ['pic' => $pic, 'uname' => $uname];
+}
+
 function permission_matrix(?array $set = null): array
 {
     static $matrix = [];
