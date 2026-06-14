@@ -43,6 +43,8 @@ $ketentuan = [
     'Bersedia mengikuti segala ketentuan dan tata tertib yang berlaku.',
 ];
 ?>
+<?php $PDF_MODE = !empty($PDF_MODE); /* diset oleh offer_print() utk jalur mPDF */ ?>
+<?php if (!$PDF_MODE): ?>
 <!doctype html>
 <html lang="id">
 <head>
@@ -50,14 +52,12 @@ $ketentuan = [
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= $h($o['offer_no']) ?> — Surat Penawaran</title>
 <link rel="icon" type="image/png" href="assets/clara-logo.png">
+<?php endif; ?>
 <style>
+<?php if (!$PDF_MODE): ?>
+/* ── Mode LAYAR/print-browser: kop via thead/tfoot (tetap utk pratinjau & fallback). ── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111;background:#fff}
-/* ── Kop surat (letterhead) BERULANG tiap halaman — pola thead/tfoot ──
-   Header = thead, Footer = tfoot (keduanya GAMBAR kop). Table-header-group &
-   table-footer-group berulang di tiap halaman & DIHORMATI baik Chrome desktop
-   MAUPUN Chrome Android (position:fixed & @page margin diabaikan/keliru di HP).
-   tfoot memesan ruang bawah sekaligus menampilkan footer → konten tak menimpa. */
 @page{size:A4 portrait;margin:0}
 table.paper{width:100%;border-collapse:collapse}
 table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:0}
@@ -72,12 +72,10 @@ table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:
   table.paper{width:210mm;margin:16px auto;box-shadow:0 4px 24px rgba(0,0,0,.12);background:#fff}
 }
 @media print{.no-print{display:none}}
-/* Preview di HP: skala A4 agar pas lebar layar (tak memengaruhi hasil cetak/PDF). */
 @media screen and (max-width:820px){
   body{overflow-x:hidden}
   table.paper{margin:0 !important;transform-origin:top left}
 }
-/* Petunjuk "Simpan sebagai PDF" — hanya muncul di layar HP, tak ikut tercetak. */
 .pdf-hint{display:none}
 @media screen and (max-width:820px){
   .pdf-hint{display:block;position:fixed;left:10px;right:10px;bottom:12px;z-index:9;
@@ -85,9 +83,14 @@ table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:
     padding:9px 13px;border-radius:10px;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.12)}
 }
 @media print{.pdf-hint{display:none}}
-/* Jaminan: skala layar HP TAK BOLEH ikut saat cetak/PDF → A4 selalu penuh. */
 @media print{ table.paper{transform:none !important} body{height:auto !important} }
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+<?php else: ?>
+/* ── Mode PDF (mPDF): kop dipasang via SetHTMLHeader/Footer; di sini CSS KONTEN saja
+   (TANPA @page agar tak menimpa margin mPDF; tanpa padding .sheet krn margin sudah diatur). ── */
+*{box-sizing:border-box}
+body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111}
+<?php endif; ?>
 .sign{page-break-inside:avoid}
 .meta{margin-bottom:10px;line-height:1.7}
 .meta b{display:inline-block;min-width:70px}
@@ -116,6 +119,7 @@ li{margin-bottom:3px;line-height:1.45}
 .qrhint{font-size:7.5px;color:#6b7280;margin-bottom:3px}
 .muted{color:#6b7280}
 </style>
+<?php if (!$PDF_MODE): ?>
 </head>
 <body>
 <div class="no-print">
@@ -127,6 +131,7 @@ li{margin-bottom:3px;line-height:1.45}
 <thead><tr><td><div class="sp-top"></div></td></tr></thead>
 <tfoot><tr><td><div class="sp-bot"></div></td></tr></tfoot>
 <tbody><tr><td>
+<?php endif; ?>
 <div class="sheet">
     <div style="text-align:right;margin-bottom:8px">Balikpapan, <?= $h($tanggal) ?></div>
     <div class="meta">
@@ -206,13 +211,18 @@ li{margin-bottom:3px;line-height:1.45}
         <div>Hormat kami,</div>
         <div style="font-weight:600">PT. Wulandari Bangun Laksana, Tbk.</div>
         <?php if ($hasQr): ?>
+            <?php if ($PDF_MODE): ?>
+            <div class="qrbox"><?= clara_qr_img($verifyUrl, 18) ?></div><div class="qrhint">Scan untuk validasi</div>
+            <?php else: ?>
             <div class="qrbox" data-qr="<?= $h($verifyUrl) ?>"></div><div class="qrhint">Scan untuk validasi</div>
+            <?php endif; ?>
         <?php else: ?>
             <div style="height:46px"></div>
         <?php endif; ?>
         <div class="nm"<?= $hasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($o['pic_name'] ?: '-') ?><br><span class="muted" style="font-weight:400">Sales <?= $h($propShort) ?></span></div>
     </div>
 </div>
+<?php if ($PDF_MODE) { return; } /* mode PDF: berhenti di sini, HTML konten ditangkap offer_print() */ ?>
 </td></tr></tbody>
 </table>
 <script src="assets/qrcode.min.js"></script>

@@ -1,0 +1,6 @@
+# Folder kerja mPDF (cache font & file sementara) — jangan di-commit isinya,
+# tapi pertahankan foldernya (777) + .htaccess.
+*
+!.gitignore
+!.gitkeep
+!.htaccess

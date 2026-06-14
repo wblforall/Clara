@@ -987,7 +987,19 @@ function offer_print(PDO $pdo): void
     $prop = current_property();
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+
+    // Pratinjau HTML lama (window.print) hanya bila diminta eksplisit (?html=1).
+    // Default: PDF server-side (mPDF) — kop berulang tiap halaman, identik di HP & PC.
+    if (getv('html') === '1') {
+        include __DIR__ . '/offer_print_template.php';
+        return;
+    }
+    require_once dirname(__DIR__) . '/pdf.php';
+    $PDF_MODE = true;
+    ob_start();
     include __DIR__ . '/offer_print_template.php';
+    $html = ob_get_clean();
+    clara_render_letterhead_pdf($html, ($o['offer_no'] ?: 'Penawaran') . ' - Surat Penawaran');
 }
 
 // ─── Verifikasi penawaran via QR (publik, read-only, akses via sign_token) ────
