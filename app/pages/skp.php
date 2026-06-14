@@ -232,15 +232,16 @@ function skp_form(PDO $pdo): void
                 <div><label>Nomor Telepon</label><input name="phone_pj" value="<?= $val('phone_pj', $src['cp_phone'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></div>
             </div>
 
-            <h3>Lampiran <span style="font-weight:400;font-size:12px;color:var(--muted)">(KTP, NPWP, Bukti Transfer wajib; Pengajuan opsional)</span></h3>
+            <h3>Lampiran <span style="font-weight:400;font-size:12px;color:var(--muted)">(<span style="color:#dc2626">*</span> wajib sebelum submit approval; Pengajuan opsional)</span></h3>
             <div class="form-grid">
                 <?php
                 $reqLbl = ['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP', 'bukti_transfer' => 'Bukti Transfer', 'pengajuan' => 'Pengajuan (opsional)'];
+                $wajib  = ['ktp', 'npwp', 'bukti_transfer'];
                 foreach ($reqLbl as $kind => $lbl):
                     $has = $atts[$kind] ?? null;
                 ?>
                 <div>
-                    <label><?= $lbl ?></label>
+                    <label><?= $lbl ?><?= in_array($kind, $wajib, true) ? ' <span style="color:#dc2626">*</span>' : '' ?></label>
                     <?php if ($has): ?>
                         <div style="font-size:12px"><a href="<?= h($has['file_path']) ?>" target="_blank">📎 <?= h($has['original_name'] ?: 'lihat') ?></a></div>
                     <?php endif; ?>
