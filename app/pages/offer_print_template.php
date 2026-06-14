@@ -154,7 +154,6 @@ li{margin-bottom:3px;line-height:1.45}
         <tr><td class="lbl">Security Deposit (dikembalikan 100%)</td><td class="amt"><?= $rp($deposit) ?></td></tr>
         <tr class="grand"><td class="lbl">Grand Total (pembayaran awal + deposit)</td><td class="amt"><?= $rp($grand) ?></td></tr>
     </table>
-    <div class="muted" style="font-size:9.5px">Harga belum termasuk biaya listrik. PPN 12% sesuai PMK No. 131/2024.</div>
 
     <div class="sec">Fasilitas</div>
     <ul><li>Standar area pameran</li><li>Stop kontak listrik</li><li>Media promosi: media sosial mall &amp; pembagian flyer di area event</li></ul>
