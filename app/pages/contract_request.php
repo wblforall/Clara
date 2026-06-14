@@ -385,8 +385,14 @@ function contract_legal_page(PDO $pdo): void
     .sec{font-weight:800;color:#6d28d9;text-transform:uppercase;font-size:12px;letter-spacing:.03em;margin:18px 0 8px}
     table{width:100%;border-collapse:collapse} td{padding:6px 8px;border:1px solid #e5e7eb;vertical-align:top}
     td.k{width:38%;background:#f8fafc;color:#374151}
-    .chips span{display:inline-block;margin-right:14px;font-weight:600}
+    .chips span{display:inline-block;margin-right:18px;font-weight:600}
+    .intro{font-size:12.5px;color:#374151;line-height:1.55;text-align:justify;margin-bottom:10px}
+    table.leg td{vertical-align:middle} table.leg th{background:#f3f4f6;text-align:center;font-size:12.5px} table.leg th.j{text-align:left}
+    table.leg td.c{text-align:center;width:84px;font-size:16px}
+    .note{display:block;font-size:11px;font-style:italic;color:#6b7280;margin-top:2px}
+    .sign{display:flex;gap:20px;margin-top:6px;text-align:center} .sign .col{flex:1} .sign .paren{margin-top:44px}
     .att a{display:inline-flex;align-items:center;gap:6px;background:#ede9fe;color:#5b21b6;text-decoration:none;border-radius:8px;padding:9px 14px;font-weight:700;margin:4px 8px 0 0}
+    .lampimg{display:block;max-width:100%;border:1px solid #e5e7eb;border-radius:8px;margin:8px 0}
     .pts{border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;white-space:pre-wrap;line-height:1.6;background:#fafafa}
     .muted{color:#6b7280;font-size:12px}
     </style></head><body>
@@ -397,12 +403,12 @@ function contract_legal_page(PDO $pdo): void
         </div>
         <div class="bd">
             <div class="sec">Informasi Umum</div>
+            <div class="intro">Formulir ini digunakan sebagai dasar bagi Departemen Legal untuk membuat dan/atau mereview kontrak yang diajukan oleh Departemen lain yang dilampirkan bersamaan dengan Surat Konfirmasi Pameran dan/atau Surat Penawaran.</div>
             <table>
                 <tr><td class="k">Departemen Pemohon</td><td><?= $h($cr['department']) ?></td></tr>
                 <tr><td class="k">Tanggal Pengajuan</td><td><?= $h($tglAju) ?></td></tr>
                 <tr><td class="k">Nama Penanggung Jawab</td><td><?= $h($cr['requester_name'] ?: '-') ?></td></tr>
                 <tr><td class="k">Jabatan</td><td><?= $h($cr['requester_position'] ?: '-') ?></td></tr>
-                <tr><td class="k">Referensi SKP / Penyewa</td><td><?= $h(($skp['skp_no'] ?? '-') ?: '-') ?> · <?= $h($d['company_name'] ?? '-') ?></td></tr>
             </table>
 
             <div class="sec">Jenis Kontrak</div>
@@ -413,20 +419,53 @@ function contract_legal_page(PDO $pdo): void
             </div>
 
             <div class="sec">Kelengkapan Dokumen Legalitas</div>
-            <table>
-                <tr><td><?= $chk($cr['doc_ktp']) ?> KTP Penanggung Jawab/Direktur</td><td><?= $chk($cr['doc_npwp']) ?> NPWP</td></tr>
-                <tr><td><?= $chk($cr['doc_akta']) ?> Akta Pendirian/Perubahan</td><td><?= $chk($cr['doc_surat_kuasa']) ?> Surat Kuasa</td></tr>
+            <table class="leg">
+                <thead><tr><th class="j">Jenis Dokumen</th><th>Ada</th><th>Tidak Ada</th></tr></thead>
+                <tbody>
+                <?php
+                $legal = [
+                    ['Hardcopy Salinan Kartu Identitas/KTP Penanggung Jawab/Direktur/Kuasa Direksi', '*Melampirkan Kartu Identitas apabila bukan Warga Negara Indonesia', $cr['doc_ktp']],
+                    ['Hardcopy NPWP', '*Melampirkan NPWP Perusahaan apabila Pihak Kedua berbentuk CV, PT, Yayasan, Koperasi, BUMN/BUMD', $cr['doc_npwp']],
+                    ['Softcopy Akta Pendirian dan/atau Akta Perubahan', '*Dilampirkan apabila Pihak Kedua berbentuk PT, Yayasan, Koperasi, BUMN/BUMD', $cr['doc_akta']],
+                    ['Softcopy Surat Kuasa', '*Dilampirkan hanya apabila Pihak Kedua berbentuk PT, Yayasan, Koperasi, BUMN/BUMD, tetapi yang bertanda tangan bukan direktur', $cr['doc_surat_kuasa']],
+                ];
+                foreach ($legal as [$lbl, $note, $on]): ?>
+                    <tr><td><?= $h($lbl) ?><span class="note"><?= $h($note) ?></span></td><td class="c"><?= $chk($on) ?></td><td class="c"><?= $chk(!$on) ?></td></tr>
+                <?php endforeach; ?>
+                </tbody>
             </table>
 
-            <div class="sec">Lampiran</div>
-            <div class="att">
-                <?php if (!empty($cr['akta_path'])): ?><a href="<?= $h($asset($cr['akta_path'])) ?>" target="_blank">📎 Akta Pendirian/Perubahan</a><?php endif; ?>
-                <?php if (!empty($cr['surat_kuasa_path'])): ?><a href="<?= $h($asset($cr['surat_kuasa_path'])) ?>" target="_blank">📎 Surat Kuasa</a><?php endif; ?>
-                <?php if (empty($cr['akta_path']) && empty($cr['surat_kuasa_path'])): ?><span class="muted">Tidak ada lampiran Akta/Surat Kuasa. KTP &amp; NPWP terlampir pada SKP.</span><?php endif; ?>
+            <div class="sec">Poin-Poin Penting yang Perlu Dimasukkan ke Dalam Kontrak</div>
+            <div class="muted" style="margin:0 0 4px">*selain yang tercantum di Surat Konfirmasi Pameran atau hal lain yang perlu diperjelas.</div>
+            <div class="pts"><?= $h($cr['important_points'] ?: '-') ?></div>
+
+            <p style="margin-top:16px">Dengan ini saya menyatakan bahwa informasi yang diberikan adalah benar dan lengkap.</p>
+            <div style="text-align:right;font-size:13px">Disetujui oleh,</div>
+            <div class="sign">
+                <div class="col">Departemen Pemohon,<div class="paren">( <?= $h($cr['requester_name'] ?: '________') ?> )</div></div>
+                <div class="col">Departemen Legal<div class="paren">( ________ )</div></div>
             </div>
 
-            <div class="sec">Poin-Poin Penting</div>
-            <div class="pts"><?= $h($cr['important_points'] ?: '-') ?></div>
+            <div class="sec">Lampiran Dokumen Pelengkap</div>
+            <?php
+            $lampiran = [];
+            if (!empty($cr['akta_path']))        $lampiran[] = ['Akta Pendirian dan/atau Akta Perubahan', $cr['akta_path']];
+            if (!empty($cr['surat_kuasa_path'])) $lampiran[] = ['Surat Kuasa', $cr['surat_kuasa_path']];
+            if (!$lampiran): ?>
+                <span class="muted">Tidak ada lampiran Akta/Surat Kuasa. KTP &amp; NPWP terlampir pada SKP.</span>
+            <?php else: foreach ($lampiran as [$lbl, $path]):
+                $ext = strtolower(pathinfo((string) $path, PATHINFO_EXTENSION));
+                $isImg = in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true);
+            ?>
+                <div style="margin-top:10px">
+                    <div style="font-weight:700;margin-bottom:4px"><?= $h($lbl) ?></div>
+                    <?php if ($isImg): ?>
+                        <img class="lampimg" src="<?= $h($asset($path)) ?>" alt="<?= $h($lbl) ?>">
+                    <?php else: ?>
+                        <div class="att"><a href="<?= $h($asset($path)) ?>" target="_blank">📎 Buka <?= $h(strtoupper($ext)) ?> — <?= $h($lbl) ?></a></div>
+                    <?php endif; ?>
+                </div>
+            <?php endforeach; endif; ?>
 
             <p class="muted" style="margin-top:18px">Dokumen ini dibagikan oleh Departemen Pemohon untuk keperluan pembuatan/review kontrak. SKP &amp; Surat Penawaran final disertakan terpisah.</p>
         </div>
