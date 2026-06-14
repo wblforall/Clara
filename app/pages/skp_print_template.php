@@ -24,19 +24,21 @@ $today = date('d') . ' ' . ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Inter', Arial, sans-serif; font-size: 11px; color: #111; background: #fff; }
+/* Header: thead tabel → berulang di ATAS tiap halaman.
+   Footer: elemen FIXED → menempel di DASAR tiap halaman (ruang via margin bawah). */
 @page { size: A4 portrait; margin: 0; }
-/* Kop di dalam thead/tfoot tabel → otomatis berulang & posisinya benar
-   (header tiap atas halaman, footer tiap bawah) baik di layar maupun cetak. */
 table.paper { width: 100%; border-collapse: collapse; }
 table.paper > thead > tr > td, table.paper > tfoot > tr > td, table.paper > tbody > tr > td { padding: 0; }
-.sp-top { height: 30mm; background: url('assets/letterhead-a4.jpg') no-repeat top center; background-size: 210mm auto; }
-.sp-bot { height: 32mm; background: url('assets/letterhead-a4.jpg') no-repeat bottom center; background-size: 210mm auto; }
+.sp-top { height: 30mm; background: url('assets/letterhead-a4.jpg') no-repeat top center; background-size: 100% auto; }
+.sp-bot { height: 36mm; } /* tfoot kosong: pesan ruang footer tiap halaman (anti-tabrak) */
+.lh-footer { position: fixed; left: 0; bottom: 0; width: 100%; height: 36mm; background: url('assets/letterhead-a4.jpg') no-repeat bottom center; background-size: 100% auto; }
 .sheet { padding: 0 17mm; }
 .no-print { position: fixed; top: 14px; right: 14px; display: flex; gap: 8px; z-index: 99; }
 .no-print button { padding: 9px 18px; border: none; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; }
 .btn-print { background: #0D9488; color: #fff; } .btn-close { background: #e5e7eb; color: #374151; }
 @media screen {
-  body { background: #9ca3af; }
+  body { background: #fff; }
+  .lh-footer { display: none; }
   table.paper { width: 210mm; margin: 16px auto; box-shadow: 0 4px 24px rgba(0,0,0,.12); background: #fff; }
 }
 @media print { .no-print { display: none; } }
@@ -74,6 +76,7 @@ table.pay tr.grand td { background: #f0fdfa; font-weight: 800; color: #0f766e; }
     <button class="btn-print" onclick="window.print()">🖨 Cetak / Simpan PDF</button>
     <button class="btn-close" onclick="window.close()">✕ Tutup</button>
 </div>
+<div class="lh-footer"></div>
 <table class="paper">
 <thead><tr><td><div class="sp-top"></div></td></tr></thead>
 <tfoot><tr><td><div class="sp-bot"></div></td></tr></tfoot>
