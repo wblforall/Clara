@@ -36,11 +36,11 @@ $skpHasQr = !empty($skp['sign_token']);
 .skpdoc table.pay td.lbl { width: 60%; } .skpdoc table.pay td.amt { text-align: right; font-weight: 600; white-space: nowrap; }
 .skpdoc table.pay tr.grand td { background: #f0fdfa; font-weight: 800; color: #0f766e; }
 .skpdoc .chk { font-size: 13px; }
-.skpdoc .notes { margin-top: 4px; padding-left: 0; }
-.skpdoc .notes li { font-size: 9.5px; color: #374151; margin-bottom: 3px; line-height: 1.45; list-style: none; padding-left: 18px; position: relative; }
-.skpdoc .notes li span.n { position: absolute; left: 0; font-weight: 700; }
-.skpdoc .sign { display: flex; justify-content: space-between; margin-top: 22px; text-align: center; gap: 10px; page-break-inside: avoid; }
-.skpdoc .sign .col { flex: 1; font-size: 10.5px; }
+.skpdoc table.notes { width: 100%; border-collapse: collapse; margin-top: 4px; }
+.skpdoc table.notes td.nn { width: 20px; vertical-align: top; font-weight: 700; font-size: 9.5px; color: #374151; }
+.skpdoc table.notes td.nt { font-size: 9.5px; color: #374151; line-height: 1.45; padding-bottom: 3px; text-align: justify; }
+.skpdoc table.sign { width: 100%; border-collapse: collapse; margin-top: 22px; page-break-inside: avoid; }
+.skpdoc table.sign td.col { width: 33.33%; font-size: 10.5px; text-align: center; vertical-align: top; padding: 0 6px; }
 .skpdoc .sign .role { color: #6b7280; margin-bottom: 52px; }
 .skpdoc .sign .name { font-weight: 700; border-top: 1px solid #111; padding-top: 3px; display: inline-block; min-width: 150px; }
 .skpdoc .qrbox { width: 70px; height: 70px; margin: 0 auto 3px; }
@@ -102,21 +102,21 @@ $skpHasQr = !empty($skp['sign_token']);
     <div class="muted" style="font-size:9px;margin-top:3px">*PPN 12% sesuai PMK Nomor 131 Tahun 2024.</div>
 
     <div class="sec">Note</div>
-    <ol class="notes">
-        <?php foreach ($skpNotes as $i => $n): ?><li><span class="n"><?= $i + 1 ?>.</span><?= $h($n) ?></li><?php endforeach; ?>
-    </ol>
+    <table class="notes">
+        <?php foreach ($skpNotes as $i => $n): ?><tr><td class="nn"><?= $i + 1 ?>.</td><td class="nt"><?= $h($n) ?></td></tr><?php endforeach; ?>
+    </table>
 
     <div style="text-align:right;margin-top:16px;font-size:10.5px">Balikpapan, <?= $h($skpToday) ?></div>
-    <div class="sign">
-        <div class="col"><div class="role">Dibuat Oleh,</div>
+    <table class="sign"><tr>
+        <td class="col"><div class="role">Dibuat Oleh,</div>
             <?php if ($skpHasQr): ?><?php if (!empty($PDF_MODE)): ?><div class="qrbox"><?= clara_qr_img($skpVerifyUrl, 18) ?></div><?php else: ?><div class="qrbox" data-qr="<?= $h($skpVerifyUrl) ?>"></div><?php endif; ?><div class="qrhint">Scan untuk validasi</div><?php endif; ?>
             <div class="name"<?= $skpHasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($d['sales'] ?? '-') ?><br><span class="muted" style="font-weight:400">Sales Executive</span></div>
-        </div>
-        <div class="col"><div class="role">Mengetahui,</div>
+        </td>
+        <td class="col"><div class="role">Mengetahui,</div>
             <?php if ($skpHasQr): ?><?php if (!empty($PDF_MODE)): ?><div class="qrbox"><?= clara_qr_img($skpVerifyUrl, 18) ?></div><?php else: ?><div class="qrbox" data-qr="<?= $h($skpVerifyUrl) ?>"></div><?php endif; ?><div class="qrhint">Scan untuk validasi</div><?php endif; ?>
             <div class="name"<?= $skpHasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($skp['approved_by'] ?? '-') ?><br><span class="muted" style="font-weight:400">Casual Leasing Manager</span></div>
-        </div>
-        <div class="col"><div class="role">Menyetujui,</div>
+        </td>
+        <td class="col"><div class="role">Menyetujui,</div>
             <?php if (($skp['status'] ?? '') === 'signed' && !empty($skp['signature_data'])): ?>
                 <div style="margin-bottom:2px"><img src="<?= $h($skp['signature_data']) ?>" alt="TTD" style="max-height:48px;max-width:150px;object-fit:contain"></div>
                 <div class="name"><?= $h($skp['sign_name'] ?: ($d['cp_name'] ?? '-')) ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span><br><span class="muted" style="font-weight:400;font-size:8px"><span style="color:#16a34a">■</span> Ditandatangani elektronik <?= $h(substr($skp['signed_at'] ?? '', 0, 16)) ?></span></div>
@@ -125,6 +125,6 @@ $skpHasQr = !empty($skp['sign_token']);
             <?php else: ?>
                 <div class="name"><?= $h($d['cp_name'] ?? '-') ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span></div>
             <?php endif; ?>
-        </div>
-    </div>
+        </td>
+    </tr></table>
 </div>

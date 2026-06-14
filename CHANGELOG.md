@@ -18,7 +18,13 @@
 - **Surat Penawaran, SKP/SKS, dan Formulir Permintaan Kontrak** kini diunduh sebagai **PDF asli** langsung dari tombol "PDF" — tak perlu lagi lewat dialog cetak browser & memilih "Simpan sebagai PDF".
 - **Kop surat (header & footer) berulang rapi di setiap halaman**, identik di HP maupun PC. Sebelumnya cetak dari HP (Chrome Android) sering merusak posisi kop / memotong halaman; sekarang dirender di server sehingga konsisten di semua perangkat.
 - **QR validasi** ikut tercetak tajam di PDF. Lampiran gambar (KTP/NPWP/Bukti Transfer) tersisip otomatis ke PDF Permintaan Kontrak.
+- **Kop menyentuh tepi kertas (full-bleed)** & ukuran tepat A4.
+- **Teks rata kiri-kanan (justify)** pada paragraf & ketentuan di semua surat — tampak lebih rapi/profesional.
+- **SKP/SKS** — kolom tanda tangan (Dibuat / Mengetahui / Menyetujui) kini **berjajar rapi** dan penomoran **Note** lurus.
+- **Tombol "Bagikan PDF" di HP** — di daftar Penawaran & SKP mobile, sekali ketuk langsung membuka share sheet HP (WhatsApp/Email/dll) dengan file PDF terlampir; otomatis fallback ke unduh bila perangkat tak mendukung.
 - Pratinjau lama (mode cetak browser) tetap tersedia bila diperlukan melalui `&html=1`.
+
+> Catatan teknis: PDF memakai mesin **mPDF** (PHP) dengan font **DejaVu Sans** (sans-serif standar; pengganti Inter/Arial yang dipakai di layar).
 
 ## Version 4.20 — 14 Juni 2026
 

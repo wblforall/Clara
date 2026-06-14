@@ -263,6 +263,32 @@ function layout(string $title, callable $body, array $opts = []): void
                 <a href="?r=<?= h($_rt) ?>" class="<?= $_mact === $_k ? 'active' : '' ?>"><?= _m_icon($_ic) ?><span><?= h($_lbl) ?></span></a>
             <?php endforeach; ?>
         </nav>
+        <script>
+        /* Bagikan PDF langsung ke WhatsApp/dll via Web Share API (file). Fallback:
+           buka/unduh PDF biasa bila browser/desktop tak dukung share file. */
+        async function claraSharePdf(url, filename, btn) {
+            var label = btn ? btn.innerHTML : '';
+            try {
+                if (btn) { btn.style.pointerEvents = 'none'; btn.innerHTML = '⏳ Menyiapkan…'; }
+                var res = await fetch(url, { credentials: 'same-origin' });
+                if (!res.ok) throw new Error('http ' + res.status);
+                var blob = await res.blob();
+                var file = new File([blob], filename + '.pdf', { type: 'application/pdf' });
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({ files: [file], title: filename });
+                } else {
+                    var u = URL.createObjectURL(blob);
+                    window.open(u, '_blank');
+                    setTimeout(function () { URL.revokeObjectURL(u); }, 30000);
+                }
+            } catch (e) {
+                if (e && e.name === 'AbortError') { /* user batal share */ }
+                else window.open(url, '_blank');
+            } finally {
+                if (btn) { btn.style.pointerEvents = ''; btn.innerHTML = label; }
+            }
+        }
+        </script>
     <?php else: ?>
     <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
     <div class="app">

@@ -748,6 +748,9 @@ function mobile_offers_page(PDO $pdo): void
         .m-ofr .meta { display:flex; justify-content:space-between; gap:10px; font-size:11.5px; color:var(--muted); margin-top:8px; align-items:center; }
         .m-ofr .mb { font-size:9.5px; font-weight:800; padding:2px 7px; border-radius:6px; }
         .m-ofr .amt { font-weight:900; color:var(--ink); white-space:nowrap; }
+        .m-ofr-main { display:block; text-decoration:none; color:inherit; }
+        .m-ofr .acts { display:flex; gap:8px; margin-top:11px; }
+        .m-ofr .acts a { flex:1; text-align:center; padding:8px; border-radius:9px; font-size:12.5px; font-weight:700; text-decoration:none; border:1px solid var(--line); color:var(--primary-dark); background:#f8fafc; }
         .m-empty { text-align:center; padding:46px 20px; color:var(--muted); }
         .m-fab { position:fixed; right:16px; bottom:calc(var(--m-nav-h) + env(safe-area-inset-bottom,0px) + 14px); z-index:55; width:54px; height:54px; border-radius:50%; background:linear-gradient(135deg,var(--primary),var(--primary2)); color:#fff; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 18px rgba(13,148,136,.4); }
         </style>
@@ -773,18 +776,26 @@ function mobile_offers_page(PDO $pdo): void
             $st = $badge[$o['status']] ?? $badge['draft'];
             [$ml, $mc, $mbg] = _m_offer_mod($o['module']);
             $amt = !empty($o['override_amount']) ? $o['override_amount'] : ($o['monthly_amount'] ?? 0); ?>
-            <a class="m-ofr" href="?r=offer_view&id=<?= (int) $o['id'] ?>">
-                <div class="top">
-                    <span class="no"><?= h($o['offer_no'] ?: '(draft)') ?></span>
-                    <span class="st" style="color:<?= $st[1] ?>;background:<?= $st[2] ?>"><?= $st[0] ?></span>
+            <div class="m-ofr">
+                <a class="m-ofr-main" href="?r=offer_view&id=<?= (int) $o['id'] ?>">
+                    <div class="top">
+                        <span class="no"><?= h($o['offer_no'] ?: '(draft)') ?></span>
+                        <span class="st" style="color:<?= $st[1] ?>;background:<?= $st[2] ?>"><?= $st[0] ?></span>
+                    </div>
+                    <div class="nm"><?= h($o['company_name'] ?? '—') ?></div>
+                    <div class="meta">
+                        <span class="mb" style="color:<?= $mc ?>;background:<?= $mbg ?>"><?= h($ml) ?></span>
+                        <span><?= $fmt($o['start_date']) ?> – <?= $fmt($o['end_date']) ?></span>
+                        <span class="amt"><?= money($amt) ?>/bln</span>
+                    </div>
+                </a>
+                <?php if (!empty($o['offer_no'])): ?>
+                <div class="acts">
+                    <a href="?r=offer_print&id=<?= (int) $o['id'] ?>" target="_blank">🖨 PDF</a>
+                    <a href="#" onclick="claraSharePdf('?r=offer_print&id=<?= (int) $o['id'] ?>','<?= h($o['offer_no']) ?>',this);return false">📤 Bagikan</a>
                 </div>
-                <div class="nm"><?= h($o['company_name'] ?? '—') ?></div>
-                <div class="meta">
-                    <span class="mb" style="color:<?= $mc ?>;background:<?= $mbg ?>"><?= h($ml) ?></span>
-                    <span><?= $fmt($o['start_date']) ?> – <?= $fmt($o['end_date']) ?></span>
-                    <span class="amt"><?= money($amt) ?>/bln</span>
-                </div>
-            </a>
+                <?php endif; ?>
+            </div>
         <?php endforeach; endif; ?>
 
         <a class="m-fab" href="?r=offer_form<?= $module ? '&module=' . h($module) : '' ?>" title="Buat penawaran"><?= _m_icon('plus') ?></a>
@@ -895,6 +906,7 @@ function mobile_skp_page(PDO $pdo): void
                     <a href="?r=skp_form&id=<?= (int) $s['id'] ?>"><?= $edit ? '✏️ Edit' : '👁 Lihat' ?></a>
                     <?php if (in_array($s['status'], ['approved', 'signed'], true)): ?>
                         <a href="?r=skp_print&id=<?= (int) $s['id'] ?>" target="_blank">🖨 PDF</a>
+                        <a href="#" onclick="claraSharePdf('?r=skp_print&id=<?= (int) $s['id'] ?>','<?= h(($s['skp_no'] ?: 'SKP')) ?>',this);return false">📤 Bagikan</a>
                     <?php endif; ?>
                     <?php if (($s['sign_method'] ?? '') === 'wet' && !empty($s['signed_doc_path'])): ?>
                         <a href="<?= h($s['signed_doc_path']) ?>" target="_blank">📄 Scan</a>

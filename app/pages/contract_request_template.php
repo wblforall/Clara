@@ -61,7 +61,8 @@ h1{font-size:13.5px;text-align:center;text-transform:uppercase;letter-spacing:.0
 table.kv{width:100%;border-collapse:collapse}
 table.kv td{padding:6px 8px;border:1px solid #111;font-size:11px;vertical-align:top}
 table.kv td.k{width:38%;color:#111}
-.types{display:flex;gap:30px;margin-top:4px;font-size:11px}
+.types{margin-top:4px;font-size:11px}
+.types span{margin-right:30px}
 .types span{font-weight:600}
 table.leg{width:100%;border-collapse:collapse}
 table.leg th,table.leg td{border:1px solid #111;padding:6px 8px;font-size:10.5px;text-align:left;vertical-align:middle}
@@ -69,8 +70,8 @@ table.leg th{background:#f1f5f9;text-align:center}
 table.leg th.j{text-align:left}
 table.leg td.c{text-align:center;width:13%;font-size:13px}
 table.leg .note{display:block;font-size:8.5px;font-style:italic;color:#6b7280;margin-top:2px}
-.points{border:1px solid #111;padding:10px 12px;min-height:66px;font-size:11px;white-space:pre-wrap;line-height:1.55}
-.stmt{margin-top:16px;font-size:11px}
+.points{border:1px solid #111;padding:10px 12px;min-height:66px;font-size:11px;white-space:pre-wrap;line-height:1.55;text-align:justify}
+.stmt{margin-top:16px;font-size:11px;text-align:justify}
 .appr{text-align:right;margin-top:6px;font-size:11px}
 table.sign{width:100%;border-collapse:collapse;margin-top:2px;text-align:center}
 table.sign td{width:50%;font-size:11px;padding-top:6px;vertical-align:top}

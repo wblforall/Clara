@@ -107,7 +107,8 @@ table.cost tr.grand td{background:#f0fdfa;color:#0f766e;font-weight:800;font-siz
 .validbox{display:inline-block;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:600;margin-top:4px}
 .sec{font-weight:800;margin:14px 0 5px;color:#0D9488;text-transform:uppercase;font-size:11px;letter-spacing:.03em}
 ul,ol{margin:0 0 0 18px}
-li{margin-bottom:3px;line-height:1.45}
+li{margin-bottom:3px;line-height:1.45;text-align:justify}
+.intro,.closing{text-align:justify}
 .pay li{font-size:11px}
 .rek{background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;margin-top:6px;font-size:11px;line-height:1.7}
 .tnc li{font-size:11px;color:#374151}
@@ -152,7 +153,7 @@ li{margin-bottom:3px;line-height:1.45}
         Di Tempat
     </div>
 
-    <p style="margin:8px 0">Dengan hormat,<br>Bersama ini kami Management e-Walk dan Pentacity Mall Balikpapan menawarkan space exhibition sebagai berikut:</p>
+    <p class="intro" style="margin:8px 0">Dengan hormat,<br>Bersama ini kami Management e-Walk dan Pentacity Mall Balikpapan menawarkan space exhibition sebagai berikut:</p>
 
     <table class="obj">
         <thead><tr><th>Lokasi</th><th>Luasan</th><th>Harga Sewa / Periode</th><th>Keterangan</th></tr></thead>
@@ -198,7 +199,7 @@ li{margin-bottom:3px;line-height:1.45}
     <div class="validbox" style="margin-top:8px">Penawaran ini berlaku s/d <?= $h($berlaku) ?></div>
 
     <p style="margin-top:12px">Untuk keterangan lebih lanjut dapat menghubungi <strong><?= $h($o['pic_name'] ?: 'tim Casual Leasing') ?></strong><?= $o['pic_phone'] ? ' (' . $h($o['pic_phone']) . ')' : '' ?> atau kantor kami <strong><?= $h($OFFICE_PHONE) ?></strong>.</p>
-    <p style="margin-top:6px">Demikian surat penawaran ini kami buat. Atas perhatian dan kerjasamanya kami ucapkan terima kasih.</p>
+    <p class="closing" style="margin-top:6px">Demikian surat penawaran ini kami buat. Atas perhatian dan kerjasamanya kami ucapkan terima kasih.</p>
 
     <?php
     // QR "Scan untuk validasi" pada TTD sales — sama seperti SKP (via sign_token).
