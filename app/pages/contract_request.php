@@ -152,11 +152,12 @@ function contract_request_form(PDO $pdo): void
 
     layout(($cr ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Permintaan Kontrak', function () use ($pdo, $cr, $id, $skpId, $ctx, $editable, $sent, $me, $v) {
         $dis = $editable ? '' : 'disabled';
-        // Default checklist: KTP/NPWP ikut lampiran SKP.
-        $ktp  = $cr ? !empty($cr['doc_ktp'])  : $ctx['has_ktp'];
-        $npwp = $cr ? !empty($cr['doc_npwp']) : $ctx['has_npwp'];
-        $akta = !empty($cr['doc_akta']);
-        $sk   = !empty($cr['doc_surat_kuasa']);
+        // Tercentang bila dokumennya MEMANG ADA: KTP/NPWP dari lampiran SKP,
+        // Akta/Surat Kuasa dari file yang sudah diunggah (atau flag tersimpan).
+        $ktp  = !empty($cr['doc_ktp'])  || !empty($ctx['has_ktp']);
+        $npwp = !empty($cr['doc_npwp']) || !empty($ctx['has_npwp']);
+        $akta = !empty($cr['doc_akta']) || !empty($cr['akta_path']);
+        $sk   = !empty($cr['doc_surat_kuasa']) || !empty($cr['surat_kuasa_path']);
         ?>
         <div class="toolbar" style="gap:8px;flex-wrap:wrap">
             <a class="btn light" href="?r=skp_form&id=<?= (int)$skpId ?>">← SKP</a>
@@ -322,8 +323,9 @@ function contract_request_save(PDO $pdo): void
         'requester_position' => trim((string) post('requester_position')) ?: null,
         'request_date'       => post('request_date') ?: date('Y-m-d'),
         'contract_type'      => 'sewa_menyewa',  // CLARA hanya menangani sewa — default tetap.
-        'doc_ktp'            => post('doc_ktp') ? 1 : 0,
-        'doc_npwp'           => post('doc_npwp') ? 1 : 0,
+        // KTP/NPWP otoritatif dari lampiran SKP — selalu tercentang bila ada.
+        'doc_ktp'            => (post('doc_ktp') || !empty($ctx['has_ktp']))  ? 1 : 0,
+        'doc_npwp'           => (post('doc_npwp') || !empty($ctx['has_npwp'])) ? 1 : 0,
         'doc_akta'           => post('doc_akta') ? 1 : 0,
         'doc_surat_kuasa'    => post('doc_surat_kuasa') ? 1 : 0,
         'important_points'   => trim((string) post('important_points')) ?: null,
