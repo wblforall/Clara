@@ -11,6 +11,8 @@ $periode = $o['start_date'] ? (date('d/m/Y', strtotime($o['start_date'])) . ' s/
 $contractMonths = (int) ($o['contract_months'] ?: 1);
 $days = ($o['start_date'] && $o['end_date']) ? ((int) floor((strtotime($o['end_date']) - strtotime($o['start_date'])) / 86400) + 1) : 0;
 $durasi = ($days > 0 && $days < 28) ? ($days . ' hari') : ($contractMonths . ' bulan' . ($days ? ' · ' . $days . ' hari' : ''));
+// Perihal selalu general (basis hari) — periode tanggal sudah tampil terpisah.
+$perihal = 'Surat Penawaran Sewa Area Pameran' . ($days > 0 ? ' ' . $days . ' Hari' : '');
 // Rincian biaya
 $total    = (float) $o['total_calculated'];
 $ppn      = round($total * 11 / 12 * 0.12);
@@ -111,7 +113,7 @@ li{margin-bottom:3px;line-height:1.45}
     <div style="text-align:right;margin-bottom:8px">Balikpapan, <?= $h($tanggal) ?></div>
     <div class="meta">
         <div><b>Nomor</b>: <?= $h($o['offer_no']) ?></div>
-        <div><b>Perihal</b>: <?= $h($o['perihal'] ?: 'Surat Penawaran Sewa') ?></div>
+        <div><b>Perihal</b>: <?= $h($perihal) ?></div>
     </div>
     <div class="meta">
         Kepada Yth,<br>
@@ -123,11 +125,11 @@ li{margin-bottom:3px;line-height:1.45}
     <p style="margin:8px 0">Dengan hormat,<br>Bersama ini kami Management e-Walk dan Pentacity Mall Balikpapan menawarkan space exhibition sebagai berikut:</p>
 
     <table class="obj">
-        <thead><tr><th>Lokasi</th><th>Luasan</th><th>Harga/bulan</th><th>Keterangan</th></tr></thead>
+        <thead><tr><th>Lokasi</th><th>Luasan</th><th>Harga Sewa / Periode</th><th>Keterangan</th></tr></thead>
         <tbody><tr>
             <td><?= $h(($o['location_name'] ?: $o['master_code']) . ($o['floor'] ? ' (Lt. ' . $o['floor'] . ')' : '')) ?></td>
             <td><?= $o['area_sqm'] ? number_format((float)$o['area_sqm'], 2, ',', '.') . ' m²' : '-' ?></td>
-            <td><?= $rp($o['monthly_amount']) ?></td>
+            <td><?= $rp($total) ?></td>
             <td><?= $h($o['keterangan'] ?? '-') ?></td>
         </tr></tbody>
     </table>
@@ -138,12 +140,12 @@ li{margin-bottom:3px;line-height:1.45}
 
     <div class="sec">Rincian Biaya</div>
     <table class="cost">
-        <tr><td class="lbl">Biaya sewa / bulan</td><td class="amt"><?= $rp($o['monthly_amount']) ?></td></tr>
+        <tr><td class="lbl">Harga Sewa / Periode</td><td class="amt"><?= $rp($total) ?></td></tr>
         <tr><td class="lbl">Masa sewa</td><td class="amt"><?= $h($durasi) ?></td></tr>
         <tr class="sub"><td class="lbl">Subtotal sewa</td><td class="amt"><?= $rp($total) ?></td></tr>
         <tr><td class="lbl">PPN 12% <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppn) ?></td></tr>
         <tr class="tot"><td class="lbl">Total setelah PPN</td><td class="amt"><?= $rp($afterPpn) ?></td></tr>
-        <tr><td class="lbl">Security Deposit (<?= $h($depBulan) ?> bln, dikembalikan 100%)</td><td class="amt"><?= $rp($deposit) ?></td></tr>
+        <tr><td class="lbl">Security Deposit (setara nilai sewa, dikembalikan 100%)</td><td class="amt"><?= $rp($deposit) ?></td></tr>
         <tr class="grand"><td class="lbl">Grand Total (pembayaran awal + deposit)</td><td class="amt"><?= $rp($grand) ?></td></tr>
     </table>
     <div class="muted" style="font-size:9.5px">Harga belum termasuk biaya listrik. PPN 12% sesuai PMK No. 131/2024.</div>
@@ -153,9 +155,8 @@ li{margin-bottom:3px;line-height:1.45}
 
     <div class="sec">Cara Pembayaran</div>
     <ol class="pay">
-        <li>Wajib membayar <strong><?= rtrim(rtrim(number_format((float)$o['dp_months'],2,',','.'),'0'),',') ?> bulan sewa</strong> senilai <strong><?= $rp($o['dp_amount']) ?></strong> (Exc. PPN 12%) maksimal 1 minggu setelah penawaran disetujui, dan pelunasan H-7 sebelum pelaksanaan sewa.</li>
-        <li>Pembayaran tersebut digunakan untuk sewa 1 bulan pertama dan 1 bulan terakhir.</li>
-        <li>Wajib membayar Security Deposit (uang jaminan) <strong><?= rtrim(rtrim(number_format((float)$o['deposit_months'],2,',','.'),'0'),',') ?> bulan sewa</strong> senilai <strong><?= $rp($o['deposit_amount']) ?></strong> sebagai jaminan kerusakan / pengakhiran kontrak sebelum masa sewa berakhir.</li>
+        <li>Wajib membayar <strong>biaya sewa</strong> senilai <strong><?= $rp($o['dp_amount'] ?: $total) ?></strong> (Exc. PPN 12%) maksimal 1 minggu setelah penawaran disetujui, dan pelunasan paling lambat H-7 sebelum pelaksanaan sewa.</li>
+        <li>Wajib membayar <strong>Security Deposit</strong> (uang jaminan) senilai <strong><?= $rp($o['deposit_amount']) ?></strong> setara nilai sewa, sebagai jaminan kerusakan / pengakhiran kontrak sebelum masa sewa berakhir.</li>
         <li>Apabila tidak terjadi kerusakan setelah masa sewa berakhir, Security Deposit dikembalikan 100%.</li>
     </ol>
     <div class="rek">

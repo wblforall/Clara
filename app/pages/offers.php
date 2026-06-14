@@ -738,7 +738,7 @@ function offer_save(PDO $pdo): void
         'dp_amount'       => (float) post('dp_amount', 0),
         'deposit_months'  => (float) post('deposit_months', 1),
         'deposit_amount'  => (float) post('deposit_amount', 0),
-        'perihal'         => 'Surat Penawaran Sewa Kontrak ' . $months . ' bulan',
+        'perihal'         => 'Surat Penawaran Sewa Area Pameran' . ($days > 0 ? ' ' . $days . ' Hari' : ''),
         'offer_date'      => date('Y-m-d'),
     ];
 
