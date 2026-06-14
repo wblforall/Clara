@@ -39,6 +39,7 @@ table.paper > thead > tr > td, table.paper > tfoot > tr > td, table.paper > tbod
 @media screen {
   body { background: #fff; }
   .lh-footer { display: none; }
+  .sp-bot { background: url('assets/letterhead-a4.jpg') no-repeat bottom center; background-size: 100% auto; }
   table.paper { width: 210mm; margin: 16px auto; box-shadow: 0 4px 24px rgba(0,0,0,.12); background: #fff; }
 }
 @media print { .no-print { display: none; } }

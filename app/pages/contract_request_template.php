@@ -24,7 +24,13 @@ table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:
 .no-print{position:fixed;top:14px;right:14px;display:flex;gap:8px;z-index:9}
 .no-print button{padding:9px 18px;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer}
 .btn-print{background:#0D9488;color:#fff}.btn-close{background:#e5e7eb;color:#374151}
-@media screen{body{background:#fff}table.paper{width:210mm;margin:16px auto;box-shadow:0 4px 24px rgba(0,0,0,.12);background:#fff}}
+@media screen{
+  body{background:#fff}
+  table.paper{width:210mm;margin:16px auto;box-shadow:0 4px 24px rgba(0,0,0,.12);background:#fff}
+  /* Di layar: footer ikut aliran (di akhir konten), tidak fixed menimpa konten. */
+  .lh-footer{display:none}
+  .sp-bot{background:url('assets/letterhead-a4.jpg') no-repeat bottom center;background-size:100% auto}
+}
 @media print{.no-print{display:none}}
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 h1{font-size:13.5px;text-align:center;text-transform:uppercase;letter-spacing:.02em;margin-bottom:2px}

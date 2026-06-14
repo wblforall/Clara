@@ -70,6 +70,9 @@ table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:
 @media screen{
   body{background:#fff}
   table.paper{width:210mm;margin:16px auto;box-shadow:0 4px 24px rgba(0,0,0,.12);background:#fff}
+  /* Di layar: footer ikut aliran (akhir konten), tidak fixed menimpa konten. */
+  .lh-footer{display:none}
+  .sp-bot{background:url('assets/letterhead-a4.jpg') no-repeat bottom center;background-size:100% auto}
 }
 @media print{.no-print{display:none}}
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
