@@ -140,6 +140,7 @@ function skp_list_page(PDO $pdo): void
                             <td style="white-space:nowrap">
                                 <a class="btn light" href="?r=skp_form&id=<?= (int)$r['id'] ?>"><?= $r['status'] === 'draft' || $r['status'] === 'rejected' ? 'Edit' : 'Lihat' ?></a>
                                 <?php if (in_array($r['status'], ['approved', 'signed'], true)): ?><a class="btn light" href="?r=skp_print&id=<?= (int)$r['id'] ?>" target="_blank">PDF</a><?php endif; ?>
+                                <?php if (($r['sign_method'] ?? '') === 'wet' && !empty($r['signed_doc_path'])): ?><a class="btn light" href="<?= h($r['signed_doc_path']) ?>" target="_blank">Scan TTD</a><?php endif; ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>
