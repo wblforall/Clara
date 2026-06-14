@@ -248,7 +248,7 @@ function permission_for_route(string $route): string
         'renewals' => 'view_renewals',
         'skp', 'skp_form', 'skp_save', 'skp_print' => 'manage_skp',
         'skp_approve', 'skp_reject' => 'approve_skp',
-        'offers', 'offer_form', 'offer_save', 'offer_status', 'offer_print' => 'manage_offers',
+        'offers', 'offer_view', 'offer_form', 'offer_save', 'offer_status', 'offer_print' => 'manage_offers',
         'm_home' => 'view_dashboard',
         'm_transactions' => 'view_transactions',
         'm_exec' => 'view_exec_summary',

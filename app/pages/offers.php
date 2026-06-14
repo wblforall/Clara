@@ -195,9 +195,9 @@ function offers_list_page(PDO $pdo): void
                     <thead><tr><th>No. Penawaran</th><th>Modul</th><th>Client</th><th>Periode</th><th>Harga/bln</th><th>Revisi</th><th>Status</th><th></th></tr></thead>
                     <tbody>
                     <?php if (!$rows): ?><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">Belum ada penawaran.</td></tr><?php endif; ?>
-                    <?php foreach ($rows as $r): $b = $badge[$r['status']] ?? $badge['draft']; ?>
-                        <tr>
-                            <td style="white-space:nowrap;font-weight:600"><?= h($r['offer_no'] ?? '—') ?></td>
+                    <?php foreach ($rows as $r): $b = $badge[$r['status']] ?? $badge['draft']; $href = '?r=offer_view&id=' . (int)$r['id']; ?>
+                        <tr style="cursor:pointer" onclick="if(!event.target.closest('a'))location.href='<?= $href ?>'">
+                            <td style="white-space:nowrap;font-weight:600"><a href="<?= $href ?>" style="color:#0369a1;text-decoration:none"><?= h($r['offer_no'] ?? '—') ?></a></td>
                             <td><?= h(_offer_module_label($r['module'])) ?></td>
                             <td><?= h($r['company_name'] ?? '-') ?></td>
                             <td style="white-space:nowrap;font-size:11.5px"><?= $r['start_date'] ? h(date('d/m/y', strtotime($r['start_date'])) . '–' . date('d/m/y', strtotime($r['end_date']))) : '—' ?></td>
@@ -205,7 +205,6 @@ function offers_list_page(PDO $pdo): void
                             <td style="text-align:center"><?= (int)$r['revision_count'] ?>×</td>
                             <td><span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span><?php if ($r['status'] === 'cancelled' && !empty($r['lost_category'])): ?><div style="font-size:10.5px;color:#991b1b;margin-top:2px"><?= h(offer_lost_label($r['lost_category'])) ?></div><?php endif; ?></td>
                             <td style="white-space:nowrap">
-                                <a class="btn light" href="?r=offer_form&id=<?= (int)$r['id'] ?>"><?= in_array($r['status'], ['deal', 'cancelled'], true) ? 'Lihat' : 'Edit' ?></a>
                                 <?php if ($r['offer_no']): ?><a class="btn light" href="?r=offer_print&id=<?= (int)$r['id'] ?>" target="_blank">PDF</a><?php endif; ?>
                             </td>
                         </tr>
@@ -213,6 +212,123 @@ function offers_list_page(PDO $pdo): void
                     </tbody>
                 </table>
             </div>
+        </div>
+        <?php
+    });
+}
+
+// ─── Preview (detail read-only + tombol aksi) ────────────────────────────────
+function offer_view(PDO $pdo): void
+{
+    require_permission('manage_offers');
+    $pid = current_property_id();
+    $id  = (int) getv('id');
+    $st = $pdo->prepare(
+        "SELECT o.*, c.company_name, c.brand_name,
+                ct.name cp_name,
+                u.location_name, u.floor
+         FROM offers o
+         LEFT JOIN master_clients c ON c.id = o.client_id
+         LEFT JOIN master_client_contacts ct ON ct.id = o.contact_id
+         LEFT JOIN master_cl_units u ON u.code = o.master_code AND u.property_id = o.property_id
+         WHERE o.id = ? AND o.property_id = ?"
+    );
+    $st->execute([$id, $pid]);
+    $offer = $st->fetch();
+    if (!$offer) { flash('Penawaran tidak ditemukan.'); redirect_to('offers'); }
+
+    $editable = !in_array($offer['status'], ['deal', 'cancelled'], true);
+    $days  = _offer_days($offer['start_date'] ?? null, $offer['end_date'] ?? null);
+    $rp    = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
+
+    layout('Penawaran ' . ($offer['offer_no'] ?: ''), function () use ($offer, $editable, $days, $rp) {
+        $badge = [
+            'draft'     => ['Draft', '#64748b', '#f1f5f9'],
+            'sent'      => ['Terkirim', '#0369a1', '#e0f2fe'],
+            'nego'      => ['Negosiasi', '#92400e', '#fef3c7'],
+            'deal'      => ['DEAL', '#166534', '#dcfce7'],
+            'cancelled' => ['Tidak Deal', '#991b1b', '#fee2e2'],
+        ];
+        $b = $badge[$offer['status']] ?? $badge['draft'];
+        $periode = $offer['start_date'] ? (date('d/m/Y', strtotime($offer['start_date'])) . ' s/d ' . date('d/m/Y', strtotime($offer['end_date']))) : '—';
+        $row = function (string $label, string $val) { ?>
+            <div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid #f1f5f9">
+                <div style="width:170px;color:var(--muted);flex-shrink:0"><?= h($label) ?></div>
+                <div style="font-weight:600"><?= $val ?></div>
+            </div>
+        <?php };
+        ?>
+        <div class="toolbar" style="gap:8px;flex-wrap:wrap">
+            <a class="btn light" href="?r=offers">← Daftar Penawaran</a>
+            <?php if ($offer['offer_no']): ?><a class="btn light" href="?r=offer_print&id=<?= (int)$offer['id'] ?>" target="_blank">🖨 PDF</a><?php endif; ?>
+            <a class="btn light" href="?r=offer_form&id=<?= (int)$offer['id'] ?>"><?= $editable ? '✎ Edit' : '👁 Lihat Detail' ?></a>
+            <?php if ($offer['status'] === 'deal' && can('manage_skp')): ?>
+            <a class="btn" style="background:#0369a1;margin-left:auto" href="?r=skp_form&offer_id=<?= (int)$offer['id'] ?>">→ Buat <?= $offer['module'] === 'cl' ? 'SKP' : 'SKS' ?> (Konfirmasi)</a>
+            <?php endif; ?>
+        </div>
+
+        <div class="panel" style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+            <div>
+                <strong style="font-size:16px"><?= h($offer['offer_no'] ?: '(no. terbit saat disimpan)') ?></strong>
+                · <span class="badge"><?= h(_offer_module_label($offer['module'])) ?></span>
+                · <span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span>
+                · Revisi/nego: <strong><?= (int)$offer['revision_count'] ?>×</strong>
+            </div>
+            <?php if ($editable): ?>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                <?php foreach (['sent' => 'Tandai Terkirim', 'nego' => 'Tandai Nego', 'deal' => 'Tandai DEAL'] as $s => $lbl): if ($offer['status'] === $s) continue; ?>
+                <form method="post" action="?r=offer_status" style="display:inline" onsubmit="return confirm('Ubah status ke <?= $lbl ?>?')">
+                    <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$offer['id'] ?>"><input type="hidden" name="status" value="<?= $s ?>">
+                    <button class="btn light" style="<?= $s === 'deal' ? 'background:#16a34a;color:#fff' : '' ?>"><?= $lbl ?></button>
+                </form>
+                <?php endforeach; ?>
+                <details style="display:inline-block">
+                    <summary class="btn light" style="background:#fee2e2;color:#991b1b;list-style:none;cursor:pointer">Tutup (Tidak Deal)</summary>
+                    <form method="post" action="?r=offer_close" style="position:absolute;z-index:20;margin-top:6px;background:#fff;border:1px solid var(--line,#e5e7eb);border-radius:10px;padding:12px;box-shadow:0 6px 24px rgba(0,0,0,.12);width:320px">
+                        <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$offer['id'] ?>">
+                        <label style="font-size:12px;font-weight:700">Alasan tidak deal</label>
+                        <select name="lost_category" required style="width:100%;margin:4px 0 8px">
+                            <option value="">- Pilih alasan -</option>
+                            <?php foreach (offer_lost_categories() as $k => $lbl): ?><option value="<?= h($k) ?>"><?= h($lbl) ?></option><?php endforeach; ?>
+                        </select>
+                        <label style="font-size:12px;font-weight:700">Catatan (wajib)</label>
+                        <textarea name="status_note" required rows="2" placeholder="Jelaskan kronologi singkat kenapa tidak deal…" style="width:100%;margin-top:4px"></textarea>
+                        <button class="btn" style="background:#991b1b;width:100%;margin-top:8px" onclick="return confirm('Tutup penawaran ini sebagai TIDAK DEAL? Tidak bisa diubah lagi.')">Tutup Penawaran</button>
+                    </form>
+                </details>
+            </div>
+            <?php endif; ?>
+        </div>
+
+        <?php if ($offer['status'] === 'cancelled'): ?>
+        <div class="panel" style="margin-top:10px;background:#fef2f2;border-color:#fecaca">
+            <strong style="color:#991b1b">Ditutup — Tidak Deal</strong>
+            · Alasan: <strong><?= h(offer_lost_label($offer['lost_category'] ?? null)) ?></strong>
+            <?php if (!empty($offer['cancelled_at'])): ?><span style="color:var(--muted)"> · <?= h(date('d/m/Y H:i', strtotime($offer['cancelled_at']))) ?></span><?php endif; ?>
+            <?php if (!empty($offer['status_note'])): ?><div style="margin-top:6px;font-size:13px">“<?= h($offer['status_note']) ?>”</div><?php endif; ?>
+        </div>
+        <?php endif; ?>
+
+        <div class="panel" style="margin-top:12px">
+            <h3 style="margin-top:0">Ringkasan Penawaran</h3>
+            <?php
+            $clientDisp = ($offer['company_name'] ?? '-') . ($offer['brand_name'] ? ' — ' . $offer['brand_name'] : '');
+            $unitDisp   = ($offer['location_name'] ?: $offer['master_code']) . ($offer['floor'] ? ' (Lt. ' . $offer['floor'] . ')' : '');
+            $row('Client / Perusahaan', h($clientDisp));
+            if ($offer['cp_name']) $row('Up. (Contact)', h($offer['cp_name']));
+            $row('PIC Sales', h($offer['pic_name'] ?: '-'));
+            if (!empty($offer['referrer_name'])) $row('Referral', h($offer['referrer_name']));
+            $row('Unit / Lokasi', h($unitDisp));
+            $row('Luas', $offer['area_sqm'] ? number_format((float)$offer['area_sqm'], 2, ',', '.') . ' m²' : '-');
+            $row('Periode', h($periode) . ($days ? ' · <strong>' . $days . ' hari</strong>' : ''));
+            $row('Total Kontrak', $rp($offer['total_calculated']));
+            if (!empty($offer['override_amount'])) $row('Harga Nego Final', $rp($offer['override_amount']));
+            $row('Harga / Bulan', $rp($offer['monthly_amount']));
+            $row('DP', $rp($offer['dp_amount']) . ' <span style="color:var(--muted);font-weight:400">(' . h(rtrim(rtrim(number_format((float)$offer['dp_months'],1,',',''),'0'),',')) . ' bln)</span>');
+            $row('Deposit', $rp($offer['deposit_amount']) . ' <span style="color:var(--muted);font-weight:400">(' . h(rtrim(rtrim(number_format((float)$offer['deposit_months'],1,',',''),'0'),',')) . ' bln)</span>');
+            $row('Recurring', !empty($offer['recurring_flag']) ? 'Ya' : 'Tidak');
+            if (!empty($offer['keterangan'])) $row('Keterangan', h($offer['keterangan']));
+            ?>
         </div>
         <?php
     });
@@ -260,48 +376,16 @@ function offer_form(PDO $pdo): void
         $picSel = $offer['pic_name'] ?? $linkedPic;
         $disabled = $editable ? '' : 'disabled';
         ?>
-        <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=offers">← Daftar Penawaran</a><?php if ($offer && $offer['offer_no']): ?><a class="btn light" href="?r=offer_print&id=<?= (int)$offer['id'] ?>" target="_blank">🖨 PDF</a><?php endif; ?>
-            <?php if ($offer && $offer['status'] === 'deal' && can('manage_skp')): ?>
-            <a class="btn" style="background:#0369a1;margin-left:auto" href="?r=skp_form&offer_id=<?= (int)$offer['id'] ?>">→ Buat <?= $offer['module'] === 'cl' ? 'SKP' : 'SKS' ?> (Konfirmasi)</a>
-            <?php endif; ?>
+        <div class="toolbar" style="gap:8px">
+            <a class="btn light" href="<?= $offer ? '?r=offer_view&id=' . (int)$offer['id'] : '?r=offers' ?>">← <?= $offer ? 'Kembali ke Preview' : 'Daftar Penawaran' ?></a>
+            <?php if ($offer && $offer['offer_no']): ?><a class="btn light" href="?r=offer_print&id=<?= (int)$offer['id'] ?>" target="_blank">🖨 PDF</a><?php endif; ?>
         </div>
 
         <?php if ($offer): ?>
-        <div class="panel" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-            <div><strong style="font-size:15px"><?= h($offer['offer_no'] ?? '(no. terbit saat disimpan)') ?></strong> · <span class="badge"><?= h(_offer_module_label($offer['module'])) ?></span> · Revisi/nego: <strong><?= (int)$offer['revision_count'] ?>×</strong></div>
-            <?php if ($editable): ?>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-                <?php foreach (['sent' => 'Tandai Terkirim', 'nego' => 'Tandai Nego', 'deal' => 'Tandai DEAL'] as $s => $lbl): if ($offer['status'] === $s) continue; ?>
-                <form method="post" action="?r=offer_status" style="display:inline" onsubmit="return confirm('Ubah status ke <?= $lbl ?>?')">
-                    <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$offer['id'] ?>"><input type="hidden" name="status" value="<?= $s ?>">
-                    <button class="btn light" style="<?= $s === 'deal' ? 'background:#16a34a;color:#fff' : '' ?>"><?= $lbl ?></button>
-                </form>
-                <?php endforeach; ?>
-                <details style="display:inline-block">
-                    <summary class="btn light" style="background:#fee2e2;color:#991b1b;list-style:none;cursor:pointer">Tutup (Tidak Deal)</summary>
-                    <form method="post" action="?r=offer_close" style="position:absolute;z-index:20;margin-top:6px;background:#fff;border:1px solid var(--line,#e5e7eb);border-radius:10px;padding:12px;box-shadow:0 6px 24px rgba(0,0,0,.12);width:320px">
-                        <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$offer['id'] ?>">
-                        <label style="font-size:12px;font-weight:700">Alasan tidak deal</label>
-                        <select name="lost_category" required style="width:100%;margin:4px 0 8px">
-                            <option value="">- Pilih alasan -</option>
-                            <?php foreach (offer_lost_categories() as $k => $lbl): ?><option value="<?= h($k) ?>"><?= h($lbl) ?></option><?php endforeach; ?>
-                        </select>
-                        <label style="font-size:12px;font-weight:700">Catatan (wajib)</label>
-                        <textarea name="status_note" required rows="2" placeholder="Jelaskan kronologi singkat kenapa tidak deal…" style="width:100%;margin-top:4px"></textarea>
-                        <button class="btn" style="background:#991b1b;width:100%;margin-top:8px" onclick="return confirm('Tutup penawaran ini sebagai TIDAK DEAL? Tidak bisa diubah lagi.')">Tutup Penawaran</button>
-                    </form>
-                </details>
-            </div>
-            <?php endif; ?>
+        <div class="panel" style="margin-top:10px">
+            <strong style="font-size:15px"><?= h($offer['offer_no'] ?? '(no. terbit saat disimpan)') ?></strong> · <span class="badge"><?= h(_offer_module_label($offer['module'])) ?></span> · Revisi/nego: <strong><?= (int)$offer['revision_count'] ?>×</strong>
+            <span class="muted" style="margin-left:6px">— ubah status / tutup / buat SKP lewat halaman preview.</span>
         </div>
-        <?php if ($offer['status'] === 'cancelled'): ?>
-        <div class="panel" style="margin-top:10px;background:#fef2f2;border-color:#fecaca">
-            <strong style="color:#991b1b">Ditutup — Tidak Deal</strong>
-            · Alasan: <strong><?= h(offer_lost_label($offer['lost_category'] ?? null)) ?></strong>
-            <?php if (!empty($offer['cancelled_at'])): ?><span style="color:var(--muted)"> · <?= h(date('d/m/Y H:i', strtotime($offer['cancelled_at']))) ?></span><?php endif; ?>
-            <?php if (!empty($offer['status_note'])): ?><div style="margin-top:6px;font-size:13px">“<?= h($offer['status_note']) ?>”</div><?php endif; ?>
-        </div>
-        <?php endif; ?>
         <?php endif; ?>
 
         <form class="panel" method="post" action="?r=offer_save" style="margin-top:12px" id="offer-form">
@@ -759,7 +843,7 @@ function offer_save(PDO $pdo): void
             ->execute([$id, $newRev, json_encode($snap, JSON_UNESCAPED_UNICODE), trim((string) post('rev_note')) ?: null, $uname]);
         audit($pdo, 'update', 'offers', (string) $id, $data);
         flash("Revisi #$newRev disimpan.");
-        redirect_to('offer_form', ['id' => $id]);
+        redirect_to('offer_view', ['id' => $id]);
     }
 
     // INSERT baru + generate No. Penawaran
@@ -781,7 +865,7 @@ function offer_save(PDO $pdo): void
         ->execute([$newId, json_encode(array_intersect_key($data, array_flip(_offer_fields())), JSON_UNESCAPED_UNICODE), 'Penawaran awal', $uname]);
     audit($pdo, 'create', 'offers', (string) $newId, $data);
     flash("Penawaran dibuat: $offerNo");
-    redirect_to('offer_form', ['id' => $newId]);
+    redirect_to('offer_view', ['id' => $newId]);
 }
 
 // ─── Ubah status ─────────────────────────────────────────────────────────────
@@ -793,11 +877,11 @@ function offer_status(PDO $pdo): void
     $id  = (int) post('id');
     $to  = post('status');
     // 'cancelled' (tutup/tidak deal) ditangani offer_close (wajib alasan).
-    if (!in_array($to, ['sent', 'nego', 'deal'], true)) { redirect_to('offer_form', ['id' => $id]); }
+    if (!in_array($to, ['sent', 'nego', 'deal'], true)) { redirect_to('offer_view', ['id' => $id]); }
     $cur = $pdo->prepare('SELECT status, sent_at, nego_at FROM offers WHERE id=? AND property_id=?');
     $cur->execute([$id, $pid]);
     $row = $cur->fetch();
-    if (!$row || in_array($row['status'], ['deal', 'cancelled'], true)) { flash('Status terkunci.'); redirect_to('offer_form', ['id' => $id]); }
+    if (!$row || in_array($row['status'], ['deal', 'cancelled'], true)) { flash('Status terkunci.'); redirect_to('offer_view', ['id' => $id]); }
     // Stempel engagement (sekali, tidak ditimpa) untuk analisa aktivitas PIC.
     $extra = '';
     if ($to === 'sent' && empty($row['sent_at'])) $extra .= ', sent_at=CURRENT_TIMESTAMP';
@@ -806,7 +890,7 @@ function offer_status(PDO $pdo): void
     $pdo->prepare("UPDATE offers SET status=? $extra WHERE id=? AND property_id=?")->execute([$to, $id, $pid]);
     audit($pdo, 'status_' . $to, 'offers', (string) $id, ['status' => $to]);
     flash('Status penawaran diperbarui: ' . $to);
-    redirect_to('offer_form', ['id' => $id]);
+    redirect_to('offer_view', ['id' => $id]);
 }
 
 // ─── Tutup penawaran (tidak deal) — WAJIB alasan, untuk analisa ───────────────
@@ -818,19 +902,19 @@ function offer_close(PDO $pdo): void
     $id  = (int) post('id');
     $cat = (string) post('lost_category');
     $note = trim((string) post('status_note'));
-    if (!array_key_exists($cat, offer_lost_categories())) { flash('Pilih alasan penawaran ditutup.'); redirect_to('offer_form', ['id' => $id]); }
-    if ($note === '') { flash('Catatan alasan wajib diisi agar bisa dianalisa.'); redirect_to('offer_form', ['id' => $id]); }
+    if (!array_key_exists($cat, offer_lost_categories())) { flash('Pilih alasan penawaran ditutup.'); redirect_to('offer_view', ['id' => $id]); }
+    if ($note === '') { flash('Catatan alasan wajib diisi agar bisa dianalisa.'); redirect_to('offer_view', ['id' => $id]); }
     $cur = $pdo->prepare('SELECT status FROM offers WHERE id=? AND property_id=?');
     $cur->execute([$id, $pid]);
     $st = $cur->fetchColumn();
-    if ($st === false || in_array($st, ['deal', 'cancelled'], true)) { flash('Status terkunci.'); redirect_to('offer_form', ['id' => $id]); }
+    if ($st === false || in_array($st, ['deal', 'cancelled'], true)) { flash('Status terkunci.'); redirect_to('offer_view', ['id' => $id]); }
     $pdo->prepare(
         "UPDATE offers SET status='cancelled', cancelled_at=CURRENT_TIMESTAMP,
                 lost_category=?, status_note=?, closed_by=? WHERE id=? AND property_id=?"
     )->execute([$cat, $note, $_SESSION['user']['name'] ?? 'system', $id, $pid]);
     audit($pdo, 'close', 'offers', (string) $id, ['lost_category' => $cat, 'note' => $note]);
     flash('Penawaran ditutup (tidak deal) dengan alasan: ' . offer_lost_label($cat) . '.');
-    redirect_to('offer_form', ['id' => $id]);
+    redirect_to('offer_view', ['id' => $id]);
 }
 
 // ─── Cetak / PDF Surat Penawaran ─────────────────────────────────────────────
