@@ -115,10 +115,17 @@ li{margin-bottom:3px;line-height:1.45}
         <div><b>Nomor</b>: <?= $h($o['offer_no']) ?></div>
         <div><b>Perihal</b>: <?= $h($perihal) ?></div>
     </div>
+    <?php
+        $addrName  = trim((string)($o['company_name'] ?? '')) ?: '-';
+        $addrBrand = trim((string)($o['brand_name'] ?? ''));
+        $addrCp    = trim((string)($o['cp_name'] ?? ''));
+        // "Up." hanya bila nama kontak berbeda dari nama/brand yang sudah tampil di atas.
+        $showUp = $addrCp !== '' && strcasecmp($addrCp, $addrName) !== 0 && strcasecmp($addrCp, $addrBrand) !== 0;
+    ?>
     <div class="meta">
         Kepada Yth,<br>
-        <strong><?= $h($o['company_name'] ?? '-') ?></strong><?= $o['brand_name'] ? ' — ' . $h($o['brand_name']) : '' ?><br>
-        <?= $o['cp_name'] ? 'Up. ' . $h($o['cp_name']) . '<br>' : '' ?>
+        <strong><?= $h($addrName) ?></strong><?= $addrBrand && strcasecmp($addrBrand, $addrName) !== 0 ? ' — ' . $h($addrBrand) : '' ?><br>
+        <?= $showUp ? 'Up. ' . $h($addrCp) . '<br>' : '' ?>
         Di Tempat
     </div>
 
