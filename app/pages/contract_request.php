@@ -143,12 +143,14 @@ function contract_request_form(PDO $pdo): void
         if ($exId = $ex->fetchColumn()) { redirect_to('contract_request_form', ['id' => (int) $exId]); }
     }
 
-    $editable = !$cr || $cr['status'] === 'draft';
+    // Bisa diedit/dilengkapi selama belum disetujui Legal (draft & terkirim).
+    $editable = !$cr || in_array($cr['status'], ['draft', 'sent'], true);
+    $sent     = $cr && $cr['status'] === 'sent';
     $skpId    = (int) ($cr['skp_id'] ?? getv('skp_id'));
     $me       = $_SESSION['user']['name'] ?? '';
     $v = fn(string $k, $def = '') => h((string) ($cr[$k] ?? $def));
 
-    layout(($cr ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Permintaan Kontrak', function () use ($pdo, $cr, $id, $skpId, $ctx, $editable, $me, $v) {
+    layout(($cr ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Permintaan Kontrak', function () use ($pdo, $cr, $id, $skpId, $ctx, $editable, $sent, $me, $v) {
         $dis = $editable ? '' : 'disabled';
         // Default checklist: KTP/NPWP ikut lampiran SKP.
         $ktp  = $cr ? !empty($cr['doc_ktp'])  : $ctx['has_ktp'];
@@ -262,10 +264,16 @@ function contract_request_form(PDO $pdo): void
             <p class="help" style="margin-top:0">Selain yang sudah tercantum di SKP / Surat Penawaran, atau hal lain yang perlu diperjelas.</p>
             <textarea name="important_points" rows="4" style="width:100%" placeholder="mis. denda keterlambatan, klausul perpanjangan, dll." <?= $dis ?>><?= $v('important_points') ?></textarea>
 
-            <?php if ($editable): ?>
+            <?php if ($editable && $sent): ?>
+            <p class="help" style="margin-top:16px;color:#92400e">Sudah terkirim ke Legal — masih bisa <strong>melengkapi/mengganti dokumen</strong> selama Legal belum menyetujui.</p>
+            <p style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+                <button type="submit" onclick="document.getElementById('cr-action').value='save'">💾 Simpan Perubahan</button>
+                <a class="btn secondary" href="?r=contract_requests">Selesai</a>
+            </p>
+            <?php elseif ($editable): ?>
             <p style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
                 <button type="submit" onclick="document.getElementById('cr-action').value='save'">💾 Simpan Draft</button>
-                <button type="submit" class="btn" style="background:#166534" onclick="document.getElementById('cr-action').value='send';return confirm('Tandai formulir TERKIRIM ke Legal? Nomor formulir akan terbit & tidak bisa diubah.')">📤 Simpan &amp; Tandai Terkirim</button>
+                <button type="submit" class="btn" style="background:#166534" onclick="document.getElementById('cr-action').value='send';return confirm('Tandai formulir TERKIRIM ke Legal? Nomor formulir akan terbit.')">📤 Simpan &amp; Tandai Terkirim</button>
                 <a class="btn secondary" href="?r=contract_requests">Batal</a>
             </p>
             <?php endif; ?>
@@ -326,7 +334,7 @@ function contract_request_save(PDO $pdo): void
         $cur->execute([$id, $pid]);
         $cr = $cur->fetch();
         if (!$cr) { flash('Permintaan tidak ditemukan.'); redirect_to('contract_requests'); }
-        if ($cr['status'] !== 'draft') { flash('Sudah terkirim — tidak bisa diubah.'); redirect_to('contract_request_form', ['id' => $id]); }
+        if ($cr['status'] === 'approved') { flash('Sudah disetujui Legal — tidak bisa diubah.'); redirect_to('contract_request_form', ['id' => $id]); }
         $sets = []; $vals = [];
         foreach ($data as $k => $val) { $sets[] = "$k=:$k"; $vals[":$k"] = $val; }
         $vals[':id'] = $id; $vals[':pid'] = $pid;
@@ -366,6 +374,8 @@ function contract_request_save(PDO $pdo): void
         $pdo->prepare("UPDATE contract_requests SET status='sent', req_no=?, share_token=?, sent_at=CURRENT_TIMESTAMP WHERE id=? AND property_id=?")
             ->execute([$reqNo, $shareToken, $id, $pid]);
         flash("Formulir terkirim. No: $reqNo. Salin link / cetak PDF untuk Legal.");
+    } elseif (($cr['status'] ?? '') === 'sent') {
+        flash('Perubahan disimpan. Dokumen terbaru langsung terlihat oleh Legal melalui link.');
     } else {
         flash('Draft permintaan kontrak disimpan.');
     }
