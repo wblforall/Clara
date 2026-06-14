@@ -405,8 +405,20 @@ function contract_request_print(PDO $pdo): void
     $prop = current_property();
     $types = _cr_contract_types();
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
-    $chk = fn($b) => !empty($b) ? '☑' : '☐';
+    // ■/□ (bukan ☑/☐) agar tampil benar di PDF (font DejaVu tak punya ballot-box).
+    $chk = fn($b) => !empty($b) ? '<span style="color:#0D9488">■</span>' : '<span style="color:#9ca3af">□</span>';
+
+    // Pratinjau HTML lama (window.print) hanya bila ?html=1; default PDF mPDF.
+    if (getv('html') === '1') {
+        include __DIR__ . '/contract_request_template.php';
+        return;
+    }
+    require_once dirname(__DIR__) . '/pdf.php';
+    $PDF_MODE = true;
+    ob_start();
     include __DIR__ . '/contract_request_template.php';
+    $html = ob_get_clean();
+    clara_render_letterhead_pdf($html, ($cr['req_no'] ?: 'Formulir-Kontrak') . ' - Permintaan Kontrak');
 }
 
 // ─── Halaman publik untuk Legal (via link, tanpa login) ──────────────────────

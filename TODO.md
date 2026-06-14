@@ -185,7 +185,7 @@ Pipeline penawaran (Surat Penawaran → Konfirmasi SKP/SKS → Transaksi) sudah 
 - [x] **Service worker / cache**: di-review — desain sudah benar (navigasi network-only → halaman dinamis penawaran/SKP/print tak pernah di-cache; aset cache-first + revalidate; skipWaiting+clients.claim). `VERSION` di-bump `clara-v1`→`clara-v2` agar cache lama di-purge setelah perubahan CSS.
 - [x] **Upload dari kamera HP**: input lampiran pakai `accept="image/*,.pdf"` → opsi **kamera** muncul di native picker (tak dipaksa `capture` karena field juga terima PDF; memaksa capture menghilangkan galeri/PDF).
 - [x] **Manifest**: shortcut "Buat Penawaran" & "Daftar Penawaran" ditambah; ikon/nama dicek OK.
-- [x] **PDF di mobile**: 3 template print (offer/SKP/kontrak) dapat viewport meta + skala fit-to-width khusus layar ≤820px (hasil cetak/PDF tak berubah).
+- [x] **PDF di mobile**: TUNTAS via **server-side mPDF** (v4.21). Awalnya dicoba CSS (viewport+fit-to-width) tapi Chrome Android tak bisa mengulang kop per-halaman dgn cara apa pun (thead/tfoot, position:fixed, @page margin semua gagal). Solusi final: `app/pdf.php` render PDF di server (kop berulang via SetHTMLHeader/Footer dari strip `letterhead-head/foot.jpg`, QR PNG via mpdf/qrcode). offer/SKP/kontrak `*_print` default → PDF 1-ketuk (inline), `&html=1` = pratinjau lama. Checkbox ☑/☐ → ■/□ (font DejaVu tak punya ballot-box). vendor/ di-commit (24MB, ttfonts dipangkas ke DejaVu).
 - [ ] **Offline draft** (opsional): simpan draft penawaran/SKP saat sinyal jelek. *Ditunda — berisiko utk app multi-user berbasis sesi (perlu IndexedDB + sync); dikerjakan belakangan bila benar dibutuhkan.*
 
 ### E. Verifikasi

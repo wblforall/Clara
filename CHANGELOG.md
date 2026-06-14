@@ -11,6 +11,15 @@
 
 ---
 
+## Version 4.21 — 15 Juni 2026
+
+### PDF surat 1-ketuk, sama persis di HP & PC (server-side mPDF)
+
+- **Surat Penawaran, SKP/SKS, dan Formulir Permintaan Kontrak** kini diunduh sebagai **PDF asli** langsung dari tombol "PDF" — tak perlu lagi lewat dialog cetak browser & memilih "Simpan sebagai PDF".
+- **Kop surat (header & footer) berulang rapi di setiap halaman**, identik di HP maupun PC. Sebelumnya cetak dari HP (Chrome Android) sering merusak posisi kop / memotong halaman; sekarang dirender di server sehingga konsisten di semua perangkat.
+- **QR validasi** ikut tercetak tajam di PDF. Lampiran gambar (KTP/NPWP/Bukti Transfer) tersisip otomatis ke PDF Permintaan Kontrak.
+- Pratinjau lama (mode cetak browser) tetap tersedia bila diperlukan melalui `&html=1`.
+
 ## Version 4.20 — 14 Juni 2026
 
 ### Mobile/PWA — penyelesaian Fase 2 + 3 (form, aksi, teknis PWA)

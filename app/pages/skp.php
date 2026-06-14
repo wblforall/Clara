@@ -795,8 +795,22 @@ function skp_print(PDO $pdo): void
     $d = json_decode($skp['snapshot_json'], true) ?: [];
     $a = $d['amounts'] ?? [];
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
-    $chk = fn($b) => !empty($b) ? '☑' : '☐';
-    include __DIR__ . '/skp_print_template.php';
+    // ■/□ dipakai (bukan ☑/☐) karena font PDF (DejaVu) tak punya glyph ballot-box.
+    $chk = fn($b) => !empty($b) ? '<span style="color:#0D9488">■</span>' : '<span style="color:#9ca3af">□</span>';
+    $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+
+    // Pratinjau HTML lama (window.print) hanya bila ?html=1; default PDF mPDF.
+    if (getv('html') === '1') {
+        include __DIR__ . '/skp_print_template.php';
+        return;
+    }
+    require_once dirname(__DIR__) . '/pdf.php';
+    $docTitle = ($skp['doc_type'] ?? 'skp') === 'sks' ? 'Surat Konfirmasi Sewa' : 'Surat Konfirmasi Pameran';
+    $PDF_MODE = true;
+    ob_start();
+    include __DIR__ . '/skp_print_body.php';
+    $html = ob_get_clean();
+    clara_render_letterhead_pdf($html, ($skp['skp_no'] ?: 'SKP') . ' - ' . $docTitle);
 }
 
 // ─── Tanda tangan customer (PUBLIK, tanpa login — akses via sign_token) ───────

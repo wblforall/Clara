@@ -69,11 +69,11 @@ $skpHasQr = !empty($skp['sign_token']);
     ?>
     <div class="sec">Lampiran Dokumen</div>
     <table class="kv">
-        <?php if ($hasOffer): ?><tr><td class="l">Surat Penawaran Final</td><td class="c">:</td><td class="v chk">☑ <span class="muted" style="font-weight:400">No. <?= $h($d['offer_no']) ?></span></td></tr><?php endif; ?>
+        <?php if ($hasOffer): ?><tr><td class="l">Surat Penawaran Final</td><td class="c">:</td><td class="v chk"><span style="color:#0D9488">■</span> <span class="muted" style="font-weight:400">No. <?= $h($d['offer_no']) ?></span></td></tr><?php endif; ?>
         <tr><td class="l">Copy KTP Penanggung Jawab</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['ktp']) || ($d['admin_ktp'] ?? 0)) ?><?= $fn('ktp') ?></td></tr>
         <tr><td class="l">Copy NPWP</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['npwp']) || ($d['admin_npwp'] ?? 0)) ?> <span class="muted" style="font-weight:400"><?= $d['npwp'] ? '(' . $h($d['npwp']) . ')' : '' ?></span><?= $fn('npwp') ?></td></tr>
         <tr><td class="l">Bukti Transfer</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['bukti_transfer'])) ?><?= $fn('bukti_transfer') ?></td></tr>
-        <?php if (isset($att['pengajuan'])): ?><tr><td class="l">Dokumen Pengajuan</td><td class="c">:</td><td class="v chk">☑<?= $fn('pengajuan') ?></td></tr><?php endif; ?>
+        <?php if (isset($att['pengajuan'])): ?><tr><td class="l">Dokumen Pengajuan</td><td class="c">:</td><td class="v chk"><span style="color:#0D9488">■</span><?= $fn('pengajuan') ?></td></tr><?php endif; ?>
     </table>
     <?php endif; ?>
 
@@ -109,19 +109,19 @@ $skpHasQr = !empty($skp['sign_token']);
     <div style="text-align:right;margin-top:16px;font-size:10.5px">Balikpapan, <?= $h($skpToday) ?></div>
     <div class="sign">
         <div class="col"><div class="role">Dibuat Oleh,</div>
-            <?php if ($skpHasQr): ?><div class="qrbox" data-qr="<?= $h($skpVerifyUrl) ?>"></div><div class="qrhint">Scan untuk validasi</div><?php endif; ?>
+            <?php if ($skpHasQr): ?><?php if (!empty($PDF_MODE)): ?><div class="qrbox"><?= clara_qr_img($skpVerifyUrl, 18) ?></div><?php else: ?><div class="qrbox" data-qr="<?= $h($skpVerifyUrl) ?>"></div><?php endif; ?><div class="qrhint">Scan untuk validasi</div><?php endif; ?>
             <div class="name"<?= $skpHasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($d['sales'] ?? '-') ?><br><span class="muted" style="font-weight:400">Sales Executive</span></div>
         </div>
         <div class="col"><div class="role">Mengetahui,</div>
-            <?php if ($skpHasQr): ?><div class="qrbox" data-qr="<?= $h($skpVerifyUrl) ?>"></div><div class="qrhint">Scan untuk validasi</div><?php endif; ?>
+            <?php if ($skpHasQr): ?><?php if (!empty($PDF_MODE)): ?><div class="qrbox"><?= clara_qr_img($skpVerifyUrl, 18) ?></div><?php else: ?><div class="qrbox" data-qr="<?= $h($skpVerifyUrl) ?>"></div><?php endif; ?><div class="qrhint">Scan untuk validasi</div><?php endif; ?>
             <div class="name"<?= $skpHasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($skp['approved_by'] ?? '-') ?><br><span class="muted" style="font-weight:400">Casual Leasing Manager</span></div>
         </div>
         <div class="col"><div class="role">Menyetujui,</div>
             <?php if (($skp['status'] ?? '') === 'signed' && !empty($skp['signature_data'])): ?>
                 <div style="margin-bottom:2px"><img src="<?= $h($skp['signature_data']) ?>" alt="TTD" style="max-height:48px;max-width:150px;object-fit:contain"></div>
-                <div class="name"><?= $h($skp['sign_name'] ?: ($d['cp_name'] ?? '-')) ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span><br><span class="muted" style="font-weight:400;font-size:8px">✓ Ditandatangani elektronik <?= $h(substr($skp['signed_at'] ?? '', 0, 16)) ?></span></div>
+                <div class="name"><?= $h($skp['sign_name'] ?: ($d['cp_name'] ?? '-')) ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span><br><span class="muted" style="font-weight:400;font-size:8px"><span style="color:#16a34a">■</span> Ditandatangani elektronik <?= $h(substr($skp['signed_at'] ?? '', 0, 16)) ?></span></div>
             <?php elseif (($skp['sign_method'] ?? '') === 'wet' && ($skp['status'] ?? '') === 'signed'): ?>
-                <div class="name"><?= $h($skp['sign_name'] ?: ($d['cp_name'] ?? '-')) ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span><br><span class="muted" style="font-weight:400;font-size:8px">✓ Ditandatangani basah (scan terlampir)</span></div>
+                <div class="name"><?= $h($skp['sign_name'] ?: ($d['cp_name'] ?? '-')) ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span><br><span class="muted" style="font-weight:400;font-size:8px"><span style="color:#16a34a">■</span> Ditandatangani basah (scan terlampir)</span></div>
             <?php else: ?>
                 <div class="name"><?= $h($d['cp_name'] ?? '-') ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span></div>
             <?php endif; ?>

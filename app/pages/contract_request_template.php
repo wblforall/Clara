@@ -5,6 +5,8 @@ $months = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', '
 $rd = $cr['request_date'] ? strtotime($cr['request_date']) : time();
 $tglAju = (int) date('d', $rd) . ' ' . $months[(int) date('n', $rd)] . ' ' . date('Y', $rd);
 ?>
+<?php $PDF_MODE = !empty($PDF_MODE); /* diset oleh contract_request_print() utk jalur mPDF */ ?>
+<?php if (!$PDF_MODE): ?>
 <!doctype html>
 <html lang="id">
 <head>
@@ -12,7 +14,9 @@ $tglAju = (int) date('d', $rd) . ' ' . $months[(int) date('n', $rd)] . ' ' . dat
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= $h($cr['req_no'] ?: 'Formulir Permintaan Kontrak') ?></title>
 <link rel="icon" type="image/png" href="assets/clara-logo.png">
+<?php endif; ?>
 <style>
+<?php if (!$PDF_MODE): ?>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111;background:#fff}
 @page{size:A4 portrait;margin:0}
@@ -33,12 +37,10 @@ table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:
   .sp-bot{background:url('assets/letterhead-a4.jpg') no-repeat bottom center;background-size:100% auto}
 }
 @media print{.no-print{display:none}}
-/* Preview di HP: skala A4 agar pas lebar layar (tak memengaruhi hasil cetak/PDF). */
 @media screen and (max-width:820px){
   body{overflow-x:hidden}
   table.paper{margin:0 !important;transform-origin:top left}
 }
-/* Petunjuk "Simpan sebagai PDF" — hanya muncul di layar HP, tak ikut tercetak. */
 .pdf-hint{display:none}
 @media screen and (max-width:820px){
   .pdf-hint{display:block;position:fixed;left:10px;right:10px;bottom:12px;z-index:9;
@@ -46,9 +48,12 @@ table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:
     padding:9px 13px;border-radius:10px;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.12)}
 }
 @media print{.pdf-hint{display:none}}
-/* Jaminan: skala layar HP TAK BOLEH ikut saat cetak/PDF → A4 selalu penuh. */
 @media print{ table.paper{transform:none !important} body{height:auto !important} }
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+<?php else: ?>
+*{box-sizing:border-box}
+body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111}
+<?php endif; ?>
 h1{font-size:13.5px;text-align:center;text-transform:uppercase;letter-spacing:.02em;margin-bottom:2px}
 .sub{text-align:center;color:#374151;font-size:10.5px;margin-bottom:14px}
 .sec{font-weight:700;margin:16px 0 6px;color:#111;text-transform:uppercase;font-size:11px;letter-spacing:.02em;border-bottom:1.5px solid #111;padding-bottom:3px}
@@ -76,6 +81,7 @@ table.sign td{width:50%;font-size:11px;padding-top:6px;vertical-align:top}
 .sign .qrhint{font-size:7.5px;color:#6b7280}
 .sign .pnm{margin-top:4px;font-weight:700}
 </style>
+<?php if (!$PDF_MODE): ?>
 </head>
 <body>
 <div class="no-print">
@@ -88,6 +94,7 @@ table.sign td{width:50%;font-size:11px;padding-top:6px;vertical-align:top}
 <thead><tr><td><div class="sp-top"></div></td></tr></thead>
 <tfoot><tr><td><div class="sp-bot"></div></td></tr></tfoot>
 <tbody><tr><td>
+<?php endif; ?>
 <div class="sheet">
     <h1>Formulir Permintaan Pembuatan/Review Kontrak</h1>
     <div class="sub">Kepada Departemen Legal<?= $cr['req_no'] ? ' &nbsp;·&nbsp; No. ' . $h($cr['req_no']) : '' ?></div>
@@ -141,7 +148,7 @@ table.sign td{width:50%;font-size:11px;padding-top:6px;vertical-align:top}
     <table class="sign">
         <tr>
             <td>Departemen Pemohon,
-                <?php if ($hasQr): ?><div class="qrbox" data-qr="<?= $h($verifyUrl) ?>"></div><div class="qrhint">Scan untuk validasi</div><?php endif; ?>
+                <?php if ($hasQr): ?><?php if ($PDF_MODE): ?><div class="qrbox"><?= clara_qr_img($verifyUrl, 16) ?></div><?php else: ?><div class="qrbox" data-qr="<?= $h($verifyUrl) ?>"></div><?php endif; ?><div class="qrhint">Scan untuk validasi</div><?php endif; ?>
                 <div class="pnm"><?= $h($cr['requester_name'] ?: '________') ?></div>
             </td>
             <td>Departemen Legal
@@ -200,6 +207,7 @@ table.sign td{width:50%;font-size:11px;padding-top:6px;vertical-align:top}
     </div>
     <?php endforeach; ?>
 </div>
+<?php if ($PDF_MODE) { return; } /* mode PDF: berhenti, HTML konten ditangkap pemanggil */ ?>
 </td></tr></tbody>
 </table>
 <script src="assets/qrcode.min.js"></script>
