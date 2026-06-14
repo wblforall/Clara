@@ -86,6 +86,9 @@ function skp_list_page(PDO $pdo): void
     if (in_array($status, ['draft', 'submitted', 'approved', 'signed', 'rejected'], true)) {
         $where[] = 's.status = ?'; $params[] = $status;
     }
+    $module = getv('module', '');
+    if (!in_array($module, ['cl', 'media', 'gudang'], true)) $module = '';
+    if ($module) { $where[] = 'COALESCE(t.module, o.module) = ?'; $params[] = $module; }
     // SKP bisa berasal dari penawaran (offer-first, transaksi belum terbit) ATAU
     // dari transaksi lama. LEFT JOIN keduanya + fallback datanya.
     $stmt = $pdo->prepare(
@@ -93,6 +96,7 @@ function skp_list_page(PDO $pdo): void
                 COALESCE(t.master_code, o.master_code) master_code,
                 COALESCE(t.start_date, o.start_date)   start_date,
                 COALESCE(t.end_date, o.end_date)       end_date,
+                COALESCE(t.module, o.module)           module,
                 COALESCE(tc.company_name, oc.company_name) company_name
          FROM skp_documents s
          LEFT JOIN transactions t ON t.id = s.transaction_id
@@ -105,7 +109,12 @@ function skp_list_page(PDO $pdo): void
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
 
-    layout('Surat Konfirmasi Pameran (SKP)', function () use ($rows, $status) {
+    layout('Surat Konfirmasi Pameran (SKP)', function () use ($rows, $status, $module) {
+        $modBadge = [
+            'cl'     => ['Exhibition', '#0f766e', '#ccfbf1'],
+            'media'  => ['Media', '#0369a1', '#e0f2fe'],
+            'gudang' => ['Gudang', '#92400e', '#fef3c7'],
+        ];
         $badge = [
             'draft'     => ['Draft', '#64748b', '#f1f5f9'],
             'submitted' => ['Menunggu Approval', '#92400e', '#fef3c7'],
@@ -114,24 +123,33 @@ function skp_list_page(PDO $pdo): void
             'rejected'  => ['Ditolak', '#991b1b', '#fee2e2'],
         ];
         ?>
+        <?php $mq = $module ? '&module=' . $module : ''; $sq = $status ? '&status=' . $status : ''; ?>
         <div class="toolbar" style="gap:8px;flex-wrap:wrap">
-            <strong style="font-size:16px">Surat Konfirmasi Pameran</strong>
-            <div style="margin-left:auto;display:flex;gap:6px">
+            <strong style="font-size:16px">Surat Konfirmasi SKP / SKS</strong>
+            <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
                 <?php foreach (['' => 'Semua', 'draft' => 'Draft', 'submitted' => 'Menunggu', 'approved' => 'Perlu TTD', 'signed' => 'Ditandatangani', 'rejected' => 'Ditolak'] as $k => $lbl): ?>
-                    <a class="btn light" style="<?= $status === $k ? 'background:var(--primary,#0d9488);color:#fff' : '' ?>" href="?r=skp<?= $k ? '&status=' . $k : '' ?>"><?= $lbl ?></a>
+                    <a class="btn light" style="<?= $status === $k ? 'background:var(--primary,#0d9488);color:#fff' : '' ?>" href="?r=skp<?= $k ? '&status=' . $k : '' ?><?= $mq ?>"><?= $lbl ?></a>
                 <?php endforeach; ?>
             </div>
+        </div>
+        <div class="toolbar" style="gap:6px;flex-wrap:wrap;margin-top:8px">
+            <span style="font-size:12px;color:var(--muted);align-self:center">Modul:</span>
+            <?php foreach (['' => 'Semua', 'cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'] as $mk => $mlbl):
+                $mactive = $module === $mk; $mbg = $mk && isset($modBadge[$mk]) ? $modBadge[$mk][2] : '#0d9488'; $mc = $mk && isset($modBadge[$mk]) ? $modBadge[$mk][1] : '#fff'; ?>
+                <a class="btn light" style="<?= $mactive ? 'background:' . $mbg . ';color:' . $mc . ';font-weight:700' : '' ?>" href="?r=skp<?= $sq ?><?= $mk ? '&module=' . $mk : '' ?>"><?= h($mlbl) ?></a>
+            <?php endforeach; ?>
         </div>
         <div class="panel" style="margin-top:12px">
             <p style="margin:0 0 10px;color:var(--muted);font-size:13px">SKP/SKS dibuat dari halaman <strong>Preview Penawaran</strong> yang sudah DEAL (tombol "Buat SKP/SKS"). Transaksi terbit otomatis saat SKP disetujui.</p>
             <div class="table-wrap">
                 <table style="font-size:12.5px">
-                    <thead><tr><th>No. SKP</th><th>Kode</th><th>Client</th><th>Periode</th><th>Status</th><th>Dibuat</th><th></th></tr></thead>
+                    <thead><tr><th>No. SKP/SKS</th><th>Modul</th><th>Kode</th><th>Client</th><th>Periode</th><th>Status</th><th>Dibuat</th><th></th></tr></thead>
                     <tbody>
-                    <?php if (!$rows): ?><tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px">Belum ada SKP.</td></tr><?php endif; ?>
-                    <?php foreach ($rows as $r): $b = $badge[$r['status']] ?? $badge['draft']; ?>
+                    <?php if (!$rows): ?><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">Belum ada SKP/SKS.</td></tr><?php endif; ?>
+                    <?php foreach ($rows as $r): $b = $badge[$r['status']] ?? $badge['draft']; $mb = $modBadge[$r['module']] ?? ['—', '#374151', '#f1f5f9']; ?>
                         <tr>
                             <td style="white-space:nowrap;font-weight:600"><?= h($r['skp_no'] ?? '—') ?></td>
+                            <td><span class="badge" style="color:<?= $mb[1] ?>;background:<?= $mb[2] ?>"><?= h($mb[0]) ?></span></td>
                             <td><?= h($r['master_code']) ?></td>
                             <td><?= h($r['company_name'] ?? '-') ?></td>
                             <td style="white-space:nowrap;font-size:11.5px"><?= $r['start_date'] ? h(date('d/m/y', strtotime($r['start_date'])) . '–' . date('d/m/y', strtotime($r['end_date']))) : '—' ?></td>

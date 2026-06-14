@@ -16,6 +16,15 @@ function _offer_module_label(string $m): string
 {
     return ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'][$m] ?? strtoupper($m);
 }
+/** [label, warna teks, warna latar] untuk badge modul (Exhibition/Media/Gudang). */
+function _offer_module_badge(string $m): array
+{
+    return [
+        'cl'     => ['Exhibition', '#0f766e', '#ccfbf1'],
+        'media'  => ['Media', '#0369a1', '#e0f2fe'],
+        'gudang' => ['Gudang', '#92400e', '#fef3c7'],
+    ][$m] ?? [strtoupper($m), '#374151', '#f1f5f9'];
+}
 
 /** Kategori alasan penawaran ditutup tanpa deal (untuk analisa). */
 function offer_lost_categories(): array
@@ -140,11 +149,15 @@ function offers_list_page(PDO $pdo): void
         'closed'   => ['cancelled'],
     ];
     if (!isset($tabStatuses[$tab])) $tab = 'on_going';
+    // Filter modul (Exhibition/Media/Gudang).
+    $module = getv('module', '');
+    if (!in_array($module, ['cl', 'media', 'gudang'], true)) $module = '';
 
-    // Hitung jumlah per tab (badge).
+    // Hitung jumlah per tab (badge) — ikut filter modul bila ada.
     $counts = ['on_going' => 0, 'deal' => 0, 'closed' => 0];
-    $cs = $pdo->prepare('SELECT status, COUNT(*) c FROM offers WHERE property_id = ? GROUP BY status');
-    $cs->execute([$pid]);
+    $cq = 'SELECT status, COUNT(*) c FROM offers WHERE property_id = ?' . ($module ? ' AND module = ?' : '') . ' GROUP BY status';
+    $cs = $pdo->prepare($cq);
+    $cs->execute($module ? [$pid, $module] : [$pid]);
     foreach ($cs->fetchAll() as $r) {
         foreach ($tabStatuses as $t => $sts) if (in_array($r['status'], $sts, true)) $counts[$t] += (int)$r['c'];
     }
@@ -152,12 +165,12 @@ function offers_list_page(PDO $pdo): void
     $in = implode(',', array_fill(0, count($tabStatuses[$tab]), '?'));
     $stmt = $pdo->prepare(
         "SELECT o.*, c.company_name FROM offers o LEFT JOIN master_clients c ON c.id = o.client_id
-         WHERE o.property_id = ? AND o.status IN ($in) ORDER BY o.id DESC"
+         WHERE o.property_id = ? AND o.status IN ($in)" . ($module ? ' AND o.module = ?' : '') . " ORDER BY o.id DESC"
     );
-    $stmt->execute(array_merge([$pid], $tabStatuses[$tab]));
+    $stmt->execute(array_merge([$pid], $tabStatuses[$tab], $module ? [$module] : []));
     $rows = $stmt->fetchAll();
 
-    layout('Surat Penawaran', function () use ($rows, $tab, $counts) {
+    layout('Surat Penawaran', function () use ($rows, $tab, $counts, $module) {
         $badge = [
             'draft'     => ['Draft', '#64748b', '#f1f5f9'],
             'sent'      => ['Terkirim', '#0369a1', '#e0f2fe'],
@@ -177,17 +190,27 @@ function offers_list_page(PDO $pdo): void
             </details>
             <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
                 <?php
+                $mq = $module ? '&module=' . $module : '';
                 $tabs = [
                     'on_going' => ['On Going', '#0d9488'],
                     'deal'     => ['Deal', '#166534'],
                     'closed'   => ['Tidak Deal', '#991b1b'],
                 ];
                 foreach ($tabs as $k => [$lbl, $clr]): $active = $tab === $k; ?>
-                    <a class="btn light" style="<?= $active ? 'background:' . $clr . ';color:#fff' : '' ?>" href="?r=offers&tab=<?= $k ?>">
+                    <a class="btn light" style="<?= $active ? 'background:' . $clr . ';color:#fff' : '' ?>" href="?r=offers&tab=<?= $k . $mq ?>">
                         <?= $lbl ?> <span class="badge" style="<?= $active ? 'background:rgba(255,255,255,.25);color:#fff' : '' ?>"><?= (int)$counts[$k] ?></span>
                     </a>
                 <?php endforeach; ?>
             </div>
+        </div>
+        <div class="toolbar" style="gap:6px;flex-wrap:wrap;margin-top:8px">
+            <span style="font-size:12px;color:var(--muted);align-self:center">Modul:</span>
+            <?php
+            $modFilters = ['' => 'Semua', 'cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
+            foreach ($modFilters as $mk => $mlbl): $mactive = $module === $mk;
+                [$ml, $mc, $mbg] = $mk ? _offer_module_badge($mk) : ['Semua', '#fff', '#0d9488']; ?>
+                <a class="btn light" style="<?= $mactive ? 'background:' . ($mk ? $mbg : '#0d9488') . ';color:' . ($mk ? $mc : '#fff') . ';font-weight:700' : '' ?>" href="?r=offers&tab=<?= $tab ?><?= $mk ? '&module=' . $mk : '' ?>"><?= h($mlbl) ?></a>
+            <?php endforeach; ?>
         </div>
         <div class="panel" style="margin-top:12px">
             <div class="table-wrap">
@@ -198,7 +221,7 @@ function offers_list_page(PDO $pdo): void
                     <?php foreach ($rows as $r): $b = $badge[$r['status']] ?? $badge['draft']; $href = '?r=offer_view&id=' . (int)$r['id']; ?>
                         <tr style="cursor:pointer" onclick="if(!event.target.closest('a'))location.href='<?= $href ?>'">
                             <td style="white-space:nowrap;font-weight:600"><a href="<?= $href ?>" style="color:#0369a1;text-decoration:none"><?= h($r['offer_no'] ?? '—') ?></a></td>
-                            <td><?= h(_offer_module_label($r['module'])) ?></td>
+                            <td><?php [$ml, $mc, $mbg] = _offer_module_badge($r['module']); ?><span class="badge" style="color:<?= $mc ?>;background:<?= $mbg ?>"><?= h($ml) ?></span></td>
                             <td><?= h($r['company_name'] ?? '-') ?></td>
                             <td style="white-space:nowrap;font-size:11.5px"><?= $r['start_date'] ? h(date('d/m/y', strtotime($r['start_date'])) . '–' . date('d/m/y', strtotime($r['end_date']))) : '—' ?></td>
                             <td style="white-space:nowrap"><?= money($r['monthly_amount']) ?></td>
