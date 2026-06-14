@@ -264,26 +264,33 @@ function layout(string $title, callable $body, array $opts = []): void
             <?php endforeach; ?>
         </nav>
         <script>
-        /* Bagikan PDF langsung ke WhatsApp/dll via Web Share API (file). Fallback:
-           buka/unduh PDF biasa bila browser/desktop tak dukung share file. */
+        /* Bagikan PDF langsung ke WhatsApp/dll via Web Share API (FILE).
+           PENTING: share file butuh secure context (HTTPS / localhost). Di HTTP
+           biasa (mis. diakses via IP LAN) Web Share file TIDAK didukung — jangan
+           dipaksa (akan "membocorkan" blob URL); langsung UNDUH PDF-nya saja. */
+        function _claraPdfDownload(url, filename) {
+            var a = document.createElement('a');
+            a.href = url; a.download = (filename || 'dokumen') + '.pdf';
+            a.target = '_blank'; a.rel = 'noopener';
+            document.body.appendChild(a); a.click(); a.remove();
+        }
         async function claraSharePdf(url, filename, btn) {
             var label = btn ? btn.innerHTML : '';
+            // Tanpa secure context atau tanpa dukungan share file → unduh biasa.
+            if (!window.isSecureContext || !navigator.canShare) { _claraPdfDownload(url, filename); return; }
             try {
                 if (btn) { btn.style.pointerEvents = 'none'; btn.innerHTML = '⏳ Menyiapkan…'; }
                 var res = await fetch(url, { credentials: 'same-origin' });
                 if (!res.ok) throw new Error('http ' + res.status);
                 var blob = await res.blob();
-                var file = new File([blob], filename + '.pdf', { type: 'application/pdf' });
-                if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                    await navigator.share({ files: [file], title: filename });
+                var file = new File([blob], (filename || 'dokumen') + '.pdf', { type: 'application/pdf' });
+                if (navigator.canShare({ files: [file] })) {
+                    await navigator.share({ files: [file], title: filename });   // kirim FILE, bukan URL
                 } else {
-                    var u = URL.createObjectURL(blob);
-                    window.open(u, '_blank');
-                    setTimeout(function () { URL.revokeObjectURL(u); }, 30000);
+                    _claraPdfDownload(url, filename);
                 }
             } catch (e) {
-                if (e && e.name === 'AbortError') { /* user batal share */ }
-                else window.open(url, '_blank');
+                if (!(e && e.name === 'AbortError')) _claraPdfDownload(url, filename);
             } finally {
                 if (btn) { btn.style.pointerEvents = ''; btn.innerHTML = label; }
             }
