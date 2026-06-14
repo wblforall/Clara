@@ -216,6 +216,13 @@ if ($route === 'contract_legal') {
     exit;
 }
 
+// ─── Validasi Surat Penawaran via QR (publik, read-only, via sign_token) ──────
+if ($route === 'offer_verify') {
+    require_once APP_ROOT . '/app/pages/offers.php';
+    offer_verify_page($pdo);
+    exit;
+}
+
 // ─── Authenticated area ───────────────────────────────────────────────────────
 require_login();
 

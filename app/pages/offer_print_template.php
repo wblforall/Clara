@@ -96,6 +96,9 @@ li{margin-bottom:3px;line-height:1.45}
 .sign{margin-top:22px;page-break-inside:avoid}
 .sign .ttd-img{display:block;max-height:64px;max-width:200px;object-fit:contain;margin:4px 0}
 .sign .nm{font-weight:700;border-top:1px solid #111;display:inline-block;padding-top:3px;min-width:200px}
+.qrbox{width:70px;height:70px;margin:6px 0 3px}
+.qrbox img,.qrbox svg{width:70px!important;height:70px!important;display:block}
+.qrhint{font-size:7.5px;color:#6b7280;margin-bottom:3px}
 .muted{color:#6b7280}
 </style>
 </head>
@@ -177,19 +180,40 @@ li{margin-bottom:3px;line-height:1.45}
     <p style="margin-top:12px">Untuk keterangan lebih lanjut dapat menghubungi <strong><?= $h($o['pic_name'] ?: 'tim Casual Leasing') ?></strong><?= $o['pic_phone'] ? ' (' . $h($o['pic_phone']) . ')' : '' ?> atau kantor kami <strong><?= $h($OFFICE_PHONE) ?></strong>.</p>
     <p style="margin-top:6px">Demikian surat penawaran ini kami buat. Atas perhatian dan kerjasamanya kami ucapkan terima kasih.</p>
 
+    <?php
+    // QR "Scan untuk validasi" pada TTD sales — sama seperti SKP (via sign_token).
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $vdir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+    $verifyUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $vdir . '/?r=offer_verify&token=' . ($o['sign_token'] ?? '');
+    $hasQr = !empty($o['sign_token']);
+    ?>
     <div class="sign">
         <div>Hormat kami,</div>
         <div style="font-weight:600">PT. Wulandari Bangun Laksana, Tbk.</div>
-        <?php if (!empty($o['pic_signature'])): ?>
-            <img class="ttd-img" src="<?= $h($o['pic_signature']) ?>" alt="Tanda tangan">
+        <?php if ($hasQr): ?>
+            <div class="qrbox" data-qr="<?= $h($verifyUrl) ?>"></div><div class="qrhint">Scan untuk validasi</div>
         <?php else: ?>
             <div style="height:46px"></div>
         <?php endif; ?>
-        <div class="nm"><?= $h($o['pic_name'] ?: '-') ?><br><span class="muted" style="font-weight:400">Sales <?= $h($propShort) ?></span></div>
+        <div class="nm"<?= $hasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($o['pic_name'] ?: '-') ?><br><span class="muted" style="font-weight:400">Sales <?= $h($propShort) ?></span></div>
     </div>
 </div>
 </td></tr></tbody>
 </table>
+<script src="assets/qrcode.min.js"></script>
+<script>
+(function () {
+    if (typeof qrcode !== 'function') return;
+    document.querySelectorAll('.qrbox[data-qr]').forEach(function (box) {
+        try {
+            var qr = qrcode(0, 'M');
+            qr.addData(box.getAttribute('data-qr'));
+            qr.make();
+            box.innerHTML = qr.createSvgTag({ cellSize: 2, margin: 0, scalable: true });
+        } catch (e) {}
+    });
+})();
+</script>
 </body>
 </html>
 <?php exit; ?>

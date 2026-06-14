@@ -938,8 +938,69 @@ function offer_print(PDO $pdo): void
     $st->execute([$id, $pid]);
     $o = $st->fetch();
     if (!$o || empty($o['offer_no'])) { http_response_code(404); exit('Penawaran tidak ditemukan / nomor belum terbit.'); }
+    // Token verifikasi (QR "Scan untuk validasi" di TTD sales) — terbit sekali.
+    if (empty($o['sign_token'])) {
+        $o['sign_token'] = bin2hex(random_bytes(20));
+        $pdo->prepare('UPDATE offers SET sign_token=? WHERE id=? AND property_id=?')->execute([$o['sign_token'], $id, $pid]);
+    }
     $prop = current_property();
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
     include __DIR__ . '/offer_print_template.php';
+}
+
+// ─── Verifikasi penawaran via QR (publik, read-only, akses via sign_token) ────
+function offer_verify_page(PDO $pdo): void
+{
+    $token = (string) getv('token', '');
+    $st = $pdo->prepare(
+        "SELECT o.*, c.company_name, c.brand_name, p.signature_path pic_signature
+         FROM offers o
+         LEFT JOIN master_clients c ON c.id = o.client_id
+         LEFT JOIN master_pic p ON p.name = o.pic_name AND p.property_id = o.property_id
+         WHERE o.sign_token = ? LIMIT 1"
+    );
+    $st->execute([$token]);
+    $o = $token !== '' ? $st->fetch() : false;
+    $valid = $o && !empty($o['offer_no']);
+    $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+    $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
+    $salesReg = $valid && !empty($o['pic_signature']);
+    $statusLbl = $valid ? (['draft' => 'Draft', 'sent' => 'Terkirim', 'nego' => 'Negosiasi', 'deal' => 'DEAL', 'cancelled' => 'Ditutup'][$o['status']] ?? $o['status']) : '';
+    ?>
+    <!doctype html>
+    <html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Validasi Penawaran</title>
+    <style>
+    *{box-sizing:border-box} body{font-family:'Inter',Arial,sans-serif;background:#f3f4f6;color:#111;margin:0;padding:20px;font-size:14px}
+    .card{max-width:460px;margin:24px auto;background:#fff;border-radius:14px;box-shadow:0 6px 30px rgba(0,0,0,.08);overflow:hidden}
+    .hd{padding:20px 22px;color:#fff;text-align:center}
+    .ok{background:#0d9488}.bad{background:#991b1b}
+    .hd .ic{font-size:34px;line-height:1}.hd h1{margin:6px 0 0;font-size:18px}
+    .bd{padding:20px 22px}
+    .row{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid #f1f5f9}
+    .row .k{width:120px;color:#6b7280;flex-shrink:0}.row .v{font-weight:600}
+    .chip{display:inline-block;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;margin-top:10px}
+    .muted{color:#6b7280;font-size:12px;margin-top:14px;text-align:center}
+    </style></head><body>
+    <div class="card">
+        <?php if ($valid): ?>
+        <div class="hd ok"><div class="ic">✓</div><h1>Dokumen Terverifikasi</h1></div>
+        <div class="bd">
+            <div class="row"><div class="k">No. Penawaran</div><div class="v"><?= $h($o['offer_no']) ?></div></div>
+            <div class="row"><div class="k">Penyewa</div><div class="v"><?= $h(($o['company_name'] ?? '-') . ($o['brand_name'] ? ' — ' . $o['brand_name'] : '')) ?></div></div>
+            <div class="row"><div class="k">Nilai</div><div class="v"><?= $rp($o['total_calculated']) ?></div></div>
+            <div class="row"><div class="k">Sales</div><div class="v"><?= $h($o['pic_name'] ?: '-') ?></div></div>
+            <div class="row"><div class="k">Status</div><div class="v"><?= $h($statusLbl) ?></div></div>
+            <?php if ($salesReg): ?><div class="chip">TTD sales terdaftar ✓</div><?php endif; ?>
+            <div class="muted">Dokumen ini diterbitkan oleh Management e-Walk &amp; Pentacity Mall Balikpapan.</div>
+        </div>
+        <?php else: ?>
+        <div class="hd bad"><div class="ic">✕</div><h1>Tidak Valid</h1></div>
+        <div class="bd"><p style="text-align:center;color:#6b7280">Tautan/QR tidak dikenali atau penawaran belum terbit.</p></div>
+        <?php endif; ?>
+    </div>
+    </body></html>
+    <?php
+    exit;
 }
