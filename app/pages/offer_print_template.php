@@ -89,6 +89,8 @@ table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:
     padding:9px 13px;border-radius:10px;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.12)}
 }
 @media print{.pdf-hint{display:none}}
+/* Jaminan: skala layar HP TAK BOLEH ikut saat cetak/PDF → A4 selalu penuh. */
+@media print{ table.paper{transform:none !important} body{height:auto !important} }
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .sign{page-break-inside:avoid}
 .meta{margin-bottom:10px;line-height:1.7}
@@ -237,8 +239,9 @@ li{margin-bottom:3px;line-height:1.45}
 (function () {
     var p = document.querySelector('table.paper');
     if (!p) return;
+    function clear() { p.style.transform = ''; document.body.style.height = ''; }
     function fit() {
-        p.style.transform = ''; document.body.style.height = '';
+        clear();
         if (window.innerWidth >= 820) return;
         var w = p.offsetWidth; if (!w) return;
         var s = window.innerWidth / w;
@@ -247,6 +250,16 @@ li{margin-bottom:3px;line-height:1.45}
     }
     window.addEventListener('resize', fit);
     window.addEventListener('load', fit);
+    // PENTING: hapus skala saat cetak/Simpan PDF agar A4 PENUH (tak mengecil),
+    // lalu pulihkan tampilan layar setelah dialog ditutup.
+    window.addEventListener('beforeprint', clear);
+    window.addEventListener('afterprint', fit);
+    if (window.matchMedia) {
+        var mq = window.matchMedia('print');
+        var onmq = function (e) { if (e.matches) clear(); else fit(); };
+        if (mq.addEventListener) mq.addEventListener('change', onmq);
+        else if (mq.addListener) mq.addListener(onmq);
+    }
     fit();
 })();
 </script>
