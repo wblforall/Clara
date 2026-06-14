@@ -44,32 +44,6 @@ table.paper > thead > tr > td, table.paper > tfoot > tr > td, table.paper > tbod
 }
 @media print { .no-print { display: none; } }
 * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-.sign { page-break-inside: avoid; }
-
-.doc-title { text-align: center; font-size: 16px; font-weight: 800; letter-spacing: .5px; margin: 0 0 2px; text-transform: uppercase; }
-.doc-no { text-align: center; font-size: 11px; color: #555; margin-bottom: 14px; }
-.sec { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #0D9488; border-bottom: 1px solid #d1d5db; padding-bottom: 3px; margin: 14px 0 7px; }
-table.kv { width: 100%; border-collapse: collapse; }
-table.kv td { padding: 2.5px 0; vertical-align: top; }
-table.kv td.l { width: 38%; color: #374151; }
-table.kv td.c { width: 3%; }
-table.kv td.v { font-weight: 600; }
-table.pay { width: 100%; border-collapse: collapse; margin-top: 3px; }
-table.pay td { padding: 4px 6px; border: 1px solid #e5e7eb; }
-table.pay td.lbl { width: 60%; } table.pay td.amt { text-align: right; font-weight: 600; white-space: nowrap; }
-table.pay tr.grand td { background: #f0fdfa; font-weight: 800; color: #0f766e; }
-.chk { font-size: 13px; }
-.notes { margin-top: 4px; padding-left: 0; }
-.notes li { font-size: 9.5px; color: #374151; margin-bottom: 3px; line-height: 1.45; list-style: none; padding-left: 18px; position: relative; }
-.notes li span.n { position: absolute; left: 0; font-weight: 700; }
-.sign { display: flex; justify-content: space-between; margin-top: 22px; text-align: center; gap: 10px; }
-.sign .col { flex: 1; font-size: 10.5px; }
-.sign .role { color: #6b7280; margin-bottom: 52px; }
-.sign .name { font-weight: 700; border-top: 1px solid #111; padding-top: 3px; display: inline-block; min-width: 150px; }
-.qrbox { width: 70px; height: 70px; margin: 0 auto 3px; }
-.qrbox img, .qrbox svg { width: 70px !important; height: 70px !important; display: block; }
-.qrhint { font-size: 7.5px; color: #6b7280; margin-bottom: 3px; }
-.muted { color: #6b7280; }
 </style>
 </head>
 <body>
@@ -82,98 +56,7 @@ table.pay tr.grand td { background: #f0fdfa; font-weight: 800; color: #0f766e; }
 <thead><tr><td><div class="sp-top"></div></td></tr></thead>
 <tfoot><tr><td><div class="sp-bot"></div></td></tr></tfoot>
 <tbody><tr><td>
-<div class="sheet">
-    <div class="doc-title"><?= ($skp['doc_type'] ?? 'skp') === 'sks' ? 'Surat Konfirmasi Sewa' : 'Surat Konfirmasi Pameran' ?></div>
-    <div class="doc-no">No. <?= $h($skp['skp_no']) ?></div>
-
-    <div class="sec">Identitas Penyewa</div>
-    <table class="kv">
-        <tr><td class="l">Nama Perusahaan</td><td class="c">:</td><td class="v"><?= $h($d['company_name'] ?? '-') ?></td></tr>
-        <tr><td class="l">Nama Penanggung Jawab</td><td class="c">:</td><td class="v"><?= $h($d['cp_name'] ?? '-') ?></td></tr>
-        <tr><td class="l">Alamat Kantor / PJ</td><td class="c">:</td><td class="v"><?= $h($d['address'] ?? '-') ?></td></tr>
-        <tr><td class="l">Nomor KTP Penanggung Jawab</td><td class="c">:</td><td class="v"><?= $h($d['ktp_pj'] ?? '-') ?></td></tr>
-        <tr><td class="l">Nomor Telepon</td><td class="c">:</td><td class="v"><?= $h($d['phone'] ?? '-') ?></td></tr>
-    </table>
-
-    <?php
-    $att = $d['attachments'] ?? [];
-    $hasOffer = !empty($d['offer_no']);
-    if ($hasOffer || $att):
-        $fn = fn($k) => isset($att[$k]) ? ' <span class="muted" style="font-weight:400">(' . $h($att[$k]) . ')</span>' : '';
-    ?>
-    <div class="sec">Lampiran Dokumen</div>
-    <table class="kv">
-        <?php if ($hasOffer): ?><tr><td class="l">Surat Penawaran Final</td><td class="c">:</td><td class="v chk">☑ <span class="muted" style="font-weight:400">No. <?= $h($d['offer_no']) ?></span></td></tr><?php endif; ?>
-        <tr><td class="l">Copy KTP Penanggung Jawab</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['ktp']) || ($d['admin_ktp'] ?? 0)) ?><?= $fn('ktp') ?></td></tr>
-        <tr><td class="l">Copy NPWP</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['npwp']) || ($d['admin_npwp'] ?? 0)) ?> <span class="muted" style="font-weight:400"><?= $d['npwp'] ? '(' . $h($d['npwp']) . ')' : '' ?></span><?= $fn('npwp') ?></td></tr>
-        <tr><td class="l">Bukti Transfer</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['bukti_transfer'])) ?><?= $fn('bukti_transfer') ?></td></tr>
-        <?php if (isset($att['pengajuan'])): ?><tr><td class="l">Dokumen Pengajuan</td><td class="c">:</td><td class="v chk">☑<?= $fn('pengajuan') ?></td></tr><?php endif; ?>
-    </table>
-    <?php else: ?>
-    <div class="sec">Kelengkapan Administrasi</div>
-    <table class="kv">
-        <tr><td class="l">Copy SIUP</td><td class="c">:</td><td class="v chk"><?= $chk($d['admin_siup'] ?? 0) ?></td></tr>
-        <tr><td class="l">Copy NPWP</td><td class="c">:</td><td class="v chk"><?= $chk($d['admin_npwp'] ?? 0) ?> <span class="muted" style="font-weight:400"><?= $d['npwp'] ? '(' . $h($d['npwp']) . ')' : '' ?></span></td></tr>
-        <tr><td class="l">Copy KTP Penanggung Jawab</td><td class="c">:</td><td class="v chk"><?= $chk($d['admin_ktp'] ?? 0) ?></td></tr>
-    </table>
-    <?php endif; ?>
-
-    <div class="sec">Spesifikasi Tempat & Periode Sewa</div>
-    <table class="kv">
-        <tr><td class="l">Lokasi</td><td class="c">:</td><td class="v"><?= $h($d['location'] ?? '-') ?></td></tr>
-        <tr><td class="l">Lantai</td><td class="c">:</td><td class="v"><?= $h($d['floor'] ?? '-') ?></td></tr>
-        <tr><td class="l">Luas Area</td><td class="c">:</td><td class="v"><?= number_format((float)($d['area'] ?? 0), 2, ',', '.') ?> m²</td></tr>
-        <?php if (!empty($d['seating_area'])): ?><tr><td class="l">Luas Seating Area</td><td class="c">:</td><td class="v"><?= number_format((float)$d['seating_area'], 2, ',', '.') ?> m²</td></tr><?php endif; ?>
-        <tr><td class="l">Masa Sewa</td><td class="c">:</td><td class="v"><?= $h(date('d/m/Y', strtotime($d['start_date'])) . ' s/d ' . date('d/m/Y', strtotime($d['end_date']))) ?> (<?= (int)($d['days'] ?? 0) ?> hari)</td></tr>
-        <tr><td class="l">Status Sewa</td><td class="c">:</td><td class="v"><?= $h($d['status_sewa'] ?? '-') ?></td></tr>
-        <tr><td class="l">Jenis Usaha / Kegiatan</td><td class="c">:</td><td class="v"><?= $h($d['business_type'] ?? '-') ?></td></tr>
-        <tr><td class="l">Produk</td><td class="c">:</td><td class="v"><?= $h($d['produk'] ?? '-') ?></td></tr>
-    </table>
-
-    <div class="sec">Rincian Pembayaran Sewa</div>
-    <table class="pay">
-        <tr><td class="lbl">A. Biaya Sewa Area</td><td class="amt"></td></tr>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;a. Biaya Sewa / m² / hari</td><td class="amt"><?= $rp($a['rate_m_day'] ?? 0) ?></td></tr>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;b. Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;c. PPN 12% <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn'] ?? 0) ?></td></tr>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;d. Total Biaya Sewa Setelah PPN</td><td class="amt"><?= $rp($a['after_ppn'] ?? 0) ?></td></tr>
-        <tr><td class="lbl">B. Jaminan Area (Security Deposit)</td><td class="amt"><?= $rp($a['deposit'] ?? 0) ?></td></tr>
-        <tr class="grand"><td class="lbl">C. Grand Total Biaya Area</td><td class="amt"><?= $rp($a['grand_total'] ?? 0) ?></td></tr>
-    </table>
-    <div class="muted" style="font-size:9px;margin-top:3px">*PPN 12% sesuai PMK Nomor 131 Tahun 2024.</div>
-
-    <div class="sec">Note</div>
-    <ol class="notes">
-        <?php foreach ($notes as $i => $n): ?><li><span class="n"><?= $i + 1 ?>.</span><?= $h($n) ?></li><?php endforeach; ?>
-    </ol>
-
-    <?php
-    // URL validasi untuk QR (dibuka saat di-scan). Read-only via sign_token.
-    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-    $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
-    $verifyUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/?r=doc_verify&token=' . ($skp['sign_token'] ?? '');
-    $hasQr = !empty($skp['sign_token']);
-    ?>
-    <div style="text-align:right;margin-top:16px;font-size:10.5px">Balikpapan, <?= $h($today) ?></div>
-    <div class="sign">
-        <div class="col"><div class="role">Dibuat Oleh,</div>
-            <?php if ($hasQr): ?><div class="qrbox" data-qr="<?= $h($verifyUrl) ?>"></div><div class="qrhint">Scan untuk validasi</div><?php endif; ?>
-            <div class="name"<?= $hasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($d['sales'] ?? '-') ?><br><span class="muted" style="font-weight:400">Sales Executive</span></div>
-        </div>
-        <div class="col"><div class="role">Mengetahui,</div>
-            <?php if ($hasQr): ?><div class="qrbox" data-qr="<?= $h($verifyUrl) ?>"></div><div class="qrhint">Scan untuk validasi</div><?php endif; ?>
-            <div class="name"<?= $hasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($skp['approved_by'] ?? '-') ?><br><span class="muted" style="font-weight:400">Casual Leasing Manager</span></div>
-        </div>
-        <div class="col"><div class="role">Menyetujui,</div>
-            <?php if (($skp['status'] ?? '') === 'signed' && !empty($skp['signature_data'])): ?>
-                <div style="margin-bottom:2px"><img src="<?= $h($skp['signature_data']) ?>" alt="TTD" style="max-height:48px;max-width:150px;object-fit:contain"></div>
-                <div class="name"><?= $h($skp['sign_name'] ?: ($d['cp_name'] ?? '-')) ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span><br><span class="muted" style="font-weight:400;font-size:8px">✓ Ditandatangani elektronik <?= $h(substr($skp['signed_at'] ?? '', 0, 16)) ?></span></div>
-            <?php else: ?>
-                <div class="name"><?= $h($d['cp_name'] ?? '-') ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span></div>
-            <?php endif; ?>
-        </div>
-    </div>
-</div>
+<div class="sheet"><?php include __DIR__ . '/skp_print_body.php'; ?></div>
 </td></tr></tbody>
 </table>
 <script src="assets/qrcode.min.js"></script>

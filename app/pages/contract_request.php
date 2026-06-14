@@ -33,7 +33,7 @@ function _cr_all_attachments(PDO $pdo, array $cr): array
 /** Data SKP final (utk dilampirkan ke berkas Legal). */
 function _cr_skp_final(PDO $pdo, int $skpId): ?array
 {
-    $st = $pdo->prepare('SELECT skp_no, status, sign_method, signed_doc_path, sign_token, sign_name, signed_at, snapshot_json FROM skp_documents WHERE id = ?');
+    $st = $pdo->prepare('SELECT skp_no, doc_type, status, approved_by, sign_method, signed_doc_path, sign_token, sign_name, signed_at, signature_data, snapshot_json FROM skp_documents WHERE id = ?');
     $st->execute([$skpId]);
     $r = $st->fetch();
     if (!$r || !in_array($r['status'], ['approved', 'signed'], true)) return null;
