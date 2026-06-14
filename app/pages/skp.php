@@ -319,7 +319,12 @@ function skp_form(PDO $pdo): void
             $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
             $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
             $signUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/?r=skp_sign&token=' . ($skp['sign_token'] ?? '');
-            $waText = rawurlencode("Yth. " . ($skp['cp_name'] ?: 'Bapak/Ibu') . ", mohon tanda tangan SKP No. " . $skp['skp_no'] . " pada tautan berikut: " . $signUrl);
+            $docShort = ($skp['doc_type'] ?? 'skp') === 'sks' ? 'Surat Konfirmasi Sewa (SKS)' : 'Surat Konfirmasi Pameran (SKP)';
+            $waMsg = "Yth. " . ($skp['cp_name'] ?: 'Bapak/Ibu') . ",\n\n"
+                . "Berikut " . $docShort . " No. " . $skp['skp_no'] . " untuk " . ($src['company_name'] ?? '-') . " dari Management e-Walk & Pentacity Mall Balikpapan.\n\n"
+                . "Mohon dapat ditinjau dan ditandatangani secara online melalui tautan berikut:\n" . $signUrl . "\n\n"
+                . "Tautan ini aman dan khusus untuk Anda. Terima kasih.";
+            $waText = rawurlencode($waMsg);
         ?>
         <div class="panel" style="margin-top:12px;background:#f0fdf4;border:1px solid #bbf7d0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <div><strong style="color:#166534">Disetujui</strong> — No. <strong><?= h($skp['skp_no']) ?></strong> oleh <?= h($skp['approved_by']) ?> (<?= h(substr($skp['approved_at'], 0, 16)) ?>).</div>
@@ -339,12 +344,14 @@ function skp_form(PDO $pdo): void
                 <?php endif; ?>
             <?php else: ?>
                 <p style="margin:0 0 8px;color:#374151"><strong>Opsi A — TTD online.</strong> Kirim tautan ini ke customer. Setelah ditandatangani, dokumen final lengkap dengan TTD.</p>
+                <textarea id="skp-wa-msg" style="position:absolute;left:-9999px" readonly><?= h($waMsg) ?></textarea>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
                     <input id="skp-sign-url" value="<?= h($signUrl) ?>" readonly style="flex:1;min-width:260px;font-size:12px" onclick="this.select()">
                     <button type="button" class="btn light" onclick="navigator.clipboard.writeText(document.getElementById('skp-sign-url').value);this.textContent='Tersalin ✓'">Salin Link</button>
+                    <button type="button" class="btn light" onclick="navigator.clipboard.writeText(document.getElementById('skp-wa-msg').value);this.textContent='Pesan tersalin ✓'">Salin Pesan</button>
                     <a class="btn" style="background:#16a34a" target="_blank" href="https://wa.me/?text=<?= $waText ?>">Kirim via WhatsApp</a>
                 </div>
-                <p style="margin:8px 0 0;font-size:11.5px;color:#64748b">Tautan bersifat rahasia — siapa pun yang memilikinya dapat menandatangani. Berlaku sampai SKP ditandatangani.</p>
+                <p style="margin:8px 0 0;font-size:11.5px;color:#64748b">Tautan bersifat rahasia &amp; berlaku sampai dokumen ditandatangani. <strong>Jika lewat WhatsApp Desktop hanya link yang terkirim</strong>, gunakan <strong>Salin Pesan</strong> lalu tempel (paste) di chat — teks lengkap akan ikut.</p>
                 <hr style="margin:14px 0;border:none;border-top:1px dashed #bae6fd">
                 <p style="margin:0 0 8px;color:#374151"><strong>Opsi B — TTD basah</strong> (untuk customer yang tidak terbiasa online). Cetak SKP, minta customer tanda tangan di atas kertas, lalu unggah hasil scan/fotonya di sini.</p>
                 <form method="post" action="?r=skp_sign_upload" enctype="multipart/form-data" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end" onsubmit="return confirm('Tandai SKP ini sudah ditandatangani (TTD basah)? Status menjadi final.')">
