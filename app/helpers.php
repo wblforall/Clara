@@ -272,6 +272,8 @@ function permission_for_route(string $route): string
         'm_home' => 'view_dashboard',
         'm_transactions' => 'view_transactions',
         'm_exec' => 'view_exec_summary',
+        'm_offers' => 'manage_offers',
+        'm_skp' => 'manage_skp',
         'lookup_manage', 'lookup_save', 'lookup_delete' => 'manage_master',
         'trend', 'comparison' => 'view_dashboard',
         'switch_property', 'select_property', 'set_property' => 'view_dashboard',

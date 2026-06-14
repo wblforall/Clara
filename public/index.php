@@ -265,6 +265,8 @@ if (isset($_GET['view'])) {
 if (mobile_view_active()) {
     if ($route === 'dashboard')      redirect_to('m_home');
     if ($route === 'exec_dashboard') redirect_to('m_exec');
+    if ($route === 'offers')         redirect_to('m_offers');
+    if ($route === 'skp')            redirect_to('m_skp');
 }
 
 
@@ -350,6 +352,8 @@ $pageFiles = [
     'm_home'                      => 'mobile.php',
     'm_transactions'              => 'mobile.php',
     'm_exec'                      => 'mobile.php',
+    'm_offers'                    => 'mobile.php',
+    'm_skp'                       => 'mobile.php',
 ];
 require_once APP_ROOT . '/app/pages/' . ($pageFiles[$route] ?? 'dashboard.php');
 match ($route) {
@@ -434,5 +438,7 @@ match ($route) {
     'm_home'                      => mobile_home_page($pdo),
     'm_transactions'              => mobile_transactions_page($pdo),
     'm_exec'                      => mobile_exec_page($pdo),
+    'm_offers'                    => mobile_offers_page($pdo),
+    'm_skp'                       => mobile_skp_page($pdo),
     default                       => dashboard($pdo),
 };

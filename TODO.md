@@ -166,20 +166,20 @@ Pipeline penawaran (Surat Penawaran → Konfirmasi SKP/SKS → Transaksi) sudah 
 **Konteks:** PWA mobile (`app/pages/mobile.php`: `mobile_home_page`, `mobile_transactions_page`, `mobile_exec_page`; bottom-nav Beranda/Transaksi/Eksekutif; `public/manifest.webmanifest` + `public/service-worker.js`) dibangun **sebelum** pipeline offer-first. Banyak alur kini berubah → mobile perlu disesuaikan agar sales bisa kerja penuh dari HP.
 
 ### A. Navigasi & Quick Action
-- [ ] **Quick action "Transaksi" → "Penawaran"**: tombol beranda (`_m_quick_actions`) masih `?r=transaction_form&module=cl` (input transaksi langsung). Offer-first menjadikan transaksi sebagai OUTPUT — ganti jadi "+ Buat Penawaran" (cl/media/gudang) atau arahkan ke daftar penawaran.
-- [ ] **Bottom-nav**: pertimbangkan tab **"Penawaran"** (gantikan/menemani "Transaksi"), karena titik masuk sales kini penawaran. Sesuaikan `_m_active_tab()` & nav di `bootstrap.php`.
+- [x] **Quick action "Transaksi" → "Penawaran"**: `_m_quick_actions` kini "+ Buat Penawaran" saat offer-first aktif (fallback transaksi bila offer-first off).
+- [x] **Bottom-nav**: tab **"Penawaran"** (`m_offers`) ditambah; `_mobile_active_tab()` & nav di `bootstrap.php` disesuaikan.
 
 ### B. Modul baru di mobile (saat ini desktop-only)
-- [ ] **Daftar + Preview Penawaran** mobile: tab On Going/Deal/Tidak Deal, filter modul (badge Exhibition/Media/Gudang), kartu ringkas; klik → preview (status, Buat SKP, Tutup, PDF).
+- [x] **Daftar + Preview Penawaran** mobile (`m_offers`): tab On Going/Deal/Tidak Deal + badge hitung, filter modul, kartu ringkas; klik → preview `offer_view` (status, Buat SKP, Tutup, PDF). FAB Buat Penawaran.
 - [ ] **Buat/Edit Penawaran** mobile (form panjang — perlu layout HP nyaman: picker client/unit, pricing, recurring, DP/deposit, override).
-- [ ] **Daftar SKP/SKS** mobile + aksi: submit approval (cek lampiran wajib KTP/NPWP/Bukti), approve/reject (manager), TTD online link, **upload TTD basah**, Scan TTD.
+- [~] **Daftar SKP/SKS** mobile (`m_skp`) — daftar + filter status/modul + aksi Edit/Lihat/PDF/Scan **selesai**; toggle Penawaran↔SKP. *Sisa:* submit approval (cek lampiran wajib KTP/NPWP/Bukti), approve/reject (manager), TTD online link, upload TTD basah → Fase 2.
 - [ ] **Permintaan Kontrak ke Legal** mobile: buat dari SKP signed, upload Akta/Surat Kuasa, kirim link/PDF, status (Terkirim/Disetujui Legal).
 - [ ] **Tanda Tangan Saya** (upload TTD PNG) mobile.
 
 ### C. Penyesuaian aturan yang sudah berubah
-- [ ] **Visibilitas per-sales**: mobile harus ikut `current_sales_scope()` — sales hanya lihat penawaran/SKP miliknya (beranda, daftar, KPI). Cek `mobile_home_page` agar metrik tidak bocor lintas-sales.
-- [ ] **Badge & filter modul** Exhibition/Media/Gudang di daftar mobile, warna konsisten dgn desktop.
-- [ ] **Offer-first enforcement**: tak ada jalan pintas input transaksi baru dari mobile (kecuali renewal) — samakan dgn guard `transaction_form`.
+- [x] **Visibilitas per-sales**: mobile ikut `current_sales_scope()` — `mobile_home_page` tak lagi tampil agregat utk role sales (guard MODE B/C); `m_offers`/`m_skp`/daftar transaksi mobile difilter per-sales.
+- [x] **Badge & filter modul** Exhibition/Media/Gudang di daftar mobile (`m_offers`/`m_skp`), warna konsisten dgn desktop.
+- [x] **Offer-first enforcement**: FAB/quick-action mobile ke `offer_form` saat offer-first aktif; guard hard tetap di controller `transaction_form` (kecuali renewal).
 
 ### D. PWA teknis
 - [ ] **Service worker / cache**: review `service-worker.js` — versi cache, jangan cache halaman dinamis (penawaran/SKP/print), pastikan update terdeteksi (skipWaiting / versi baru).

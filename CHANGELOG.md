@@ -11,6 +11,16 @@
 
 ---
 
+## Version 4.20 — 14 Juni 2026
+
+### Mobile/PWA menyesuaikan pipeline offer-first & per-sales (Fase 0 + 1)
+
+- **Visibilitas per-sales di mobile** — beranda HP role *sales* tak lagi menampilkan angka agregat lintas-sales; bila akun belum tertaut PIC, tampil beranda pribadi kosong (bukan total properti). Daftar transaksi mobile difilter hanya milik sales tersebut.
+- **Offer-first di mobile** — titik masuk sales kini **Penawaran**, bukan input transaksi langsung. Quick-action beranda & tombol tambah jadi "Buat Penawaran" saat mode offer-first aktif.
+- **Tab "Penawaran" di bottom-nav** — navigasi bawah HP punya tab Penawaran baru.
+- **Daftar Penawaran mobile** — kartu ringkas dengan tab On Going/Deal/Tidak Deal (+ jumlah), filter modul (Exhibition/Media/Gudang), buka preview untuk aksi Buat SKP/Tutup/PDF.
+- **Daftar SKP/SKS mobile** — kartu dengan filter status & modul, aksi Edit/Lihat/PDF/Scan TTD. Toggle cepat **Penawaran ↔ SKP/SKS** di kedua halaman.
+
 ## Version 4.19 — 13 Juni 2026
 
 ### Isi Surat Penawaran lebih rapi & jelas

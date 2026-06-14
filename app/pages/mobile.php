@@ -205,9 +205,14 @@ function _m_home_styles(): void
 
 function _m_quick_actions(): void
 {
+    // Offer-first (default aktif): titik masuk sales adalah Penawaran, bukan
+    // input transaksi langsung (transaksi kini OUTPUT dari penawaran yang DEAL).
+    $offerFirst = get_setting(Database::connect(), 'offer_first', '1') === '1';
     ?>
     <div class="m-qa">
-        <?php if (can('manage_transactions')): ?>
+        <?php if ($offerFirst && can('manage_offers')): ?>
+            <a class="p" href="?r=offer_form&module=cl"><?= _m_icon('plus') ?> Buat Penawaran</a>
+        <?php elseif (!$offerFirst && can('manage_transactions')): ?>
             <a class="p" href="?r=transaction_form&module=cl"><?= _m_icon('plus') ?> Transaksi</a>
         <?php endif; ?>
         <a class="s" href="?r=renewals"><?= _m_icon('renew') ?> Renewal</a>
@@ -239,6 +244,23 @@ function mobile_home_page(PDO $pdo): void
         );
         $s->execute([$period, (int) $user['id']]);
         $pic = $s->fetch() ?: null;
+    }
+
+    // ══ GUARD per-sales: role 'sales' tak boleh lihat agregat lintas-sales ══
+    // Selalu mode personal (MODE A). Jika belum tertaut PIC, tampilkan beranda
+    // minimal — bukan agregat MODE B/C — agar metrik tidak bocor.
+    if (current_role() === 'sales' && !$pic) {
+        layout('Beranda', function () use ($uname, $period) {
+            _m_home_styles();
+            _m_hero('Halo, ' . $uname . ' 👋', 'Beranda Pribadi · ' . period_label($period), 0, 0, 0);
+            _m_quick_actions();
+            ?>
+            <div class="m-card" style="text-align:center;padding:30px 20px;color:var(--muted);font-size:13.5px;line-height:1.6">
+                Akun Anda belum tertaut sebagai PIC sales.<br>Hubungi admin agar metrik &amp; data penawaran pribadi Anda muncul di sini.
+            </div>
+            <?php
+        });
+        return;
     }
 
     // ══ MODE A: PIC SALES — beranda personal ══
@@ -512,6 +534,12 @@ function mobile_transactions_page(PDO $pdo): void
 
     $where  = ['t.module = :module', 't.deleted_at IS NULL', 't.property_id = :pid'];
     $params = [':module' => $module, ':pid' => $pid];
+    // Pembatasan per-sales: role 'sales' hanya lihat transaksi miliknya.
+    if ($scope = current_sales_scope($pdo, $pid)) {
+        $where[] = '(t.pic_name = :sc_pic OR t.created_by = :sc_uname)';
+        $params[':sc_pic']   = $scope['pic'];
+        $params[':sc_uname'] = $scope['uname'];
+    }
     if ($search !== '') {
         $where[] = '(c.company_name LIKE :s1 OR t.master_code LIKE :s2)';
         $params[':s1'] = '%' . $search . '%';
@@ -535,7 +563,8 @@ function mobile_transactions_page(PDO $pdo): void
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
 
-    layout('Transaksi', function () use ($rows, $module, $search, $page, $totalPages) {
+    $offerFirst = get_setting($pdo, 'offer_first', '1') === '1';
+    layout('Transaksi', function () use ($rows, $module, $search, $page, $totalPages, $offerFirst) {
         $modules = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
         $fmt = function (?string $d): string {
             $ts = $d ? strtotime($d) : false;
@@ -607,9 +636,272 @@ function mobile_transactions_page(PDO $pdo): void
             <?php endif; ?>
         <?php endif; ?>
 
-        <?php if (can('manage_transactions')): ?>
+        <?php if ($offerFirst): ?>
+            <?php if (can('manage_offers')): ?>
+            <a class="m-fab" href="?r=offer_form&module=<?= h($module) ?>" title="Buat penawaran"><?= _m_icon('plus') ?></a>
+            <?php endif; ?>
+        <?php elseif (can('manage_transactions')): ?>
         <a class="m-fab" href="?r=transaction_form&module=<?= h($module) ?>" title="Tambah transaksi"><?= _m_icon('plus') ?></a>
         <?php endif; ?>
+        <?php
+    });
+}
+
+// ─── DAFTAR PENAWARAN (mobile) ────────────────────────────────────────────────
+/** Segmen toggle Penawaran ↔ SKP/SKS (akses SKP tanpa tab nav tambahan). */
+function _m_offer_seg(string $active): void
+{
+    $seg = ['m_offers' => 'Penawaran', 'm_skp' => 'SKP / SKS'];
+    if (!can('manage_skp')) unset($seg['m_skp']);
+    if (count($seg) < 2) return;
+    ?>
+    <div class="m-seg">
+        <?php foreach ($seg as $rt => $lbl): ?>
+            <a href="?r=<?= $rt ?>" class="<?= $active === $rt ? 'active' : '' ?>"><?= $lbl ?></a>
+        <?php endforeach; ?>
+    </div>
+    <style>
+    .m-seg { display:flex; gap:0; margin-bottom:13px; background:#eef2f7; border-radius:11px; padding:3px; }
+    .m-seg a { flex:1; text-align:center; padding:8px 4px; border-radius:9px; font-size:13px; font-weight:800; text-decoration:none; color:var(--muted); }
+    .m-seg a.active { background:#fff; color:var(--primary-dark); box-shadow:0 1px 3px rgba(16,24,40,.12); }
+    </style>
+    <?php
+}
+
+/** Badge modul untuk kartu mobile (mandiri, tak bergantung offers.php). */
+function _m_offer_mod(string $m): array
+{
+    return [
+        'cl'     => ['Exhibition', '#0f766e', '#ccfbf1'],
+        'media'  => ['Media', '#0369a1', '#e0f2fe'],
+        'gudang' => ['Gudang', '#92400e', '#fef3c7'],
+    ][$m] ?? [strtoupper($m), '#374151', '#f1f5f9'];
+}
+
+function mobile_offers_page(PDO $pdo): void
+{
+    require_permission('manage_offers');
+    $pid = current_property_id();
+
+    $tab = getv('tab', 'on_going');
+    $tabStatuses = [
+        'on_going' => ['draft', 'sent', 'nego'],
+        'deal'     => ['deal'],
+        'closed'   => ['cancelled'],
+    ];
+    if (!isset($tabStatuses[$tab])) $tab = 'on_going';
+
+    $module = getv('module', '');
+    if (!in_array($module, ['cl', 'media', 'gudang'], true)) $module = '';
+
+    // Pembatasan per-sales: role 'sales' hanya lihat miliknya sendiri.
+    $scope     = current_sales_scope($pdo, $pid);
+    $scopeSql  = $scope ? ' AND (o.pic_name = ? OR o.created_by = ?)' : '';
+    $scopeSqlC = $scope ? ' AND (pic_name = ? OR created_by = ?)' : '';
+    $scopeP    = $scope ? [$scope['pic'], $scope['uname']] : [];
+
+    // Hitung badge per tab (ikut filter modul + scope).
+    $counts = ['on_going' => 0, 'deal' => 0, 'closed' => 0];
+    $cq = 'SELECT status, COUNT(*) c FROM offers WHERE property_id = ?' . ($module ? ' AND module = ?' : '') . $scopeSqlC . ' GROUP BY status';
+    $cs = $pdo->prepare($cq);
+    $cs->execute(array_merge([$pid], $module ? [$module] : [], $scopeP));
+    foreach ($cs->fetchAll() as $r) {
+        foreach ($tabStatuses as $t => $sts) if (in_array($r['status'], $sts, true)) $counts[$t] += (int) $r['c'];
+    }
+
+    $in   = implode(',', array_fill(0, count($tabStatuses[$tab]), '?'));
+    $stmt = $pdo->prepare(
+        "SELECT o.*, c.company_name FROM offers o LEFT JOIN master_clients c ON c.id = o.client_id
+         WHERE o.property_id = ? AND o.status IN ($in)" . ($module ? ' AND o.module = ?' : '') . $scopeSql . ' ORDER BY o.id DESC'
+    );
+    $stmt->execute(array_merge([$pid], $tabStatuses[$tab], $module ? [$module] : [], $scopeP));
+    $rows = $stmt->fetchAll();
+
+    layout('Penawaran', function () use ($rows, $tab, $counts, $module) {
+        $badge = [
+            'draft'     => ['Draft', '#475569', '#f1f5f9'],
+            'sent'      => ['Terkirim', '#0369a1', '#e0f2fe'],
+            'nego'      => ['Negosiasi', '#92400e', '#fef3c7'],
+            'deal'      => ['DEAL', '#166534', '#dcfce7'],
+            'cancelled' => ['Tidak Deal', '#991b1b', '#fee2e2'],
+        ];
+        $fmt = function (?string $d): string {
+            $ts = $d ? strtotime($d) : false;
+            return $ts ? date('d/m/y', $ts) : '—';
+        };
+        $tabs = ['on_going' => 'On Going', 'deal' => 'Deal', 'closed' => 'Tidak Deal'];
+        $mods = ['' => 'Semua', 'cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
+        ?>
+        <style>
+        .m-tabs { display:flex; gap:7px; margin-bottom:11px; }
+        .m-tabs a { flex:1; text-align:center; padding:8px 4px; border-radius:10px; font-size:12.5px; font-weight:700; text-decoration:none; color:var(--muted); background:#fff; border:1px solid var(--line); }
+        .m-tabs a.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+        .m-tabs .b { display:inline-block; min-width:17px; padding:0 5px; margin-left:3px; border-radius:9px; font-size:10.5px; background:#eef2f7; color:#475569; }
+        .m-tabs a.active .b { background:rgba(255,255,255,.28); color:#fff; }
+        .m-mfil { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:13px; }
+        .m-mfil a { padding:5px 11px; border-radius:999px; font-size:12px; font-weight:700; text-decoration:none; color:var(--muted); background:#fff; border:1px solid var(--line); }
+        .m-ofr { display:block; background:#fff; border:1px solid var(--line); border-radius:13px; padding:13px 15px; margin-bottom:10px; box-shadow:0 1px 3px rgba(16,24,40,.05); }
+        .m-ofr .top { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+        .m-ofr .no { font-size:12px; font-weight:800; color:var(--primary-dark); }
+        .m-ofr .st { font-size:10px; font-weight:800; padding:2px 8px; border-radius:7px; white-space:nowrap; }
+        .m-ofr .nm { font-size:14px; font-weight:700; color:var(--ink); margin-top:6px; }
+        .m-ofr .meta { display:flex; justify-content:space-between; gap:10px; font-size:11.5px; color:var(--muted); margin-top:8px; align-items:center; }
+        .m-ofr .mb { font-size:9.5px; font-weight:800; padding:2px 7px; border-radius:6px; }
+        .m-ofr .amt { font-weight:900; color:var(--ink); white-space:nowrap; }
+        .m-empty { text-align:center; padding:46px 20px; color:var(--muted); }
+        .m-fab { position:fixed; right:16px; bottom:calc(var(--m-nav-h) + env(safe-area-inset-bottom,0px) + 14px); z-index:55; width:54px; height:54px; border-radius:50%; background:linear-gradient(135deg,var(--primary),var(--primary2)); color:#fff; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 18px rgba(13,148,136,.4); }
+        </style>
+
+        <?php _m_offer_seg('m_offers'); ?>
+        <div class="m-tabs">
+            <?php $mq = $module ? '&module=' . $module : ''; foreach ($tabs as $k => $lbl): ?>
+                <a href="?r=m_offers&tab=<?= $k . $mq ?>" class="<?= $tab === $k ? 'active' : '' ?>"><?= $lbl ?><span class="b"><?= (int) $counts[$k] ?></span></a>
+            <?php endforeach; ?>
+        </div>
+
+        <div class="m-mfil">
+            <?php foreach ($mods as $mk => $mlbl): $act = $module === $mk;
+                [$ml, $mc, $mbg] = $mk ? _m_offer_mod($mk) : ['', '#fff', 'var(--primary)']; ?>
+                <a href="?r=m_offers&tab=<?= $tab ?><?= $mk ? '&module=' . $mk : '' ?>"
+                   style="<?= $act ? 'background:' . ($mk ? $mbg : 'var(--primary)') . ';color:' . ($mk ? $mc : '#fff') . ';border-color:transparent' : '' ?>"><?= h($mlbl) ?></a>
+            <?php endforeach; ?>
+        </div>
+
+        <?php if (empty($rows)): ?>
+            <div class="m-card m-empty">Belum ada penawaran di tab ini.</div>
+        <?php else: foreach ($rows as $o):
+            $st = $badge[$o['status']] ?? $badge['draft'];
+            [$ml, $mc, $mbg] = _m_offer_mod($o['module']);
+            $amt = !empty($o['override_amount']) ? $o['override_amount'] : ($o['monthly_amount'] ?? 0); ?>
+            <a class="m-ofr" href="?r=offer_view&id=<?= (int) $o['id'] ?>">
+                <div class="top">
+                    <span class="no"><?= h($o['offer_no'] ?: '(draft)') ?></span>
+                    <span class="st" style="color:<?= $st[1] ?>;background:<?= $st[2] ?>"><?= $st[0] ?></span>
+                </div>
+                <div class="nm"><?= h($o['company_name'] ?? '—') ?></div>
+                <div class="meta">
+                    <span class="mb" style="color:<?= $mc ?>;background:<?= $mbg ?>"><?= h($ml) ?></span>
+                    <span><?= $fmt($o['start_date']) ?> – <?= $fmt($o['end_date']) ?></span>
+                    <span class="amt"><?= money($amt) ?>/bln</span>
+                </div>
+            </a>
+        <?php endforeach; endif; ?>
+
+        <a class="m-fab" href="?r=offer_form<?= $module ? '&module=' . h($module) : '' ?>" title="Buat penawaran"><?= _m_icon('plus') ?></a>
+        <?php
+    });
+}
+
+// ─── DAFTAR SKP / SKS (mobile) ────────────────────────────────────────────────
+function mobile_skp_page(PDO $pdo): void
+{
+    require_permission('manage_skp');
+    $pid    = current_property_id();
+    $status = getv('status', '');
+    $where  = ['s.property_id = ?']; $params = [$pid];
+    if (in_array($status, ['draft', 'submitted', 'approved', 'signed', 'rejected'], true)) {
+        $where[] = 's.status = ?'; $params[] = $status;
+    }
+    $module = getv('module', '');
+    if (!in_array($module, ['cl', 'media', 'gudang'], true)) $module = '';
+    if ($module) { $where[] = 'COALESCE(t.module, o.module) = ?'; $params[] = $module; }
+    // Pembatasan per-sales: hanya SKP dari penawaran miliknya / yang ia buat.
+    if ($scope = current_sales_scope($pdo, $pid)) {
+        $where[] = '(o.pic_name = ? OR s.created_by = ?)';
+        $params[] = $scope['pic']; $params[] = $scope['uname'];
+    }
+    $stmt = $pdo->prepare(
+        'SELECT s.*,
+                COALESCE(t.master_code, o.master_code) master_code,
+                COALESCE(t.start_date, o.start_date)   start_date,
+                COALESCE(t.end_date, o.end_date)       end_date,
+                COALESCE(t.module, o.module)           module,
+                COALESCE(tc.company_name, oc.company_name) company_name
+         FROM skp_documents s
+         LEFT JOIN transactions t ON t.id = s.transaction_id
+         LEFT JOIN master_clients tc ON tc.id = t.client_id
+         LEFT JOIN offers o ON o.id = s.offer_id
+         LEFT JOIN master_clients oc ON oc.id = o.client_id
+         WHERE ' . implode(' AND ', $where) . ' ORDER BY s.id DESC'
+    );
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll();
+
+    layout('SKP / SKS', function () use ($rows, $status, $module) {
+        $badge = [
+            'draft'     => ['Draft', '#475569', '#f1f5f9'],
+            'submitted' => ['Menunggu Approval', '#92400e', '#fef3c7'],
+            'approved'  => ['Disetujui · perlu TTD', '#166534', '#dcfce7'],
+            'signed'    => ['Ditandatangani', '#0369a1', '#e0f2fe'],
+            'rejected'  => ['Ditolak', '#991b1b', '#fee2e2'],
+        ];
+        $fmt = function (?string $d): string {
+            $ts = $d ? strtotime($d) : false;
+            return $ts ? date('d/m/y', $ts) : '—';
+        };
+        $sts  = ['' => 'Semua', 'draft' => 'Draft', 'submitted' => 'Menunggu', 'approved' => 'Perlu TTD', 'signed' => 'TTD', 'rejected' => 'Ditolak'];
+        $mods = ['' => 'Semua', 'cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
+        ?>
+        <style>
+        .m-tabs { display:flex; gap:6px; margin-bottom:11px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+        .m-tabs a { flex:0 0 auto; text-align:center; padding:7px 12px; border-radius:10px; font-size:12.5px; font-weight:700; text-decoration:none; color:var(--muted); background:#fff; border:1px solid var(--line); white-space:nowrap; }
+        .m-tabs a.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+        .m-mfil { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:13px; }
+        .m-mfil a { padding:5px 11px; border-radius:999px; font-size:12px; font-weight:700; text-decoration:none; color:var(--muted); background:#fff; border:1px solid var(--line); }
+        .m-ofr { display:block; background:#fff; border:1px solid var(--line); border-radius:13px; padding:13px 15px; margin-bottom:10px; box-shadow:0 1px 3px rgba(16,24,40,.05); }
+        .m-ofr .top { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+        .m-ofr .no { font-size:12px; font-weight:800; color:var(--primary-dark); }
+        .m-ofr .st { font-size:9.5px; font-weight:800; padding:2px 8px; border-radius:7px; white-space:nowrap; }
+        .m-ofr .nm { font-size:14px; font-weight:700; color:var(--ink); margin-top:6px; }
+        .m-ofr .meta { display:flex; justify-content:space-between; gap:10px; font-size:11.5px; color:var(--muted); margin-top:8px; align-items:center; }
+        .m-ofr .mb { font-size:9.5px; font-weight:800; padding:2px 7px; border-radius:6px; }
+        .m-ofr .acts { display:flex; gap:8px; margin-top:11px; }
+        .m-ofr .acts a { flex:1; text-align:center; padding:8px; border-radius:9px; font-size:12.5px; font-weight:700; text-decoration:none; border:1px solid var(--line); color:var(--primary-dark); background:#f8fafc; }
+        .m-empty { text-align:center; padding:46px 20px; color:var(--muted); }
+        </style>
+
+        <?php _m_offer_seg('m_skp'); ?>
+        <div class="m-tabs">
+            <?php $mq = $module ? '&module=' . $module : ''; foreach ($sts as $k => $lbl): ?>
+                <a href="?r=m_skp<?= $k ? '&status=' . $k : '' ?><?= $mq ?>" class="<?= $status === $k ? 'active' : '' ?>"><?= $lbl ?></a>
+            <?php endforeach; ?>
+        </div>
+        <div class="m-mfil">
+            <?php $sq = $status ? '&status=' . $status : ''; foreach ($mods as $mk => $mlbl): $act = $module === $mk;
+                [$ml, $mc, $mbg] = $mk ? _m_offer_mod($mk) : ['', '#fff', 'var(--primary)']; ?>
+                <a href="?r=m_skp<?= $sq ?><?= $mk ? '&module=' . $mk : '' ?>"
+                   style="<?= $act ? 'background:' . ($mk ? $mbg : 'var(--primary)') . ';color:' . ($mk ? $mc : '#fff') . ';border-color:transparent' : '' ?>"><?= h($mlbl) ?></a>
+            <?php endforeach; ?>
+        </div>
+
+        <?php if (empty($rows)): ?>
+            <div class="m-card m-empty">Belum ada SKP/SKS.<br><span style="font-size:12px">Dibuat dari Preview Penawaran yang sudah DEAL.</span></div>
+        <?php else: foreach ($rows as $s):
+            $st = $badge[$s['status']] ?? $badge['draft'];
+            [$ml, $mc, $mbg] = _m_offer_mod($s['module'] ?? '');
+            $edit = in_array($s['status'], ['draft', 'rejected'], true); ?>
+            <div class="m-ofr">
+                <div class="top">
+                    <span class="no"><?= h($s['skp_no'] ?: '(draft)') ?></span>
+                    <span class="st" style="color:<?= $st[1] ?>;background:<?= $st[2] ?>"><?= $st[0] ?></span>
+                </div>
+                <div class="nm"><?= h($s['company_name'] ?? '—') ?></div>
+                <div class="meta">
+                    <span class="mb" style="color:<?= $mc ?>;background:<?= $mbg ?>"><?= h($ml) ?></span>
+                    <span><?= $fmt($s['start_date']) ?> – <?= $fmt($s['end_date']) ?></span>
+                    <span><?= h($s['master_code'] ?? '—') ?></span>
+                </div>
+                <div class="acts">
+                    <a href="?r=skp_form&id=<?= (int) $s['id'] ?>"><?= $edit ? '✏️ Edit' : '👁 Lihat' ?></a>
+                    <?php if (in_array($s['status'], ['approved', 'signed'], true)): ?>
+                        <a href="?r=skp_print&id=<?= (int) $s['id'] ?>" target="_blank">🖨 PDF</a>
+                    <?php endif; ?>
+                    <?php if (($s['sign_method'] ?? '') === 'wet' && !empty($s['signed_doc_path'])): ?>
+                        <a href="<?= h($s['signed_doc_path']) ?>" target="_blank">📄 Scan</a>
+                    <?php endif; ?>
+                </div>
+            </div>
+        <?php endforeach; endif; ?>
         <?php
     });
 }

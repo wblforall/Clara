@@ -64,6 +64,7 @@ function _m_icon(string $name): string
         'plus'    => '<path d="M12 5v14M5 12h14"/>',
         'search'  => '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
         'chart'   => '<path d="M3 21h18M6 21v-7M11 21V8M16 21v-4"/>',
+        'offer'   => '<path d="M3 12V5a2 2 0 0 1 2-2h7l9 9-9 9-9-9z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
     ];
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
          . 'stroke-linecap="round" stroke-linejoin="round" width="22" height="22">'
@@ -74,6 +75,7 @@ function _m_icon(string $name): string
 function _mobile_active_tab(string $route): string
 {
     if ($route === 'm_home') return 'home';
+    if ($route === 'm_offers' || $route === 'm_skp' || str_starts_with($route, 'offer') || $route === 'skp' || str_starts_with($route, 'skp_')) return 'offer';
     if ($route === 'm_transactions' || str_starts_with($route, 'transaction')) return 'tx';
     if ($route === 'm_exec' || $route === 'exec_dashboard') return 'exec';
     if ($route === 'renewals') return 'renew';
@@ -224,6 +226,7 @@ function layout(string $title, callable $body, array $opts = []): void
             <?php
             $_mtabs = [
                 'home'  => ['m_home',         'Beranda',   'home',  'view_dashboard'],
+                'offer' => ['m_offers',       'Penawaran', 'offer', 'manage_offers'],
                 'tx'    => ['m_transactions', 'Transaksi', 'tx',    'view_transactions'],
                 'exec'  => ['m_exec',         'Eksekutif', 'chart', 'view_exec_summary'],
                 'renew' => ['renewals',       'Renewal',   'renew', 'view_renewals'],
