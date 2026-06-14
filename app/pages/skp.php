@@ -292,7 +292,8 @@ function skp_form(PDO $pdo): void
             <textarea name="note" rows="2" <?= $editable ? '' : 'disabled' ?>><?= h($skp['note'] ?? '') ?></textarea>
 
             <?php if ($editable): ?>
-            <p style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+            <p class="help" style="margin-top:16px;color:#92400e">Submit untuk approval hanya bisa setelah <strong>Scan KTP</strong>, <strong>Scan NPWP</strong>, dan <strong>Bukti Transfer</strong> terunggah.</p>
+            <p style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">
                 <button type="submit" onclick="document.getElementById('skp-action').value='save'" class="btn secondary">Simpan Draft</button>
                 <button type="submit" onclick="document.getElementById('skp-action').value='submit'" style="background:#0369a1">Simpan & Submit untuk Approval</button>
                 <a class="btn secondary" href="?r=skp">Batal</a>
@@ -463,6 +464,18 @@ function _skp_update_master(PDO $pdo, int $clientId, ?string $ktp, ?string $npwp
     $pdo->prepare('UPDATE master_clients SET ' . implode(',', $sets) . ' WHERE id=?')->execute($vals);
 }
 
+/** Lampiran wajib sebelum submit approval. Return label yang BELUM ada. */
+function _skp_missing_required(PDO $pdo, int $skpId): array
+{
+    $need = ['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP', 'bukti_transfer' => 'Bukti Transfer'];
+    $st = $pdo->prepare('SELECT DISTINCT kind FROM skp_attachments WHERE skp_id=?');
+    $st->execute([$skpId]);
+    $have = $st->fetchAll(PDO::FETCH_COLUMN);
+    $missing = [];
+    foreach ($need as $k => $lbl) if (!in_array($k, $have, true)) $missing[] = $lbl;
+    return $missing;
+}
+
 function skp_save(PDO $pdo): void
 {
     require_permission('manage_skp');
@@ -500,6 +513,14 @@ function skp_save(PDO $pdo): void
         $cur->execute([$id, $pid]);
         $st = $cur->fetchColumn();
         if (!in_array($st, ['draft', 'rejected'], true)) { flash('Sudah disubmit/disetujui — tidak bisa diubah.'); redirect_to('skp_form', ['id' => $id]); }
+        // Proses upload dulu agar validasi lampiran wajib akurat.
+        _skp_handle_uploads($pdo, $id, $uname, $clientId);
+        _skp_update_master($pdo, $clientId, $ktp, $npwp);
+        $blockMsg = '';
+        if ($doSubmit && ($miss = _skp_missing_required($pdo, $id))) {
+            $doSubmit = false;
+            $blockMsg = 'Belum bisa submit — lengkapi dulu: ' . implode(', ', $miss) . '. Disimpan sebagai draft.';
+        }
         $newStatus = $doSubmit ? 'submitted' : 'draft';
         $sql = 'UPDATE skp_documents SET cp_name=:cp_name, ktp_pj=:ktp_pj, phone_pj=:phone_pj,
                 seating_area=:seating_area, produk=:produk, status_sewa=:status_sewa,
@@ -509,30 +530,36 @@ function skp_save(PDO $pdo): void
                 updated_at=CURRENT_TIMESTAMP, updated_by=:uname
                 WHERE id=:id AND property_id=:pid';
         $pdo->prepare($sql)->execute(array_merge($fields, [':status' => $newStatus, ':uname' => $uname, ':id' => $id, ':pid' => $pid]));
-        _skp_handle_uploads($pdo, $id, $uname, $clientId);
-        _skp_update_master($pdo, $clientId, $ktp, $npwp);
         audit($pdo, $doSubmit ? 'submit' : 'update', 'skp_documents', (string) $id, $fields);
-        flash($doSubmit ? 'Dokumen disubmit untuk approval.' : 'Draft disimpan.');
+        flash($blockMsg ?: ($doSubmit ? 'Dokumen disubmit untuk approval.' : 'Draft disimpan.'));
         redirect_to('skp_form', ['id' => $id]);
     }
 
-    // INSERT baru (offer-based atau legacy transaksi)
-    $newStatus = $doSubmit ? 'submitted' : 'draft';
+    // INSERT baru (offer-based atau legacy transaksi). Selalu draft dulu →
+    // setelah lampiran terproses & lolos validasi, baru dipromosikan ke submitted.
     $cols = array_keys($fields);
     $place = array_map(fn($c) => ':' . $c, $cols);
     $sql = 'INSERT INTO skp_documents (property_id, doc_type, offer_id, transaction_id, status, created_by, '
-         . ($doSubmit ? 'submitted_at, ' : '') . implode(', ', $cols) . ')
-         VALUES (:pid, :doc, :offer, :trx, :status, :uname, '
-         . ($doSubmit ? 'CURRENT_TIMESTAMP, ' : '') . implode(', ', $place) . ')';
+         . implode(', ', $cols) . ')
+         VALUES (:pid, :doc, :offer, :trx, \'draft\', :uname, '
+         . implode(', ', $place) . ')';
     $pdo->prepare($sql)->execute(array_merge($fields, [
         ':pid' => $pid, ':doc' => $docType, ':offer' => $offerId ?: null,
-        ':trx' => $offerId ? null : ($trxId ?: null), ':status' => $newStatus, ':uname' => $uname,
+        ':trx' => $offerId ? null : ($trxId ?: null), ':uname' => $uname,
     ]));
     $newId = (int) $pdo->lastInsertId();
     _skp_handle_uploads($pdo, $newId, $uname, $clientId);
     _skp_update_master($pdo, $clientId, $ktp, $npwp);
     audit($pdo, 'create', 'skp_documents', (string) $newId, $fields);
-    flash($doSubmit ? 'Dokumen dibuat & disubmit.' : 'Draft dibuat.');
+
+    if ($doSubmit && ($miss = _skp_missing_required($pdo, $newId))) {
+        flash('Dibuat sebagai draft. Belum bisa submit — lengkapi dulu: ' . implode(', ', $miss) . '.');
+    } elseif ($doSubmit) {
+        $pdo->prepare("UPDATE skp_documents SET status='submitted', submitted_at=CURRENT_TIMESTAMP WHERE id=? AND property_id=?")->execute([$newId, $pid]);
+        flash('Dokumen dibuat & disubmit untuk approval.');
+    } else {
+        flash('Draft dibuat.');
+    }
     redirect_to('skp_form', ['id' => $newId]);
 }
 
