@@ -86,11 +86,19 @@ function skp_list_page(PDO $pdo): void
     if (in_array($status, ['draft', 'submitted', 'approved', 'signed', 'rejected'], true)) {
         $where[] = 's.status = ?'; $params[] = $status;
     }
+    // SKP bisa berasal dari penawaran (offer-first, transaksi belum terbit) ATAU
+    // dari transaksi lama. LEFT JOIN keduanya + fallback datanya.
     $stmt = $pdo->prepare(
-        'SELECT s.*, t.master_code, t.start_date, t.end_date, c.company_name
+        'SELECT s.*,
+                COALESCE(t.master_code, o.master_code) master_code,
+                COALESCE(t.start_date, o.start_date)   start_date,
+                COALESCE(t.end_date, o.end_date)       end_date,
+                COALESCE(tc.company_name, oc.company_name) company_name
          FROM skp_documents s
-         JOIN transactions t ON t.id = s.transaction_id
-         LEFT JOIN master_clients c ON c.id = t.client_id
+         LEFT JOIN transactions t ON t.id = s.transaction_id
+         LEFT JOIN master_clients tc ON tc.id = t.client_id
+         LEFT JOIN offers o ON o.id = s.offer_id
+         LEFT JOIN master_clients oc ON oc.id = o.client_id
          WHERE ' . implode(' AND ', $where) . '
          ORDER BY s.id DESC'
     );
@@ -115,7 +123,7 @@ function skp_list_page(PDO $pdo): void
             </div>
         </div>
         <div class="panel" style="margin-top:12px">
-            <p style="margin:0 0 10px;color:var(--muted);font-size:13px">SKP dibuat dari halaman <strong>Detail Alokasi</strong> sebuah transaksi Exhibition (tombol "Buat SKP").</p>
+            <p style="margin:0 0 10px;color:var(--muted);font-size:13px">SKP/SKS dibuat dari halaman <strong>Preview Penawaran</strong> yang sudah DEAL (tombol "Buat SKP/SKS"). Transaksi terbit otomatis saat SKP disetujui.</p>
             <div class="table-wrap">
                 <table style="font-size:12.5px">
                     <thead><tr><th>No. SKP</th><th>Kode</th><th>Client</th><th>Periode</th><th>Status</th><th>Dibuat</th><th></th></tr></thead>
@@ -126,7 +134,7 @@ function skp_list_page(PDO $pdo): void
                             <td style="white-space:nowrap;font-weight:600"><?= h($r['skp_no'] ?? '—') ?></td>
                             <td><?= h($r['master_code']) ?></td>
                             <td><?= h($r['company_name'] ?? '-') ?></td>
-                            <td style="white-space:nowrap;font-size:11.5px"><?= h(date('d/m/y', strtotime($r['start_date'])) . '–' . date('d/m/y', strtotime($r['end_date']))) ?></td>
+                            <td style="white-space:nowrap;font-size:11.5px"><?= $r['start_date'] ? h(date('d/m/y', strtotime($r['start_date'])) . '–' . date('d/m/y', strtotime($r['end_date']))) : '—' ?></td>
                             <td><span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span></td>
                             <td style="font-size:11.5px;color:var(--muted)"><?= h($r['created_by'] ?? '-') ?><br><?= h(substr($r['created_at'] ?? '', 0, 16)) ?></td>
                             <td style="white-space:nowrap">
