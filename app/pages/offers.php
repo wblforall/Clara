@@ -530,7 +530,7 @@ function offer_form(PDO $pdo): void
 
             <h3>Pembayaran <span style="font-weight:400;font-size:12px;color:var(--muted)">(DP & deposit dihitung dari harga/bulan; bisa di-override)</span></h3>
             <div class="form-grid">
-                <div><label>DP (bulan, min 1)</label><input type="number" step="0.5" min="1" name="dp_months" id="dp_months" value="<?= $v('dp_months', '2') ?>" <?= $disabled ?>></div>
+                <div><label>DP (bulan, min 1)</label><input type="number" step="0.5" min="1" name="dp_months" id="dp_months" value="<?= $v('dp_months', '1') ?>" <?= $disabled ?>></div>
                 <div><label>Nominal DP <span class="muted" style="font-weight:400">(otomatis, bisa diubah)</span></label><input type="text" inputmode="numeric" id="dp_fmt" placeholder="0" <?= $disabled ?>><input type="hidden" name="dp_amount" id="dp_amount" value="<?= (int)($offer['dp_amount'] ?? 0) ?: '' ?>"></div>
                 <div><label>Deposit (bulan)</label><input type="number" step="0.5" min="0" name="deposit_months" id="deposit_months" value="<?= $v('deposit_months', '1') ?>" <?= $disabled ?>></div>
                 <div><label>Nominal Deposit <span class="muted" style="font-weight:400">(otomatis, bisa diubah)</span></label><input type="text" inputmode="numeric" id="dep_fmt" placeholder="0" <?= $disabled ?>><input type="hidden" name="deposit_amount" id="deposit_amount" value="<?= (int)($offer['deposit_amount'] ?? 0) ?: '' ?>"></div>
@@ -829,7 +829,7 @@ function offer_save(PDO $pdo): void
         'billing_method'  => $billing,
         'recurring_flag'  => post('recurring_flag') ? 1 : 0,
         'cycle_recognition' => post('cycle_recognition') === 'cycle_end' ? 'cycle_end' : 'cycle_start',
-        'dp_months'       => max(1, (float) post('dp_months', 2)),
+        'dp_months'       => max(1, (float) post('dp_months', 1)),
         'dp_amount'       => (float) post('dp_amount', 0),
         'deposit_months'  => (float) post('deposit_months', 1),
         'deposit_amount'  => (float) post('deposit_amount', 0),
