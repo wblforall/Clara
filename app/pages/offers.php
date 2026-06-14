@@ -203,13 +203,13 @@ function offers_list_page(PDO $pdo): void
                 <?php endforeach; ?>
             </div>
         </div>
-        <div class="toolbar" style="gap:6px;flex-wrap:wrap;margin-top:8px">
-            <span style="font-size:12px;color:var(--muted);align-self:center">Modul:</span>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px">
+            <span style="font-size:12px;color:var(--muted);margin-right:2px">Modul:</span>
             <?php
             $modFilters = ['' => 'Semua', 'cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
             foreach ($modFilters as $mk => $mlbl): $mactive = $module === $mk;
                 [$ml, $mc, $mbg] = $mk ? _offer_module_badge($mk) : ['Semua', '#fff', '#0d9488']; ?>
-                <a class="btn light" style="<?= $mactive ? 'background:' . ($mk ? $mbg : '#0d9488') . ';color:' . ($mk ? $mc : '#fff') . ';font-weight:700' : '' ?>" href="?r=offers&tab=<?= $tab ?><?= $mk ? '&module=' . $mk : '' ?>"><?= h($mlbl) ?></a>
+                <a class="btn light" style="padding:5px 12px;font-size:12.5px;<?= $mactive ? 'background:' . ($mk ? $mbg : '#0d9488') . ';color:' . ($mk ? $mc : '#fff') . ';font-weight:700' : '' ?>" href="?r=offers&tab=<?= $tab ?><?= $mk ? '&module=' . $mk : '' ?>"><?= h($mlbl) ?></a>
             <?php endforeach; ?>
         </div>
         <div class="panel" style="margin-top:12px">
