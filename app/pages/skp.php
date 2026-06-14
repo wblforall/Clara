@@ -321,22 +321,38 @@ function skp_form(PDO $pdo): void
             $signUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/?r=skp_sign&token=' . ($skp['sign_token'] ?? '');
             $waText = rawurlencode("Yth. " . ($skp['cp_name'] ?: 'Bapak/Ibu') . ", mohon tanda tangan SKP No. " . $skp['skp_no'] . " pada tautan berikut: " . $signUrl);
         ?>
-        <div class="panel" style="margin-top:12px;background:#f0fdf4;border:1px solid #bbf7d0">
-            <strong style="color:#166534">Disetujui</strong> — No. <strong><?= h($skp['skp_no']) ?></strong> oleh <?= h($skp['approved_by']) ?> (<?= h(substr($skp['approved_at'], 0, 16)) ?>).
-            <a class="btn" style="margin-left:10px" href="?r=skp_print&id=<?= (int)$skp['id'] ?>" target="_blank">🖨 Cetak / Simpan PDF</a>
+        <div class="panel" style="margin-top:12px;background:#f0fdf4;border:1px solid #bbf7d0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div><strong style="color:#166534">Disetujui</strong> — No. <strong><?= h($skp['skp_no']) ?></strong> oleh <?= h($skp['approved_by']) ?> (<?= h(substr($skp['approved_at'], 0, 16)) ?>).</div>
+            <a class="btn" href="?r=skp_print&id=<?= (int)$skp['id'] ?>" target="_blank">🖨 Cetak / Simpan PDF</a>
+            <?php if ($skp['status'] === 'signed' && can('manage_skp')): ?>
+            <a class="btn" style="background:#7c3aed;margin-left:auto" href="?r=contract_request_form&skp_id=<?= (int)$skp['id'] ?>">→ Ajukan Kontrak ke Legal</a>
+            <?php endif; ?>
         </div>
         <div class="panel" style="margin-top:12px;border:1px solid #bae6fd;background:#f0f9ff">
-            <h3 style="margin-top:0;color:#0369a1">Tanda Tangan Customer (online)</h3>
+            <h3 style="margin-top:0;color:#0369a1">Tanda Tangan Customer</h3>
             <?php if ($skp['status'] === 'signed'): ?>
-                <p style="margin:0;color:#166534">✓ <strong>Sudah ditandatangani</strong> oleh <strong><?= h($skp['sign_name']) ?></strong> pada <?= h(substr($skp['signed_at'], 0, 16)) ?> (IP <?= h($skp['sign_ip']) ?>).</p>
+                <?php if (($skp['sign_method'] ?? 'online') === 'wet'): ?>
+                <p style="margin:0;color:#166534">✓ <strong>Ditandatangani basah (scan)</strong> a.n. <strong><?= h($skp['sign_name']) ?></strong> pada <?= h(substr($skp['signed_at'], 0, 16)) ?>.
+                    <?php if (!empty($skp['signed_doc_path'])): ?> <a class="btn light" href="<?= h($skp['signed_doc_path']) ?>" target="_blank">Lihat Scan TTD</a><?php endif; ?></p>
+                <?php else: ?>
+                <p style="margin:0;color:#166534">✓ <strong>Ditandatangani online</strong> oleh <strong><?= h($skp['sign_name']) ?></strong> pada <?= h(substr($skp['signed_at'], 0, 16)) ?> (IP <?= h($skp['sign_ip']) ?>).</p>
+                <?php endif; ?>
             <?php else: ?>
-                <p style="margin:0 0 8px;color:#374151">Kirim tautan ini ke customer untuk tanda tangan. Setelah ditandatangani, dokumen final lengkap dengan TTD.</p>
+                <p style="margin:0 0 8px;color:#374151"><strong>Opsi A — TTD online.</strong> Kirim tautan ini ke customer. Setelah ditandatangani, dokumen final lengkap dengan TTD.</p>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
                     <input id="skp-sign-url" value="<?= h($signUrl) ?>" readonly style="flex:1;min-width:260px;font-size:12px" onclick="this.select()">
                     <button type="button" class="btn light" onclick="navigator.clipboard.writeText(document.getElementById('skp-sign-url').value);this.textContent='Tersalin ✓'">Salin Link</button>
                     <a class="btn" style="background:#16a34a" target="_blank" href="https://wa.me/?text=<?= $waText ?>">Kirim via WhatsApp</a>
                 </div>
                 <p style="margin:8px 0 0;font-size:11.5px;color:#64748b">Tautan bersifat rahasia — siapa pun yang memilikinya dapat menandatangani. Berlaku sampai SKP ditandatangani.</p>
+                <hr style="margin:14px 0;border:none;border-top:1px dashed #bae6fd">
+                <p style="margin:0 0 8px;color:#374151"><strong>Opsi B — TTD basah</strong> (untuk customer yang tidak terbiasa online). Cetak SKP, minta customer tanda tangan di atas kertas, lalu unggah hasil scan/fotonya di sini.</p>
+                <form method="post" action="?r=skp_sign_upload" enctype="multipart/form-data" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end" onsubmit="return confirm('Tandai SKP ini sudah ditandatangani (TTD basah)? Status menjadi final.')">
+                    <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$skp['id'] ?>">
+                    <div><label style="font-size:12px;font-weight:700;display:block">Nama Penanda Tangan</label><input name="sign_name" required placeholder="Nama customer" value="<?= h($skp['cp_name'] ?? '') ?>" style="min-width:200px"></div>
+                    <div><label style="font-size:12px;font-weight:700;display:block">Scan SKP ber-TTD (jpg/png/pdf, ≤8MB)</label><input type="file" name="signed_doc" accept=".jpg,.jpeg,.png,.webp,.pdf" required></div>
+                    <button type="submit" class="btn" style="background:#0369a1">Unggah &amp; Tandai TTD</button>
+                </form>
             <?php endif; ?>
         </div>
         <?php endif; ?>
@@ -659,6 +675,43 @@ function skp_reject(PDO $pdo): void
         ->execute([$note, $id, $pid]);
     audit($pdo, 'reject', 'skp_documents', (string) $id, ['note' => $note]);
     flash('SKP ditolak & dikembalikan ke sales.');
+    redirect_to('skp_form', ['id' => $id]);
+}
+
+// ─── TTD basah (upload scan) — alternatif TTD online utk customer gaptek ──────
+function skp_sign_upload(PDO $pdo): void
+{
+    require_permission('manage_skp');
+    verify_csrf();
+    $pid = current_property_id();
+    $id  = (int) post('id');
+    $st = $pdo->prepare('SELECT * FROM skp_documents WHERE id=? AND property_id=?');
+    $st->execute([$id, $pid]);
+    $skp = $st->fetch();
+    if (!$skp || $skp['status'] !== 'approved') { flash('SKP harus berstatus Disetujui & belum ditandatangani.'); redirect_to('skp_form', ['id' => $id]); }
+
+    $name = trim((string) post('sign_name'));
+    if ($name === '') { flash('Nama penanda tangan wajib diisi.'); redirect_to('skp_form', ['id' => $id]); }
+    if (empty($_FILES['signed_doc']['tmp_name']) || !is_uploaded_file($_FILES['signed_doc']['tmp_name'])) {
+        flash('File scan SKP ber-TTD wajib diunggah.'); redirect_to('skp_form', ['id' => $id]);
+    }
+    $f = $_FILES['signed_doc'];
+    if ($f['size'] <= 0 || $f['size'] > 8 * 1024 * 1024) { flash('Ukuran file maksimal 8MB.'); redirect_to('skp_form', ['id' => $id]); }
+    $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'], true)) { flash('Format harus jpg/png/webp/pdf.'); redirect_to('skp_form', ['id' => $id]); }
+
+    $dir = dirname(__DIR__, 2) . '/public/uploads/skp';
+    if (!is_dir($dir)) @mkdir($dir, 0777, true);
+    $fname = 'skp' . $id . '_signed_' . bin2hex(random_bytes(4)) . '.' . $ext;
+    if (!@move_uploaded_file($f['tmp_name'], $dir . '/' . $fname)) { flash('Gagal menyimpan file.'); redirect_to('skp_form', ['id' => $id]); }
+    $rel = 'uploads/skp/' . $fname;
+
+    $pdo->prepare(
+        "UPDATE skp_documents SET status='signed', sign_method='wet', sign_name=?, signed_doc_path=?, signed_at=CURRENT_TIMESTAMP
+         WHERE id=? AND property_id=? AND status='approved'"
+    )->execute([$name, $rel, $id, $pid]);
+    audit($pdo, 'customer_sign_wet', 'skp_documents', (string) $id, ['name' => $name, 'file' => $rel]);
+    flash('SKP ditandai sudah ditandatangani (TTD basah, scan tersimpan).');
     redirect_to('skp_form', ['id' => $id]);
 }
 

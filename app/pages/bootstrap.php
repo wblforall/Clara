@@ -92,6 +92,7 @@ function layout(string $title, callable $body, array $opts = []): void
         ['', 'comparison', 'Perbandingan Periode', 'view_dashboard'],
         ['Input', 'offers', 'Surat Penawaran', 'manage_offers'],
         ['', 'skp', 'SKP Pameran', 'manage_skp'],
+        ['', 'contract_requests', 'Permintaan Kontrak', 'manage_skp'],
         ['', 'transactions&module=cl', 'Exhibition', 'view_transactions'],
         ['', 'transactions&module=media', 'Media', 'view_transactions'],
         ['', 'transactions&module=gudang', 'Gudang', 'view_transactions'],
