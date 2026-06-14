@@ -209,6 +209,13 @@ if ($route === 'doc_verify') {
     exit;
 }
 
+// ─── Permintaan Kontrak: link ke Legal (publik, read-only, via share_token) ───
+if ($route === 'contract_legal') {
+    require_once APP_ROOT . '/app/pages/contract_request.php';
+    contract_legal_page($pdo);
+    exit;
+}
+
 // ─── Authenticated area ───────────────────────────────────────────────────────
 require_login();
 

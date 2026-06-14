@@ -141,7 +141,24 @@ function contract_request_form(PDO $pdo): void
             <?php if ($cr && $cr['status'] === 'sent'): ?> · <span class="badge" style="color:#166534;background:#dcfce7">Terkirim ke Legal</span><?php endif; ?>
         </div>
 
-        <form class="panel" method="post" action="?r=contract_request_save" style="margin-top:12px">
+        <?php if ($cr && $cr['status'] === 'sent' && !empty($cr['share_token'])):
+            $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+            $legalUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/?r=contract_legal&token=' . $cr['share_token'];
+            $waText = rawurlencode("Mohon dibantu pembuatan/review kontrak. Formulir & lampiran (Akta/Surat Kuasa) dapat diakses di: " . $legalUrl);
+        ?>
+        <div class="panel" style="margin-top:12px;border:1px solid #ddd6fe;background:#f5f3ff">
+            <h3 style="margin-top:0;color:#6d28d9">Kirim ke Legal (link)</h3>
+            <p style="margin:0 0 8px;color:#374151">Bagikan tautan ini ke Departemen Legal — mereka bisa membuka formulir &amp; mengunduh lampiran (Akta / Surat Kuasa) tanpa login.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <input id="cr-legal-url" value="<?= h($legalUrl) ?>" readonly style="flex:1;min-width:260px;font-size:12px" onclick="this.select()">
+                <button type="button" class="btn light" onclick="navigator.clipboard.writeText(document.getElementById('cr-legal-url').value);this.textContent='Tersalin ✓'">Salin Link</button>
+                <a class="btn" style="background:#16a34a" target="_blank" href="https://wa.me/?text=<?= $waText ?>">Kirim via WhatsApp</a>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <form class="panel" method="post" action="?r=contract_request_save" style="margin-top:12px" enctype="multipart/form-data">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="id" value="<?= (int)($cr['id'] ?? 0) ?>">
             <input type="hidden" name="skp_id" value="<?= (int)$skpId ?>">
@@ -165,20 +182,42 @@ function contract_request_form(PDO $pdo): void
             </div>
 
             <h3>Kelengkapan Dokumen Legalitas</h3>
-            <p class="help" style="margin-top:0">KTP &amp; NPWP otomatis tercentang bila lampirannya sudah ada di SKP. Akta &amp; Surat Kuasa dicentang bila dilampirkan (untuk PT/CV/Yayasan/Koperasi/BUMN-D).</p>
-            <div style="display:flex;flex-direction:column;gap:8px;max-width:760px">
+            <p class="help" style="margin-top:0">KTP &amp; NPWP otomatis tercentang bila lampirannya sudah ada di SKP. <strong>Akta &amp; Surat Kuasa</strong> bisa diunggah di sini (untuk PT/CV/Yayasan/Koperasi/BUMN-D) agar ikut terlampir saat dikirim ke Legal.</p>
+            <div style="display:flex;flex-direction:column;gap:8px;max-width:820px">
                 <?php
                 $checks = [
-                    'doc_ktp'         => ['Kartu Identitas/KTP Penanggung Jawab/Direktur/Kuasa Direksi', $ktp],
-                    'doc_npwp'        => ['NPWP (Pribadi / Perusahaan bila berbadan hukum)', $npwp],
-                    'doc_akta'        => ['Akta Pendirian dan/atau Akta Perubahan (PT/Yayasan/Koperasi/BUMN-D)', $akta],
-                    'doc_surat_kuasa' => ['Surat Kuasa (bila penanda tangan bukan direktur)', $sk],
+                    'doc_ktp'  => ['Kartu Identitas/KTP Penanggung Jawab/Direktur/Kuasa Direksi', $ktp],
+                    'doc_npwp' => ['NPWP (Pribadi / Perusahaan bila berbadan hukum)', $npwp],
                 ];
                 foreach ($checks as $name => [$lbl, $on]): ?>
                 <label style="display:flex;align-items:flex-start;gap:10px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;cursor:pointer">
                     <input type="checkbox" name="<?= $name ?>" value="1" style="width:18px;height:18px;flex-shrink:0;margin-top:1px" <?= $on ? 'checked' : '' ?> <?= $dis ?>>
                     <span style="font-size:13px"><?= h($lbl) ?></span>
                 </label>
+                <?php endforeach; ?>
+                <?php
+                $uploads = [
+                    'akta'        => ['doc_akta', 'Akta Pendirian dan/atau Akta Perubahan (PT/Yayasan/Koperasi/BUMN-D)', $akta, $cr['akta_path'] ?? null],
+                    'surat_kuasa' => ['doc_surat_kuasa', 'Surat Kuasa (bila penanda tangan bukan direktur)', $sk, $cr['surat_kuasa_path'] ?? null],
+                ];
+                foreach ($uploads as $key => [$flag, $lbl, $on, $path]): ?>
+                <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px">
+                    <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin:0">
+                        <input type="checkbox" name="<?= $flag ?>" value="1" style="width:18px;height:18px;flex-shrink:0;margin-top:1px" <?= $on ? 'checked' : '' ?> <?= $dis ?>>
+                        <span style="font-size:13px"><?= h($lbl) ?></span>
+                    </label>
+                    <div style="margin-top:8px;margin-left:28px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                        <?php if ($path): ?>
+                            <a class="btn light" href="<?= h($path) ?>" target="_blank">📎 Lihat file</a>
+                        <?php endif; ?>
+                        <?php if ($editable): ?>
+                            <input type="file" name="file_<?= $key ?>" accept=".jpg,.jpeg,.png,.webp,.pdf">
+                            <span class="help" style="font-size:11px"><?= $path ? 'Pilih file untuk mengganti.' : 'jpg/png/pdf, ≤8MB. Centang otomatis bila diunggah.' ?></span>
+                        <?php elseif (!$path): ?>
+                            <span class="help" style="font-size:11px;color:#991b1b">Tidak ada file.</span>
+                        <?php endif; ?>
+                    </div>
+                </div>
                 <?php endforeach; ?>
             </div>
 
@@ -196,6 +235,25 @@ function contract_request_form(PDO $pdo): void
         </form>
         <?php
     });
+}
+
+/** Simpan upload Akta / Surat Kuasa → kolom path + auto-centang doc flag. */
+function _cr_handle_uploads(PDO $pdo, int $crId): void
+{
+    $dir = dirname(__DIR__, 2) . '/public/uploads/contract';
+    if (!is_dir($dir)) @mkdir($dir, 0777, true);
+    $map = ['file_akta' => ['akta_path', 'doc_akta'], 'file_surat_kuasa' => ['surat_kuasa_path', 'doc_surat_kuasa']];
+    foreach ($map as $field => [$pathCol, $flagCol]) {
+        if (empty($_FILES[$field]['tmp_name']) || !is_uploaded_file($_FILES[$field]['tmp_name'])) continue;
+        $f = $_FILES[$field];
+        if ($f['size'] <= 0 || $f['size'] > 8 * 1024 * 1024) continue;
+        $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'], true)) continue;
+        $fname = 'cr' . $crId . '_' . substr($field, 5) . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+        if (!@move_uploaded_file($f['tmp_name'], $dir . '/' . $fname)) continue;
+        $pdo->prepare("UPDATE contract_requests SET $pathCol=?, $flagCol=1 WHERE id=?")
+            ->execute(['uploads/contract/' . $fname, $crId]);
+    }
 }
 
 // ─── Simpan ──────────────────────────────────────────────────────────────────
@@ -248,6 +306,9 @@ function contract_request_save(PDO $pdo): void
         $id = (int) $pdo->lastInsertId();
     }
 
+    // Upload Akta / Surat Kuasa (bila ada file baru) → set path + centang otomatis.
+    _cr_handle_uploads($pdo, $id);
+
     if ($action === 'send') {
         // Terbitkan nomor formulir bila belum ada, set status terkirim.
         $cur = $pdo->prepare('SELECT req_no FROM contract_requests WHERE id=?');
@@ -261,9 +322,13 @@ function contract_request_save(PDO $pdo): void
             $seq = (int) $pdo->query("SELECT last_no FROM contract_request_counters WHERE property_id=$pid AND year=$year")->fetchColumn();
             $reqNo = sprintf('FPK/%s/%d/%03d', _cr_prop_code($prop['key'] ?? ''), $year, $seq);
         }
-        $pdo->prepare("UPDATE contract_requests SET status='sent', req_no=?, sent_at=CURRENT_TIMESTAMP WHERE id=? AND property_id=?")
-            ->execute([$reqNo, $id, $pid]);
-        flash("Formulir terkirim. No: $reqNo. Cetak PDF & kirim ke Legal.");
+        // Token share utk link ke Legal (sekali terbit, dipakai ulang).
+        $tok = $pdo->prepare('SELECT share_token FROM contract_requests WHERE id=?');
+        $tok->execute([$id]);
+        $shareToken = $tok->fetchColumn() ?: bin2hex(random_bytes(20));
+        $pdo->prepare("UPDATE contract_requests SET status='sent', req_no=?, share_token=?, sent_at=CURRENT_TIMESTAMP WHERE id=? AND property_id=?")
+            ->execute([$reqNo, $shareToken, $id, $pid]);
+        flash("Formulir terkirim. No: $reqNo. Salin link / cetak PDF untuk Legal.");
     } else {
         flash('Draft permintaan kontrak disimpan.');
     }
@@ -286,4 +351,91 @@ function contract_request_print(PDO $pdo): void
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
     $chk = fn($b) => !empty($b) ? '☑' : '☐';
     include __DIR__ . '/contract_request_template.php';
+}
+
+// ─── Halaman publik untuk Legal (via link, tanpa login) ──────────────────────
+function contract_legal_page(PDO $pdo): void
+{
+    $token = (string) getv('token', '');
+    $st = $pdo->prepare('SELECT * FROM contract_requests WHERE share_token = ? AND status = "sent" LIMIT 1');
+    $st->execute([$token]);
+    $cr = $st->fetch();
+    if (!$cr || $token === '') { http_response_code(404); exit('Tautan tidak valid atau formulir belum dikirim.'); }
+
+    // Konteks SKP (lintas-properti aman: token rahasia).
+    $sk = $pdo->prepare('SELECT skp_no, snapshot_json FROM skp_documents WHERE id = ?');
+    $sk->execute([(int) $cr['skp_id']]);
+    $skp = $sk->fetch() ?: [];
+    $d = json_decode($skp['snapshot_json'] ?? '', true) ?: [];
+    $types = _cr_contract_types();
+    $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+    $chk = fn($b) => !empty($b) ? '☑' : '☐';
+    $months = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    $rd = $cr['request_date'] ? strtotime($cr['request_date']) : time();
+    $tglAju = (int) date('d', $rd) . ' ' . $months[(int) date('n', $rd)] . ' ' . date('Y', $rd);
+    // Base URL utk unduh lampiran (relatif ke /public).
+    $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+    $asset = fn($p) => $dir . '/' . ltrim((string) $p, '/');
+    ?>
+    <!doctype html>
+    <html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Permintaan Kontrak <?= $h($cr['req_no']) ?></title>
+    <style>
+    *{box-sizing:border-box} body{font-family:'Inter',Arial,sans-serif;background:#f3f4f6;color:#111;margin:0;padding:18px;font-size:14px}
+    .card{max-width:760px;margin:0 auto;background:#fff;border-radius:14px;box-shadow:0 6px 30px rgba(0,0,0,.08);overflow:hidden}
+    .hd{background:#6d28d9;color:#fff;padding:18px 22px}
+    .hd h1{margin:0;font-size:17px} .hd p{margin:4px 0 0;opacity:.9;font-size:13px}
+    .bd{padding:20px 22px}
+    .sec{font-weight:800;color:#6d28d9;text-transform:uppercase;font-size:12px;letter-spacing:.03em;margin:18px 0 8px}
+    table{width:100%;border-collapse:collapse} td{padding:6px 8px;border:1px solid #e5e7eb;vertical-align:top}
+    td.k{width:38%;background:#f8fafc;color:#374151}
+    .chips span{display:inline-block;margin-right:14px;font-weight:600}
+    .att a{display:inline-flex;align-items:center;gap:6px;background:#ede9fe;color:#5b21b6;text-decoration:none;border-radius:8px;padding:9px 14px;font-weight:700;margin:4px 8px 0 0}
+    .pts{border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;white-space:pre-wrap;line-height:1.6;background:#fafafa}
+    .muted{color:#6b7280;font-size:12px}
+    </style></head><body>
+    <div class="card">
+        <div class="hd">
+            <h1>Formulir Permintaan Pembuatan/Review Kontrak</h1>
+            <p>Kepada Departemen Legal · No. <?= $h($cr['req_no']) ?></p>
+        </div>
+        <div class="bd">
+            <div class="sec">Informasi Umum</div>
+            <table>
+                <tr><td class="k">Departemen Pemohon</td><td><?= $h($cr['department']) ?></td></tr>
+                <tr><td class="k">Tanggal Pengajuan</td><td><?= $h($tglAju) ?></td></tr>
+                <tr><td class="k">Nama Penanggung Jawab</td><td><?= $h($cr['requester_name'] ?: '-') ?></td></tr>
+                <tr><td class="k">Jabatan</td><td><?= $h($cr['requester_position'] ?: '-') ?></td></tr>
+                <tr><td class="k">Referensi SKP / Penyewa</td><td><?= $h(($skp['skp_no'] ?? '-') ?: '-') ?> · <?= $h($d['company_name'] ?? '-') ?></td></tr>
+            </table>
+
+            <div class="sec">Jenis Kontrak</div>
+            <div class="chips">
+                <span><?= $chk($cr['contract_type'] === 'spk') ?> SPK</span>
+                <span><?= $chk($cr['contract_type'] === 'sewa_menyewa') ?> Sewa Menyewa</span>
+                <span><?= $chk($cr['contract_type'] === 'kerja_sama') ?> Kerja Sama</span>
+            </div>
+
+            <div class="sec">Kelengkapan Dokumen Legalitas</div>
+            <table>
+                <tr><td><?= $chk($cr['doc_ktp']) ?> KTP Penanggung Jawab/Direktur</td><td><?= $chk($cr['doc_npwp']) ?> NPWP</td></tr>
+                <tr><td><?= $chk($cr['doc_akta']) ?> Akta Pendirian/Perubahan</td><td><?= $chk($cr['doc_surat_kuasa']) ?> Surat Kuasa</td></tr>
+            </table>
+
+            <div class="sec">Lampiran</div>
+            <div class="att">
+                <?php if (!empty($cr['akta_path'])): ?><a href="<?= $h($asset($cr['akta_path'])) ?>" target="_blank">📎 Akta Pendirian/Perubahan</a><?php endif; ?>
+                <?php if (!empty($cr['surat_kuasa_path'])): ?><a href="<?= $h($asset($cr['surat_kuasa_path'])) ?>" target="_blank">📎 Surat Kuasa</a><?php endif; ?>
+                <?php if (empty($cr['akta_path']) && empty($cr['surat_kuasa_path'])): ?><span class="muted">Tidak ada lampiran Akta/Surat Kuasa. KTP &amp; NPWP terlampir pada SKP.</span><?php endif; ?>
+            </div>
+
+            <div class="sec">Poin-Poin Penting</div>
+            <div class="pts"><?= $h($cr['important_points'] ?: '-') ?></div>
+
+            <p class="muted" style="margin-top:18px">Dokumen ini dibagikan oleh Departemen Pemohon untuk keperluan pembuatan/review kontrak. SKP &amp; Surat Penawaran final disertakan terpisah.</p>
+        </div>
+    </div>
+    </body></html>
+    <?php
+    exit;
 }
