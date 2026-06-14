@@ -572,7 +572,7 @@ function offer_form(PDO $pdo): void
             <?php endif; ?>
 
             <?php if ($editable): ?>
-            <p style="margin-top:16px"><button type="submit">💾 <?= $offer ? 'Simpan Revisi' : 'Simpan Penawaran' ?></button> <a class="btn secondary" href="?r=offers">Batal</a></p>
+            <p class="form-actions" style="margin-top:16px"><button type="submit">💾 <?= $offer ? 'Simpan Revisi' : 'Simpan Penawaran' ?></button> <a class="btn secondary" href="?r=offers">Batal</a></p>
             <?php endif; ?>
         </form>
 

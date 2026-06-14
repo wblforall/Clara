@@ -13,5 +13,21 @@
     { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" },
     { "src": "assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Buat Penawaran",
+      "short_name": "Penawaran +",
+      "description": "Buat surat penawaran baru",
+      "url": "./?r=offer_form&module=cl",
+      "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Daftar Penawaran",
+      "short_name": "Penawaran",
+      "description": "Lihat daftar surat penawaran",
+      "url": "./?r=m_offers",
+      "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
   ]
 }

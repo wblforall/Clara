@@ -387,6 +387,10 @@ tr[style*="background: #e0f2fe"] td {
     .btn, button { padding: 11px 15px; }
     input, select, textarea { font-size: 16px; padding: 11px 12px; }
 
+    /* Baris aksi form (Simpan/Batal) → tombol penuh & mudah disentuh di HP */
+    .form-actions { display: flex; flex-direction: column; gap: 9px; }
+    .form-actions button, .form-actions .btn { width: 100%; justify-content: center; text-align: center; }
+
     /* Toolbar / filter penuh selebar layar & rapi */
     .toolbar form { width: 100%; }
     .toolbar form > * { flex: 1 1 auto; min-width: 0; }

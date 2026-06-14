@@ -18,6 +18,7 @@ $today = date('d') . ' ' . ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 
 <html lang="id">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <?php $docTitle = ($skp['doc_type'] ?? 'skp') === 'sks' ? 'Surat Konfirmasi Sewa' : 'Surat Konfirmasi Pameran'; ?>
 <title><?= $h($skp['skp_no']) ?> — <?= $docTitle ?></title>
 <link rel="icon" type="image/png" href="assets/clara-logo.png">
@@ -43,6 +44,11 @@ table.paper > thead > tr > td, table.paper > tfoot > tr > td, table.paper > tbod
   table.paper { width: 210mm; margin: 16px auto; box-shadow: 0 4px 24px rgba(0,0,0,.12); background: #fff; }
 }
 @media print { .no-print { display: none; } }
+/* Preview di HP: skala A4 agar pas lebar layar (tak memengaruhi hasil cetak/PDF). */
+@media screen and (max-width:820px){
+  body{overflow-x:hidden}
+  table.paper{margin:0 !important;transform-origin:top left}
+}
 * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 </style>
 </head>
@@ -71,6 +77,24 @@ table.paper > thead > tr > td, table.paper > tfoot > tr > td, table.paper > tbod
             box.innerHTML = qr.createSvgTag({ cellSize: 2, margin: 0, scalable: true });
         } catch (e) {}
     });
+})();
+</script>
+<script>
+/* Fit-to-width A4 di layar HP saja (≤820px). Hasil cetak/PDF tak terpengaruh. */
+(function () {
+    var p = document.querySelector('table.paper');
+    if (!p) return;
+    function fit() {
+        p.style.transform = ''; document.body.style.height = '';
+        if (window.innerWidth >= 820) return;
+        var w = p.offsetWidth; if (!w) return;
+        var s = window.innerWidth / w;
+        p.style.transform = 'scale(' + s + ')';
+        document.body.style.height = (p.offsetHeight * s) + 'px';
+    }
+    window.addEventListener('resize', fit);
+    window.addEventListener('load', fit);
+    fit();
 })();
 </script>
 </body>

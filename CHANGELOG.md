@@ -13,6 +13,14 @@
 
 ## Version 4.20 — 14 Juni 2026
 
+### Mobile/PWA — penyelesaian Fase 2 + 3 (form, aksi, teknis PWA)
+
+- **Menu akun di HP** — topbar mobile kini punya menu akun: **Tanda Tangan Saya**, Ganti Password, Tampilan Desktop, Logout (sebelumnya tak ada akses akun dari HP).
+- **Form & aksi nyaman di HP** — form Penawaran, SKP/SKS, dan Permintaan Kontrak ber-tombol aksi full-width yang mudah disentuh; daftar Kontrak jadi kartu bertumpuk di layar kecil.
+- **Foto langsung untuk lampiran** — input unggah Scan TTD basah & dokumen kontrak memakai `image/*` sehingga opsi **kamera** muncul di HP (tetap bisa PDF/galeri).
+- **Preview surat pas layar HP** — Surat Penawaran, SKP/SKS, dan Formulir Kontrak otomatis diskalakan agar muat lebar layar saat dipratinjau di HP (hasil cetak/PDF tidak berubah).
+- **PWA** — manifest dapat **shortcut "Buat Penawaran" & "Daftar Penawaran"** (tekan-lama ikon app); service worker di-bump versi agar aset terbaru terambil bersih. Halaman dinamis tetap tidak pernah di-cache.
+
 ### Mobile/PWA menyesuaikan pipeline offer-first & per-sales (Fase 0 + 1)
 
 - **Visibilitas per-sales di mobile** — beranda HP role *sales* tak lagi menampilkan angka agregat lintas-sales; bila akun belum tertaut PIC, tampil beranda pribadi kosong (bukan total properti). Daftar transaksi mobile difilter hanya milik sales tersebut.

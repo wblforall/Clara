@@ -191,6 +191,17 @@ function layout(string $title, callable $body, array $opts = []): void
         .m-top a.t-desk { color: #fff; font-size: 11px; font-weight: 700; background: rgba(255,255,255,.18); padding: 6px 11px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
         .m-top .t-prop-sw { margin-top: 4px; max-width: 100%; width: auto; background: rgba(255,255,255,.18); color: #fff; border: none; border-radius: 8px; padding: 4px 26px 4px 9px; font-size: 12px; font-weight: 700; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
         .m-top .t-prop-sw option { color: #0F1623; }
+        .m-acct { position: relative; flex-shrink: 0; }
+        .m-acct > summary { list-style: none; cursor: pointer; width: 38px; height: 38px; border-radius: 50%; background: rgba(255,255,255,.2); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px; }
+        .m-acct > summary::-webkit-details-marker { display: none; }
+        .m-acct[open] > summary { background: rgba(255,255,255,.35); }
+        .m-acct .m-acct-menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 70; min-width: 210px; background: #fff; border-radius: 12px; box-shadow: 0 10px 30px rgba(16,24,40,.22); overflow: hidden; }
+        .m-acct .m-acct-menu .hd { padding: 12px 15px; border-bottom: 1px solid var(--line); }
+        .m-acct .m-acct-menu .hd b { display: block; font-size: 14px; color: var(--ink); }
+        .m-acct .m-acct-menu .hd small { font-size: 11.5px; color: var(--muted); }
+        .m-acct .m-acct-menu a { display: flex; align-items: center; gap: 9px; padding: 12px 15px; font-size: 13.5px; font-weight: 600; color: var(--ink2); text-decoration: none; border-top: 1px solid #f1f5f9; }
+        .m-acct .m-acct-menu a:first-of-type { border-top: none; }
+        .m-acct .m-acct-menu a.danger { color: #b91c1c; }
         .m-body { padding: 14px; }
         .m-flash { margin: 12px 14px 0; padding: 11px 14px; background: var(--soft); color: var(--primary-dark); border-radius: 10px; font-weight: 600; font-size: 13px; border-left: 3px solid var(--primary); }
         .m-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; height: calc(var(--m-nav-h) + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); background: #fff; border-top: 1px solid var(--line); display: flex; box-shadow: 0 -2px 14px rgba(16,24,40,.06); }
@@ -218,6 +229,21 @@ function layout(string $title, callable $body, array $opts = []): void
                     <div class="t-sub"><?= h($appName) ?> &middot; <?= h($opts['prop_label'] ?? ($currentProp['name'] ?? '')) ?></div>
                     <?php endif; ?>
                 </div>
+                <?php
+                $_uName = (string) ($_SESSION['user']['name'] ?? 'User');
+                $_uRole = (string) ($_SESSION['user']['role'] ?? '');
+                $_uInit = strtoupper(mb_substr(trim($_uName), 0, 1) ?: 'U');
+                ?>
+                <details class="m-acct">
+                    <summary aria-label="Menu akun"><?= h($_uInit) ?></summary>
+                    <div class="m-acct-menu">
+                        <div class="hd"><b><?= h($_uName) ?></b><small><?= h($_uRole) ?></small></div>
+                        <a href="?r=my_signature"><?= _m_icon('offer') ?> Tanda Tangan Saya</a>
+                        <a href="?r=change_password">🔑 Ganti Password</a>
+                        <a href="?view=desktop"><?= _m_icon('desktop') ?> Tampilan Desktop</a>
+                        <a class="danger" href="?r=logout">↩ Logout</a>
+                    </div>
+                </details>
             </div>
             <?php if ($flash): ?><div class="m-flash"><?= h($flash) ?></div><?php endif; ?>
             <div class="m-body"><?php $body(); ?></div>

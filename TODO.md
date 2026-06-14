@@ -171,10 +171,10 @@ Pipeline penawaran (Surat Penawaran → Konfirmasi SKP/SKS → Transaksi) sudah 
 
 ### B. Modul baru di mobile (saat ini desktop-only)
 - [x] **Daftar + Preview Penawaran** mobile (`m_offers`): tab On Going/Deal/Tidak Deal + badge hitung, filter modul, kartu ringkas; klik → preview `offer_view` (status, Buat SKP, Tutup, PDF). FAB Buat Penawaran.
-- [ ] **Buat/Edit Penawaran** mobile (form panjang — perlu layout HP nyaman: picker client/unit, pricing, recurring, DP/deposit, override).
-- [~] **Daftar SKP/SKS** mobile (`m_skp`) — daftar + filter status/modul + aksi Edit/Lihat/PDF/Scan **selesai**; toggle Penawaran↔SKP. *Sisa:* submit approval (cek lampiran wajib KTP/NPWP/Bukti), approve/reject (manager), TTD online link, upload TTD basah → Fase 2.
-- [ ] **Permintaan Kontrak ke Legal** mobile: buat dari SKP signed, upload Akta/Surat Kuasa, kirim link/PDF, status (Terkirim/Disetujui Legal).
-- [ ] **Tanda Tangan Saya** (upload TTD PNG) mobile.
+- [x] **Buat/Edit Penawaran** mobile — reuse form desktop (sudah responsif: `.form-grid`→1 kolom ≤768px, input 16px anti-zoom) + tombol aksi full-width (`.form-actions`). Tak digandakan agar tak drift dgn `offer_save`.
+- [x] **Daftar + aksi SKP/SKS** mobile (`m_skp`) — daftar/filter/aksi + submit-approval (cek lampiran wajib server-side), approve/reject, TTD online link+WA, upload TTD basah, Scan; tombol aksi full-width di HP.
+- [x] **Permintaan Kontrak ke Legal** mobile — buat dari SKP signed (entry di panel SKP signed), form responsif + tombol full-width, daftar jadi kartu (`mobile-cards`), upload Akta/Surat Kuasa, kirim link/PDF.
+- [x] **Tanda Tangan Saya** mobile — dijangkau via **menu akun** baru di topbar HP; halaman upload TTD sudah ringkas/responsif.
 
 ### C. Penyesuaian aturan yang sudah berubah
 - [x] **Visibilitas per-sales**: mobile ikut `current_sales_scope()` — `mobile_home_page` tak lagi tampil agregat utk role sales (guard MODE B/C); `m_offers`/`m_skp`/daftar transaksi mobile difilter per-sales.
@@ -182,14 +182,14 @@ Pipeline penawaran (Surat Penawaran → Konfirmasi SKP/SKS → Transaksi) sudah 
 - [x] **Offer-first enforcement**: FAB/quick-action mobile ke `offer_form` saat offer-first aktif; guard hard tetap di controller `transaction_form` (kecuali renewal).
 
 ### D. PWA teknis
-- [ ] **Service worker / cache**: review `service-worker.js` — versi cache, jangan cache halaman dinamis (penawaran/SKP/print), pastikan update terdeteksi (skipWaiting / versi baru).
-- [ ] **Upload dari kamera HP**: lampiran SKP & scan TTD basah pakai `<input capture>` agar bisa foto langsung.
-- [ ] **Manifest**: cek ikon/nama; tambah shortcut "Buat Penawaran".
-- [ ] **PDF di mobile**: pastikan cetak/preview surat (penawaran/SKP/kontrak A4) terbaca enak di HP.
-- [ ] **Offline draft** (opsional): simpan draft penawaran/SKP saat sinyal jelek.
+- [x] **Service worker / cache**: di-review — desain sudah benar (navigasi network-only → halaman dinamis penawaran/SKP/print tak pernah di-cache; aset cache-first + revalidate; skipWaiting+clients.claim). `VERSION` di-bump `clara-v1`→`clara-v2` agar cache lama di-purge setelah perubahan CSS.
+- [x] **Upload dari kamera HP**: input lampiran pakai `accept="image/*,.pdf"` → opsi **kamera** muncul di native picker (tak dipaksa `capture` karena field juga terima PDF; memaksa capture menghilangkan galeri/PDF).
+- [x] **Manifest**: shortcut "Buat Penawaran" & "Daftar Penawaran" ditambah; ikon/nama dicek OK.
+- [x] **PDF di mobile**: 3 template print (offer/SKP/kontrak) dapat viewport meta + skala fit-to-width khusus layar ≤820px (hasil cetak/PDF tak berubah).
+- [ ] **Offline draft** (opsional): simpan draft penawaran/SKP saat sinyal jelek. *Ditunda — berisiko utk app multi-user berbasis sesi (perlu IndexedDB + sync); dikerjakan belakangan bila benar dibutuhkan.*
 
 ### E. Verifikasi
-- [ ] Uji alur penuh sales dari HP: buat penawaran → DEAL → SKP → lampiran → submit → (manager approve) → TTD → ajukan kontrak ke Legal.
-- [ ] Uji per-sales: 2 akun sales berbeda tidak saling melihat data.
+- [~] Uji alur penuh sales dari HP: penawaran → DEAL → SKP → lampiran → submit → approve → TTD → kontrak. *HTTP smoke (render 200, tanpa error PHP) tiap halaman OK sbg superadmin; uji E2E penuh perlu browser nyata (JS).* 
+- [~] Uji per-sales: 2 akun sales berbeda tidak saling lihat data. *Scoping pakai `current_sales_scope()` (helper sama dgn desktop) di beranda/m_offers/m_skp/transaksi mobile; verifikasi visual final perlu 2 akun sales di browser.*
 
-*Ditambahkan: 2026-06-14. Dikerjakan setelah pipeline offer-first + per-sales stabil.*
+*Ditambahkan: 2026-06-14. Fase 0–3 selesai 2026-06-14. Sisa: Offline draft (opsional) + verifikasi E2E browser oleh user.*

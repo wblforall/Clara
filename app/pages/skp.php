@@ -324,7 +324,7 @@ function skp_form(PDO $pdo): void
 
             <?php if ($editable): ?>
             <p class="help" style="margin-top:16px;color:#92400e">Submit untuk approval hanya bisa setelah <strong>Scan KTP</strong>, <strong>Scan NPWP</strong>, dan <strong>Bukti Transfer</strong> terunggah.</p>
-            <p style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">
+            <p class="form-actions" style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">
                 <button type="submit" onclick="document.getElementById('skp-action').value='save'" class="btn secondary">Simpan Draft</button>
                 <button type="submit" onclick="document.getElementById('skp-action').value='submit'" style="background:#0369a1">Simpan & Submit untuk Approval</button>
                 <a class="btn secondary" href="?r=skp">Batal</a>
@@ -339,9 +339,9 @@ function skp_form(PDO $pdo): void
                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$skp['id'] ?>">
                 <button type="submit" onclick="return confirm('Setujui SKP ini? Nomor SKP akan terbit dan nilai dikunci.')">✓ Setujui</button>
             </form>
-            <form method="post" action="?r=skp_reject" style="display:inline-flex;gap:8px;align-items:center;margin-left:10px">
+            <form method="post" action="?r=skp_reject" style="display:inline-flex;gap:8px;align-items:center;margin-left:10px;flex-wrap:wrap">
                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$skp['id'] ?>">
-                <input name="reject_note" placeholder="Alasan penolakan" style="width:240px">
+                <input name="reject_note" placeholder="Alasan penolakan" style="width:240px;max-width:100%">
                 <button type="submit" class="btn warn">✗ Tolak</button>
             </form>
         </div>
@@ -389,7 +389,7 @@ function skp_form(PDO $pdo): void
                 <form method="post" action="?r=skp_sign_upload" enctype="multipart/form-data" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end" onsubmit="return confirm('Tandai SKP ini sudah ditandatangani (TTD basah)? Status menjadi final.')">
                     <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$skp['id'] ?>">
                     <div><label style="font-size:12px;font-weight:700;display:block">Nama Penanda Tangan</label><input name="sign_name" required placeholder="Nama customer" value="<?= h($skp['cp_name'] ?? '') ?>" style="min-width:200px"></div>
-                    <div><label style="font-size:12px;font-weight:700;display:block">Scan SKP ber-TTD (jpg/png/pdf, ≤8MB)</label><input type="file" name="signed_doc" accept=".jpg,.jpeg,.png,.webp,.pdf" required></div>
+                    <div><label style="font-size:12px;font-weight:700;display:block">Scan SKP ber-TTD (foto/jpg/png/pdf, ≤8MB)</label><input type="file" name="signed_doc" accept="image/*,.pdf" required></div>
                     <button type="submit" class="btn" style="background:#0369a1">Unggah &amp; Tandai TTD</button>
                 </form>
             <?php endif; ?>

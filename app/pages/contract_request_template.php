@@ -9,6 +9,7 @@ $tglAju = (int) date('d', $rd) . ' ' . $months[(int) date('n', $rd)] . ' ' . dat
 <html lang="id">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= $h($cr['req_no'] ?: 'Formulir Permintaan Kontrak') ?></title>
 <link rel="icon" type="image/png" href="assets/clara-logo.png">
 <style>
@@ -32,6 +33,11 @@ table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:
   .sp-bot{background:url('assets/letterhead-a4.jpg') no-repeat bottom center;background-size:100% auto}
 }
 @media print{.no-print{display:none}}
+/* Preview di HP: skala A4 agar pas lebar layar (tak memengaruhi hasil cetak/PDF). */
+@media screen and (max-width:820px){
+  body{overflow-x:hidden}
+  table.paper{margin:0 !important;transform-origin:top left}
+}
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 h1{font-size:13.5px;text-align:center;text-transform:uppercase;letter-spacing:.02em;margin-bottom:2px}
 .sub{text-align:center;color:#374151;font-size:10.5px;margin-bottom:14px}
@@ -193,6 +199,24 @@ table.sign td{width:50%;font-size:11px;padding-top:6px;vertical-align:top}
         try { var qr = qrcode(0, 'M'); qr.addData(box.getAttribute('data-qr')); qr.make();
             box.innerHTML = qr.createSvgTag({ cellSize: 2, margin: 0, scalable: true }); } catch (e) {}
     });
+})();
+</script>
+<script>
+/* Fit-to-width A4 di layar HP saja (≤820px). Hasil cetak/PDF tak terpengaruh. */
+(function () {
+    var p = document.querySelector('table.paper');
+    if (!p) return;
+    function fit() {
+        p.style.transform = ''; document.body.style.height = '';
+        if (window.innerWidth >= 820) return;
+        var w = p.offsetWidth; if (!w) return;
+        var s = window.innerWidth / w;
+        p.style.transform = 'scale(' + s + ')';
+        document.body.style.height = (p.offsetHeight * s) + 'px';
+    }
+    window.addEventListener('resize', fit);
+    window.addEventListener('load', fit);
+    fit();
 })();
 </script>
 </body>

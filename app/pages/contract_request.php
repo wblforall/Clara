@@ -93,17 +93,17 @@ function contract_request_list(PDO $pdo): void
         <div class="panel" style="margin-top:12px">
             <p style="margin:0 0 10px;color:var(--muted);font-size:13px">Dibuat dari halaman <strong>SKP</strong> yang sudah ditandatangani customer (tombol "Ajukan Kontrak ke Legal"). Cetak PDF lalu kirim ke Departemen Legal beserta SKP &amp; Surat Penawaran.</p>
             <div class="table-wrap">
-                <table style="font-size:12.5px">
+                <table class="mobile-cards" style="font-size:12.5px">
                     <thead><tr><th>No. Formulir</th><th>SKP</th><th>Jenis Kontrak</th><th>Status</th><th>Dibuat</th><th></th></tr></thead>
                     <tbody>
-                    <?php if (!$rows): ?><tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">Belum ada permintaan kontrak.</td></tr><?php endif; ?>
+                    <?php if (!$rows): ?><tr class="mc-full"><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">Belum ada permintaan kontrak.</td></tr><?php endif; ?>
                     <?php foreach ($rows as $r): $b = $badge[$r['status']] ?? $badge['draft']; ?>
                         <tr>
-                            <td style="white-space:nowrap;font-weight:600"><?= h($r['req_no'] ?? '—') ?></td>
-                            <td style="white-space:nowrap"><?= h($r['skp_no'] ?? '—') ?></td>
-                            <td><?= h($types[$r['contract_type']] ?? 'Sewa Menyewa') ?></td>
-                            <td><span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span></td>
-                            <td style="font-size:11.5px;color:var(--muted)"><?= h($r['created_by'] ?? '-') ?><br><?= h(substr($r['created_at'] ?? '', 0, 16)) ?></td>
+                            <td data-label="No. Formulir" style="white-space:nowrap;font-weight:600"><?= h($r['req_no'] ?? '—') ?></td>
+                            <td data-label="SKP" style="white-space:nowrap"><?= h($r['skp_no'] ?? '—') ?></td>
+                            <td data-label="Jenis Kontrak"><?= h($types[$r['contract_type']] ?? 'Sewa Menyewa') ?></td>
+                            <td data-label="Status"><span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span></td>
+                            <td data-label="Dibuat" style="font-size:11.5px;color:var(--muted)"><?= h($r['created_by'] ?? '-') ?><br><?= h(substr($r['created_at'] ?? '', 0, 16)) ?></td>
                             <td style="white-space:nowrap">
                                 <a class="btn light" href="?r=contract_request_form&id=<?= (int)$r['id'] ?>"><?= $r['status'] === 'draft' ? 'Edit' : 'Lihat' ?></a>
                                 <a class="btn light" href="?r=contract_request_print&id=<?= (int)$r['id'] ?>" target="_blank">PDF</a>
@@ -251,7 +251,7 @@ function contract_request_form(PDO $pdo): void
                             <a class="btn light" href="<?= h($path) ?>" target="_blank">📎 Lihat file</a>
                         <?php endif; ?>
                         <?php if ($editable): ?>
-                            <input type="file" name="file_<?= $key ?>" accept=".jpg,.jpeg,.png,.webp,.pdf">
+                            <input type="file" name="file_<?= $key ?>" accept="image/*,.pdf">
                             <span class="help" style="font-size:11px"><?= $path ? 'Pilih file untuk mengganti.' : 'jpg/png/pdf, ≤8MB. Centang otomatis bila diunggah.' ?></span>
                         <?php elseif (!$path): ?>
                             <span class="help" style="font-size:11px;color:#991b1b">Tidak ada file.</span>
@@ -267,12 +267,12 @@ function contract_request_form(PDO $pdo): void
 
             <?php if ($editable && $sent): ?>
             <p class="help" style="margin-top:16px;color:#92400e">Sudah terkirim ke Legal — masih bisa <strong>melengkapi/mengganti dokumen</strong> selama Legal belum menyetujui.</p>
-            <p style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+            <p class="form-actions" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
                 <button type="submit" onclick="document.getElementById('cr-action').value='save'">💾 Simpan Perubahan</button>
                 <a class="btn secondary" href="?r=contract_requests">Selesai</a>
             </p>
             <?php elseif ($editable): ?>
-            <p style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+            <p class="form-actions" style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
                 <button type="submit" onclick="document.getElementById('cr-action').value='save'">💾 Simpan Draft</button>
                 <button type="submit" class="btn" style="background:#166534" onclick="document.getElementById('cr-action').value='send';return confirm('Tandai formulir TERKIRIM ke Legal? Nomor formulir akan terbit.')">📤 Simpan &amp; Tandai Terkirim</button>
                 <a class="btn secondary" href="?r=contract_requests">Batal</a>
