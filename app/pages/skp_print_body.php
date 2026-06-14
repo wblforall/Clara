@@ -72,8 +72,9 @@ $skpHasQr = !empty($skp['sign_token']);
     <div class="sec">Lampiran Dokumen</div>
     <table class="kv">
         <?php if ($hasOffer): ?><tr><td class="l">Surat Penawaran Final</td><td class="c">:</td><td class="v chk"><span style="color:#0D9488">■</span> <span class="muted" style="font-weight:400">No. <?= $h($d['offer_no']) ?></span></td></tr><?php endif; ?>
-        <tr><td class="l">Copy KTP Penanggung Jawab</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['ktp']) || ($d['admin_ktp'] ?? 0)) ?><?= $fn('ktp') ?></td></tr>
-        <tr><td class="l">Copy NPWP</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['npwp']) || ($d['admin_npwp'] ?? 0)) ?> <span class="muted" style="font-weight:400"><?= $d['npwp'] ? '(' . $h($d['npwp']) . ')' : '' ?></span><?= $fn('npwp') ?></td></tr>
+        <tr><td class="l">Copy KTP Penanggung Jawab</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['ktp']) || ($d['admin_ktp'] ?? 0)) ?> <span class="muted" style="font-weight:400"><?= !empty($d['ktp_pj']) ? 'No. ' . $h($d['ktp_pj']) : '' ?></span><?= $fn('ktp') ?></td></tr>
+        <tr><td class="l">Copy NPWP</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['npwp']) || ($d['admin_npwp'] ?? 0)) ?> <span class="muted" style="font-weight:400"><?= !empty($d['npwp']) ? 'No. ' . $h($d['npwp']) : '' ?></span><?= $fn('npwp') ?></td></tr>
+        <tr><td class="l">Copy SIUP</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['siup']) || ($d['admin_siup'] ?? 0)) ?> <span class="muted" style="font-weight:400"><?= !empty($d['siup']) ? 'No. ' . $h($d['siup']) : '' ?></span><?= $fn('siup') ?></td></tr>
         <tr><td class="l">Bukti Transfer</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['bukti_transfer'])) ?><?= $fn('bukti_transfer') ?></td></tr>
         <?php if (isset($att['pengajuan'])): ?><tr><td class="l">Dokumen Pengajuan</td><td class="c">:</td><td class="v chk"><span style="color:#0D9488">■</span><?= $fn('pengajuan') ?></td></tr><?php endif; ?>
     </table>

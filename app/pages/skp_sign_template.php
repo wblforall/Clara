@@ -70,7 +70,7 @@ input[type=text]{flex:1;min-width:200px;padding:10px 12px;border:1px solid #cbd5
 
         <?php
         $att = $d['attachments'] ?? [];
-        $labels = ['ktp' => 'Copy KTP', 'npwp' => 'Copy NPWP', 'bukti_transfer' => 'Bukti Transfer', 'pengajuan' => 'Dokumen Pengajuan'];
+        $labels = ['ktp' => 'Copy KTP', 'npwp' => 'Copy NPWP', 'siup' => 'Copy SIUP', 'bukti_transfer' => 'Bukti Transfer', 'pengajuan' => 'Dokumen Pengajuan'];
         if (!empty($d['offer_no']) || $att): ?>
         <div class="sec">Lampiran Dokumen</div>
         <table class="kv">

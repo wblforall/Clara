@@ -18,7 +18,7 @@ function _skp_prop_code(string $key): string
 function _skp_source(PDO $pdo, int $trxId, int $pid): ?array
 {
     $stmt = $pdo->prepare(
-        "SELECT t.*, c.company_name, c.npwp, c.address, c.business_type,
+        "SELECT t.*, c.company_name, c.npwp, c.ktp AS client_ktp, c.siup, c.address, c.business_type,
                 ct.name cp_name, ct.phone cp_phone,
                 u.location_name, u.floor, u.area_sqm AS unit_area
          FROM transactions t
@@ -36,7 +36,7 @@ function _skp_source_from_offer(PDO $pdo, int $offerId, int $pid): ?array
 {
     $stmt = $pdo->prepare(
         "SELECT o.*, o.keterangan AS content_note, o.total_calculated AS final_amount,
-                c.company_name, c.npwp, c.ktp AS client_ktp, c.address, c.business_type,
+                c.company_name, c.npwp, c.ktp AS client_ktp, c.siup, c.address, c.business_type,
                 ct.name cp_name, ct.phone cp_phone,
                 u.location_name, u.floor, u.area_sqm AS unit_area
          FROM offers o
@@ -257,16 +257,17 @@ function skp_form(PDO $pdo): void
                 <div><label>Nama Perusahaan</label><input value="<?= h($src['company_name'] ?? '-') ?>" disabled></div>
                 <div><label>Nama Penanggung Jawab</label><input name="cp_name" value="<?= $val('cp_name', $src['cp_name'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></div>
                 <div class="wide"><label>Alamat</label><input value="<?= h($src['address'] ?? '-') ?>" disabled></div>
-                <div><label>Nomor KTP Penanggung Jawab</label><input name="ktp_pj" value="<?= $val('ktp_pj', $src['client_ktp'] ?? '') ?>" inputmode="numeric" <?= $editable ? '' : 'disabled' ?>><span class="help" style="font-size:11px">Tersimpan ke Master Client (auto next)</span></div>
-                <div><label>Nomor NPWP</label><input name="npwp_no" value="<?= $val('npwp_no', $src['npwp'] ?? '') ?>" inputmode="numeric" <?= $editable ? '' : 'disabled' ?>><span class="help" style="font-size:11px">Tersimpan ke Master Client (auto next)</span></div>
+                <div><label>Nomor KTP Penanggung Jawab <span style="color:#dc2626">*</span></label><input name="ktp_pj" value="<?= $val('ktp_pj', $src['client_ktp'] ?? '') ?>" inputmode="numeric" <?= $editable ? '' : 'disabled' ?>><span class="help" style="font-size:11px">Tersimpan ke Master Client (auto next)</span></div>
+                <div><label>Nomor NPWP <span style="color:#dc2626">*</span></label><input name="npwp_no" value="<?= $val('npwp_no', $src['npwp'] ?? '') ?>" inputmode="numeric" <?= $editable ? '' : 'disabled' ?>><span class="help" style="font-size:11px">Tersimpan ke Master Client (auto next)</span></div>
+                <div><label>Nomor SIUP <span style="color:#dc2626">*</span></label><input name="siup_no" value="<?= $val('siup_no', $src['siup'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>><span class="help" style="font-size:11px">Tersimpan ke Master Client (auto next)</span></div>
                 <div><label>Nomor Telepon</label><input name="phone_pj" value="<?= $val('phone_pj', $src['cp_phone'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></div>
             </div>
 
             <h3>Lampiran <span style="font-weight:400;font-size:12px;color:var(--muted)">(<span style="color:#dc2626">*</span> wajib sebelum submit approval; Pengajuan opsional)</span></h3>
             <div class="form-grid">
                 <?php
-                $reqLbl = ['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP', 'bukti_transfer' => 'Bukti Transfer', 'pengajuan' => 'Pengajuan (opsional)'];
-                $wajib  = ['ktp', 'npwp', 'bukti_transfer'];
+                $reqLbl = ['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP', 'siup' => 'Scan SIUP', 'bukti_transfer' => 'Bukti Transfer', 'pengajuan' => 'Pengajuan (opsional)'];
+                $wajib  = ['ktp', 'npwp', 'siup', 'bukti_transfer'];
                 foreach ($reqLbl as $kind => $lbl):
                     $has = $atts[$kind] ?? null;
                 ?>
@@ -420,7 +421,7 @@ function _skp_handle_uploads(PDO $pdo, int $skpId, string $uname, int $clientId 
 {
     $dir = dirname(__DIR__, 2) . '/public/uploads/skp';
     if (!is_dir($dir)) @mkdir($dir, 0777, true);
-    $kinds = ['att_ktp' => 'ktp', 'att_npwp' => 'npwp', 'att_bukti_transfer' => 'bukti_transfer', 'att_pengajuan' => 'pengajuan'];
+    $kinds = ['att_ktp' => 'ktp', 'att_npwp' => 'npwp', 'att_siup' => 'siup', 'att_bukti_transfer' => 'bukti_transfer', 'att_pengajuan' => 'pengajuan'];
     $uploaded = [];
     foreach ($kinds as $field => $kind) {
         if (empty($_FILES[$field]['tmp_name']) || !is_uploaded_file($_FILES[$field]['tmp_name'])) continue;
@@ -437,7 +438,7 @@ function _skp_handle_uploads(PDO $pdo, int $skpId, string $uname, int $clientId 
     }
     // Pakai-ulang scan KTP/NPWP dari dokumen client sebelumnya (referensi file sama).
     $reuse = $clientId > 0 ? _skp_reusable_attachments($pdo, $clientId, $skpId) : [];
-    foreach (['ktp', 'npwp'] as $kind) {
+    foreach (['ktp', 'npwp', 'siup'] as $kind) {
         if (!empty($uploaded[$kind]) || empty($_POST['reuse_' . $kind]) || empty($reuse[$kind])) continue;
         $exists = $pdo->prepare('SELECT 1 FROM skp_attachments WHERE skp_id=? AND kind=?');
         $exists->execute([$skpId, $kind]);
@@ -460,7 +461,7 @@ function _skp_reusable_attachments(PDO $pdo, int $clientId, int $excludeSkpId = 
          JOIN skp_documents d ON d.id = a.skp_id
          LEFT JOIN offers o       ON o.id = d.offer_id
          LEFT JOIN transactions t ON t.id = d.transaction_id
-         WHERE a.kind IN ('ktp','npwp')
+         WHERE a.kind IN ('ktp','npwp','siup')
            AND COALESCE(o.client_id, t.client_id) = ?
            AND d.id <> ?
          ORDER BY a.id DESC"
@@ -483,13 +484,14 @@ function _skp_attachment_list(PDO $pdo, int $skpId): array
     return $out;
 }
 
-/** Auto-update KTP/NPWP ke master client (reusable berikutnya). */
-function _skp_update_master(PDO $pdo, int $clientId, ?string $ktp, ?string $npwp): void
+/** Auto-update KTP/NPWP/SIUP ke master client (reusable berikutnya). */
+function _skp_update_master(PDO $pdo, int $clientId, ?string $ktp, ?string $npwp, ?string $siup = null): void
 {
     if (!$clientId) return;
     $sets = []; $vals = [];
     if ($ktp !== null)  { $sets[] = 'ktp=?';  $vals[] = $ktp; }
     if ($npwp !== null) { $sets[] = 'npwp=?'; $vals[] = $npwp; }
+    if ($siup !== null) { $sets[] = 'siup=?'; $vals[] = $siup; }
     if (!$sets) return;
     $vals[] = $clientId;
     $pdo->prepare('UPDATE master_clients SET ' . implode(',', $sets) . ' WHERE id=?')->execute($vals);
@@ -498,7 +500,7 @@ function _skp_update_master(PDO $pdo, int $clientId, ?string $ktp, ?string $npwp
 /** Lampiran wajib sebelum submit approval. Return label yang BELUM ada. */
 function _skp_missing_required(PDO $pdo, int $skpId): array
 {
-    $need = ['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP', 'bukti_transfer' => 'Bukti Transfer'];
+    $need = ['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP', 'siup' => 'Scan SIUP', 'bukti_transfer' => 'Bukti Transfer'];
     $st = $pdo->prepare('SELECT DISTINCT kind FROM skp_attachments WHERE skp_id=?');
     $st->execute([$skpId]);
     $have = $st->fetchAll(PDO::FETCH_COLUMN);
@@ -524,6 +526,7 @@ function skp_save(PDO $pdo): void
 
     $ktp  = trim((string) post('ktp_pj')) ?: null;
     $npwp = trim((string) post('npwp_no')) ?: null;
+    $siup = trim((string) post('siup_no')) ?: null;
     $fields = [
         'cp_name'       => trim((string) post('cp_name')) ?: null,
         'ktp_pj'        => $ktp,
@@ -532,12 +535,17 @@ function skp_save(PDO $pdo): void
         'produk'        => trim((string) post('produk')) ?: null,
         'status_sewa'   => post('status_sewa') ?: 'Baru',
         'deposit_amount'=> (float) post('deposit_raw', 0),
-        'admin_siup'    => 0,
+        'admin_siup'    => $siup ? 1 : 0,
         'admin_npwp'    => $npwp ? 1 : 0,
         'admin_ktp'     => $ktp ? 1 : 0,
         'note'          => trim((string) post('note')) ?: null,
     ];
     $uname = $_SESSION['user']['name'] ?? 'system';
+    // Nomor identitas wajib sebelum submit approval (KTP/NPWP/SIUP).
+    $missNum = [];
+    if (!$ktp)  $missNum[] = 'Nomor KTP';
+    if (!$npwp) $missNum[] = 'Nomor NPWP';
+    if (!$siup) $missNum[] = 'Nomor SIUP';
 
     if ($id) {
         $cur = $pdo->prepare('SELECT status FROM skp_documents WHERE id = ? AND property_id = ?');
@@ -546,9 +554,9 @@ function skp_save(PDO $pdo): void
         if (!in_array($st, ['draft', 'rejected'], true)) { flash('Sudah disubmit/disetujui — tidak bisa diubah.'); redirect_to('skp_form', ['id' => $id]); }
         // Proses upload dulu agar validasi lampiran wajib akurat.
         _skp_handle_uploads($pdo, $id, $uname, $clientId);
-        _skp_update_master($pdo, $clientId, $ktp, $npwp);
+        _skp_update_master($pdo, $clientId, $ktp, $npwp, $siup);
         $blockMsg = '';
-        if ($doSubmit && ($miss = _skp_missing_required($pdo, $id))) {
+        if ($doSubmit && ($miss = array_merge($missNum, _skp_missing_required($pdo, $id)))) {
             $doSubmit = false;
             $blockMsg = 'Belum bisa submit — lengkapi dulu: ' . implode(', ', $miss) . '. Disimpan sebagai draft.';
         }
@@ -580,10 +588,10 @@ function skp_save(PDO $pdo): void
     ]));
     $newId = (int) $pdo->lastInsertId();
     _skp_handle_uploads($pdo, $newId, $uname, $clientId);
-    _skp_update_master($pdo, $clientId, $ktp, $npwp);
+    _skp_update_master($pdo, $clientId, $ktp, $npwp, $siup);
     audit($pdo, 'create', 'skp_documents', (string) $newId, $fields);
 
-    if ($doSubmit && ($miss = _skp_missing_required($pdo, $newId))) {
+    if ($doSubmit && ($miss = array_merge($missNum, _skp_missing_required($pdo, $newId)))) {
         flash('Dibuat sebagai draft. Belum bisa submit — lengkapi dulu: ' . implode(', ', $miss) . '.');
     } elseif ($doSubmit) {
         $pdo->prepare("UPDATE skp_documents SET status='submitted', submitted_at=CURRENT_TIMESTAMP WHERE id=? AND property_id=?")->execute([$newId, $pid]);
@@ -687,7 +695,7 @@ function skp_approve(PDO $pdo): void
     $total = (float) ($src['final_amount'] ?: $src['total_calculated']);
     $amt   = _skp_amounts($total, (float) $src['unit_rate'], (float) $skp['deposit_amount']);
     $snapshot = [
-        'company_name' => $src['company_name'], 'npwp' => $src['npwp'], 'address' => $src['address'],
+        'company_name' => $src['company_name'], 'npwp' => $src['npwp'], 'siup' => $src['siup'] ?? null, 'address' => $src['address'],
         'cp_name' => $skp['cp_name'] ?: $src['cp_name'], 'phone' => $skp['phone_pj'] ?: $src['cp_phone'],
         'ktp_pj' => $skp['ktp_pj'], 'business_type' => $src['business_type'], 'produk' => $skp['produk'],
         'location' => $src['location_name'] ?: $src['master_code'], 'floor' => $src['floor'],
