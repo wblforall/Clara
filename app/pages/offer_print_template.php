@@ -85,14 +85,14 @@ table.cost td.lbl{width:62%;color:#374151}
 table.cost td.amt{text-align:right;font-weight:600;white-space:nowrap}
 table.cost tr.sub td{background:#f8fafc}
 table.cost tr.tot td{background:#f1f5f9;font-weight:700}
-table.cost tr.grand td{background:#f0fdfa;color:#0f766e;font-weight:800;font-size:11.5px}
-.validbox{display:inline-block;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;border-radius:6px;padding:3px 10px;font-size:10.5px;font-weight:600;margin-top:4px}
+table.cost tr.grand td{background:#f0fdfa;color:#0f766e;font-weight:800;font-size:11px}
+.validbox{display:inline-block;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:600;margin-top:4px}
 .sec{font-weight:800;margin:14px 0 5px;color:#0D9488;text-transform:uppercase;font-size:11px;letter-spacing:.03em}
 ul,ol{margin:0 0 0 18px}
 li{margin-bottom:3px;line-height:1.45}
-.pay li{font-size:10.5px}
+.pay li{font-size:11px}
 .rek{background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;margin-top:6px;font-size:11px;line-height:1.7}
-.tnc li{font-size:9.7px;color:#374151}
+.tnc li{font-size:11px;color:#374151}
 .sign{margin-top:22px;page-break-inside:avoid}
 .sign .ttd-img{display:block;max-height:64px;max-width:200px;object-fit:contain;margin:4px 0}
 .sign .nm{font-weight:700;border-top:1px solid #111;display:inline-block;padding-top:3px;min-width:200px}
