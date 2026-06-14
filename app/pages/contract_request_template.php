@@ -48,6 +48,7 @@ table.leg .note{display:block;font-size:8.5px;font-style:italic;color:#6b7280;ma
 table.sign{width:100%;border-collapse:collapse;margin-top:2px;text-align:center}
 table.sign td{width:50%;font-size:11px;padding-top:6px;vertical-align:top}
 .sign .paren{margin-top:56px}
+.qrbox img,.qrbox svg{width:100%!important;height:100%!important;display:block}
 .sign .qrbox{width:64px;height:64px;margin:6px auto 2px}
 .sign .qrbox img,.sign .qrbox svg{width:64px!important;height:64px!important;display:block}
 .sign .qrhint{font-size:7.5px;color:#6b7280}
@@ -130,6 +131,46 @@ table.sign td{width:50%;font-size:11px;padding-top:6px;vertical-align:top}
             </td>
         </tr>
     </table>
+
+    <?php
+    // ── Lampiran: SKP FINAL ──
+    if (!empty($skpFinal)):
+        $sf = $skpFinal; $sd = $sf['snap']; $sa = $sd['amounts'] ?? [];
+        $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
+        $skpScheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $skpDir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+        $skpUrl = $skpScheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $skpDir . '/?r=skp_sign&token=' . ($sf['sign_token'] ?? '');
+        $sfWet = ($sf['sign_method'] ?? '') === 'wet';
+        $scanExt = $sfWet && !empty($sf['signed_doc_path']) ? strtolower(pathinfo((string) $sf['signed_doc_path'], PATHINFO_EXTENSION)) : '';
+        $scanImg = in_array($scanExt, ['jpg', 'jpeg', 'png', 'webp'], true);
+    ?>
+    <div style="page-break-before:always;padding-top:6mm">
+        <div class="sec">Lampiran: SKP Final — No. <?= $h($sf['skp_no']) ?></div>
+        <table class="kv">
+            <tr><td class="k">Penyewa</td><td><?= $h($sd['company_name'] ?? '-') ?></td></tr>
+            <tr><td class="k">Penanggung Jawab</td><td><?= $h($sd['cp_name'] ?? '-') ?></td></tr>
+            <tr><td class="k">Lokasi</td><td><?= $h(($sd['location'] ?? '-') . ($sd['floor'] ? ' (Lt. ' . $sd['floor'] . ')' : '')) ?></td></tr>
+            <tr><td class="k">Masa Sewa</td><td><?= $h(($sd['start_date'] ?? '') . ' s/d ' . ($sd['end_date'] ?? '')) ?> (<?= (int) ($sd['days'] ?? 0) ?> hari)</td></tr>
+            <tr><td class="k">Total Setelah PPN</td><td><?= $rp($sa['after_ppn'] ?? 0) ?></td></tr>
+            <tr><td class="k">Security Deposit</td><td><?= $rp($sa['deposit'] ?? 0) ?></td></tr>
+            <tr><td class="k">Grand Total</td><td><strong><?= $rp($sa['grand_total'] ?? 0) ?></strong></td></tr>
+        </table>
+        <?php if ($sfWet && $scanImg): ?>
+            <div style="margin-top:8px;font-weight:700">Dokumen SKP ditandatangani (TTD basah):</div>
+            <img src="<?= $h($sf['signed_doc_path']) ?>" alt="SKP TTD basah" style="display:block;max-width:100%;max-height:180mm;margin:6px auto 0;object-fit:contain">
+        <?php elseif ($sfWet): ?>
+            <div style="margin-top:8px;border:1px solid #111;padding:12px;font-size:10.5px">Scan SKP ber-TTD basah dalam format <?= $h(strtoupper($scanExt)) ?> — buka via tautan: <?= $h($skpUrl) ?></div>
+        <?php else: ?>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:14px">
+                <?php if (!empty($sf['sign_token'])): ?><div class="qrbox" data-qr="<?= $h($skpUrl) ?>" style="width:78px;height:78px"></div><?php endif; ?>
+                <div style="font-size:10.5px;line-height:1.5">
+                    <strong>✓ SKP ditandatangani elektronik</strong><?= $sf['sign_name'] ? ' oleh ' . $h($sf['sign_name']) : '' ?><?= $sf['signed_at'] ? ' pada ' . $h(substr((string) $sf['signed_at'], 0, 16)) : '' ?>.<br>
+                    Scan QR atau buka tautan untuk melihat SKP final lengkap dengan tanda tangan.
+                </div>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
 
     <?php
     // Lampiran dokumen — SEMUA (KTP/NPWP/Bukti dari SKP + Akta/Surat Kuasa).

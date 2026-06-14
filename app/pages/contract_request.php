@@ -30,6 +30,17 @@ function _cr_all_attachments(PDO $pdo, array $cr): array
     return $out;
 }
 
+/** Data SKP final (utk dilampirkan ke berkas Legal). */
+function _cr_skp_final(PDO $pdo, int $skpId): ?array
+{
+    $st = $pdo->prepare('SELECT skp_no, status, sign_method, signed_doc_path, sign_token, sign_name, signed_at, snapshot_json FROM skp_documents WHERE id = ?');
+    $st->execute([$skpId]);
+    $r = $st->fetch();
+    if (!$r || !in_array($r['status'], ['approved', 'signed'], true)) return null;
+    $r['snap'] = json_decode($r['snapshot_json'] ?? '', true) ?: [];
+    return $r;
+}
+
 /** Ambil SKP (harus signed) + data ringkas utk autofill formulir. */
 function _cr_skp_context(PDO $pdo, int $skpId, int $pid): ?array
 {
@@ -378,6 +389,7 @@ function contract_request_print(PDO $pdo): void
     }
     $ctx     = _cr_skp_context($pdo, (int) $cr['skp_id'], $pid);
     $allAtts = _cr_all_attachments($pdo, $cr);
+    $skpFinal = _cr_skp_final($pdo, (int) $cr['skp_id']);
     $prop = current_property();
     $types = _cr_contract_types();
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
@@ -404,6 +416,7 @@ function contract_legal_page(PDO $pdo): void
     $at->execute([(int) $cr['skp_id']]);
     $skpAtts = [];
     foreach ($at->fetchAll() as $a) $skpAtts[$a['kind']] = $a;
+    $skpFinal = _cr_skp_final($pdo, (int) $cr['skp_id']);
     $types = _cr_contract_types();
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
     $chk = fn($b) => !empty($b) ? '☑' : '☐';
@@ -490,6 +503,23 @@ function contract_legal_page(PDO $pdo): void
                 <div class="col">Departemen Legal<div class="paren">( ________ )</div></div>
             </div>
 
+            <?php if (!empty($skpFinal)): $sf = $skpFinal; $sd = $sf['snap']; $sa = $sd['amounts'] ?? [];
+                $rpf = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
+                $skpUrl = $asset('') === '/' ? '?r=skp_sign&token=' . $sf['sign_token'] : ($dir . '/?r=skp_sign&token=' . $sf['sign_token']);
+            ?>
+            <div class="sec">SKP Final</div>
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px">
+                <div><strong>No. <?= $h($sf['skp_no']) ?></strong> · <?= $h($sd['company_name'] ?? '-') ?> · <?= $h($sd['location'] ?? '-') ?></div>
+                <div class="muted" style="margin-top:2px">Periode <?= $h(($sd['start_date'] ?? '') . ' s/d ' . ($sd['end_date'] ?? '')) ?> · Grand Total <?= $rpf($sa['grand_total'] ?? 0) ?> · <?= ($sf['sign_method'] ?? '') === 'wet' ? 'TTD basah' : 'TTD elektronik' ?></div>
+                <div class="att" style="margin-top:8px">
+                    <a href="<?= $h($skpUrl) ?>" target="_blank">📄 Buka SKP Final</a>
+                    <?php if (($sf['sign_method'] ?? '') === 'wet' && !empty($sf['signed_doc_path'])): ?>
+                        <a href="<?= $h($asset($sf['signed_doc_path'])) ?>" target="_blank">🖋️ Scan SKP ber-TTD</a>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+
             <div class="sec">Lampiran Dokumen</div>
             <?php
             $lampiran = [];
@@ -572,6 +602,7 @@ function contract_legal_print(PDO $pdo): void
     if (!$cr) { http_response_code(404); exit('Tautan tidak valid.'); }
     $ctx     = _cr_skp_context($pdo, (int) $cr['skp_id'], (int) $cr['property_id']);
     $allAtts = _cr_all_attachments($pdo, $cr);
+    $skpFinal = _cr_skp_final($pdo, (int) $cr['skp_id']);
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
     $chk = fn($b) => !empty($b) ? '☑' : '☐';
     include __DIR__ . '/contract_request_template.php';
