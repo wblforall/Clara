@@ -53,33 +53,30 @@ $ketentuan = [
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111;background:#fff}
-/* Kop surat dibelah jadi header & footer (potongan dari 1 gambar A4), masing-masing
-   position:fixed → BERULANG tiap halaman saat cetak. Ruang konten via margin halaman. */
-/* Header: thead tabel → berulang di ATAS tiap halaman.
-   Footer: elemen FIXED → menempel di DASAR tiap halaman (ruang dipesan
-   via margin bawah @page). Inilah satu-satunya cara footer selalu di dasar. */
-@page{size:A4 portrait;margin:0}
-table.paper{width:100%;border-collapse:collapse}
-table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:0}
-.sp-top{height:30mm;background:url('assets/letterhead-a4.jpg') no-repeat top center;background-size:100% auto}
-.sp-bot{height:36mm}/* tfoot kosong: pesan ruang footer tiap halaman (anti-tabrak) */
-.lh-footer{position:fixed;left:0;bottom:0;width:100%;height:36mm;background:url('assets/letterhead-a4.jpg') no-repeat bottom center;background-size:100% auto}
+/* ── Kop surat (letterhead) BERULANG tiap halaman — pola "running header/footer" ──
+   @page memesan ruang atas 30mm & bawah 36mm; .lh-header & .lh-footer position:fixed
+   mengisi ruang itu & berulang tiap halaman. Ruang dipesan via @page margin (BUKAN
+   thead/tfoot) → andal lintas-browser termasuk Chrome Android: konten tak pernah
+   menimpa kop karena area cetak memang sudah dipersempit oleh margin. */
+@page{size:A4 portrait;margin:30mm 0 36mm 0}
+.paper{width:100%}
+.lh-header{position:fixed;top:0;left:0;width:100%;height:30mm;background:url('assets/letterhead-a4.jpg') no-repeat top center;background-size:100% auto}
+.lh-footer{position:fixed;bottom:0;left:0;width:100%;height:36mm;background:url('assets/letterhead-a4.jpg') no-repeat bottom center;background-size:100% auto}
 .sheet{padding:0 16mm}
 .no-print{position:fixed;top:14px;right:14px;display:flex;gap:8px;z-index:9}
 .no-print button{padding:9px 18px;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer}
 .btn-print{background:#0D9488;color:#fff}.btn-close{background:#e5e7eb;color:#374151}
 @media screen{
-  body{background:#fff}
-  table.paper{width:210mm;margin:16px auto;box-shadow:0 4px 24px rgba(0,0,0,.12);background:#fff}
-  /* Di layar: footer ikut aliran (akhir konten), tidak fixed menimpa konten. */
-  .lh-footer{display:none}
-  .sp-bot{background:url('assets/letterhead-a4.jpg') no-repeat bottom center;background-size:100% auto}
+  body{background:#f3f4f6}
+  .paper{width:210mm;margin:16px auto;box-shadow:0 4px 24px rgba(0,0,0,.12);background:#fff}
+  /* Di layar: kop jadi blok biasa dalam aliran (bukan fixed) → satu lembar A4 utuh. */
+  .lh-header,.lh-footer{position:static}
 }
 @media print{.no-print{display:none}}
 /* Preview di HP: skala A4 agar pas lebar layar (tak memengaruhi hasil cetak/PDF). */
 @media screen and (max-width:820px){
   body{overflow-x:hidden}
-  table.paper{margin:0 !important;transform-origin:top left}
+  .paper{margin:0 !important;transform-origin:top left}
 }
 /* Petunjuk "Simpan sebagai PDF" — hanya muncul di layar HP, tak ikut tercetak. */
 .pdf-hint{display:none}
@@ -90,7 +87,7 @@ table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:
 }
 @media print{.pdf-hint{display:none}}
 /* Jaminan: skala layar HP TAK BOLEH ikut saat cetak/PDF → A4 selalu penuh. */
-@media print{ table.paper{transform:none !important} body{height:auto !important} }
+@media print{ .paper{transform:none !important} body{height:auto !important} }
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .sign{page-break-inside:avoid}
 .meta{margin-bottom:10px;line-height:1.7}
@@ -127,11 +124,8 @@ li{margin-bottom:3px;line-height:1.45}
     <button class="btn-close" onclick="window.close()">✕ Tutup</button>
 </div>
 <div class="pdf-hint">📄 Ketuk <b>Simpan PDF / Cetak</b> di atas, lalu pilih <b>“Simpan sebagai PDF”</b> sebagai tujuan pada dialog cetak.</div>
-<div class="lh-footer"></div>
-<table class="paper">
-<thead><tr><td><div class="sp-top"></div></td></tr></thead>
-<tfoot><tr><td><div class="sp-bot"></div></td></tr></tfoot>
-<tbody><tr><td>
+<div class="paper">
+<div class="lh-header"></div>
 <div class="sheet">
     <div style="text-align:right;margin-bottom:8px">Balikpapan, <?= $h($tanggal) ?></div>
     <div class="meta">
@@ -218,8 +212,8 @@ li{margin-bottom:3px;line-height:1.45}
         <div class="nm"<?= $hasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($o['pic_name'] ?: '-') ?><br><span class="muted" style="font-weight:400">Sales <?= $h($propShort) ?></span></div>
     </div>
 </div>
-</td></tr></tbody>
-</table>
+<div class="lh-footer"></div>
+</div>
 <script src="assets/qrcode.min.js"></script>
 <script>
 (function () {
@@ -237,7 +231,7 @@ li{margin-bottom:3px;line-height:1.45}
 <script>
 /* Fit-to-width A4 di layar HP saja (≤820px). Hasil cetak/PDF tak terpengaruh. */
 (function () {
-    var p = document.querySelector('table.paper');
+    var p = document.querySelector('.paper');
     if (!p) return;
     function clear() { p.style.transform = ''; document.body.style.height = ''; }
     function fit() {
