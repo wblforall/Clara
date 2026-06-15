@@ -209,6 +209,31 @@ function layout(string $title, callable $body, array $opts = []): void
         .m-nav a.active { color: var(--primary); }
         .m-sec-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 4px 2px 10px; }
         .m-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 16px; box-shadow: 0 1px 3px rgba(16,24,40,.05); margin-bottom: 13px; }
+
+        /* ── Animasi halus (app-like). Hemat performa (transform/opacity) + hormati reduce-motion ── */
+        @keyframes m-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+        @keyframes m-pop  { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
+        .m-body > * { animation: m-rise .4s cubic-bezier(.22,.61,.36,1) both; }
+        .m-body > *:nth-child(2) { animation-delay: .04s; }
+        .m-body > *:nth-child(3) { animation-delay: .08s; }
+        .m-body > *:nth-child(4) { animation-delay: .12s; }
+        .m-body > *:nth-child(5) { animation-delay: .16s; }
+        .m-body > *:nth-child(6) { animation-delay: .20s; }
+        .m-body > *:nth-child(n+7) { animation-delay: .24s; }
+        /* umpan-balik sentuh: sedikit mengecil saat ditekan */
+        .m-tx, .m-ofr-main, .m-qa a, .m-ofr .acts a, .m-tabs a, .m-mfil a, .m-seg a, .m-nav a, .m-fab, .m-prop,
+        .m-acct .m-acct-menu a { transition: transform .12s ease, box-shadow .2s ease, background .2s ease, color .2s ease; }
+        .m-tx:active, .m-ofr-main:active, .m-qa a:active, .m-ofr .acts a:active, .m-tabs a:active,
+        .m-mfil a:active, .m-seg a:active, .m-acct .m-acct-menu a:active { transform: scale(.97); }
+        .m-nav a:active { transform: scale(.9); }
+        .m-nav a svg { transition: transform .2s cubic-bezier(.22,1.2,.4,1); }
+        .m-nav a.active svg { transform: translateY(-1px) scale(1.08); }
+        .m-fab { animation: m-pop .32s cubic-bezier(.22,1.2,.4,1) both .12s; }
+        .m-fab:active { transform: scale(.9); }
+        @media (prefers-reduced-motion: reduce) {
+            .m-body > *, .m-fab { animation: none !important; }
+            .m-tx, .m-ofr-main, .m-qa a, .m-nav a, .m-nav a svg, .m-fab { transition: none !important; transform: none !important; }
+        }
         </style>
         <?php endif; ?>
     </head>
