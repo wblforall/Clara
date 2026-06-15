@@ -259,15 +259,15 @@ function skp_form(PDO $pdo): void
                 <div class="wide"><label>Alamat</label><input value="<?= h($src['address'] ?? '-') ?>" disabled></div>
                 <div><label>Nomor KTP Penanggung Jawab <span style="color:#dc2626">*</span></label><input name="ktp_pj" value="<?= $val('ktp_pj', $src['client_ktp'] ?? '') ?>" inputmode="numeric" <?= $editable ? '' : 'disabled' ?>><span class="help" style="font-size:11px">Tersimpan ke Master Client (auto next)</span></div>
                 <div><label>Nomor NPWP <span style="color:#dc2626">*</span></label><input name="npwp_no" value="<?= $val('npwp_no', $src['npwp'] ?? '') ?>" inputmode="numeric" <?= $editable ? '' : 'disabled' ?>><span class="help" style="font-size:11px">Tersimpan ke Master Client (auto next)</span></div>
-                <div><label>Nomor SIUP <span style="color:#dc2626">*</span></label><input name="siup_no" value="<?= $val('siup_no', $src['siup'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>><span class="help" style="font-size:11px">Tersimpan ke Master Client (auto next)</span></div>
+                <div><label>Nomor SIUP <span class="muted" style="font-weight:400;font-size:11px">(opsional)</span></label><input name="siup_no" value="<?= $val('siup_no', $src['siup'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>><span class="help" style="font-size:11px">Tersimpan ke Master Client (auto next)</span></div>
                 <div><label>Nomor Telepon</label><input name="phone_pj" value="<?= $val('phone_pj', $src['cp_phone'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></div>
             </div>
 
             <h3>Lampiran <span style="font-weight:400;font-size:12px;color:var(--muted)">(<span style="color:#dc2626">*</span> wajib sebelum submit approval; Pengajuan opsional)</span></h3>
             <div class="form-grid">
                 <?php
-                $reqLbl = ['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP', 'siup' => 'Scan SIUP', 'bukti_transfer' => 'Bukti Transfer', 'pengajuan' => 'Pengajuan (opsional)'];
-                $wajib  = ['ktp', 'npwp', 'siup', 'bukti_transfer'];
+                $reqLbl = ['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP', 'siup' => 'Scan SIUP (opsional)', 'bukti_transfer' => 'Bukti Transfer', 'pengajuan' => 'Pengajuan (opsional)'];
+                $wajib  = ['ktp', 'npwp', 'bukti_transfer'];
                 foreach ($reqLbl as $kind => $lbl):
                     $has = $atts[$kind] ?? null;
                 ?>
@@ -500,7 +500,7 @@ function _skp_update_master(PDO $pdo, int $clientId, ?string $ktp, ?string $npwp
 /** Lampiran wajib sebelum submit approval. Return label yang BELUM ada. */
 function _skp_missing_required(PDO $pdo, int $skpId): array
 {
-    $need = ['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP', 'siup' => 'Scan SIUP', 'bukti_transfer' => 'Bukti Transfer'];
+    $need = ['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP', 'bukti_transfer' => 'Bukti Transfer'];
     $st = $pdo->prepare('SELECT DISTINCT kind FROM skp_attachments WHERE skp_id=?');
     $st->execute([$skpId]);
     $have = $st->fetchAll(PDO::FETCH_COLUMN);
@@ -545,7 +545,6 @@ function skp_save(PDO $pdo): void
     $missNum = [];
     if (!$ktp)  $missNum[] = 'Nomor KTP';
     if (!$npwp) $missNum[] = 'Nomor NPWP';
-    if (!$siup) $missNum[] = 'Nomor SIUP';
 
     if ($id) {
         $cur = $pdo->prepare('SELECT status FROM skp_documents WHERE id = ? AND property_id = ?');

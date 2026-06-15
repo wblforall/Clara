@@ -15,8 +15,8 @@
 
 ### SKP — kelengkapan identitas & lampiran (KTP, NPWP, SIUP)
 
-- Saat buat SKP/SKS, **Nomor KTP Penanggung Jawab, Nomor NPWP, dan Nomor SIUP kini wajib diisi** sebelum bisa submit approval.
-- **SIUP** ditambahkan sebagai **lampiran wajib** (scan) + **nomornya** — sebelumnya tertinggal. Nomor & scan tersimpan ke Master Client (auto-prefill SKP berikutnya, bisa pakai-ulang scan).
+- Saat buat SKP/SKS, **Nomor KTP Penanggung Jawab dan Nomor NPWP kini wajib diisi** sebelum bisa submit approval.
+- **SIUP** ditambahkan (No. + scan) sebagai data **opsional** — nomor & scan tersimpan ke Master Client (auto-prefill SKP berikutnya, bisa pakai-ulang scan).
 - **PDF SKP/SKS** kini menuliskan **No. KTP, No. NPWP, dan No. SIUP** di bagian "Lampiran Dokumen" (sebelumnya hanya nama berkas). Tampil juga di halaman tanda tangan customer.
 
 ## Version 4.22 — 15 Juni 2026
