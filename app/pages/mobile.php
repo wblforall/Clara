@@ -749,8 +749,8 @@ function mobile_offers_page(PDO $pdo): void
         .m-ofr .mb { font-size:9.5px; font-weight:800; padding:2px 7px; border-radius:6px; }
         .m-ofr .amt { font-weight:900; color:var(--ink); white-space:nowrap; }
         .m-ofr-main { display:block; text-decoration:none; color:inherit; }
-        .m-ofr .acts { display:flex; gap:8px; margin-top:11px; }
-        .m-ofr .acts a { flex:1; text-align:center; padding:8px; border-radius:9px; font-size:12.5px; font-weight:700; text-decoration:none; border:1px solid var(--line); color:var(--primary-dark); background:#f8fafc; }
+        .m-ofr .acts { display:flex; flex-wrap:wrap; gap:8px; margin-top:11px; }
+        .m-ofr .acts a { flex:1 1 calc(50% - 4px); text-align:center; padding:8px 6px; border-radius:9px; font-size:12.5px; font-weight:700; text-decoration:none; border:1px solid var(--line); color:var(--primary-dark); background:#f8fafc; white-space:nowrap; }
         .m-empty { text-align:center; padding:46px 20px; color:var(--muted); }
         .m-fab { position:fixed; right:16px; bottom:calc(var(--m-nav-h) + env(safe-area-inset-bottom,0px) + 14px); z-index:55; width:54px; height:54px; border-radius:50%; background:linear-gradient(135deg,var(--primary),var(--primary2)); color:#fff; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 18px rgba(13,148,136,.4); }
         </style>
@@ -866,8 +866,8 @@ function mobile_skp_page(PDO $pdo): void
         .m-ofr .nm { font-size:14px; font-weight:700; color:var(--ink); margin-top:6px; }
         .m-ofr .meta { display:flex; justify-content:space-between; gap:10px; font-size:11.5px; color:var(--muted); margin-top:8px; align-items:center; }
         .m-ofr .mb { font-size:9.5px; font-weight:800; padding:2px 7px; border-radius:6px; }
-        .m-ofr .acts { display:flex; gap:8px; margin-top:11px; }
-        .m-ofr .acts a { flex:1; text-align:center; padding:8px; border-radius:9px; font-size:12.5px; font-weight:700; text-decoration:none; border:1px solid var(--line); color:var(--primary-dark); background:#f8fafc; }
+        .m-ofr .acts { display:flex; flex-wrap:wrap; gap:8px; margin-top:11px; }
+        .m-ofr .acts a { flex:1 1 calc(50% - 4px); text-align:center; padding:8px 6px; border-radius:9px; font-size:12.5px; font-weight:700; text-decoration:none; border:1px solid var(--line); color:var(--primary-dark); background:#f8fafc; white-space:nowrap; }
         .m-empty { text-align:center; padding:46px 20px; color:var(--muted); }
         </style>
 
