@@ -199,8 +199,8 @@ function contract_request_form(PDO $pdo): void
             <textarea id="cr-wa-msg" style="position:absolute;left:-9999px" readonly><?= h($waMsg) ?></textarea>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
                 <input id="cr-legal-url" value="<?= h($legalUrl) ?>" readonly style="flex:1;min-width:260px;font-size:12px" onclick="this.select()">
-                <button type="button" class="btn light" onclick="navigator.clipboard.writeText(document.getElementById('cr-legal-url').value);this.textContent='Tersalin ✓'">Salin Link</button>
-                <button type="button" class="btn light" onclick="navigator.clipboard.writeText(document.getElementById('cr-wa-msg').value);this.textContent='Pesan tersalin ✓'">Salin Pesan</button>
+                <button type="button" class="btn light" onclick="claraCopyText(document.getElementById('cr-legal-url').value,this,'Tersalin ✓')">Salin Link</button>
+                <button type="button" class="btn light" onclick="claraCopyText(document.getElementById('cr-wa-msg').value,this,'Pesan tersalin ✓')">Salin Pesan</button>
                 <a class="btn" style="background:#16a34a" target="_blank" href="https://wa.me/?text=<?= $waText ?>">Kirim via WhatsApp</a>
             </div>
             <p style="margin:8px 0 0;font-size:11.5px;color:#64748b"><strong>Jika lewat WhatsApp Desktop hanya link yang terkirim</strong>, gunakan <strong>Salin Pesan</strong> lalu tempel (paste) di chat.</p>

@@ -550,6 +550,32 @@ function layout(string $title, callable $body, array $opts = []): void
         setTimeout(function(){window.location.href='?r=logout';},logoutAt);
     })();
     document.addEventListener('submit',function(e){var form=e.target;if(form.dataset.submitted){e.preventDefault();return;}form.dataset.submitted='1';form.querySelectorAll('button[type=submit]').forEach(function(btn){btn.disabled=true;btn.dataset.orig=btn.textContent;btn.textContent='Menyimpan...';});});
+    /* Salin teks ke clipboard dgn fallback. navigator.clipboard hanya ada di
+       secure context (HTTPS/localhost); di PWA via IP LAN (HTTP) ia undefined,
+       jadi tombol Salin "diam" tanpa fallback. Fallback: textarea + execCommand. */
+    function claraCopyText(text, btn, okLabel){
+        okLabel = okLabel || 'Tersalin ✓';
+        var orig = btn ? btn.textContent : '';
+        function done(ok){
+            if(!btn) return;
+            btn.textContent = ok ? okLabel : 'Gagal — salin manual';
+            setTimeout(function(){ btn.textContent = orig; }, 2000);
+        }
+        function fallback(){
+            try{
+                var ta=document.createElement('textarea');
+                ta.value=text; ta.setAttribute('readonly','');
+                ta.style.cssText='position:fixed;top:0;left:0;opacity:0';
+                document.body.appendChild(ta);
+                ta.select(); ta.setSelectionRange(0, text.length);
+                var ok=document.execCommand('copy');
+                ta.remove(); done(ok);
+            }catch(e){ done(false); }
+        }
+        if(navigator.clipboard && window.isSecureContext){
+            navigator.clipboard.writeText(text).then(function(){ done(true); }, fallback);
+        }else{ fallback(); }
+    }
     </script>
     <script src="assets/flatpickr.min.js"></script>
     <script src="assets/spread-table.js"></script>
