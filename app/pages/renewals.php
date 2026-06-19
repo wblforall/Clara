@@ -336,7 +336,7 @@ function _renewal_list(PDO $pdo): void
                     <textarea name="renewal_note" placeholder="Catatan tindak lanjut (opsional)..."><?= h($c['renewal_note'] ?? '') ?></textarea>
                     <div class="rnw-actions">
                         <button type="submit">Simpan</button>
-                        <a class="renew" href="?r=transaction_form&module=<?= h($c['module']) ?>&renew_from=<?= (int)$c['id'] ?>" target="_blank" rel="noopener">+ Perpanjang</a>
+                        <a class="renew" href="?r=offer_form&module=<?= h($c['module']) ?>&renew_from=<?= (int)$c['id'] ?>" target="_blank" rel="noopener">+ Perpanjang</a>
                     </div>
                 </form>
                 <?php else: ?>

@@ -21,27 +21,12 @@ $deposit  = (float) $o['deposit_amount'];
 $grand    = $afterPpn + $deposit;
 $dpBulan  = rtrim(rtrim(number_format((float) $o['dp_months'], 1, ',', ''), '0'), ',');
 $depBulan = rtrim(rtrim(number_format((float) $o['deposit_months'], 1, ',', ''), '0'), ',');
-// Masa berlaku penawaran: 14 hari sejak tanggal penawaran
-$validTs  = strtotime(($o['offer_date'] ?: date('Y-m-d')) . ' +14 days');
+// Masa berlaku penawaran: 7 hari sejak tanggal penawaran
+$validTs  = strtotime(($o['offer_date'] ?: date('Y-m-d')) . ' +7 days');
 $berlaku  = (int) date('d', $validTs) . ' ' . $months[(int) date('n', $validTs)] . ' ' . date('Y', $validTs);
 // Kontak pembayaran: fallback ke kantor bila PIC kosong
 $payWa    = $o['pic_phone'] ?: $OFFICE_PHONE;
-$ketentuan = [
-    'Penyewa / peserta pameran dilarang menjual produk yang melanggar Hak Cipta, seperti produk bajakan atau barang palsu.',
-    'Wajib menyerahkan design (gambar) booth yang akan digunakan ke pihak Manajemen.',
-    'Untuk pemakaian listrik dikenakan sesuai pemakaian dengan harga Rp 3.150/Kwh.',
-    'Pemakaian partisi / booth dengan ketinggian max. 1,8 meter (see through / tidak full block).',
-    'Pameran wajib menggunakan level kayu dan karpet (disediakan oleh peserta pameran).',
-    'Jika penyewa mengundurkan jadwal dari tanggal masa sewa di kontrak, dikenakan biaya Rp 1.000.000,- di luar total harga sewa.',
-    'Batas pengunduran jadwal pameran maksimal 1 bulan dari masa sewa di kontrak awal.',
-    'Apabila melebihi batas pengunduran, pameran dianggap batal dan pembayaran tidak dapat ditarik kembali.',
-    'PPN 11% ditanggung penyewa jika terjadi pembatalan kontrak pameran.',
-    'Pengurusan surat keluar masuk di jam operasional kantor (10.00–16.00 WITA).',
-    'Data peserta pameran harus sesuai dengan yang diberikan ke manajemen; setelah kontrak/invoice/faktur pajak terbit, data tidak dapat dirubah (kecuali kesalahan input dari manajemen).',
-    'Perubahan data untuk pameran selanjutnya wajib diinfokan ke manajemen e-Walk dan Pentacity Mall Balikpapan.',
-    'Pemakaian listrik penyambungan wajib memakai kabel NYM 3 x 2,5 mm.',
-    'Bersedia mengikuti segala ketentuan dan tata tertib yang berlaku.',
-];
+$ketentuan = offer_terms();
 ?>
 <?php $PDF_MODE = !empty($PDF_MODE); /* diset oleh offer_print() utk jalur mPDF */ ?>
 <?php if (!$PDF_MODE): ?>
@@ -112,9 +97,11 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
 .pay li{font-size:11px}
 .rek{background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;margin-top:6px;font-size:11px;line-height:1.7}
 .tnc li{font-size:11px;color:#374151}
-.sign{margin-top:22px;page-break-inside:avoid}
-.sign .ttd-img{display:block;max-height:64px;max-width:200px;object-fit:contain;margin:4px 0}
-.sign .nm{font-weight:700;border-top:1px solid #111;display:inline-block;padding-top:3px;min-width:200px}
+.sign{width:100%;border-collapse:collapse;margin-top:22px;page-break-inside:avoid;table-layout:fixed}
+.sign td.col{width:50%;vertical-align:top;padding:0 6px}
+.sign .sigarea{height:78px}
+.sign .ttd-img{height:58px;width:auto;margin:2px 0}
+.sign .nm{font-weight:700;border-top:1px solid #111;display:inline-block;padding-top:3px;min-width:170px}
 .qrbox{width:70px;height:70px;margin:6px 0 3px}
 .qrbox img,.qrbox svg{width:70px!important;height:70px!important;display:block}
 .qrhint{font-size:7.5px;color:#6b7280;margin-bottom:3px}
@@ -180,7 +167,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     </table>
 
     <div class="sec">Fasilitas</div>
-    <ul><li>Standar area pameran</li><li>Stop kontak listrik</li><li>Media promosi: media sosial mall &amp; pembagian flyer di area event</li></ul>
+    <ul><?php foreach (offer_facilities() as $f): ?><li><?= $h($f) ?></li><?php endforeach; ?></ul>
 
     <div class="sec">Cara Pembayaran</div>
     <ol class="pay">
@@ -208,20 +195,35 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     $verifyUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $vdir . '/?r=offer_verify&token=' . ($o['sign_token'] ?? '');
     $hasQr = !empty($o['sign_token']);
     ?>
-    <div class="sign">
-        <div>Hormat kami,</div>
-        <div style="font-weight:600">PT. Wulandari Bangun Laksana, Tbk.</div>
-        <?php if ($hasQr): ?>
-            <?php if ($PDF_MODE): ?>
-            <div class="qrbox"><?= clara_qr_img($verifyUrl, 18) ?></div><div class="qrhint">Scan untuk validasi</div>
+    <?php $custSigned = !empty($o['signed_at']); ?>
+    <table class="sign">
+    <tr>
+        <td class="col">
+            <div>Hormat kami,</div>
+            <div style="font-weight:600">PT. Wulandari Bangun Laksana, Tbk.</div>
+            <div class="sigarea">
+                <?php if ($hasQr): ?>
+                    <?php if ($PDF_MODE): ?>
+                    <div class="qrbox"><?= clara_qr_img($verifyUrl, 18) ?></div><div class="qrhint">Scan untuk validasi</div>
+                    <?php else: ?>
+                    <div class="qrbox" data-qr="<?= $h($verifyUrl) ?>"></div><div class="qrhint">Scan untuk validasi</div>
+                    <?php endif; ?>
+                <?php endif; ?>
+            </div>
+            <div class="nm"<?= $hasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($o['pic_name'] ?: '-') ?><br><span class="muted" style="font-weight:400">Sales <?= $h($propShort) ?></span></div>
+        </td>
+        <td class="col">
+            <div>Menyetujui,</div>
+            <div style="font-weight:600">Calon Penyewa</div>
+            <div class="sigarea"><?php if ($custSigned && !empty($o['signature_data'])): ?><img class="ttd-img" height="58" src="<?= $h($o['signature_data']) ?>" alt="TTD"><?php endif; ?></div>
+            <?php if ($custSigned): ?>
+            <div class="nm" style="border-top:none;padding-top:0"><?= $h($o['sign_name'] ?: ($o['cp_name'] ?? '-')) ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span><br><span class="muted" style="font-weight:400;font-size:8px"><span style="color:#16a34a">■</span> Ditandatangani elektronik <?= $h(substr($o['signed_at'], 0, 16)) ?></span></div>
             <?php else: ?>
-            <div class="qrbox" data-qr="<?= $h($verifyUrl) ?>"></div><div class="qrhint">Scan untuk validasi</div>
+            <div class="nm"><?= $h($o['cp_name'] ?? '') ?: '&nbsp;' ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span></div>
             <?php endif; ?>
-        <?php else: ?>
-            <div style="height:46px"></div>
-        <?php endif; ?>
-        <div class="nm"<?= $hasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($o['pic_name'] ?: '-') ?><br><span class="muted" style="font-weight:400">Sales <?= $h($propShort) ?></span></div>
-    </div>
+        </td>
+    </tr>
+    </table>
 </div>
 <?php if ($PDF_MODE) { return; } /* mode PDF: berhenti di sini, HTML konten ditangkap offer_print() */ ?>
 </td></tr></tbody>

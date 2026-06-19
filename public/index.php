@@ -225,6 +225,14 @@ if ($route === 'offer_verify') {
     exit;
 }
 
+// ─── Penawaran: tanda tangan customer (publik, via sign_token, tanpa login) ───
+if (in_array($route, ['offer_sign', 'offer_sign_save'], true)) {
+    require_once APP_ROOT . '/app/pages/offers.php';
+    if ($route === 'offer_sign_save') offer_sign_save($pdo);
+    offer_sign_page($pdo);
+    exit;
+}
+
 // ─── Authenticated area ───────────────────────────────────────────────────────
 require_login();
 

@@ -45,6 +45,33 @@ function offer_lost_label(?string $k): string
     return offer_lost_categories()[$k] ?? '—';
 }
 
+/** Ketentuan & persyaratan baku Surat Penawaran (sumber tunggal: PDF & halaman TTD). */
+function offer_terms(): array
+{
+    return [
+        'Penyewa / peserta pameran dilarang menjual produk yang melanggar Hak Cipta, seperti produk bajakan atau barang palsu.',
+        'Wajib menyerahkan design (gambar) booth yang akan digunakan ke pihak Manajemen.',
+        'Untuk pemakaian listrik dikenakan sesuai pemakaian dengan harga Rp 3.150/Kwh.',
+        'Pemakaian partisi / booth dengan ketinggian max. 1,8 meter (see through / tidak full block).',
+        'Pameran wajib menggunakan level kayu dan karpet (disediakan oleh peserta pameran).',
+        'Jika penyewa mengundurkan jadwal dari tanggal masa sewa di kontrak, dikenakan biaya Rp 1.000.000,- di luar total harga sewa.',
+        'Batas pengunduran jadwal pameran maksimal 1 bulan dari masa sewa di kontrak awal.',
+        'Apabila melebihi batas pengunduran, pameran dianggap batal dan pembayaran tidak dapat ditarik kembali.',
+        'PPN 11% ditanggung penyewa jika terjadi pembatalan kontrak pameran.',
+        'Pengurusan surat keluar masuk di jam operasional kantor (10.00–16.00 WITA).',
+        'Data peserta pameran harus sesuai dengan yang diberikan ke manajemen; setelah kontrak/invoice/faktur pajak terbit, data tidak dapat dirubah (kecuali kesalahan input dari manajemen).',
+        'Perubahan data untuk pameran selanjutnya wajib diinfokan ke manajemen e-Walk dan Pentacity Mall Balikpapan.',
+        'Pemakaian listrik penyambungan wajib memakai kabel NYM 3 x 2,5 mm.',
+        'Bersedia mengikuti segala ketentuan dan tata tertib yang berlaku.',
+    ];
+}
+
+/** Fasilitas baku yang ditawarkan (PDF & halaman TTD). */
+function offer_facilities(): array
+{
+    return ['Standar area pameran', 'Stop kontak listrik', 'Media promosi: media sosial mall & pembagian flyer di area event'];
+}
+
 /**
  * Skor risiko "fiktif" sebuah penawaran (0–100) + daftar sinyal.
  * Heuristik aktivitas: penawaran asli umumnya benar-benar DIKIRIM ke client,
@@ -270,7 +297,24 @@ function offer_view(PDO $pdo): void
     $days  = _offer_days($offer['start_date'] ?? null, $offer['end_date'] ?? null);
     $rp    = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
 
-    layout('Penawaran ' . ($offer['offer_no'] ?: ''), function () use ($offer, $editable, $days, $rp) {
+    // Panel kirim TTD customer: hanya bila nomor sudah terbit & belum ditutup.
+    // sign_token diterbitkan sekali (lazy) — dipakai bersama QR validasi.
+    $signUrl = $waMsg = '';
+    if (!empty($offer['offer_no']) && $offer['status'] !== 'cancelled') {
+        if (empty($offer['sign_token'])) {
+            $offer['sign_token'] = bin2hex(random_bytes(20));
+            $pdo->prepare('UPDATE offers SET sign_token=? WHERE id=? AND property_id=?')->execute([$offer['sign_token'], $id, $pid]);
+        }
+        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+        $signUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/?r=offer_sign&token=' . $offer['sign_token'];
+        $waMsg = "Yth. " . ($offer['cp_name'] ?: 'Bapak/Ibu') . ",\n\n"
+            . "Berikut Surat Penawaran No. " . $offer['offer_no'] . " untuk " . ($offer['company_name'] ?? '-') . " dari Management e-Walk & Pentacity Mall Balikpapan.\n\n"
+            . "Mohon dapat ditinjau dan ditandatangani secara online melalui tautan berikut:\n" . $signUrl . "\n\n"
+            . "Tautan ini aman dan khusus untuk Anda. Terima kasih.";
+    }
+
+    layout('Penawaran ' . ($offer['offer_no'] ?: ''), function () use ($offer, $editable, $days, $rp, $signUrl, $waMsg) {
         $badge = [
             'draft'     => ['Draft', '#64748b', '#f1f5f9'],
             'sent'      => ['Terkirim', '#0369a1', '#e0f2fe'],
@@ -349,6 +393,27 @@ function offer_view(PDO $pdo): void
         </div>
         <?php endif; ?>
 
+        <?php if ($signUrl !== ''):
+            $isSigned = !empty($offer['signed_at']);
+            $waText = rawurlencode($waMsg); ?>
+        <div class="panel" style="margin-top:12px;background:#f0f9ff;border-color:#bae6fd">
+            <h3 style="margin-top:0;color:#0369a1">📝 Persetujuan & TTD Customer</h3>
+            <?php if ($isSigned): ?>
+                <p style="margin:0;color:#166534">✓ <strong>Disetujui &amp; ditandatangani online</strong> oleh <strong><?= h($offer['sign_name']) ?></strong> pada <?= h(substr($offer['signed_at'], 0, 16)) ?> (IP <?= h($offer['sign_ip']) ?>). Penawaran menjadi <strong>DEAL</strong> &amp; nilai terkunci.</p>
+            <?php else: ?>
+                <p style="margin:0 0 8px;color:#374151">Kirim tautan ini ke customer untuk meninjau &amp; menandatangani penawaran. Saat customer TTD, penawaran otomatis menjadi <strong>DEAL</strong> dan nilainya dikunci. <strong>Sebelum customer TTD, Anda masih bisa merevisi penawaran.</strong></p>
+                <textarea id="of-wa-msg" style="position:absolute;left:-9999px" readonly><?= h($waMsg) ?></textarea>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                    <input id="of-sign-url" value="<?= h($signUrl) ?>" readonly style="flex:1;min-width:260px;font-size:12px" onclick="this.select()">
+                    <button type="button" class="btn light" onclick="claraCopyText(document.getElementById('of-sign-url').value,this,'Tersalin ✓')">Salin Link</button>
+                    <button type="button" class="btn light" onclick="claraCopyText(document.getElementById('of-wa-msg').value,this,'Pesan tersalin ✓')">Salin Pesan</button>
+                    <a class="btn" style="background:#16a34a" target="_blank" href="https://wa.me/?text=<?= $waText ?>">Kirim via WhatsApp</a>
+                </div>
+                <p style="margin:8px 0 0;font-size:11.5px;color:#64748b">Tautan bersifat rahasia &amp; khusus untuk customer ini. <strong>Jika lewat WhatsApp Desktop hanya link yang terkirim</strong>, gunakan <strong>Salin Pesan</strong> lalu tempel (paste) di chat — teks lengkap akan ikut.</p>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+
         <div class="panel" style="margin-top:12px">
             <h3 style="margin-top:0">Ringkasan Penawaran</h3>
             <?php
@@ -388,9 +453,49 @@ function offer_form(PDO $pdo): void
         if (!$offer) { flash('Penawaran tidak ditemukan.'); redirect_to('offers'); }
         if (($sc = current_sales_scope($pdo, $pid)) && $offer['pic_name'] !== $sc['pic'] && $offer['created_by'] !== $sc['uname']) { flash('Penawaran ini bukan milik Anda.'); redirect_to('offers'); }
     }
+    // Perpanjangan kontrak (dari Papan Renewal): prefill penawaran BARU dari
+    // transaksi lama. Tidak menautkan/mengunci apa pun — sekadar isian awal.
+    $isRenew = false;
+    if (!$id && ($rf = (int) getv('renew_from', 0))) {
+        $rfStmt = $pdo->prepare(
+            "SELECT t.* FROM transactions t
+             WHERE t.id = ? AND t.property_id = ? AND t.deleted_at IS NULL LIMIT 1"
+        );
+        $rfStmt->execute([$rf, $pid]);
+        if ($src = $rfStmt->fetch()) {
+            $oldStart = $src['start_date']; $oldEnd = $src['end_date'];
+            $dur      = ($oldStart && $oldEnd) ? (int) floor((strtotime($oldEnd) - strtotime($oldStart)) / 86400) : 0;
+            $newStart = $oldEnd ? date('Y-m-d', strtotime($oldEnd . ' +1 day')) : '';
+            $newEnd   = ($newStart && $dur) ? date('Y-m-d', strtotime($newStart . ' +' . $dur . ' days')) : '';
+            $offer = [
+                'id' => 0, 'status' => 'draft', 'offer_no' => null, 'revision_count' => 0,
+                'module'            => $src['module'],
+                'client_id'         => $src['client_id'],
+                'contact_id'        => $src['contact_id'],
+                'pic_name'          => $src['pic_name'],
+                'referrer_name'     => $src['referrer_name'] ?? '',
+                'master_code'       => $src['master_code'],
+                'area_sqm'          => $src['area_sqm'],
+                'slots'             => $src['slots'],
+                'pricing_type'      => $src['pricing_type'],
+                'unit_rate'         => $src['unit_rate'],
+                'keterangan'        => '',
+                'start_date'        => $newStart,
+                'end_date'          => $newEnd,
+                'billing_method'    => $src['billing_method'] ?? '',
+                'cycle_recognition' => $src['cycle_recognition'] ?? 'cycle_start',
+                'recurring_flag'    => $src['recurring_flag'] ?? 0,
+            ];
+            $isRenew = true;
+        } else {
+            flash('Kontrak sumber perpanjangan tidak ditemukan.');
+        }
+    }
+
+    $existing = $id > 0;   // true hanya untuk penawaran yang sudah tersimpan (bukan prefill renewal)
     $module  = $offer['module'] ?? getv('module', 'cl');
     if (!in_array($module, ['cl', 'media', 'gudang'], true)) $module = 'cl';
-    $editable = !$offer || !in_array($offer['status'], ['deal', 'cancelled'], true);
+    $editable = !$existing || !in_array($offer['status'], ['deal', 'cancelled'], true);
 
     $masters  = masterOptions($pdo, $module);
     $clients  = $pdo->query("SELECT id, company_name, brand_name FROM master_clients WHERE status='active' ORDER BY company_name")->fetchAll();
@@ -413,16 +518,20 @@ function offer_form(PDO $pdo): void
     }
     $v = fn(string $k, $def = '') => h((string) ($offer[$k] ?? $def));
 
-    layout(($offer ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v) {
+    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v) {
         $picSel = $offer['pic_name'] ?? $linkedPic;
         $disabled = $editable ? '' : 'disabled';
         ?>
         <div class="toolbar" style="gap:8px">
-            <a class="btn light" href="<?= $offer ? '?r=offer_view&id=' . (int)$offer['id'] : '?r=offers' ?>">← <?= $offer ? 'Kembali ke Preview' : 'Daftar Penawaran' ?></a>
-            <?php if ($offer && $offer['offer_no']): ?><a class="btn light" href="?r=offer_print&id=<?= (int)$offer['id'] ?>" target="_blank">🖨 PDF</a><?php endif; ?>
+            <a class="btn light" href="<?= $existing ? '?r=offer_view&id=' . (int)$offer['id'] : '?r=offers' ?>">← <?= $existing ? 'Kembali ke Preview' : 'Daftar Penawaran' ?></a>
+            <?php if ($existing && $offer['offer_no']): ?><a class="btn light" href="?r=offer_print&id=<?= (int)$offer['id'] ?>" target="_blank">🖨 PDF</a><?php endif; ?>
         </div>
 
-        <?php if ($offer): ?>
+        <?php if ($isRenew): ?>
+        <div class="panel" style="margin-top:10px;background:#ecfdf5;border-color:#a7f3d0;color:#065f46">
+            <strong>🔄 Perpanjangan kontrak</strong> — data unit, client, PIC, dan rate sudah diisi dari kontrak sebelumnya. Periksa &amp; sesuaikan <strong>Tanggal &amp; Harga</strong>, lalu simpan sebagai penawaran baru. Nomor penawaran terbit saat disimpan.
+        </div>
+        <?php elseif ($existing): ?>
         <div class="panel" style="margin-top:10px">
             <strong style="font-size:15px"><?= h($offer['offer_no'] ?? '(no. terbit saat disimpan)') ?></strong> · <span class="badge"><?= h(_offer_module_label($offer['module'])) ?></span> · Revisi/nego: <strong><?= (int)$offer['revision_count'] ?>×</strong>
             <span class="muted" style="margin-left:6px">— ubah status / tutup / buat SKP lewat halaman preview.</span>
@@ -572,7 +681,7 @@ function offer_form(PDO $pdo): void
             <?php endif; ?>
 
             <?php if ($editable): ?>
-            <p class="form-actions" style="margin-top:16px"><button type="submit">💾 <?= $offer ? 'Simpan Revisi' : 'Simpan Penawaran' ?></button> <a class="btn secondary" href="?r=offers">Batal</a></p>
+            <p class="form-actions" style="margin-top:16px"><button type="submit">💾 <?= $existing ? 'Simpan Revisi' : 'Simpan Penawaran' ?></button> <a class="btn secondary" href="?r=offers">Batal</a></p>
             <?php endif; ?>
         </form>
 
@@ -1056,4 +1165,118 @@ function offer_verify_page(PDO $pdo): void
     </body></html>
     <?php
     exit;
+}
+
+// ─── Tanda tangan customer Surat Penawaran (PUBLIK, via sign_token) ───────────
+
+/** Ambil penawaran + join tampilan via sign_token (tanpa scope properti). */
+function _offer_by_token(PDO $pdo, string $token): ?array
+{
+    if ($token === '') return null;
+    $st = $pdo->prepare(
+        "SELECT o.*, c.company_name, c.brand_name,
+                ct.name cp_name,
+                u.location_name, u.floor,
+                p.email pic_email, p.phone pic_phone
+         FROM offers o
+         LEFT JOIN master_clients c ON c.id = o.client_id
+         LEFT JOIN master_client_contacts ct ON ct.id = o.contact_id
+         LEFT JOIN master_cl_units u ON u.code = o.master_code AND u.property_id = o.property_id
+         LEFT JOIN master_pic p ON p.name = o.pic_name AND p.property_id = o.property_id
+         WHERE o.sign_token = ? LIMIT 1"
+    );
+    $st->execute([$token]);
+    $o = $st->fetch();
+    return $o ?: null;
+}
+
+/** Bangun data tampilan + nominal dari baris penawaran (live atau snapshot). */
+function _offer_sign_view(array $o): array
+{
+    $total    = (float) $o['total_calculated'];
+    $ppn      = round($total * 11 / 12 * 0.12);
+    $afterPpn = $total + $ppn;
+    $deposit  = (float) $o['deposit_amount'];
+    $days = ($o['start_date'] && $o['end_date'])
+        ? ((int) floor((strtotime($o['end_date']) - strtotime($o['start_date'])) / 86400) + 1) : 0;
+    $validTs  = strtotime(($o['offer_date'] ?: date('Y-m-d')) . ' +7 days');
+    return [
+        'company_name' => $o['company_name'] ?? '-',
+        'cp_name'      => $o['cp_name'] ?? '',
+        'location'     => ($o['location_name'] ?: $o['master_code']) . ($o['floor'] ? ' — Lt. ' . $o['floor'] : ''),
+        'area'         => (float) ($o['area_sqm'] ?? 0),
+        'start_date'   => $o['start_date'],
+        'end_date'     => $o['end_date'],
+        'days'         => $days,
+        'periode'      => $o['start_date'] ? (date('d/m/Y', strtotime($o['start_date'])) . ' s/d ' . date('d/m/Y', strtotime($o['end_date']))) : '-',
+        'berlaku'      => date('d/m/Y', $validTs),
+        'amounts'      => [
+            'total'    => $total,
+            'ppn'      => $ppn,
+            'after'    => $afterPpn,
+            'dp'       => (float) $o['dp_amount'],
+            'dp_bln'   => rtrim(rtrim(number_format((float) $o['dp_months'], 1, ',', ''), '0'), ','),
+            'deposit'  => $deposit,
+            'dep_bln'  => rtrim(rtrim(number_format((float) $o['deposit_months'], 1, ',', ''), '0'), ','),
+            'grand'    => $afterPpn + $deposit,
+        ],
+    ];
+}
+
+/** Halaman publik: customer review Surat Penawaran + tanda tangan. */
+function offer_sign_page(PDO $pdo): void
+{
+    $token = (string) getv('token', '');
+    $o = _offer_by_token($pdo, $token);
+    if (!$o || empty($o['offer_no']) || $o['status'] === 'cancelled') {
+        http_response_code(404);
+        exit('Tautan tanda tangan tidak valid atau sudah kedaluwarsa.');
+    }
+    $signed = !empty($o['signed_at']);
+    // Bila sudah TTD, tampilkan dari snapshot terkunci; bila belum, dari data live.
+    $d = $signed && !empty($o['snapshot_json'])
+        ? (json_decode($o['snapshot_json'], true) ?: _offer_sign_view($o))
+        : _offer_sign_view($o);
+    $a = $d['amounts'] ?? [];
+    $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
+    $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+    include __DIR__ . '/offer_sign_template.php';
+}
+
+/** Simpan TTD customer → kunci snapshot, status DEAL. */
+function offer_sign_save(PDO $pdo): void
+{
+    $token = (string) post('token', getv('token', ''));
+    $o = _offer_by_token($pdo, $token);
+    if (!$o || empty($o['offer_no']) || $o['status'] === 'cancelled' || !empty($o['signed_at'])) {
+        http_response_code(403);
+        exit('Tautan tidak valid atau dokumen sudah ditandatangani.');
+    }
+    $name = trim((string) post('sign_name'));
+    $data = (string) post('signature');
+    if ($name === '' || !preg_match('#^data:image/png;base64,#', $data)) {
+        http_response_code(422); exit('Nama dan tanda tangan wajib diisi.');
+    }
+    $bin = base64_decode(substr($data, strlen('data:image/png;base64,')), true);
+    if ($bin === false || strlen($bin) < 200 || strlen($bin) > 800000) {
+        http_response_code(422); exit('Tanda tangan tidak valid.');
+    }
+    // Snapshot dikunci pada saat TTD (sales boleh revisi sampai detik ini).
+    $snap = _offer_sign_view($o);
+    $snap['offer_no'] = $o['offer_no'];
+    $pdo->prepare(
+        "UPDATE offers SET status='deal', deal_at=COALESCE(deal_at, CURRENT_TIMESTAMP),
+                sign_name=?, sign_ip=?, sign_ua=?, signature_data=?, signed_at=CURRENT_TIMESTAMP,
+                snapshot_json=?
+         WHERE id=? AND sign_token=? AND signed_at IS NULL AND status<>'cancelled'"
+    )->execute([
+        $name,
+        substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
+        substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255),
+        $data,
+        json_encode($snap, JSON_UNESCAPED_UNICODE),
+        (int) $o['id'], $token,
+    ]);
+    audit($pdo, 'customer_sign', 'offers', (string) $o['id'], ['name' => $name], [], 'offer');
+    redirect_to('offer_sign', ['token' => $token, 'done' => 1]);
 }
