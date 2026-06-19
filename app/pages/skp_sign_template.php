@@ -37,6 +37,8 @@ input[type=text]{flex:1;min-width:200px;padding:10px 12px;border:1px solid #cbd5
 .ok{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:14px;border-radius:10px;text-align:center;font-weight:600}
 .muted{color:#64748b;font-size:12px}
 .consent{font-size:12px;color:#475569;margin-top:10px;line-height:1.5}
+ol.tnc{margin:4px 0 0 18px;padding:0}
+ol.tnc li{font-size:12px;color:#374151;margin-bottom:4px;line-height:1.5;text-align:justify}
 </style>
 </head>
 <body>
@@ -80,6 +82,9 @@ input[type=text]{flex:1;min-width:200px;padding:10px 12px;border:1px solid #cbd5
             <?php endif; endforeach; ?>
         </table>
         <?php endif; ?>
+
+        <div class="sec">Ketentuan / Note</div>
+        <ol class="tnc"><?php foreach (skp_terms() as $t): ?><li><?= $h($t) ?></li><?php endforeach; ?></ol>
     </div>
 
     <div class="card">

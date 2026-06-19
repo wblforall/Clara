@@ -2,16 +2,7 @@
 /** Template cetak SKP. Variabel: $skp, $d (snapshot), $a (amounts), $rp, $chk. */
 if (!isset($skp)) { http_response_code(400); exit('Konteks tidak valid.'); }
 $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
-$notes = [
-    'Jika penyewa melakukan pengunduran jadwal dari tanggal masa sewa yang tertulis di kontrak maka akan dikenakan biaya Rp 1.000.000,- di luar total harga sewa pameran.',
-    'Batas pengunduran jadwal pameran maksimal 1 bulan dari masa sewa yang tertulis di kontrak awal.',
-    'Apabila melebihi batas pengunduran pameran maka pameran dianggap batal dan biaya yang telah dibayarkan penyewa tidak dapat ditarik kembali.',
-    'Data peserta pameran (pribadi / perusahaan) harus sesuai dengan yang diberikan kepada pihak Manajemen Mall. Apabila kontrak, invoice dan faktur pajak telah terbit maka data tidak dapat dirubah dengan alasan apapun (kecuali kesalahan penginputan data dari pihak manajemen e-Walk dan Pentacity Mall Balikpapan).',
-    'Apabila terdapat perubahan data untuk pameran selanjutnya, peserta pameran wajib memberitahukan perubahan data tersebut kepada pihak manajemen e-Walk dan Pentacity Mall Balikpapan.',
-    'Surat Pemesanan ini bersifat mengikat para pihak sebelum dan sesudah diterbitkannya Kontrak Kerjasama.',
-    'Wajib mengikuti jam operasional e-Walk dan Pentacity Mall Balikpapan : Hari Senin s.d Minggu — Jam 10.00 s.d 22.00 WITA.',
-    'Jam Operasional Mall adalah 10.00 WITA s.d 22.00 WITA yang artinya jam 10.00 WITA tenant sudah diwajibkan beroperasi (bukan persiapan) dan jam 22.00 WITA tenant baru diperbolehkan untuk bersiap-siap menutup toko. Setiap pelanggaran dikenakan denda sebesar Rp 250.000,-. Denda wajib dibayarkan tenant secara tunai pada setiap akhir bulan berjalan (jatuh tempo tidak berlaku bagi tenant yang masa sewanya kurang dari 30 hari kalender).',
-];
+// Catatan: daftar ketentuan dirender oleh skp_print_body.php (skp_terms()).
 $today = date('d') . ' ' . ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'][(int) date('n')] . ' ' . date('Y');
 ?>
 <!doctype html>

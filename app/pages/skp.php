@@ -4,6 +4,21 @@
 // Alur: sales buat (draft) → submit → manager approve (No. SKP terbit + snapshot)
 //       → cetak/PDF. Lihat [[project-skp]] / migration 013.
 
+/** Ketentuan/Note baku dokumen SKP/SKS (sumber tunggal: cetakan & halaman TTD). */
+function skp_terms(): array
+{
+    return [
+        'Jika penyewa melakukan pengunduran jadwal dari tanggal masa sewa yang tertulis di kontrak maka akan dikenakan biaya Rp 1.000.000,- di luar total harga sewa pameran.',
+        'Batas pengunduran jadwal pameran maksimal 1 bulan dari masa sewa yang tertulis di kontrak awal.',
+        'Apabila melebihi batas pengunduran pameran maka pameran dianggap batal dan biaya yang telah dibayarkan penyewa tidak dapat ditarik kembali.',
+        'Data peserta pameran (pribadi / perusahaan) harus sesuai dengan yang diberikan kepada pihak Manajemen Mall. Apabila kontrak, invoice dan faktur pajak telah terbit maka data tidak dapat dirubah dengan alasan apapun (kecuali kesalahan penginputan data dari pihak manajemen e-Walk dan Pentacity Mall Balikpapan).',
+        'Apabila terdapat perubahan data untuk pameran selanjutnya, peserta pameran wajib memberitahukan perubahan data tersebut kepada pihak manajemen e-Walk dan Pentacity Mall Balikpapan.',
+        'Surat Pemesanan ini bersifat mengikat para pihak sebelum dan sesudah diterbitkannya Kontrak Kerjasama.',
+        'Wajib mengikuti jam operasional e-Walk dan Pentacity Mall Balikpapan : Hari Senin s.d Minggu — Jam 10.00 s.d 22.00 WITA.',
+        'Jam Operasional Mall adalah 10.00 WITA s.d 22.00 WITA yang artinya jam 10.00 WITA tenant sudah diwajibkan beroperasi (bukan persiapan) dan jam 22.00 WITA tenant baru diperbolehkan untuk bersiap-siap menutup toko. Setiap pelanggaran dikenakan denda sebesar Rp 250.000,-. Denda wajib dibayarkan tenant secara tunai pada setiap akhir bulan berjalan (jatuh tempo tidak berlaku bagi tenant yang masa sewanya kurang dari 30 hari kalender).',
+    ];
+}
+
 /** Map key properti → kode singkat untuk Nomor SKP. */
 function _skp_prop_code(string $key): string
 {
@@ -380,8 +395,8 @@ function skp_form(PDO $pdo): void
                 <textarea id="skp-wa-msg" style="position:absolute;left:-9999px" readonly><?= h($waMsg) ?></textarea>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
                     <input id="skp-sign-url" value="<?= h($signUrl) ?>" readonly style="flex:1;min-width:260px;font-size:12px" onclick="this.select()">
-                    <button type="button" class="btn light" onclick="navigator.clipboard.writeText(document.getElementById('skp-sign-url').value);this.textContent='Tersalin ✓'">Salin Link</button>
-                    <button type="button" class="btn light" onclick="navigator.clipboard.writeText(document.getElementById('skp-wa-msg').value);this.textContent='Pesan tersalin ✓'">Salin Pesan</button>
+                    <button type="button" class="btn light" onclick="claraCopyText(document.getElementById('skp-sign-url').value,this,'Tersalin ✓')">Salin Link</button>
+                    <button type="button" class="btn light" onclick="claraCopyText(document.getElementById('skp-wa-msg').value,this,'Pesan tersalin ✓')">Salin Pesan</button>
                     <a class="btn" style="background:#16a34a" target="_blank" href="https://wa.me/?text=<?= $waText ?>">Kirim via WhatsApp</a>
                 </div>
                 <p style="margin:8px 0 0;font-size:11.5px;color:#64748b">Tautan bersifat rahasia &amp; berlaku sampai dokumen ditandatangani. <strong>Jika lewat WhatsApp Desktop hanya link yang terkirim</strong>, gunakan <strong>Salin Pesan</strong> lalu tempel (paste) di chat — teks lengkap akan ikut.</p>
