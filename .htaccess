@@ -1,12 +1,30 @@
 Options -Indexes
 
-<FilesMatch "(\.env|\.sql|\.sqlite|\.db|\.log)$">
+# Tolak file sensitif. CATATAN: ini lapis aplikasi yang rapuh — pertahanan
+# sebenarnya = arahkan DocumentRoot vhost ke folder public/ (lihat SECURITY).
+<FilesMatch "(\.env|\.sql|\.sqlite|\.db|\.log|\.bak|\.gz)$">
     Require all denied
 </FilesMatch>
 
+# Handout internal (di root) — tetap bisa dibuka via filesystem/IDE, blokir HTTP.
+<FilesMatch "^HANDOUT_SALES.*\.(html|pdf|md)$">
+    Require all denied
+</FilesMatch>
+
+# Blok seluruh direktori .git/ (cegah dump source + history)
+RedirectMatch 403 (?i)(^|/)\.git(/|$)
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
+
+    # Paksa HTTPS di produksi (tidak aktif di localhost/127.0.0.1 → dev tetap jalan)
+    RewriteCond %{HTTPS} off
+    RewriteCond %{HTTP_HOST} !^localhost [NC]
+    RewriteCond %{HTTP_HOST} !^127\.0\.0\.1 [NC]
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
     RewriteRule ^public/ - [L]
+    RewriteRule (^|/)\.git(/|$) - [F,L]
     RewriteRule ^(app|database|scripts|storage)/ - [F,L]
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d

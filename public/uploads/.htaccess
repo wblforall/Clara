@@ -1,0 +1,14 @@
+# Folder upload: cegah eksekusi skrip apa pun (defense-in-depth anti-RCE).
+# Berlaku ke subfolder (skp, contract, signatures).
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+    php_flag engine off
+</IfModule>
+<FilesMatch "\.(php|phtml|php3|php4|php5|php7|phps|phar|cgi|pl|py|asp|aspx|jsp|sh|htaccess)$">
+    Require all denied
+</FilesMatch>
+Options -ExecCGI -Indexes
+RemoveHandler .php .phtml .phar
+RemoveType .php .phtml .phar

@@ -6,6 +6,22 @@
 tmp/
 *.log
 
+# Dump database & backup (JANGAN pernah di-commit — berisi data customer)
+*.sql
+*.sql.gz
+*.bak
+
+# Artefak handout (besar / hasil generate) — markdown sumber tetap di-commit
+HANDOUT_SALES.html
+HANDOUT_SALES.pdf
+scripts/handout_assets/
+
+# File kerja lokal (PDF/dokumen contoh, dll)
+*.doc
+*.docx
+*.xlsx
+*.code-workspace
+
 # OS
 .DS_Store
 Thumbs.db
