@@ -75,24 +75,28 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
         <div class="valid">Penawaran ini berlaku s/d <strong><?= $h($d['berlaku']) ?></strong>.</div>
         <?php endif; ?>
 
+        <?php
+        $L = $letter ?? ['fasilitas' => [], 'payment' => [], 'terms' => []];
+        $facil = ($L['fasilitas'] ?? []) ?: offer_facilities();
+        $payList = $L['payment'] ?? [];
+        $payWa = $o['pic_phone'] ?? ''; $payWa = $payWa !== '' ? $payWa : '0542-8520555';
+        ?>
         <div class="sec">Fasilitas</div>
-        <ul class="lst"><?php foreach (offer_facilities() as $f): ?><li><?= $h($f) ?></li><?php endforeach; ?></ul>
+        <ul class="lst"><?php foreach ($facil as $f): ?><li><?= $h($f) ?></li><?php endforeach; ?></ul>
 
-        <?php $payWa = $o['pic_phone'] ?? ''; $payWa = $payWa !== '' ? $payWa : '0542-8520555'; ?>
+        <?php if ($payList): ?>
         <div class="sec">Cara Pembayaran</div>
-        <ol class="lst">
-            <li>Wajib membayar <strong>biaya sewa</strong> senilai <strong><?= $rp(($a['dp'] ?? 0) ?: ($a['total'] ?? 0)) ?></strong> (Exc. PPN 12%) maksimal 1 minggu setelah penawaran disetujui, dan pelunasan paling lambat H-7 sebelum pelaksanaan sewa.</li>
-            <li>Wajib membayar <strong>Security Deposit</strong> (uang jaminan) senilai <strong><?= $rp($a['deposit'] ?? 0) ?></strong> sebagai jaminan kerusakan / pengakhiran kontrak sebelum masa sewa berakhir.</li>
-            <li>Apabila tidak terjadi kerusakan setelah masa sewa berakhir, Security Deposit dikembalikan 100%.</li>
-        </ol>
+        <ol class="lst"><?php foreach ($payList as $p): ?><li><?= $h(offer_letter_fill((string) $p, $a)) ?></li><?php endforeach; ?></ol>
+        <?php endif; ?>
         <div class="rek">
             Pembayaran ditransfer ke rekening:<br>
             <strong>PT. Wulandari Bangun Laksana</strong> · Bank Rakyat Indonesia (BRI) · No. Rek <strong>2078-01-000560-30-4</strong><br>
             Bukti pembayaran dikirim via WhatsApp ke <strong><?= $h($payWa) ?></strong><?= !empty($o['pic_email']) ? ' atau email <strong>' . $h($o['pic_email']) . '</strong>' : '' ?>.
         </div>
 
+        <?php $termList = ($L['terms'] ?? []) ?: offer_terms(); ?>
         <div class="sec">Ketentuan &amp; Persyaratan</div>
-        <ol class="lst tnc"><?php foreach (offer_terms() as $t): ?><li><?= $h($t) ?></li><?php endforeach; ?></ol>
+        <ol class="lst tnc"><?php foreach ($termList as $t): ?><li><?= $h($t) ?></li><?php endforeach; ?></ol>
     </div>
 
     <div class="card">

@@ -231,7 +231,10 @@ function master_form(PDO $pdo, array $masterConfig): void
         $existingCodes = $s->fetchAll(PDO::FETCH_COLUMN);
     }
 
-    layout(($id ? 'Edit ' : 'Tambah ') . $cfg['title'], function () use ($type, $cfg, $row, $id, $periodYears, $periodMonthNames, $users, $existingCodes) {
+    // Daftar baku Tipe Unit (dropdown) — per properti, dari master_cl_unit_types.
+    $unitTypes = $type === 'cl' ? cl_unit_types($pdo, $pid) : [];
+
+    layout(($id ? 'Edit ' : 'Tambah ') . $cfg['title'], function () use ($type, $cfg, $row, $id, $periodYears, $periodMonthNames, $users, $existingCodes, $unitTypes) {
         ?>
         <?php if (!$id && !empty($existingCodes)): ?>
         <script>
@@ -419,6 +422,18 @@ function master_form(PDO $pdo, array $masterConfig): void
                                     <option value="<?= $fl ?>" <?= ($row['floor'] ?? '') === $fl ? 'selected' : '' ?>><?= $fl ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <?php elseif ($name === 'unit_type'): ?>
+                            <?php $utCur = (string)($row['unit_type'] ?? ''); $utBaku = $unitTypes; ?>
+                            <select name="unit_type" id="unit_type">
+                                <option value="">— pilih tipe —</option>
+                                <?php foreach ($utBaku as $ut): ?>
+                                    <option value="<?= h($ut) ?>" <?= $utCur === $ut ? 'selected' : '' ?>><?= h($ut) ?></option>
+                                <?php endforeach; ?>
+                                <?php if ($utCur !== '' && !in_array($utCur, $utBaku, true)): ?>
+                                    <option value="<?= h($utCur) ?>" selected><?= h($utCur) ?> (lama — perbaiki)</option>
+                                <?php endif; ?>
+                            </select>
+                            <div class="help">Pilih dari daftar baku. Nilai lama yang tak baku ditandai "(lama — perbaiki)" agar diseragamkan.</div>
                             <?php else: ?>
                             <input name="<?= h($name) ?>" value="<?= field($row, $name) ?>">
                             <?php endif; ?>

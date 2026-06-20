@@ -5,6 +5,33 @@ function h(?string $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
+/**
+ * Daftar baku Tipe Unit (Exhibition/Casual Leasing) — controlled vocabulary
+ * untuk dropdown di Master Unit. Mengganti input teks bebas (sumber typo &
+ * variasi: "Puschart", "Island L1/L2", singkatan "FC/SC/PC"). Per-properti,
+ * dikelola lewat Master Tipe Unit (tabel master_cl_unit_types, migrasi 034).
+ * Fallback ke daftar statis bila tabel belum ada/kosong (aman sebelum migrasi).
+ * Acuan tunggal; dipakai juga utk template Surat Penawaran per tipe unit.
+ */
+function cl_unit_types(?PDO $pdo = null, ?int $propertyId = null): array
+{
+    $fallback = [
+        'Fashion Booth', 'Food Stall', 'Food Court', 'Snack Corner', 'Pushcart',
+        'Island', 'Circle', 'Free Standing', 'Atrium', 'Playground', 'Photobox',
+        'Leasable Area', 'Parking Area',
+    ];
+    if (!$pdo) return $fallback;
+    try {
+        $pid = $propertyId ?? (function_exists('current_property_id') ? current_property_id() : 0);
+        $st = $pdo->prepare("SELECT name FROM master_cl_unit_types WHERE property_id = ? AND status = 'active' ORDER BY sort_order ASC, name ASC");
+        $st->execute([(int) $pid]);
+        $rows = $st->fetchAll(PDO::FETCH_COLUMN);
+        return $rows ?: $fallback;
+    } catch (Throwable $e) {
+        return $fallback;
+    }
+}
+
 function money($value): string
 {
     return 'Rp ' . number_format((float) $value, 0, ',', '.');
@@ -268,7 +295,8 @@ function permission_for_route(string $route): string
         'skp', 'skp_form', 'skp_save', 'skp_print', 'skp_sign_upload' => 'manage_skp',
         'contract_requests', 'contract_request_form', 'contract_request_save', 'contract_request_print' => 'manage_skp',
         'skp_approve', 'skp_reject' => 'approve_skp',
-        'offers', 'offer_view', 'offer_form', 'offer_save', 'offer_status', 'offer_print' => 'manage_offers',
+        'offers', 'offer_view', 'offer_form', 'offer_save', 'offer_status', 'offer_print', 'offer_template_rule' => 'manage_offers',
+        'offer_templates', 'offer_template_form', 'offer_template_save' => 'manage_master',
         'm_home' => 'view_dashboard',
         'm_transactions' => 'view_transactions',
         'm_exec' => 'view_exec_summary',
@@ -325,7 +353,8 @@ function csrf_token(): string
 
 function verify_csrf(): void
 {
-    if (($_POST['_csrf'] ?? '') !== ($_SESSION['csrf'] ?? '')) {
+    // hash_equals: perbandingan waktu-konstan (anti timing attack).
+    if (!hash_equals((string) ($_SESSION['csrf'] ?? ''), (string) ($_POST['_csrf'] ?? ''))) {
         unset($_SESSION['csrf']);
         flash('Sesi form sudah kedaluwarsa. Silakan coba lagi.');
         redirect_to('login');

@@ -72,6 +72,94 @@ function offer_facilities(): array
     return ['Standar area pameran', 'Stop kontak listrik', 'Media promosi: media sosial mall & pembagian flyer di area event'];
 }
 
+/** Decode satu baris offer_templates → struktur isi surat. */
+function _offer_template_norm(array $t): array
+{
+    return [
+        'name'              => (string) ($t['name'] ?? ''),
+        'unit_type'         => (string) ($t['unit_type'] ?? ''),
+        'perihal'           => (string) ($t['perihal'] ?? ''),
+        'intro'             => (string) ($t['intro'] ?? ''),
+        'fasilitas'         => json_decode((string) ($t['fasilitas_json'] ?? '[]'), true) ?: [],
+        'payment'           => json_decode((string) ($t['payment_json'] ?? '[]'), true) ?: [],
+        'terms'             => json_decode((string) ($t['terms_json'] ?? '[]'), true) ?: [],
+        'dp_required'       => (int) ($t['dp_required'] ?? 1),
+        'dp_months_default' => (float) ($t['dp_months_default'] ?? 2),
+    ];
+}
+
+/**
+ * Resolusi template Surat Penawaran: (properti, unit_type) → default properti
+ * (unit_type='') → fallback kode (offer_terms/offer_facilities). Mengembalikan
+ * struktur isi surat siap render.
+ */
+function offer_template_for(PDO $pdo, int $propertyId, ?string $unitType): array
+{
+    $st = $pdo->prepare("SELECT * FROM offer_templates WHERE property_id=? AND unit_type=? AND status='active' LIMIT 1");
+    if ($unitType !== null && $unitType !== '') {
+        $st->execute([$propertyId, $unitType]);
+        if ($t = $st->fetch()) return _offer_template_norm($t);
+    }
+    $st->execute([$propertyId, '']);
+    if ($t = $st->fetch()) return _offer_template_norm($t);
+    // Fallback kode (praktis tak terpakai krn migrasi seed default per properti).
+    return [
+        'name' => 'Pameran Umum (default)', 'unit_type' => '',
+        'perihal' => 'Surat Penawaran Sewa Area Pameran',
+        'intro'   => 'Bersama ini kami Management e-Walk dan Pentacity Mall Balikpapan menawarkan space exhibition sebagai berikut:',
+        'fasilitas' => offer_facilities(),
+        'payment' => [
+            'Wajib membayar biaya sewa (DP) senilai {dp} (Exc. PPN 12%) maksimal 1 minggu setelah penawaran disetujui, dan pelunasan paling lambat H-7 sebelum pelaksanaan sewa.',
+            'Wajib membayar Security Deposit (uang jaminan) senilai {deposit} sebagai jaminan kerusakan / pengakhiran kontrak sebelum masa sewa berakhir.',
+            'Apabila tidak terjadi kerusakan setelah masa sewa berakhir, Security Deposit dikembalikan 100%.',
+        ],
+        'terms' => offer_terms(),
+        'dp_required' => 1, 'dp_months_default' => 2,
+    ];
+}
+
+/** Ganti placeholder nominal pada teks template: {dp} {deposit} {total} {ppn} {grand}. */
+function offer_letter_fill(string $text, array $a): string
+{
+    $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
+    return strtr($text, [
+        '{dp}'      => $rp($a['dp'] ?? 0),
+        '{deposit}' => $rp($a['deposit'] ?? 0),
+        '{total}'   => $rp($a['total'] ?? 0),
+        '{ppn}'     => $rp($a['ppn'] ?? 0),
+        '{grand}'   => $rp($a['grand'] ?? 0),
+    ]);
+}
+
+/**
+ * Isi surat untuk sebuah penawaran: dari snapshot letter_json (terkunci saat
+ * simpan) bila ada; jika tidak (penawaran lama), resolve template live.
+ */
+function offer_letter(PDO $pdo, array $o): array
+{
+    if (!empty($o['letter_json'])) {
+        $l = json_decode((string) $o['letter_json'], true);
+        if (is_array($l)) {
+            return $l + ['perihal' => '', 'intro' => '', 'fasilitas' => [], 'payment' => [], 'terms' => []];
+        }
+    }
+    $ut  = offer_unit_type($pdo, (int) $o['property_id'], $o['master_code'] ?? null);
+    $t   = offer_template_for($pdo, (int) $o['property_id'], $ut);
+    return [
+        'perihal' => $t['perihal'], 'intro' => $t['intro'],
+        'fasilitas' => $t['fasilitas'], 'payment' => $t['payment'], 'terms' => $t['terms'],
+    ];
+}
+
+/** unit_type sebuah unit CL (utk resolusi template). */
+function offer_unit_type(PDO $pdo, int $propertyId, ?string $masterCode): string
+{
+    if (!$masterCode) return '';
+    $st = $pdo->prepare("SELECT unit_type FROM master_cl_units WHERE code=? AND property_id=? LIMIT 1");
+    $st->execute([$masterCode, $propertyId]);
+    return (string) ($st->fetchColumn() ?: '');
+}
+
 /**
  * Skor risiko "fiktif" sebuah penawaran (0–100) + daftar sinyal.
  * Heuristik aktivitas: penawaran asli umumnya benar-benar DIKIRIM ke client,
@@ -214,10 +302,10 @@ function offers_list_page(PDO $pdo): void
         <div class="toolbar" style="gap:8px;flex-wrap:wrap">
             <details style="position:relative;display:inline-block">
                 <summary class="btn" style="list-style:none;cursor:pointer">+ Buat Penawaran ▾</summary>
-                <div style="position:absolute;z-index:30;margin-top:4px;background:#fff;border:1px solid var(--line,#e5e7eb);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.12);min-width:180px;overflow:hidden">
-                    <a class="dd-item" href="?r=offer_form&module=cl" style="display:block;padding:9px 14px;font-size:13px">🏬 Exhibition (SKP)</a>
-                    <a class="dd-item" href="?r=offer_form&module=media" style="display:block;padding:9px 14px;font-size:13px;border-top:1px solid #f1f5f9">📺 Media (SKS)</a>
-                    <a class="dd-item" href="?r=offer_form&module=gudang" style="display:block;padding:9px 14px;font-size:13px;border-top:1px solid #f1f5f9">📦 Gudang (SKS)</a>
+                <div style="position:absolute;z-index:30;margin-top:4px;background:#fff;border:1px solid var(--line,#e5e7eb);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.12);min-width:220px;overflow:hidden">
+                    <a class="dd-item" href="?r=offer_form&module=cl" style="display:block;padding:9px 14px;font-size:13px">🏬 Exhibition <span style="color:var(--muted,#64748b);font-size:11px">— area / booth pameran</span></a>
+                    <a class="dd-item" href="?r=offer_form&module=media" style="display:block;padding:9px 14px;font-size:13px;border-top:1px solid #f1f5f9">📺 Media <span style="color:var(--muted,#64748b);font-size:11px">— LED / videotron / TVC</span></a>
+                    <a class="dd-item" href="?r=offer_form&module=gudang" style="display:block;padding:9px 14px;font-size:13px;border-top:1px solid #f1f5f9">📦 Gudang <span style="color:var(--muted,#64748b);font-size:11px">— storage</span></a>
                 </div>
             </details>
             <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
@@ -668,6 +756,7 @@ function offer_form(PDO $pdo): void
             </div>
 
             <h3>Pembayaran <span style="font-weight:400;font-size:12px;color:var(--muted)">(DP & deposit dihitung dari harga/bulan; bisa di-override)</span></h3>
+            <div id="tpl-note" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:9px 13px;margin-bottom:10px;font-size:12.5px;color:#075985"></div>
             <div class="form-grid">
                 <div><label>DP (bulan, min 1)</label><input type="number" step="0.5" min="1" name="dp_months" id="dp_months" value="<?= $v('dp_months', '1') ?>" <?= $disabled ?>></div>
                 <div><label>Nominal DP <span class="muted" style="font-weight:400">(otomatis, bisa diubah)</span></label><input type="text" inputmode="numeric" id="dp_fmt" placeholder="0" <?= $disabled ?>><input type="hidden" name="dp_amount" id="dp_amount" value="<?= (int)($offer['dp_amount'] ?? 0) ?: '' ?>"></div>
@@ -722,7 +811,28 @@ function offer_form(PDO $pdo): void
                 if (sw) { sw.style.display = isSlot ? '' : 'none'; var si = document.getElementById('slots_input'); if (isSlot && si && (!si.value || si.value == '1')) si.value = m.slots || 1; }
                 <?php endif; ?>
                 if (typeof kalkulasi === 'function') kalkulasi();
+                applyTemplateRule(code);
             }
+            // Template per jenis booth: tampilkan & atur aturan DP saat unit dipilih.
+            function applyTemplateRule(code) {
+                var note = document.getElementById('tpl-note'); if (!note || !code) return;
+                fetch('?r=offer_template_rule&master_code=' + encodeURIComponent(code), { cache: 'no-store' })
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        var dpm = document.getElementById('dp_months');
+                        if (d.dp_required) {
+                            note.innerHTML = '📄 Tipe <strong>' + (d.unit_type || '-') + '</strong> · template <strong>' + d.template + '</strong> · <strong>DP wajib</strong> (default ' + d.dp_months_default + ' bln).';
+                            if (dpm) { dpm.min = '1'; if (!dpm.value || dpm.value === '0') dpm.value = d.dp_months_default || 1; }
+                        } else {
+                            note.innerHTML = '📄 Tipe <strong>' + (d.unit_type || '-') + '</strong> · template <strong>' + d.template + '</strong> · <strong>tanpa DP</strong> (deposit-only). Kosongkan DP.';
+                            if (dpm) { dpm.min = '0'; dpm.value = '0'; }
+                        }
+                        note.style.display = '';
+                        if (typeof kalkulasi === 'function') kalkulasi();
+                    })
+                    .catch(function () {});
+            }
+            (function () { var mc = (document.getElementById('master_code') || {}).value; if (mc) applyTemplateRule(mc); })();
             (function () {
                 var src = document.getElementById('masterSearch'), hid = document.getElementById('master_code'), dd = document.getElementById('masterDrop');
                 if (!src || !hid || !dd) return;
@@ -946,6 +1056,23 @@ function offer_save(PDO $pdo): void
     $billing  = post('billing_method') === 'anchor_cycle' ? 'anchor_cycle'
               : (post('billing_method') === 'spread' ? 'spread' : (($months > 1 || $crossMonth) ? 'spread' : 'anchor_cycle'));
 
+    // Template surat per jenis booth (unit_type) → aturan DP + snapshot isi surat.
+    $unitType = offer_unit_type($pdo, $pid, trim((string) post('master_code')) ?: null);
+    $tpl      = offer_template_for($pdo, $pid, $unitType);
+    $dpReq    = $tpl['dp_required'] == 1;
+    // DP wajib → min 1 bln; deposit-only (tak wajib) → boleh 0.
+    $dpMonths = $dpReq ? max(1, (float) post('dp_months', $tpl['dp_months_default'])) : max(0, (float) post('dp_months', 0));
+    $letterJson = json_encode([
+        'template'    => $tpl['name'],
+        'unit_type'   => $unitType,
+        'perihal'     => $tpl['perihal'],
+        'intro'       => $tpl['intro'],
+        'fasilitas'   => $tpl['fasilitas'],
+        'payment'     => $tpl['payment'],
+        'terms'       => $tpl['terms'],
+        'dp_required' => $tpl['dp_required'],
+    ], JSON_UNESCAPED_UNICODE);
+
     $data = [
         'module'          => $module,
         'client_id'       => (int) post('client_id') ?: null,
@@ -968,11 +1095,12 @@ function offer_save(PDO $pdo): void
         'billing_method'  => $billing,
         'recurring_flag'  => post('recurring_flag') ? 1 : 0,
         'cycle_recognition' => post('cycle_recognition') === 'cycle_end' ? 'cycle_end' : 'cycle_start',
-        'dp_months'       => max(1, (float) post('dp_months', 1)),
+        'dp_months'       => $dpMonths,
         'dp_amount'       => (float) post('dp_amount', 0),
         'deposit_months'  => (float) post('deposit_months', 1),
         'deposit_amount'  => (float) post('deposit_amount', 0),
-        'perihal'         => 'Surat Penawaran Sewa Area Pameran' . ($days > 0 ? ' ' . $days . ' Hari' : ''),
+        'perihal'         => $tpl['perihal'] ?: ('Surat Penawaran Sewa Area Pameran' . ($days > 0 ? ' ' . $days . ' Hari' : '')),
+        'letter_json'     => $letterJson,
         'offer_date'      => date('Y-m-d'),
     ];
 
@@ -1094,6 +1222,7 @@ function offer_print(PDO $pdo): void
         $pdo->prepare('UPDATE offers SET sign_token=? WHERE id=? AND property_id=?')->execute([$o['sign_token'], $id, $pid]);
     }
     $prop = current_property();
+    $letter = offer_letter($pdo, $o);   // isi surat per jenis booth (snapshot/template)
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
@@ -1238,6 +1367,7 @@ function offer_sign_page(PDO $pdo): void
         ? (json_decode($o['snapshot_json'], true) ?: _offer_sign_view($o))
         : _offer_sign_view($o);
     $a = $d['amounts'] ?? [];
+    $letter = offer_letter($pdo, $o);   // isi surat per jenis booth (snapshot/template)
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
     include __DIR__ . '/offer_sign_template.php';
@@ -1279,4 +1409,166 @@ function offer_sign_save(PDO $pdo): void
     ]);
     audit($pdo, 'customer_sign', 'offers', (string) $o['id'], ['name' => $name], [], 'offer');
     redirect_to('offer_sign', ['token' => $token, 'done' => 1]);
+}
+
+// ─── Template Surat Penawaran per jenis booth (CRUD admin) ───────────────────
+
+/** Pecah textarea (1 baris = 1 poin) → array bersih. */
+function _tpl_lines(string $raw): array
+{
+    return array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $raw)), fn($x) => $x !== ''));
+}
+
+function offer_templates_page(PDO $pdo): void
+{
+    require_permission('manage_master');
+    $pid = current_property_id();
+    $rows = $pdo->prepare("SELECT * FROM offer_templates WHERE property_id=? ORDER BY sort_order ASC, unit_type ASC");
+    $rows->execute([$pid]);
+    $tpls = $rows->fetchAll();
+    layout('Template Surat Penawaran', function () use ($tpls) {
+        ?>
+        <div class="toolbar" style="gap:8px">
+            <a class="btn" href="?r=offer_template_form">+ Tambah Template</a>
+        </div>
+        <div class="panel" style="margin-top:12px">
+            <p class="muted" style="margin-top:0">Isi surat (perihal, intro, fasilitas, cara pembayaran, ketentuan) &amp; aturan DP berbeda per <strong>jenis booth (Tipe Unit)</strong>. Template <strong>(default)</strong> dipakai bila tipe unit belum punya template khusus. Saat penawaran disimpan, isi template di-<em>snapshot</em> sehingga surat terbit tak berubah walau template diedit.</p>
+            <table class="data" style="width:100%">
+                <thead><tr><th>Nama</th><th>Tipe Unit</th><th>DP</th><th>Fasilitas/Bayar/Ketentuan</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                <?php foreach ($tpls as $t): ?>
+                    <tr>
+                        <td><strong><?= h($t['name']) ?></strong></td>
+                        <td><?= $t['unit_type'] === '' ? '<span class="badge">(default)</span>' : h($t['unit_type']) ?></td>
+                        <td><?= $t['dp_required'] ? 'Wajib · ' . h(rtrim(rtrim(number_format((float)$t['dp_months_default'],1,',',''),'0'),',')) . ' bln' : '<span class="muted">Tanpa DP</span>' ?></td>
+                        <td class="muted"><?= (int)(json_decode($t['fasilitas_json'] ?: '[]', true) ? count(json_decode($t['fasilitas_json'], true)) : 0) ?> / <?= (int)(json_decode($t['payment_json'] ?: '[]', true) ? count(json_decode($t['payment_json'], true)) : 0) ?> / <?= (int)(json_decode($t['terms_json'] ?: '[]', true) ? count(json_decode($t['terms_json'], true)) : 0) ?></td>
+                        <td><?= $t['status'] === 'active' ? '<span style="color:#16a34a">Aktif</span>' : '<span class="muted">Nonaktif</span>' ?></td>
+                        <td><a class="btn light" href="?r=offer_template_form&id=<?= (int)$t['id'] ?>">Edit</a></td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if (!$tpls): ?><tr><td colspan="6" class="muted">Belum ada template.</td></tr><?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php
+    });
+}
+
+function offer_template_form(PDO $pdo): void
+{
+    require_permission('manage_master');
+    $pid = current_property_id();
+    $id  = (int) getv('id');
+    $t = null;
+    if ($id) {
+        $st = $pdo->prepare("SELECT * FROM offer_templates WHERE id=? AND property_id=?");
+        $st->execute([$id, $pid]);
+        $t = $st->fetch();
+        if (!$t) { flash('Template tidak ditemukan.'); redirect_to('offer_templates'); }
+    }
+    $unitTypes = cl_unit_types($pdo, $pid);
+    $val = fn(string $k, $d = '') => h((string) ($t[$k] ?? $d));
+    $lines = fn(string $col) => h(implode("\n", json_decode((string) ($t[$col] ?? '[]'), true) ?: []));
+    layout(($t ? 'Edit' : 'Tambah') . ' Template Penawaran', function () use ($t, $id, $unitTypes, $val, $lines) {
+        ?>
+        <div class="toolbar"><a class="btn light" href="?r=offer_templates">← Daftar Template</a></div>
+        <form class="panel" method="post" action="?r=offer_template_save" style="margin-top:12px">
+            <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+            <input type="hidden" name="id" value="<?= (int)$id ?>">
+            <div class="form-grid">
+                <div><label>Nama Template</label><input name="name" required value="<?= $val('name') ?>" placeholder="mis. Fashion Booth"></div>
+                <div>
+                    <label>Tipe Unit</label>
+                    <select name="unit_type">
+                        <option value="">(default — semua tipe lain)</option>
+                        <?php foreach ($unitTypes as $ut): ?><option value="<?= h($ut) ?>" <?= ($t['unit_type'] ?? null) === $ut ? 'selected' : '' ?>><?= h($ut) ?></option><?php endforeach; ?>
+                        <?php $utc = (string)($t['unit_type'] ?? ''); if ($utc !== '' && !in_array($utc, $unitTypes, true)): ?><option value="<?= h($utc) ?>" selected><?= h($utc) ?></option><?php endif; ?>
+                    </select>
+                    <div class="help">Satu template per tipe unit. "(default)" dipakai utk tipe tanpa template khusus.</div>
+                </div>
+                <div><label>Perihal</label><input name="perihal" value="<?= $val('perihal') ?>" placeholder="Surat Penawaran Sewa ..."></div>
+                <div>
+                    <label>Status</label>
+                    <select name="status"><option value="active" <?= ($t['status'] ?? 'active') === 'active' ? 'selected' : '' ?>>Aktif</option><option value="inactive" <?= ($t['status'] ?? '') === 'inactive' ? 'selected' : '' ?>>Nonaktif</option></select>
+                </div>
+            </div>
+            <div style="margin-top:10px"><label>Paragraf Pembuka (intro)</label><textarea name="intro" rows="2" style="width:100%"><?= $val('intro') ?></textarea></div>
+
+            <div style="display:flex;gap:10px;align-items:flex-start;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:11px 14px;margin-top:12px">
+                <input type="checkbox" name="dp_required" id="dp_required" value="1" style="width:18px;height:18px;margin-top:1px" <?= !$t || !empty($t['dp_required']) ? 'checked' : '' ?>>
+                <div>
+                    <label for="dp_required" style="font-weight:700">Wajib DP (Down Payment)</label>
+                    <div class="help" style="margin-top:2px">Centang = penawaran tipe ini perlu DP. Kosongkan utk booth <strong>deposit-only</strong> (mis. Fashion/Food Stall) — validasi DP min 2 bln dilewati.</div>
+                    <div style="margin-top:6px"><label style="font-size:12px">Default DP (bulan)</label> <input type="number" step="0.5" min="0" name="dp_months_default" value="<?= $val('dp_months_default', '2') ?>" style="width:90px"></div>
+                </div>
+            </div>
+
+            <div style="margin-top:12px"><label>Fasilitas <span class="muted" style="font-weight:400">(1 baris = 1 poin)</span></label><textarea name="fasilitas" rows="3" style="width:100%"><?= $lines('fasilitas_json') ?></textarea></div>
+            <div style="margin-top:10px"><label>Cara Pembayaran <span class="muted" style="font-weight:400">(1 baris = 1 poin · placeholder: <code>{dp}</code> <code>{deposit}</code> <code>{total}</code> <code>{ppn}</code> <code>{grand}</code>)</span></label><textarea name="payment" rows="4" style="width:100%"><?= $lines('payment_json') ?></textarea></div>
+            <div style="margin-top:10px"><label>Ketentuan &amp; Persyaratan <span class="muted" style="font-weight:400">(1 baris = 1 poin)</span></label><textarea name="terms" rows="8" style="width:100%"><?= $lines('terms_json') ?></textarea></div>
+
+            <p class="form-actions" style="margin-top:16px"><button type="submit">💾 Simpan Template</button> <a class="btn secondary" href="?r=offer_templates">Batal</a></p>
+        </form>
+        <?php
+    });
+}
+
+function offer_template_save(PDO $pdo): void
+{
+    require_permission('manage_master');
+    verify_csrf();
+    $pid = current_property_id();
+    $id  = (int) post('id');
+    $unitType = trim((string) post('unit_type', ''));
+    $name = trim((string) post('name', ''));
+    if ($name === '') { flash('Nama template wajib diisi.'); redirect_to('offer_template_form', $id ? ['id' => $id] : []); }
+    // Cegah duplikat (property, unit_type)
+    $dup = $pdo->prepare("SELECT id FROM offer_templates WHERE property_id=? AND unit_type=? AND id<>? LIMIT 1");
+    $dup->execute([$pid, $unitType, $id]);
+    if ($dup->fetchColumn()) { flash('Sudah ada template untuk tipe unit tersebut. Edit yang ada atau pilih tipe lain.'); redirect_to('offer_template_form', $id ? ['id' => $id] : []); }
+
+    $J = fn($a) => json_encode($a, JSON_UNESCAPED_UNICODE);
+    $data = [
+        'property_id'       => $pid,
+        'unit_type'         => $unitType,
+        'name'              => $name,
+        'perihal'           => trim((string) post('perihal', '')),
+        'intro'             => trim((string) post('intro', '')),
+        'fasilitas_json'    => $J(_tpl_lines((string) post('fasilitas', ''))),
+        'payment_json'      => $J(_tpl_lines((string) post('payment', ''))),
+        'terms_json'        => $J(_tpl_lines((string) post('terms', ''))),
+        'dp_required'       => post('dp_required') ? 1 : 0,
+        'dp_months_default' => (float) post('dp_months_default', 2),
+        'status'            => post('status') === 'inactive' ? 'inactive' : 'active',
+    ];
+    if ($id) {
+        $sets = implode(', ', array_map(fn($k) => "$k=:$k", array_keys($data)));
+        $data['id'] = $id;
+        $pdo->prepare("UPDATE offer_templates SET $sets, updated_at=NOW() WHERE id=:id AND property_id=:property_id")->execute($data);
+        audit($pdo, 'update', 'offer_templates', (string) $id, $data);
+    } else {
+        $cols = implode(',', array_keys($data));
+        $ph   = implode(',', array_map(fn($k) => ":$k", array_keys($data)));
+        $pdo->prepare("INSERT INTO offer_templates ($cols) VALUES ($ph)")->execute($data);
+        audit($pdo, 'create', 'offer_templates', (string) $pdo->lastInsertId(), $data);
+    }
+    flash('Template penawaran disimpan.');
+    redirect_to('offer_templates');
+}
+
+/** AJAX: aturan DP & nama template utk unit terpilih (dipakai form penawaran). */
+function offer_template_rule(PDO $pdo): void
+{
+    require_permission('manage_offers');
+    header('Content-Type: application/json');
+    $pid = current_property_id();
+    $unitType = offer_unit_type($pdo, $pid, (string) getv('master_code', ''));
+    $tpl = offer_template_for($pdo, $pid, $unitType);
+    echo json_encode([
+        'unit_type'         => $unitType,
+        'template'          => $tpl['name'],
+        'dp_required'       => $tpl['dp_required'],
+        'dp_months_default' => $tpl['dp_months_default'],
+    ]);
+    exit;
 }

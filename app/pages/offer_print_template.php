@@ -1,6 +1,7 @@
 <?php
-/** Template cetak Surat Penawaran. Vars: $o (offer+join), $prop, $rp, $h. */
+/** Template cetak Surat Penawaran. Vars: $o (offer+join), $prop, $rp, $h, $letter. */
 if (!isset($o)) { http_response_code(400); exit('Konteks tidak valid.'); }
+$letter = $letter ?? ['perihal' => '', 'intro' => '', 'fasilitas' => [], 'payment' => [], 'terms' => []];
 $OFFICE_PHONE = '0542-8520555';   // nomor kantor (satu untuk semua properti)
 $propShort = ($prop['key'] ?? '') === 'pentacity' ? 'Pentacity' : 'e-Walk';
 $months = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
@@ -11,8 +12,8 @@ $periode = $o['start_date'] ? (date('d/m/Y', strtotime($o['start_date'])) . ' s/
 $contractMonths = (int) ($o['contract_months'] ?: 1);
 $days = ($o['start_date'] && $o['end_date']) ? ((int) floor((strtotime($o['end_date']) - strtotime($o['start_date'])) / 86400) + 1) : 0;
 $durasi = ($days > 0 && $days < 28) ? ($days . ' hari') : ($contractMonths . ' bulan' . ($days ? ' · ' . $days . ' hari' : ''));
-// Perihal selalu general (basis hari) — periode tanggal sudah tampil terpisah.
-$perihal = 'Surat Penawaran Sewa Area Pameran' . ($days > 0 ? ' ' . $days . ' Hari' : '');
+// Perihal dari template per jenis booth (fallback general bila kosong).
+$perihal = $letter['perihal'] ?: ('Surat Penawaran Sewa Area Pameran' . ($days > 0 ? ' ' . $days . ' Hari' : ''));
 // Rincian biaya
 $total    = (float) $o['total_calculated'];
 $ppn      = round($total * 11 / 12 * 0.12);
@@ -26,7 +27,7 @@ $validTs  = strtotime(($o['offer_date'] ?: date('Y-m-d')) . ' +7 days');
 $berlaku  = (int) date('d', $validTs) . ' ' . $months[(int) date('n', $validTs)] . ' ' . date('Y', $validTs);
 // Kontak pembayaran: fallback ke kantor bila PIC kosong
 $payWa    = $o['pic_phone'] ?: $OFFICE_PHONE;
-$ketentuan = offer_terms();
+$ketentuan = ($letter['terms'] ?? []) ?: offer_terms();
 ?>
 <?php $PDF_MODE = !empty($PDF_MODE); /* diset oleh offer_print() utk jalur mPDF */ ?>
 <?php if (!$PDF_MODE): ?>
@@ -140,7 +141,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
         Di Tempat
     </div>
 
-    <p class="intro" style="margin:8px 0">Dengan hormat,<br>Bersama ini kami Management e-Walk dan Pentacity Mall Balikpapan menawarkan space exhibition sebagai berikut:</p>
+    <p class="intro" style="margin:8px 0">Dengan hormat,<br><?= $h($letter['intro'] ?: 'Bersama ini kami Management e-Walk dan Pentacity Mall Balikpapan menawarkan space exhibition sebagai berikut:') ?></p>
 
     <table class="obj">
         <thead><tr><th>Lokasi</th><th>Luasan</th><th>Harga Sewa / Periode</th><th>Keterangan</th></tr></thead>
@@ -166,15 +167,18 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
         <tr class="grand"><td class="lbl">Grand Total (pembayaran awal + deposit)</td><td class="amt"><?= $rp($grand) ?></td></tr>
     </table>
 
+    <?php
+    $facil = $letter['fasilitas'] ?: offer_facilities();
+    $payList = $letter['payment'] ?: [];
+    $amts = ['dp' => $o['dp_amount'] ?: 0, 'deposit' => $deposit, 'total' => $total, 'ppn' => $ppn, 'grand' => $grand];
+    ?>
     <div class="sec">Fasilitas</div>
-    <ul><?php foreach (offer_facilities() as $f): ?><li><?= $h($f) ?></li><?php endforeach; ?></ul>
+    <ul><?php foreach ($facil as $f): ?><li><?= $h($f) ?></li><?php endforeach; ?></ul>
 
+    <?php if ($payList): ?>
     <div class="sec">Cara Pembayaran</div>
-    <ol class="pay">
-        <li>Wajib membayar <strong>biaya sewa</strong> senilai <strong><?= $rp($o['dp_amount'] ?: $total) ?></strong> (Exc. PPN 12%) maksimal 1 minggu setelah penawaran disetujui, dan pelunasan paling lambat H-7 sebelum pelaksanaan sewa.</li>
-        <li>Wajib membayar <strong>Security Deposit</strong> (uang jaminan) senilai <strong><?= $rp($o['deposit_amount']) ?></strong> sebagai jaminan kerusakan / pengakhiran kontrak sebelum masa sewa berakhir.</li>
-        <li>Apabila tidak terjadi kerusakan setelah masa sewa berakhir, Security Deposit dikembalikan 100%.</li>
-    </ol>
+    <ol class="pay"><?php foreach ($payList as $p): ?><li><?= $h(offer_letter_fill((string) $p, $amts)) ?></li><?php endforeach; ?></ol>
+    <?php endif; ?>
     <div class="rek">
         Pembayaran ditransfer ke rekening:<br>
         <strong>PT. Wulandari Bangun Laksana</strong> · Bank Rakyat Indonesia (BRI) · No. Rek <strong>2078-01-000560-30-4</strong><br>

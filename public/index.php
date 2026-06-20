@@ -27,6 +27,15 @@ if (!$isDisplayRoute && session_status() !== PHP_SESSION_ACTIVE) {
     if ((is_dir($sessionPath) || @mkdir($sessionPath, 0775, true)) && is_writable($sessionPath)) {
         ini_set('session.save_path', $sessionPath);
     }
+    // Harden cookie sesi: HttpOnly (anti pencurian via XSS), SameSite=Lax (anti
+    // CSRF lintas situs), Secure otomatis saat HTTPS (di lokal HTTP tetap jalan).
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path'     => '/',
+        'httponly' => true,
+        'secure'   => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+        'samesite' => 'Lax',
+    ]);
     session_name('CLARA');
     session_start();
 }
@@ -101,6 +110,15 @@ $masterConfig = [
             'status' => 'Status',
         ],
         'order'     => "sort_order ASC, CASE floor WHEN 'LG' THEN 1 WHEN 'GF' THEN 2 WHEN 'UG' THEN 3 WHEN 'FF' THEN 4 WHEN 'SF' THEN 5 ELSE 6 END, code",
+    ],
+    'cl_unit_type' => [
+        'title'     => 'Master Tipe Unit',
+        'table'     => 'master_cl_unit_types',
+        'key'       => 'name',
+        'sortable'  => true,
+        'columns'   => ['name', 'status'],
+        'fields'    => ['name' => 'Nama Tipe', 'status' => 'Status'],
+        'order'     => 'sort_order ASC, name ASC',
     ],
     'gudang' => [
         'title'     => 'Master Gudang',
@@ -337,6 +355,10 @@ $pageFiles = [
     'offer_view'                  => 'offers.php',
     'offer_form'                  => 'offers.php',
     'offer_save'                  => 'offers.php',
+    'offer_templates'             => 'offers.php',
+    'offer_template_form'         => 'offers.php',
+    'offer_template_save'         => 'offers.php',
+    'offer_template_rule'         => 'offers.php',
     'offer_status'                => 'offers.php',
     'offer_close'                 => 'offers.php',
     'offer_print'                 => 'offers.php',
@@ -391,6 +413,10 @@ match ($route) {
     'offer_view'                  => offer_view($pdo),
     'offer_form'                  => offer_form($pdo),
     'offer_save'                  => offer_save($pdo),
+    'offer_templates'             => offer_templates_page($pdo),
+    'offer_template_form'         => offer_template_form($pdo),
+    'offer_template_save'         => offer_template_save($pdo),
+    'offer_template_rule'         => offer_template_rule($pdo),
     'offer_status'                => offer_status($pdo),
     'offer_close'                 => offer_close($pdo),
     'offer_print'                 => offer_print($pdo),

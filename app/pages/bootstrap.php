@@ -99,6 +99,8 @@ function layout(string $title, callable $body, array $opts = []): void
         ['', 'transactions&module=media', 'Media', 'view_transactions'],
         ['', 'transactions&module=gudang', 'Gudang', 'view_transactions'],
         ['Master Data', 'master&type=cl', 'Master Exhibition', 'view_master'],
+        ['', 'master&type=cl_unit_type', 'Master Tipe Unit', 'view_master'],
+        ['', 'offer_templates', 'Template Penawaran', 'manage_master'],
         ['', 'master&type=media', 'Master Media', 'view_master'],
         ['', 'master&type=gudang', 'Master Gudang', 'view_master'],
         ['', 'master&type=pic', 'Master PIC', 'view_master'],
