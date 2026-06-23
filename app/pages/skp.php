@@ -588,6 +588,15 @@ function skp_save(PDO $pdo): void
         redirect_to('skp_form', ['id' => $id]);
     }
 
+    // Idempotensi (anti double-submit): bila penawaran ini sudah punya SKP,
+    // jangan buat duplikat — arahkan ke yang sudah ada. Mirror guard di
+    // skp_form() (render-path) + dilindungi UNIQUE index (migrasi 036).
+    if ($offerId) {
+        $dup = $pdo->prepare('SELECT id FROM skp_documents WHERE offer_id = ? AND property_id = ? LIMIT 1');
+        $dup->execute([$offerId, $pid]);
+        if ($dupId = $dup->fetchColumn()) { redirect_to('skp_form', ['id' => (int) $dupId]); }
+    }
+
     // INSERT baru (offer-based atau legacy transaksi). Selalu draft dulu →
     // setelah lampiran terproses & lolos validasi, baru dipromosikan ke submitted.
     $cols = array_keys($fields);
@@ -596,10 +605,22 @@ function skp_save(PDO $pdo): void
          . implode(', ', $cols) . ')
          VALUES (:pid, :doc, :offer, :trx, \'draft\', :uname, '
          . implode(', ', $place) . ')';
-    $pdo->prepare($sql)->execute(array_merge($fields, [
-        ':pid' => $pid, ':doc' => $docType, ':offer' => $offerId ?: null,
-        ':trx' => $offerId ? null : ($trxId ?: null), ':uname' => $uname,
-    ]));
+    try {
+        $pdo->prepare($sql)->execute(array_merge($fields, [
+            ':pid' => $pid, ':doc' => $docType, ':offer' => $offerId ?: null,
+            ':trx' => $offerId ? null : ($trxId ?: null), ':uname' => $uname,
+        ]));
+    } catch (PDOException $e) {
+        // Race double-submit yang lolos guard di atas → UNIQUE uniq_skp_offer
+        // (migrasi 036) menolak. Tangani anggun: arahkan ke SKP yang sudah ada,
+        // jangan biarkan jadi fatal 500.
+        if ($offerId && ($e->errorInfo[1] ?? 0) === 1062) {
+            $dup = $pdo->prepare('SELECT id FROM skp_documents WHERE offer_id = ? AND property_id = ? LIMIT 1');
+            $dup->execute([$offerId, $pid]);
+            if ($dupId = $dup->fetchColumn()) { redirect_to('skp_form', ['id' => (int) $dupId]); }
+        }
+        throw $e;
+    }
     $newId = (int) $pdo->lastInsertId();
     _skp_handle_uploads($pdo, $newId, $uname, $clientId);
     _skp_update_master($pdo, $clientId, $ktp, $npwp, $siup);
@@ -699,10 +720,6 @@ function skp_approve(PDO $pdo): void
     $prop  = current_property();
     $code  = _skp_prop_code($prop['key'] ?? '');
     $prefix = ($skp['doc_type'] ?? 'skp') === 'sks' ? 'SKS' : 'SKP';
-    $pdo->prepare('INSERT INTO skp_counters (property_id, year, last_no) VALUES (?, ?, 1)
-                   ON DUPLICATE KEY UPDATE last_no = last_no + 1')->execute([$pid, $year]);
-    $seq = (int) $pdo->query("SELECT last_no FROM skp_counters WHERE property_id = $pid AND year = $year")->fetchColumn();
-    $skpNo = sprintf('%s/%s/%d/%03d', $prefix, $code, $year, $seq);
 
     // Snapshot nilai cetak
     $days  = _skp_days($src['start_date'], $src['end_date']);
@@ -724,24 +741,42 @@ function skp_approve(PDO $pdo): void
     ];
 
     $signToken = bin2hex(random_bytes(20));
-    $pdo->prepare(
-        'UPDATE skp_documents SET status=\'approved\', skp_no=?, approved_by=?, approved_at=CURRENT_TIMESTAMP,
-         snapshot_json=?, sign_token=? WHERE id=? AND property_id=?'
-    )->execute([$skpNo, $_SESSION['user']['name'] ?? 'manager', json_encode($snapshot, JSON_UNESCAPED_UNICODE), $signToken, $id, $pid]);
 
-    // Transaksi + alokasi terbit saat approve (offer-based, bila belum ada).
-    // Inilah titik deal masuk ke Dashboard/Achievement/Recurring.
+    // ATOMIK: nomor SKP + status approved + transaksi/alokasi harus terbit
+    // bersama. Bila pembuatan transaksi gagal, SEMUA di-rollback (termasuk
+    // increment counter) sehingga tidak ada nomor "terbakar" dan SKP tetap
+    // 'submitted' agar bisa di-approve ulang. next_seq_no dipanggil DI DALAM
+    // transaksi agar rollback juga mengembalikan counter.
     $trxMsg = '';
-    if (empty($skp['transaction_id']) && !empty($skp['offer_id'])) {
-        try {
+    try {
+        $pdo->beginTransaction();
+
+        $seq   = next_seq_no($pdo, 'skp_counters', $pid, $year);
+        $skpNo = sprintf('%s/%s/%d/%03d', $prefix, $code, $year, $seq);
+
+        $pdo->prepare(
+            'UPDATE skp_documents SET status=\'approved\', skp_no=?, approved_by=?, approved_at=CURRENT_TIMESTAMP,
+             snapshot_json=?, sign_token=? WHERE id=? AND property_id=?'
+        )->execute([$skpNo, $_SESSION['user']['name'] ?? 'manager', json_encode($snapshot, JSON_UNESCAPED_UNICODE), $signToken, $id, $pid]);
+
+        // Transaksi + alokasi terbit saat approve (offer-based, bila belum ada).
+        // Inilah titik deal masuk ke Dashboard/Achievement/Recurring.
+        if (empty($skp['transaction_id']) && !empty($skp['offer_id'])) {
             $newTrxId = _skp_create_transaction($pdo, array_merge($skp, ['skp_no' => $skpNo]), $src, $pid);
             $pdo->prepare('UPDATE skp_documents SET transaction_id=? WHERE id=? AND property_id=?')->execute([$newTrxId, $id, $pid]);
             audit($pdo, 'create', 'transactions', (string) $newTrxId, ['from_skp' => $id, 'skp_no' => $skpNo]);
             $trxMsg = ' Transaksi #' . $newTrxId . ' terbit & masuk laporan.';
-        } catch (Throwable $e) {
-            $trxMsg = ' (Catatan: transaksi gagal dibuat otomatis — ' . $e->getMessage() . ')';
         }
+
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('skp_approve gagal (id=' . $id . '): ' . $e->getMessage());
+        // Tidak ada nomor terbakar — SKP tetap menunggu approval, bisa diulang.
+        flash('Gagal menyetujui SKP — transaksi tidak dapat dibuat: ' . $e->getMessage() . '. Tidak ada perubahan disimpan, silakan coba lagi.');
+        redirect_to('skp_form', ['id' => $id]);
     }
+
     audit($pdo, 'approve', 'skp_documents', (string) $id, ['skp_no' => $skpNo]);
     flash("Disetujui. Nomor terbit: $skpNo." . $trxMsg);
     redirect_to('skp_form', ['id' => $id]);

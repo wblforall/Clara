@@ -227,10 +227,11 @@ if ($route === 'doc_verify') {
     exit;
 }
 
-// ─── Permintaan Kontrak: link ke Legal (publik, via share_token) ──────────────
-if ($route === 'contract_legal' || $route === 'contract_legal_approve' || $route === 'contract_legal_print') {
+// ─── Permintaan Kontrak: link ke Legal (publik read-only, via share_token) ────
+// contract_legal_approve SENGAJA tidak di sini — ia mengubah state (status=approved)
+// sehingga harus berjalan di area terautentikasi (lihat pageFiles/dispatch di bawah).
+if ($route === 'contract_legal' || $route === 'contract_legal_print') {
     require_once APP_ROOT . '/app/pages/contract_request.php';
-    if ($route === 'contract_legal_approve') contract_legal_approve($pdo);
     if ($route === 'contract_legal_print') contract_legal_print($pdo);
     contract_legal_page($pdo);
     exit;
@@ -351,6 +352,7 @@ $pageFiles = [
     'contract_request_form'       => 'contract_request.php',
     'contract_request_save'       => 'contract_request.php',
     'contract_request_print'      => 'contract_request.php',
+    'contract_legal_approve'      => 'contract_request.php',
     'offers'                      => 'offers.php',
     'offer_view'                  => 'offers.php',
     'offer_form'                  => 'offers.php',
@@ -409,6 +411,7 @@ match ($route) {
     'contract_request_form'       => contract_request_form($pdo),
     'contract_request_save'       => contract_request_save($pdo),
     'contract_request_print'      => contract_request_print($pdo),
+    'contract_legal_approve'      => contract_legal_approve($pdo),
     'offers'                      => offers_list_page($pdo),
     'offer_view'                  => offer_view($pdo),
     'offer_form'                  => offer_form($pdo),

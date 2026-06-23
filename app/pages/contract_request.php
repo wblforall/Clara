@@ -364,16 +364,15 @@ function contract_request_save(PDO $pdo): void
         if (!$reqNo) {
             $year = (int) date('Y');
             $prop = current_property();
-            $pdo->prepare('INSERT INTO contract_request_counters (property_id, year, last_no) VALUES (?,?,1)
-                           ON DUPLICATE KEY UPDATE last_no=last_no+1')->execute([$pid, $year]);
-            $seq = (int) $pdo->query("SELECT last_no FROM contract_request_counters WHERE property_id=$pid AND year=$year")->fetchColumn();
+            $seq  = next_seq_no($pdo, 'contract_request_counters', $pid, $year);
             $reqNo = sprintf('FPK/%s/%d/%03d', _cr_prop_code($prop['key'] ?? ''), $year, $seq);
         }
         // Token share utk link ke Legal (sekali terbit, dipakai ulang).
         $tok = $pdo->prepare('SELECT share_token FROM contract_requests WHERE id=?');
         $tok->execute([$id]);
         $shareToken = $tok->fetchColumn() ?: bin2hex(random_bytes(20));
-        $pdo->prepare("UPDATE contract_requests SET status='sent', req_no=?, share_token=?, sent_at=CURRENT_TIMESTAMP WHERE id=? AND property_id=?")
+        // Token link Legal berlaku 14 hari sejak (re)kirim.
+        $pdo->prepare("UPDATE contract_requests SET status='sent', req_no=?, share_token=?, share_token_expires_at=DATE_ADD(NOW(), INTERVAL 14 DAY), sent_at=CURRENT_TIMESTAMP WHERE id=? AND property_id=?")
             ->execute([$reqNo, $shareToken, $id, $pid]);
         flash("Formulir terkirim. No: $reqNo. Salin link / cetak PDF untuk Legal.");
     } elseif (($cr['status'] ?? '') === 'sent') {
@@ -390,8 +389,15 @@ function contract_request_print(PDO $pdo): void
     require_permission('manage_skp');
     $pid = current_property_id();
     $id  = (int) getv('id');
-    $st = $pdo->prepare('SELECT * FROM contract_requests WHERE id=? AND property_id=?');
-    $st->execute([$id, $pid]);
+    // Batasi ke scope sales. contract_requests tidak punya kolom PIC, jadi cukup
+    // batasi ke created_by (pembuat) — role non-sales tetap lihat semua (#13).
+    $scopeSql = ''; $scopeParams = [];
+    if ($scope = current_sales_scope($pdo, $pid)) {
+        $scopeSql = ' AND cr.created_by = ?';
+        $scopeParams = [$scope['uname']];
+    }
+    $st = $pdo->prepare('SELECT cr.* FROM contract_requests cr WHERE cr.id=? AND cr.property_id=?' . $scopeSql);
+    $st->execute(array_merge([$id, $pid], $scopeParams));
     $cr = $st->fetch();
     if (!$cr) { http_response_code(404); exit('Formulir tidak ditemukan.'); }
     // Token utk QR validasi (terbit sekali, dipakai ulang).
@@ -425,7 +431,7 @@ function contract_request_print(PDO $pdo): void
 function contract_legal_page(PDO $pdo): void
 {
     $token = (string) getv('token', '');
-    $st = $pdo->prepare('SELECT * FROM contract_requests WHERE share_token = ? AND status IN ("sent","approved") LIMIT 1');
+    $st = $pdo->prepare('SELECT * FROM contract_requests WHERE share_token = ? AND status IN ("sent","approved") AND (share_token_expires_at IS NULL OR share_token_expires_at > NOW()) LIMIT 1');
     $st->execute([$token]);
     $cr = $token !== '' ? $st->fetch() : false;
     if (!$cr) { http_response_code(404); exit('Tautan tidak valid atau formulir belum dikirim.'); }
@@ -592,10 +598,11 @@ function contract_legal_page(PDO $pdo): void
                     <?php if (!empty($cr['legal_note'])): ?><div style="margin-top:6px">Catatan: <?= $h($cr['legal_note']) ?></div><?php endif; ?>
                 </div>
             <?php else: ?>
-                <form method="post" action="?r=contract_legal_approve&token=<?= $h($cr['share_token']) ?>" style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:14px 16px" onsubmit="return confirm('Setujui permintaan kontrak ini? Pemohon akan melihat status disetujui.')">
-                    <p style="margin:0 0 8px;color:#374151">Setelah dokumen ditinjau, klik tombol di bawah untuk menyetujui. Pemohon (sales) akan melihat status <strong>Disetujui Legal</strong>.</p>
+                <form method="post" action="?r=contract_legal_approve" style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:14px 16px" onsubmit="return confirm('Setujui permintaan kontrak ini? Pemohon akan melihat status disetujui.')">
+                    <input type="hidden" name="_csrf" value="<?= $h(csrf_token()) ?>">
+                    <input type="hidden" name="token" value="<?= $h($cr['share_token']) ?>">
+                    <p style="margin:0 0 8px;color:#374151">Setelah dokumen ditinjau, klik tombol di bawah untuk menyetujui. Persetujuan tercatat atas nama akun Legal yang sedang login. Pemohon (sales) akan melihat status <strong>Disetujui Legal</strong>.</p>
                     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-                        <div><label style="font-size:12px;font-weight:700;display:block">Nama Petugas Legal</label><input name="legal_by" placeholder="Nama Anda" style="min-width:200px;padding:8px"></div>
                         <div style="flex:1;min-width:220px"><label style="font-size:12px;font-weight:700;display:block">Catatan (opsional)</label><input name="legal_note" placeholder="mis. lanjut buat draft kontrak" style="width:100%;padding:8px"></div>
                         <button type="submit" style="background:#6d28d9;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-weight:700;cursor:pointer">✓ Setujui Permintaan</button>
                     </div>
@@ -620,16 +627,20 @@ function contract_legal_page(PDO $pdo): void
     exit;
 }
 
-// ─── Legal menyetujui via link publik (tanpa login, validasi share_token) ─────
+// ─── Legal menyetujui (terautentikasi, butuh approve_skp + CSRF, via share_token) ─────
 function contract_legal_approve(PDO $pdo): void
 {
-    $token = (string) (getv('token', '') ?: post('token', ''));
+    require_login();
+    require_permission('approve_skp');
+    verify_csrf();
+    $token = (string) post('token', '');
     $st = $pdo->prepare('SELECT id, status FROM contract_requests WHERE share_token = ? LIMIT 1');
     $st->execute([$token]);
     $cr = $token !== '' ? $st->fetch() : false;
     if (!$cr) { http_response_code(404); exit('Tautan tidak valid.'); }
     if ($cr['status'] === 'sent') {
-        $by   = trim((string) post('legal_by')) ?: 'Departemen Legal';
+        // Identitas penyetuju dari sesi login (bukan input bebas).
+        $by   = trim((string) ($_SESSION['user']['name'] ?? '')) ?: 'Departemen Legal';
         $note = trim((string) post('legal_note')) ?: null;
         $pdo->prepare("UPDATE contract_requests SET status='approved', legal_by=?, legal_note=?, legal_approved_at=CURRENT_TIMESTAMP WHERE id=?")
             ->execute([substr($by, 0, 120), $note ? substr($note, 0, 500) : null, (int) $cr['id']]);
@@ -645,7 +656,7 @@ function contract_legal_approve(PDO $pdo): void
 function contract_legal_print(PDO $pdo): void
 {
     $token = (string) getv('token', '');
-    $st = $pdo->prepare('SELECT * FROM contract_requests WHERE share_token = ? AND status IN ("sent","approved") LIMIT 1');
+    $st = $pdo->prepare('SELECT * FROM contract_requests WHERE share_token = ? AND status IN ("sent","approved") AND (share_token_expires_at IS NULL OR share_token_expires_at > NOW()) LIMIT 1');
     $st->execute([$token]);
     $cr = $token !== '' ? $st->fetch() : false;
     if (!$cr) { http_response_code(404); exit('Tautan tidak valid.'); }

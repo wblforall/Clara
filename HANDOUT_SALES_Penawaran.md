@@ -86,13 +86,18 @@ Di halaman preview penawaran:
 
 Customer membuka link → melihat **seluruh isi surat** (identitas, biaya, fasilitas, cara bayar, **ketentuan lengkap**) → tanda tangan di layar (HP/komputer).
 
+> 🔄 **Otomatis "Terkirim":** begitu customer **membuka link TTD**, status penawaran berubah sendiri dari *Draft* → **Terkirim**. Anda tidak perlu menandai manual.
+> ⏳ **Hanya berlaku 7 hari:** bila customer membuka link **setelah masa berlaku lewat (>7 hari)**, sistem menolak TTD dengan pesan *"Penawaran sudah kedaluwarsa"*. Lihat cara mengatasinya di Tahap 4.
+
 ---
 
 ## TAHAP 3 — Negosiasi & Revisi
 
-- Saat penawaran sedang dibahas, ubah status lewat tombol: **Tandai Terkirim** → **Tandai Nego**.
+- Saat penawaran sedang dibahas, tandai **Tandai Nego** (status: Negosiasi).
 - Untuk revisi harga/periode: buka **✎ Edit**, ubah, simpan. **Setiap revisi tercatat** (untuk catatan negosiasi).
 - Selama customer **belum TTD**, Anda **masih bebas merevisi**.
+
+> ✍️ **Nego tetap bisa langsung di-TTD:** customer boleh menandatangani meski status masih *Negosiasi*. Saat ia membuka link TTD, status otomatis menjadi **Terkirim** lalu lanjut TTD. Jadi setelah revisi, cukup **kirim ulang link**-nya — tidak perlu menandai apa pun lebih dulu.
 
 ---
 
@@ -103,7 +108,11 @@ Penawaran menjadi **DEAL** lewat salah satu cara:
 - **A. Customer TTD online** (disarankan) → otomatis **DEAL** & nilai terkunci. ✅
 - **B. Tandai DEAL manual** → tombol **Tandai DEAL** di halaman preview.
 
-> Setelah DEAL, penawaran **terkunci** (tidak bisa diedit lagi).
+> Setelah DEAL, penawaran **terkunci** (tidak bisa diedit lagi). Cara **B (Tandai DEAL manual)** juga ikut **mengunci salinan nilai** penawaran saat itu, sama seperti TTD online.
+
+> ⏳ **Penawaran kedaluwarsa (>7 hari) tidak bisa di-TTD lagi.** Bila masa berlaku sudah lewat dan customer baru mau tanda tangan:
+> - **Buat penawaran baru** (atau lewat **+ Perpanjang** untuk renewal), lalu kirim ulang link-nya; **atau**
+> - bila sudah sepakat, gunakan **Tandai DEAL manual**.
 
 ### Bila TIDAK jadi (tidak deal)
 Klik **Tutup (Tidak Deal)** → **wajib pilih alasan** + catatan singkat (untuk analisa). Penawaran ditutup.
@@ -153,7 +162,9 @@ Di panel SKP yang sudah disetujui, ada **2 opsi**:
 Setelah SKP **ditandatangani**, bila perlu kontrak resmi:
 - Menu/tombol **Permintaan Kontrak** → formulir auto-isi dari SKP (KTP/NPWP ✓).
 - Lengkapi (mis. unggah Akta / Surat Kuasa bila ada) → **kirim ke Legal** (Simpan & Tandai Terkirim / kirim via link).
-- Legal meninjau & menyetujui → Anda lihat badge **"Disetujui Legal"**.
+- Legal (login dengan akun-nya) meninjau & menyetujui → Anda lihat badge **"Disetujui Legal"**.
+
+> ⏳ **Link ke Legal berlaku 14 hari.** Lewat itu link kedaluwarsa demi keamanan dokumen (KTP/NPWP). Bila perlu, buka formulir lalu **kirim ulang** untuk menerbitkan link baru.
 
 ---
 
@@ -178,11 +189,13 @@ Menu: **Renewal Kontrak** (Papan Renewal) — daftar kontrak yang mendekati habi
 | **Mulai dari penawaran** | Semua deal baru wajib lewat Surat Penawaran. |
 | **Template otomatis** | Isi surat (ketentuan, fasilitas, cara bayar, DP) mengikuti **jenis booth (Tipe Unit)** secara otomatis. |
 | **DP per jenis booth** | Fashion Booth / Food Stall = **deposit saja (tanpa DP)**. Jenis lain = DP wajib. |
-| **Masa berlaku** | Penawaran berlaku **7 hari**. |
+| **Masa berlaku** | Penawaran berlaku **7 hari** — **dan kini dipaksa sistem**: lewat 7 hari, TTD online ditolak. |
+| **Status otomatis** | Saat customer **membuka link TTD**, status auto jadi **Terkirim** (dari Draft/Nego). |
 | **PPN** | Tertulis 12%, beban efektif **11%** (DPP Nilai Lain). |
-| **Revisi** | Bebas revisi **sebelum** customer TTD / sebelum DEAL. |
-| **Kunci nilai** | Setelah DEAL & setelah SKP disetujui, nilai **terkunci**. |
+| **Revisi** | Bebas revisi **sebelum** customer TTD / sebelum DEAL. Setelah revisi nego, cukup **kirim ulang link**. |
+| **Kunci nilai** | Setelah DEAL (TTD online **atau** Tandai DEAL manual) & setelah SKP disetujui, nilai **terkunci**. |
 | **TTD = DEAL** | Customer TTD penawaran online = otomatis DEAL. |
+| **Link Legal** | Link Permintaan Kontrak ke Legal berlaku **14 hari**. |
 | **Tidak deal** | Wajib **Tutup + alasan** (jangan digantung). |
 | **Salin di HP/PWA** | Tombol **Salin Link/Pesan** berfungsi di aplikasi HP. |
 
@@ -201,6 +214,15 @@ J: Tidak bisa — setelah TTD/DEAL nilai terkunci. Harus buat penawaran baru ata
 
 **T: Link "Salin Pesan" tidak jalan?**
 J: Sudah diperbaiki — berfungsi di HP & aplikasi. Pakai **Salin Pesan** lalu tempel (paste) di chat agar teks lengkap + link ikut.
+
+**T: Customer dapat pesan "Penawaran sudah kedaluwarsa" saat mau TTD?**
+J: Masa berlaku 7 hari sudah lewat. Buat **penawaran baru** (atau **+ Perpanjang**) dan kirim ulang link-nya; atau bila sudah sepakat, pakai **Tandai DEAL manual**.
+
+**T: Status penawaran saya berubah jadi "Terkirim" sendiri, padahal belum saya tandai. Kenapa?**
+J: Itu normal — status naik otomatis begitu **customer membuka link TTD**. Artinya link Anda sudah sampai & dibuka.
+
+**T: Penawaran masih "Negosiasi", apakah customer tetap bisa TTD?**
+J: Bisa. Saat customer membuka link, status otomatis jadi Terkirim lalu lanjut TTD. Setelah revisi, cukup **kirim ulang link** — tak perlu menandai apa pun dulu.
 
 ---
 

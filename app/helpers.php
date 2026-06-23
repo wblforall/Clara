@@ -37,6 +37,52 @@ function money($value): string
     return 'Rp ' . number_format((float) $value, 0, ',', '.');
 }
 
+/**
+ * Parse input nominal rupiah dari form menjadi float, aman terhadap pemisah
+ * ribuan & desimal. Konvensi Indonesia: titik = ribuan, koma = desimal.
+ * Mengganti pola lama preg_replace('/\D/','',..) yang MEMBUANG titik desimal
+ * sehingga "1500000.50" salah jadi 150000050 (~100x). Lihat temuan review #3/#5.
+ */
+function parse_rupiah($raw): float
+{
+    $s = trim((string) $raw);
+    if ($s === '') return 0.0;
+    // Buang semua kecuali digit, titik, koma, minus.
+    $s = preg_replace('/[^\d.,\-]/', '', $s);
+    if ($s === '' || $s === '-') return 0.0;
+    if (strpos($s, ',') !== false) {
+        // Ada koma → koma adalah desimal, titik adalah ribuan.
+        $s = str_replace('.', '', $s);
+        $s = str_replace(',', '.', $s);
+    } else {
+        // Tanpa koma → titik dianggap pemisah ribuan (konvensi ID), buang.
+        $s = str_replace('.', '', $s);
+    }
+    return is_numeric($s) ? (float) $s : 0.0;
+}
+
+/**
+ * Ambil nomor urut berikutnya dari tabel counter (offer_counters / skp_counters
+ * / contract_request_counters) secara ATOMIK. Mengganti pola lama:
+ *   INSERT .. ON DUPLICATE KEY UPDATE last_no=last_no+1;  SELECT last_no ...
+ * yang rawan duplikat nomor saat dua request bersamaan (temuan review #15).
+ * LAST_INSERT_ID() membuat baca-nilai menyatu dengan increment per-koneksi.
+ */
+function next_seq_no(PDO $pdo, string $table, int $pid, int $year): int
+{
+    // $table dipanggil dengan literal di kode kami (bukan input user), namun
+    // batasi tetap ke whitelist agar tidak pernah jadi vektor injeksi.
+    $allowed = ['offer_counters', 'skp_counters', 'contract_request_counters'];
+    if (!in_array($table, $allowed, true)) {
+        throw new InvalidArgumentException("counter table tidak dikenal: $table");
+    }
+    $pdo->prepare(
+        "INSERT INTO `$table` (property_id, year, last_no) VALUES (?, ?, LAST_INSERT_ID(1))
+         ON DUPLICATE KEY UPDATE last_no = LAST_INSERT_ID(last_no + 1)"
+    )->execute([$pid, $year]);
+    return (int) $pdo->lastInsertId();
+}
+
 function pct($value): string
 {
     return number_format(((float) $value) * 100, 1, ',', '.') . '%';
@@ -216,6 +262,27 @@ function current_sales_scope(PDO $pdo, int $pid): ?array
         $pic = (string) ($st->fetchColumn() ?: '');
     }
     return ['pic' => $pic, 'uname' => $uname];
+}
+
+/**
+ * Fragmen WHERE untuk pembatasan per-sales, siap ditempel ke query.
+ * Mengembalikan [sqlFragment, params].
+ *
+ * PENTING (temuan review #14): bila PIC tertaut kosong (''), JANGAN ikut
+ * mencocokkan pic_name='' — itu membocorkan semua baris ber-PIC kosong milik
+ * sales lain. Saat kosong, batasi HANYA ke created_by.
+ *
+ * @param string $picCol nama kolom pic (mis. 'o.pic_name')
+ * @param string $byCol  nama kolom pembuat (mis. 'o.created_by')
+ */
+function current_sales_scope_sql(PDO $pdo, int $pid, string $picCol = 'pic_name', string $byCol = 'created_by'): array
+{
+    $scope = current_sales_scope($pdo, $pid);
+    if (!$scope) return ['', []];                       // bukan sales → tanpa batas
+    if ($scope['pic'] === '') {
+        return [" AND $byCol = ?", [$scope['uname']]]; // pic kosong → created_by saja
+    }
+    return [" AND ($picCol = ? OR $byCol = ?)", [$scope['pic'], $scope['uname']]];
 }
 
 function permission_matrix(?array $set = null): array

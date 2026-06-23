@@ -17,11 +17,14 @@ RedirectMatch 403 (?i)(^|/)\.git(/|$)
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
-    # Paksa HTTPS di produksi (tidak aktif di localhost/127.0.0.1 → dev tetap jalan)
+    # Paksa HTTPS di produksi (tidak aktif di localhost/127.0.0.1 → dev tetap jalan).
+    # R=307 (bukan 301): mempertahankan method + body POST. Dengan 301/302 browser
+    # mengirim ulang POST sebagai GET tanpa body → tanda tangan customer hilang di
+    # alur TTD bila hit pertama lewat http (temuan review #11).
     RewriteCond %{HTTPS} off
     RewriteCond %{HTTP_HOST} !^localhost [NC]
     RewriteCond %{HTTP_HOST} !^127\.0\.0\.1 [NC]
-    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=307]
 
     RewriteRule ^public/ - [L]
     RewriteRule (^|/)\.git(/|$) - [F,L]

@@ -535,10 +535,17 @@ function mobile_transactions_page(PDO $pdo): void
     $where  = ['t.module = :module', 't.deleted_at IS NULL', 't.property_id = :pid'];
     $params = [':module' => $module, ':pid' => $pid];
     // Pembatasan per-sales: role 'sales' hanya lihat transaksi miliknya.
+    // Query ini pakai named params; replikasi logika helper (#14): bila PIC
+    // tertaut kosong, batasi HANYA ke created_by (jangan bocorkan baris ber-PIC kosong).
     if ($scope = current_sales_scope($pdo, $pid)) {
-        $where[] = '(t.pic_name = :sc_pic OR t.created_by = :sc_uname)';
-        $params[':sc_pic']   = $scope['pic'];
-        $params[':sc_uname'] = $scope['uname'];
+        if ($scope['pic'] === '') {
+            $where[] = 't.created_by = :sc_uname';
+            $params[':sc_uname'] = $scope['uname'];
+        } else {
+            $where[] = '(t.pic_name = :sc_pic OR t.created_by = :sc_uname)';
+            $params[':sc_pic']   = $scope['pic'];
+            $params[':sc_uname'] = $scope['uname'];
+        }
     }
     if ($search !== '') {
         $where[] = '(c.company_name LIKE :s1 OR t.master_code LIKE :s2)';
@@ -694,17 +701,17 @@ function mobile_offers_page(PDO $pdo): void
     $module = getv('module', '');
     if (!in_array($module, ['cl', 'media', 'gudang'], true)) $module = '';
 
-    // Pembatasan per-sales: role 'sales' hanya lihat miliknya sendiri.
-    $scope     = current_sales_scope($pdo, $pid);
-    $scopeSql  = $scope ? ' AND (o.pic_name = ? OR o.created_by = ?)' : '';
-    $scopeSqlC = $scope ? ' AND (pic_name = ? OR created_by = ?)' : '';
-    $scopeP    = $scope ? [$scope['pic'], $scope['uname']] : [];
+    // Pembatasan per-sales: role 'sales' hanya lihat miliknya sendiri (#14).
+    // Helper menutup kebocoran baris ber-PIC kosong: saat PIC tertaut kosong,
+    // fragmen hanya membatasi ke created_by.
+    [$scopeSql,  $scopePList]  = current_sales_scope_sql($pdo, $pid, 'o.pic_name', 'o.created_by');
+    [$scopeSqlC, $scopePCount] = current_sales_scope_sql($pdo, $pid, 'pic_name', 'created_by');
 
     // Hitung badge per tab (ikut filter modul + scope).
     $counts = ['on_going' => 0, 'deal' => 0, 'closed' => 0];
     $cq = 'SELECT status, COUNT(*) c FROM offers WHERE property_id = ?' . ($module ? ' AND module = ?' : '') . $scopeSqlC . ' GROUP BY status';
     $cs = $pdo->prepare($cq);
-    $cs->execute(array_merge([$pid], $module ? [$module] : [], $scopeP));
+    $cs->execute(array_merge([$pid], $module ? [$module] : [], $scopePCount));
     foreach ($cs->fetchAll() as $r) {
         foreach ($tabStatuses as $t => $sts) if (in_array($r['status'], $sts, true)) $counts[$t] += (int) $r['c'];
     }
@@ -714,7 +721,7 @@ function mobile_offers_page(PDO $pdo): void
         "SELECT o.*, c.company_name FROM offers o LEFT JOIN master_clients c ON c.id = o.client_id
          WHERE o.property_id = ? AND o.status IN ($in)" . ($module ? ' AND o.module = ?' : '') . $scopeSql . ' ORDER BY o.id DESC'
     );
-    $stmt->execute(array_merge([$pid], $tabStatuses[$tab], $module ? [$module] : [], $scopeP));
+    $stmt->execute(array_merge([$pid], $tabStatuses[$tab], $module ? [$module] : [], $scopePList));
     $rows = $stmt->fetchAll();
 
     layout('Penawaran', function () use ($rows, $tab, $counts, $module) {
@@ -816,10 +823,13 @@ function mobile_skp_page(PDO $pdo): void
     $module = getv('module', '');
     if (!in_array($module, ['cl', 'media', 'gudang'], true)) $module = '';
     if ($module) { $where[] = 'COALESCE(t.module, o.module) = ?'; $params[] = $module; }
-    // Pembatasan per-sales: hanya SKP dari penawaran miliknya / yang ia buat.
-    if ($scope = current_sales_scope($pdo, $pid)) {
-        $where[] = '(o.pic_name = ? OR s.created_by = ?)';
-        $params[] = $scope['pic']; $params[] = $scope['uname'];
+    // Pembatasan per-sales: hanya SKP dari penawaran miliknya / yang ia buat (#14).
+    // Helper memakai PIC dari offer (o.pic_name) & pembuat SKP (s.created_by);
+    // saat PIC tertaut kosong, fragmen hanya membatasi ke s.created_by.
+    [$scopeSkpSql, $scopeSkpP] = current_sales_scope_sql($pdo, $pid, 'o.pic_name', 's.created_by');
+    if ($scopeSkpSql !== '') {
+        $where[] = substr($scopeSkpSql, 5); // buang prefiks ' AND ' (di-join ulang oleh implode)
+        $params  = array_merge($params, $scopeSkpP);
     }
     $stmt = $pdo->prepare(
         'SELECT s.*,

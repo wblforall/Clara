@@ -393,6 +393,9 @@ function offer_view(PDO $pdo): void
             $offer['sign_token'] = bin2hex(random_bytes(20));
             $pdo->prepare('UPDATE offers SET sign_token=? WHERE id=? AND property_id=?')->execute([$offer['sign_token'], $id, $pid]);
         }
+        // Catatan #7: status TIDAK dipromosikan di sini — membuka detail untuk
+        // ditinjau tidak boleh mengubah status. Promosi draft→sent terjadi saat
+        // customer benar-benar MEMBUKA link TTD (lihat offer_sign_page).
         $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
         $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
         $signUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/?r=offer_sign&token=' . $offer['sign_token'];
@@ -1048,7 +1051,8 @@ function offer_save(PDO $pdo): void
     $slots    = max(1, (float) post('slots', 1));
     // Total kalkulasi (mesin pricing) → ditimpa harga nego final bila ada.
     $calc     = round(_offer_calc_total($pricing, $rate, $area, $slots, $days, $months));
-    $override = (float) preg_replace('/\D/', '', (string) post('override_amount', '')) ?: 0.0;
+    // #3 — parse rupiah aman via helper (titik ribuan / koma desimal), bukan strip digit.
+    $override = parse_rupiah(post('override_amount', '')) ?: 0.0;
     $final    = $override > 0 ? $override : $calc;
     $monthly  = $months > 0 ? round($final / $months) : $final;
     // Recurring/pengakuan ditentukan sales; default spread bila multi-bulan/lintas bulan.
@@ -1057,11 +1061,22 @@ function offer_save(PDO $pdo): void
               : (post('billing_method') === 'spread' ? 'spread' : (($months > 1 || $crossMonth) ? 'spread' : 'anchor_cycle'));
 
     // Template surat per jenis booth (unit_type) → aturan DP + snapshot isi surat.
-    $unitType = offer_unit_type($pdo, $pid, trim((string) post('master_code')) ?: null);
-    $tpl      = offer_template_for($pdo, $pid, $unitType);
+    // #6 — unit_type CL hanya relevan utk modul 'cl' (Exhibition). Media/Gudang
+    // pakai jalur netral (unit_type null) agar istilah booth pameran tidak ikut
+    // ter-bake ke surat media/gudang.
+    $unitType = $module === 'cl' ? offer_unit_type($pdo, $pid, trim((string) post('master_code')) ?: null) : '';
+    $tpl      = offer_template_for($pdo, $pid, $module === 'cl' ? $unitType : null);
+    // #4 — sinyal non-silent bila unit_type ada tapi template jatuh ke default
+    // (unit_type hasil kosong) → terbitnya surat dgn istilah salah bisa dilacak.
+    if ($unitType !== '' && ($tpl['unit_type'] ?? '') === '') {
+        error_log("offer template miss: property=$pid unit_type='$unitType' -> default");
+    }
     $dpReq    = $tpl['dp_required'] == 1;
     // DP wajib → min 1 bln; deposit-only (tak wajib) → boleh 0.
     $dpMonths = $dpReq ? max(1, (float) post('dp_months', $tpl['dp_months_default'])) : max(0, (float) post('dp_months', 0));
+    // #5 — DP deposit-only (dp_required=0) WAJIB 0 agar surat tidak kontradiktif
+    // (0 bulan tapi nominal DP > 0). Parse via helper rupiah.
+    $dpAmount = $dpReq ? parse_rupiah(post('dp_amount', '0')) : 0.0;
     $letterJson = json_encode([
         'template'    => $tpl['name'],
         'unit_type'   => $unitType,
@@ -1096,7 +1111,7 @@ function offer_save(PDO $pdo): void
         'recurring_flag'  => post('recurring_flag') ? 1 : 0,
         'cycle_recognition' => post('cycle_recognition') === 'cycle_end' ? 'cycle_end' : 'cycle_start',
         'dp_months'       => $dpMonths,
-        'dp_amount'       => (float) post('dp_amount', 0),
+        'dp_amount'       => $dpAmount, // #5 — 0 utk template deposit-only
         'deposit_months'  => (float) post('deposit_months', 1),
         'deposit_amount'  => (float) post('deposit_amount', 0),
         'perihal'         => $tpl['perihal'] ?: ('Surat Penawaran Sewa Area Pameran' . ($days > 0 ? ' ' . $days . ' Hari' : '')),
@@ -1156,16 +1171,37 @@ function offer_status(PDO $pdo): void
     $to  = post('status');
     // 'cancelled' (tutup/tidak deal) ditangani offer_close (wajib alasan).
     if (!in_array($to, ['sent', 'nego', 'deal'], true)) { redirect_to('offer_view', ['id' => $id]); }
-    $cur = $pdo->prepare('SELECT status, sent_at, nego_at FROM offers WHERE id=? AND property_id=?');
+    // #8 — butuh baris lengkap utk membangun snapshot saat transisi ke 'deal'
+    // (join client/unit agar bentuk snapshot sama dgn offer_sign_save).
+    $cur = $pdo->prepare(
+        "SELECT o.*, c.company_name, ct.name cp_name, u.location_name, u.floor
+         FROM offers o
+         LEFT JOIN master_clients c ON c.id = o.client_id
+         LEFT JOIN master_client_contacts ct ON ct.id = o.contact_id
+         LEFT JOIN master_cl_units u ON u.code = o.master_code AND u.property_id = o.property_id
+         WHERE o.id=? AND o.property_id=?"
+    );
     $cur->execute([$id, $pid]);
     $row = $cur->fetch();
     if (!$row || in_array($row['status'], ['deal', 'cancelled'], true)) { flash('Status terkunci.'); redirect_to('offer_view', ['id' => $id]); }
     // Stempel engagement (sekali, tidak ditimpa) untuk analisa aktivitas PIC.
     $extra = '';
+    $extraParams = [];
     if ($to === 'sent' && empty($row['sent_at'])) $extra .= ', sent_at=CURRENT_TIMESTAMP';
     if ($to === 'nego') { if (empty($row['sent_at'])) $extra .= ', sent_at=CURRENT_TIMESTAMP'; if (empty($row['nego_at'])) $extra .= ', nego_at=CURRENT_TIMESTAMP'; }
-    if ($to === 'deal') $extra .= ', deal_at=CURRENT_TIMESTAMP';
-    $pdo->prepare("UPDATE offers SET status=? $extra WHERE id=? AND property_id=?")->execute([$to, $id, $pid]);
+    if ($to === 'deal') {
+        $extra .= ', deal_at=CURRENT_TIMESTAMP';
+        // #8 — DEAL manual = finalisasi: kunci snapshot & signed_at agar tidak bisa
+        // di-TTD ulang via token publik. Bentuk snapshot sama dgn offer_sign_save.
+        if (empty($row['signed_at'])) {
+            $snap = _offer_sign_view($row);
+            $snap['offer_no'] = $row['offer_no'];
+            $extra .= ', signed_at=CURRENT_TIMESTAMP, snapshot_json=?';
+            $extraParams[] = json_encode($snap, JSON_UNESCAPED_UNICODE);
+        }
+    }
+    $pdo->prepare("UPDATE offers SET status=? $extra WHERE id=? AND property_id=?")
+        ->execute(array_merge([$to], $extraParams, [$id, $pid]));
     audit($pdo, 'status_' . $to, 'offers', (string) $id, ['status' => $to]);
     flash('Status penawaran diperbarui: ' . $to);
     redirect_to('offer_view', ['id' => $id]);
@@ -1361,11 +1397,29 @@ function offer_sign_page(PDO $pdo): void
         http_response_code(404);
         exit('Tautan tanda tangan tidak valid atau sudah kedaluwarsa.');
     }
+    // #7 — auto-promote: customer membuka link TTD = penawaran "terkirim".
+    // Berlaku dari 'draft' MAUPUN 'nego' (boleh TTD langsung dari negosiasi),
+    // tidak menurunkan 'deal'/'cancelled'. Idempoten via WHERE. Inilah syarat
+    // agar offer_sign_save (yang mewajibkan status='sent') bisa lanjut.
+    if (in_array($o['status'], ['draft', 'nego'], true)) {
+        $pdo->prepare("UPDATE offers SET status='sent', sent_at=COALESCE(sent_at, CURRENT_TIMESTAMP) WHERE id=? AND status IN ('draft','nego')")
+            ->execute([(int) $o['id']]);
+        $o['status'] = 'sent';
+    }
     $signed = !empty($o['signed_at']);
     // Bila sudah TTD, tampilkan dari snapshot terkunci; bila belum, dari data live.
-    $d = $signed && !empty($o['snapshot_json'])
-        ? (json_decode($o['snapshot_json'], true) ?: _offer_sign_view($o))
-        : _offer_sign_view($o);
+    // #9 — penawaran yg SUDAH TTD wajib punya snapshot valid; jangan diam-diam
+    // hitung ulang dari data live (bisa beda dgn yg ditandatangani). Hard-fail.
+    if ($signed) {
+        $snap = !empty($o['snapshot_json']) ? json_decode($o['snapshot_json'], true) : null;
+        if (!is_array($snap)) {
+            http_response_code(409);
+            exit('Data tanda tangan tidak konsisten. Hubungi admin.');
+        }
+        $d = $snap;
+    } else {
+        $d = _offer_sign_view($o);
+    }
     $a = $d['amounts'] ?? [];
     $letter = offer_letter($pdo, $o);   // isi surat per jenis booth (snapshot/template)
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
@@ -1378,9 +1432,17 @@ function offer_sign_save(PDO $pdo): void
 {
     $token = (string) post('token', getv('token', ''));
     $o = _offer_by_token($pdo, $token);
-    if (!$o || empty($o['offer_no']) || $o['status'] === 'cancelled' || !empty($o['signed_at'])) {
+    // #7 — TTD customer hanya boleh utk penawaran berstatus 'sent' (sudah dibagikan),
+    // belum ditandatangani, & nomor terbit. Draft/nego/deal/cancelled ditolak.
+    if (!$o || empty($o['offer_no']) || $o['status'] !== 'sent' || !empty($o['signed_at'])) {
         http_response_code(403);
         exit('Tautan tidak valid atau dokumen sudah ditandatangani.');
+    }
+    // #7 — tolak bila lewat masa berlaku (offer_date + 7 hari), sejalan _offer_sign_view.
+    $validTs = strtotime(($o['offer_date'] ?: date('Y-m-d')) . ' +7 days');
+    if ($validTs !== false && time() > $validTs) {
+        http_response_code(410);
+        exit('Penawaran sudah kedaluwarsa.');
     }
     $name = trim((string) post('sign_name'));
     $data = (string) post('signature');
@@ -1398,7 +1460,7 @@ function offer_sign_save(PDO $pdo): void
         "UPDATE offers SET status='deal', deal_at=COALESCE(deal_at, CURRENT_TIMESTAMP),
                 sign_name=?, sign_ip=?, sign_ua=?, signature_data=?, signed_at=CURRENT_TIMESTAMP,
                 snapshot_json=?
-         WHERE id=? AND sign_token=? AND signed_at IS NULL AND status<>'cancelled'"
+         WHERE id=? AND sign_token=? AND signed_at IS NULL AND status='sent'"
     )->execute([
         $name,
         substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),

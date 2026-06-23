@@ -85,6 +85,8 @@ lewat **aplikasi HP (CLARA mobile/PWA)**.
 
 Customer buka link → lihat **seluruh isi surat** (biaya, fasilitas, cara bayar, **ketentuan lengkap**) → tanda tangan pakai **jari** di layar HP.
 
+> 🔄 **Otomatis "Terkirim":** begitu customer **membuka link TTD**, status penawaran berubah sendiri jadi **Terkirim** (tak perlu ditandai manual).
+> ⏳ **Berlaku 7 hari:** bila link dibuka **setelah 7 hari**, TTD ditolak (*"Penawaran sudah kedaluwarsa"*). Atasi di Tahap 4.
 > 📤 **Bagikan** butuh koneksi aman (HTTPS). Bila lewat jaringan biasa, file akan **terunduh** dulu — lalu kirim manual.
 
 ---
@@ -92,16 +94,20 @@ Customer buka link → lihat **seluruh isi surat** (biaya, fasilitas, cara bayar
 ## TAHAP 3 — Negosiasi & Revisi
 
 Di **Preview** penawaran:
-- Ubah status: **Tandai Terkirim** → **Tandai Nego**.
+- Tandai **Tandai Nego** (status: Negosiasi).
 - Revisi: ketuk **Edit**, ubah, simpan. Setiap revisi tercatat.
 - Selama customer **belum TTD**, Anda **bebas merevisi**.
+
+> ✍️ **Nego tetap bisa langsung di-TTD:** customer boleh tanda tangan walau status masih *Negosiasi* — saat ia buka link, status otomatis jadi **Terkirim** lalu lanjut TTD. Setelah revisi, cukup **kirim ulang link**.
 
 ---
 
 ## TAHAP 4 — DEAL
 
 - **A. Customer TTD online** → otomatis **DEAL** & nilai terkunci. ✅
-- **B. Tandai DEAL** manual di Preview.
+- **B. Tandai DEAL** manual di Preview (juga **mengunci salinan nilai**, sama seperti TTD online).
+
+> ⏳ **Lewat 7 hari tidak bisa di-TTD.** Bila kedaluwarsa: buat **penawaran baru** (atau **+ Perpanjang**) lalu kirim ulang link; atau bila sudah sepakat, pakai **Tandai DEAL manual**.
 
 **Bila tidak jadi:** ketuk **Tutup (Tidak Deal)** → wajib pilih **alasan** + catatan.
 
@@ -144,7 +150,9 @@ Bagikan PDF SKP lewat tombol **📤 Bagikan** di kartu SKP.
 
 ## TAHAP 8 — (Opsional) Permintaan Kontrak ke Legal
 
-Setelah SKP ditandatangani: buat **Permintaan Kontrak** (auto-isi dari SKP) → lengkapi & **kirim ke Legal** → tunggu badge **"Disetujui Legal"**.
+Setelah SKP ditandatangani: buat **Permintaan Kontrak** (auto-isi dari SKP) → lengkapi & **kirim ke Legal** → tunggu badge **"Disetujui Legal"** (disetujui oleh Legal yang login dengan akun-nya).
+
+> ⏳ **Link ke Legal berlaku 14 hari** demi keamanan dokumen (KTP/NPWP). Lewat itu, buka formulir & **kirim ulang** untuk link baru.
 
 ---
 
@@ -164,11 +172,13 @@ Setelah SKP ditandatangani: buat **Permintaan Kontrak** (auto-isi dari SKP) → 
 | **Mulai dari penawaran** | Semua deal baru wajib lewat Surat Penawaran. |
 | **Template otomatis** | Isi surat ikut **jenis booth (Tipe Unit)** otomatis. |
 | **DP per jenis booth** | Fashion Booth / Food Stall = **deposit saja**. Lain = DP wajib. |
-| **Masa berlaku** | Penawaran **7 hari**. |
+| **Masa berlaku** | Penawaran **7 hari** — **dipaksa sistem**: lewat itu TTD ditolak. |
+| **Status otomatis** | Customer buka link TTD → status auto **Terkirim** (dari Draft/Nego). |
 | **PPN** | Tertulis 12%, efektif **11%**. |
-| **Revisi** | Bebas **sebelum** customer TTD. |
-| **TTD = DEAL** | Customer TTD = otomatis DEAL, nilai terkunci. |
+| **Revisi** | Bebas **sebelum** customer TTD. Sesudah revisi nego, cukup **kirim ulang link**. |
+| **TTD = DEAL** | Customer TTD (atau Tandai DEAL manual) = DEAL, nilai terkunci. |
 | **Tidak deal** | Wajib **Tutup + alasan**. |
+| **Link Legal** | Berlaku **14 hari**. |
 | **Bagikan PDF** | Tombol **📤 Bagikan** (butuh koneksi aman; jika tidak, terunduh dulu). |
 | **Salin Link/Pesan** | Berfungsi di aplikasi HP. |
 
@@ -187,6 +197,12 @@ J: Jenis booth itu **deposit-only** (Fashion/Food Stall) — memang tanpa DP.
 
 **T: "Bagikan" malah mengunduh, bukan kirim?**
 J: Itu normal di jaringan tanpa HTTPS. File terunduh — kirim manual lewat WhatsApp.
+
+**T: Customer dapat pesan "Penawaran sudah kedaluwarsa"?**
+J: Sudah lewat 7 hari. Buat **penawaran baru** (atau **+ Perpanjang**) & kirim ulang link; atau pakai **Tandai DEAL manual** bila sudah sepakat.
+
+**T: Status berubah "Terkirim" sendiri / penawaran Nego masih bisa di-TTD?**
+J: Normal. Status naik otomatis begitu customer **membuka link**, termasuk dari status Negosiasi — lalu lanjut TTD. Cukup kirim ulang link setelah revisi.
 
 ---
 
