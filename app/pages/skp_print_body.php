@@ -87,6 +87,16 @@ $skpHasQr = !empty($skp['sign_token']);
         <tr><td class="l">Produk</td><td class="c">:</td><td class="v"><?= $h($d['produk'] ?? '-') ?></td></tr>
     </table>
 
+    <?php if (!empty($d['is_bundle']) && !empty($d['bundle_items'])): $segL = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang']; ?>
+    <div class="sec">Komponen Paket</div>
+    <table class="pay">
+        <tr><td class="lbl"><strong>Titik / Unit</strong></td><td class="amt"><strong>Harga / Periode</strong></td></tr>
+        <?php foreach ($d['bundle_items'] as $bi): ?>
+        <tr><td class="lbl"><?= $h(($bi['name'] ?: $bi['master_code']) . ' · ' . ($segL[$bi['segment']] ?? $bi['segment'])) ?></td><td class="amt"><?= $rp($bi['total'] ?? 0) ?></td></tr>
+        <?php endforeach; ?>
+    </table>
+    <?php endif; ?>
+
     <div class="sec">Rincian Pembayaran Sewa</div>
     <table class="pay">
         <tr><td class="lbl">A. Biaya Sewa Area</td><td class="amt"></td></tr>

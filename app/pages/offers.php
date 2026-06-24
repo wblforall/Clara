@@ -14,15 +14,16 @@ function _offer_roman(int $m): string
 }
 function _offer_module_label(string $m): string
 {
-    return ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'][$m] ?? strtoupper($m);
+    return ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang', 'bundle' => 'Paket'][$m] ?? strtoupper($m);
 }
-/** [label, warna teks, warna latar] untuk badge modul (Exhibition/Media/Gudang). */
+/** [label, warna teks, warna latar] untuk badge modul (Exhibition/Media/Gudang/Paket). */
 function _offer_module_badge(string $m): array
 {
     return [
         'cl'     => ['Exhibition', '#0f766e', '#ccfbf1'],
         'media'  => ['Media', '#0369a1', '#e0f2fe'],
         'gudang' => ['Gudang', '#92400e', '#fef3c7'],
+        'bundle' => ['Paket', '#7c3aed', '#ede9fe'],
     ][$m] ?? [strtoupper($m), '#374151', '#f1f5f9'];
 }
 
@@ -248,7 +249,105 @@ function _offer_fields(): array
             'pricing_type', 'unit_rate', 'area_sqm', 'quantity', 'slots',
             'start_date', 'end_date', 'contract_months', 'monthly_amount', 'total_calculated', 'override_amount',
             'billing_method', 'recurring_flag', 'cycle_recognition',
-            'dp_months', 'dp_amount', 'deposit_months', 'deposit_amount', 'perihal', 'offer_date'];
+            'dp_months', 'dp_amount', 'deposit_months', 'deposit_amount', 'perihal', 'offer_date', 'is_bundle'];
+}
+
+// ─── Paket Bundling (offer multi-komponen) ───────────────────────────────────
+// Paket = penawaran dengan >=2 komponen (offer_items). Periode SAMA (level offer).
+// Lihat [[project-bundling-package]].
+
+/** Parse item paket dari POST (array sejajar item_*[]). Return list komponen ternormalisasi. */
+function _offer_parse_bundle_items(int $months): array
+{
+    $segs = (array) post('item_segment', []);
+    $mcs  = (array) post('item_master_code', []);
+    $nms  = (array) post('item_name', []);
+    $mon  = (array) post('item_monthly', []);
+    $dps  = (array) post('item_dp', []);
+    $deps = (array) post('item_deposit', []);
+    $out = [];
+    foreach ($segs as $i => $seg) {
+        $seg = in_array($seg, ['cl', 'media', 'gudang'], true) ? $seg : 'cl';
+        $mc  = trim((string) ($mcs[$i] ?? '')) ?: null;
+        $nm  = trim((string) ($nms[$i] ?? ''));
+        if ($mc === null && $nm === '') continue;            // lewati baris kosong
+        $mAmt = parse_rupiah($mon[$i] ?? '0');
+        $out[] = [
+            'segment'        => $seg,
+            'master_code'    => $mc,
+            'name_snapshot'  => $nm ?: $mc,
+            'pricing_type'   => null,
+            'unit_rate'      => 0.0,
+            'area_sqm'       => 0.0,
+            'slots'          => 1.0,
+            'monthly_amount' => $mAmt,
+            'dp_amount'      => parse_rupiah($dps[$i] ?? '0'),
+            'deposit_amount' => parse_rupiah($deps[$i] ?? '0'),
+            'total_amount'   => $mAmt * max(1, $months),
+        ];
+    }
+    return $out;
+}
+
+/** Tulis ulang komponen paket (replace-all) untuk sebuah offer. */
+function _offer_write_items(PDO $pdo, int $offerId, array $items): void
+{
+    $pdo->prepare('DELETE FROM offer_items WHERE offer_id = ?')->execute([$offerId]);
+    if (!$items) return;
+    $st = $pdo->prepare(
+        'INSERT INTO offer_items
+         (offer_id, segment, master_code, name_snapshot, pricing_type, unit_rate, area_sqm, slots,
+          monthly_amount, dp_amount, deposit_amount, total_amount, sort_order)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
+    );
+    foreach ($items as $i => $it) {
+        $st->execute([
+            $offerId, $it['segment'], $it['master_code'], $it['name_snapshot'], $it['pricing_type'],
+            $it['unit_rate'], $it['area_sqm'], $it['slots'], $it['monthly_amount'],
+            $it['dp_amount'], $it['deposit_amount'], $it['total_amount'], $i,
+        ]);
+    }
+}
+
+/** Ambil komponen paket sebuah offer (urut). */
+function offer_items(PDO $pdo, int $offerId): array
+{
+    $st = $pdo->prepare('SELECT * FROM offer_items WHERE offer_id = ? ORDER BY sort_order ASC, id ASC');
+    $st->execute([$offerId]);
+    return $st->fetchAll();
+}
+
+/**
+ * Cek bentrok slot: master_code yang sama dipakai PENAWARAN aktif lain (status
+ * <> cancelled, termasuk deal — karena offer deal tidak di-cancel) pada periode
+ * tumpang-tindih, baik di offers.master_code maupun komponen offer_items.
+ * Return daftar pesan bentrok (kosong = aman). Karena pipeline ini offer-first,
+ * cek di level offers sudah mencakup deal; booking transaksi-langsung legacy di
+ * luar cakupan. $excludeOffer = id offer yg sedang disimpan (jangan bentrok diri).
+ */
+function _offer_slot_conflicts(PDO $pdo, int $pid, array $items, ?string $start, ?string $end, int $excludeOffer = 0): array
+{
+    if (!$start || !$end) return [];
+    $msgs = [];
+    foreach ($items as $it) {
+        $mc = $it['master_code'] ?? null;
+        if (!$mc) continue;
+        // Penawaran aktif lain (belum batal) dgn unit/titik sama, periode tumpang-tindih.
+        $q = $pdo->prepare(
+            "SELECT o.offer_no FROM offers o
+             WHERE o.property_id = ? AND o.id <> ? AND o.status <> 'cancelled'
+               AND o.start_date IS NOT NULL AND o.end_date IS NOT NULL
+               AND o.start_date <= ? AND o.end_date >= ?
+               AND (o.master_code = ? OR EXISTS (
+                   SELECT 1 FROM offer_items oi WHERE oi.offer_id = o.id AND oi.master_code = ?))
+             LIMIT 1"
+        );
+        $q->execute([$pid, $excludeOffer, $end, $start, $mc, $mc]);
+        if ($no = $q->fetchColumn()) {
+            $msgs[] = ($it['name_snapshot'] ?: $mc) . ' bentrok dgn penawaran ' . $no;
+        }
+    }
+    return $msgs;
 }
 
 // ─── Daftar ──────────────────────────────────────────────────────────────────
@@ -405,7 +504,7 @@ function offer_view(PDO $pdo): void
             . "Tautan ini aman dan khusus untuk Anda. Terima kasih.";
     }
 
-    layout('Penawaran ' . ($offer['offer_no'] ?: ''), function () use ($offer, $editable, $days, $rp, $signUrl, $waMsg) {
+    layout('Penawaran ' . ($offer['offer_no'] ?: ''), function () use ($pdo, $offer, $editable, $days, $rp, $signUrl, $waMsg) {
         $badge = [
             'draft'     => ['Draft', '#64748b', '#f1f5f9'],
             'sent'      => ['Terkirim', '#0369a1', '#e0f2fe'],
@@ -505,6 +604,7 @@ function offer_view(PDO $pdo): void
         </div>
         <?php endif; ?>
 
+        <?php $isBundle = !empty($offer['is_bundle']); ?>
         <div class="panel" style="margin-top:12px">
             <h3 style="margin-top:0">Ringkasan Penawaran</h3>
             <?php
@@ -514,8 +614,10 @@ function offer_view(PDO $pdo): void
             if ($offer['cp_name']) $row('Up. (Contact)', h($offer['cp_name']));
             $row('PIC Sales', h($offer['pic_name'] ?: '-'));
             if (!empty($offer['referrer_name'])) $row('Referral', h($offer['referrer_name']));
-            $row('Unit / Lokasi', h($unitDisp));
-            $row('Luas', $offer['area_sqm'] ? number_format((float)$offer['area_sqm'], 2, ',', '.') . ' m²' : '-');
+            if (!$isBundle) {
+                $row('Unit / Lokasi', h($unitDisp));
+                $row('Luas', $offer['area_sqm'] ? number_format((float)$offer['area_sqm'], 2, ',', '.') . ' m²' : '-');
+            }
             $row('Periode', h($periode) . ($days ? ' · <strong>' . $days . ' hari</strong>' : ''));
             $row('Total Kontrak', $rp($offer['total_calculated']));
             if (!empty($offer['override_amount'])) $row('Harga Nego Final', $rp($offer['override_amount']));
@@ -526,6 +628,49 @@ function offer_view(PDO $pdo): void
             if (!empty($offer['keterangan'])) $row('Keterangan', h($offer['keterangan']));
             ?>
         </div>
+
+        <?php if ($isBundle):
+            $segLbl = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
+            $items  = offer_items($pdo, (int)$offer['id']); ?>
+        <div class="panel" style="margin-top:12px">
+            <h3 style="margin-top:0">Komponen Paket</h3>
+            <div style="overflow-x:auto">
+            <table class="table" style="width:100%;border-collapse:collapse;font-size:13px">
+                <thead>
+                    <tr style="text-align:left;border-bottom:2px solid #e2e8f0">
+                        <th style="padding:8px 10px">Nama / Titik</th>
+                        <th style="padding:8px 10px">Segmen</th>
+                        <th style="padding:8px 10px;text-align:right">Harga / periode</th>
+                        <th style="padding:8px 10px;text-align:right">DP</th>
+                        <th style="padding:8px 10px;text-align:right">Deposit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($items as $it): ?>
+                    <tr style="border-bottom:1px solid #f1f5f9">
+                        <td style="padding:8px 10px"><strong><?= h($it['name_snapshot'] ?: $it['master_code']) ?></strong><?= $it['name_snapshot'] && $it['master_code'] ? ' <span style="color:var(--muted);font-size:11px">' . h($it['master_code']) . '</span>' : '' ?></td>
+                        <td style="padding:8px 10px"><?= h($segLbl[$it['segment']] ?? $it['segment']) ?></td>
+                        <td style="padding:8px 10px;text-align:right"><?= $rp($it['total_amount']) ?></td>
+                        <td style="padding:8px 10px;text-align:right"><?= $rp($it['dp_amount']) ?></td>
+                        <td style="padding:8px 10px;text-align:right"><?= $rp($it['deposit_amount']) ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    <?php if (!$items): ?>
+                    <tr><td colspan="5" style="padding:10px;color:var(--muted)">Tidak ada komponen.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+                <tfoot>
+                    <tr style="border-top:2px solid #e2e8f0;font-weight:700;background:#f8fafc">
+                        <td style="padding:9px 10px" colspan="2">Total Paket</td>
+                        <td style="padding:9px 10px;text-align:right"><?= $rp($offer['total_calculated'] ?: $offer['monthly_amount']) ?></td>
+                        <td style="padding:9px 10px;text-align:right"><?= $rp($offer['dp_amount']) ?></td>
+                        <td style="padding:9px 10px;text-align:right"><?= $rp($offer['deposit_amount']) ?></td>
+                    </tr>
+                </tfoot>
+            </table>
+            </div>
+        </div>
+        <?php endif; ?>
         <?php
     });
 }
@@ -609,7 +754,23 @@ function offer_form(PDO $pdo): void
     }
     $v = fn(string $k, $def = '') => h((string) ($offer[$k] ?? $def));
 
-    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v) {
+    // ── Paket Bundling: tentukan mode & prefill komponen ─────────────────────
+    $isBundle  = $existing ? !empty($offer['is_bundle']) : (bool) getv('bundle');
+    $bundleRows = [];
+    if ($existing && $isBundle) {
+        foreach (offer_items($pdo, (int)$offer['id']) as $it) {
+            $bundleRows[] = [
+                'segment'     => $it['segment'],
+                'master_code' => $it['master_code'],
+                'name'        => $it['name_snapshot'],
+                'monthly'     => (int)$it['monthly_amount'],
+                'dp'          => (int)$it['dp_amount'],
+                'deposit'     => (int)$it['deposit_amount'],
+            ];
+        }
+    }
+
+    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows) {
         $picSel = $offer['pic_name'] ?? $linkedPic;
         $disabled = $editable ? '' : 'disabled';
         ?>
@@ -675,6 +836,57 @@ function offer_form(PDO $pdo): void
                 </div>
             </div>
 
+            <div class="wide" style="display:flex;align-items:flex-start;gap:10px;background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:11px 14px;margin-top:6px">
+                <input type="checkbox" name="is_bundle" id="is_bundle" value="1" style="width:18px;height:18px;flex-shrink:0;margin-top:1px" <?= $isBundle ? 'checked' : '' ?> <?= $editable ? '' : 'disabled' ?>>
+                <label for="is_bundle" style="margin:0;cursor:pointer">
+                    <span style="font-weight:700;color:#92400e">Penawaran Paket (gabungan beberapa booth/titik media)</span>
+                    <span class="help" style="display:block;margin-top:2px;font-weight:400">Centang untuk membuat satu penawaran yang berisi beberapa komponen (multi-titik). Periode di bawah berlaku untuk seluruh paket. Minimal 2 komponen.</span>
+                </label>
+            </div>
+
+            <?php
+            $segOpts = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
+            // Baris awal: prefill dari komponen tersimpan, atau 2 baris kosong utk paket baru.
+            $rowsToRender = $bundleRows;
+            if (!$rowsToRender) $rowsToRender = [[], []];
+            $rupFmt = fn($n) => $n ? number_format((int)$n, 0, ',', '.') : '';
+            ?>
+            <div id="bundle-fields" style="<?= $isBundle ? '' : 'display:none' ?>">
+                <h3>Komponen Paket</h3>
+                <div style="overflow-x:auto">
+                <table id="bundle-table" style="width:100%;border-collapse:collapse;font-size:13px">
+                    <thead>
+                        <tr style="text-align:left">
+                            <th style="padding:4px 6px">Segmen</th>
+                            <th style="padding:4px 6px">Kode Unit/Titik</th>
+                            <th style="padding:4px 6px">Nama Tampil</th>
+                            <th style="padding:4px 6px">Harga/Bulan</th>
+                            <th style="padding:4px 6px">DP</th>
+                            <th style="padding:4px 6px">Deposit</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="bundle-body">
+                        <?php foreach ($rowsToRender as $br): ?>
+                        <tr class="bundle-row">
+                            <td style="padding:3px 6px"><select name="item_segment[]" <?= $editable ? '' : 'disabled' ?>><?php foreach ($segOpts as $sv => $sl): ?><option value="<?= $sv ?>" <?= (($br['segment'] ?? 'cl') === $sv) ? 'selected' : '' ?>><?= $sl ?></option><?php endforeach; ?></select></td>
+                            <td style="padding:3px 6px"><input type="text" name="item_master_code[]" placeholder="GF-002" value="<?= h($br['master_code'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></td>
+                            <td style="padding:3px 6px"><input type="text" name="item_name[]" placeholder="LED Atrium" value="<?= h($br['name'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></td>
+                            <td style="padding:3px 6px"><input type="text" inputmode="numeric" name="item_monthly[]" placeholder="0" value="<?= h($rupFmt($br['monthly'] ?? '')) ?>" <?= $editable ? '' : 'disabled' ?>></td>
+                            <td style="padding:3px 6px"><input type="text" inputmode="numeric" name="item_dp[]" placeholder="0" value="<?= h($rupFmt($br['dp'] ?? '')) ?>" <?= $editable ? '' : 'disabled' ?>></td>
+                            <td style="padding:3px 6px"><input type="text" inputmode="numeric" name="item_deposit[]" placeholder="0" value="<?= h($rupFmt($br['deposit'] ?? '')) ?>" <?= $editable ? '' : 'disabled' ?>></td>
+                            <td style="padding:3px 6px"><button type="button" class="btn light bundle-del" style="padding:4px 8px;background:#fee2e2;color:#991b1b" <?= $editable ? '' : 'disabled' ?>>hapus</button></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+                <?php if ($editable): ?>
+                <p style="margin-top:8px"><button type="button" class="btn light" id="bundle-add" style="background:#0ea5e9;color:#fff">+ Tambah komponen</button></p>
+                <?php endif; ?>
+            </div>
+
+            <div id="single-fields" style="<?= $isBundle ? 'display:none' : '' ?>">
             <h3>Objek Sewa</h3>
             <div class="form-grid">
                 <?php
@@ -712,22 +924,23 @@ function offer_form(PDO $pdo): void
                 <div><label>Rate</label><input type="number" step="0.01" name="unit_rate" id="unit_rate" value="<?= $v('unit_rate') ?>" <?= $disabled ?>></div>
                 <div class="wide"><label>Keterangan</label><input name="keterangan" value="<?= $v('keterangan') ?>" <?= $disabled ?>></div>
             </div>
+            </div><!-- /#single-fields (Objek Sewa) -->
 
-            <h3>Periode & Harga</h3>
+            <h3>Periode<span id="ph-price-hd"> &amp; Harga</span></h3>
             <div class="form-grid">
                 <div><label>Tanggal Mulai</label><input type="date" name="start_date" id="start_date" value="<?= $v('start_date') ?>" required <?= $disabled ?>></div>
                 <div><label>Tanggal Selesai</label><input type="date" name="end_date" id="end_date" value="<?= $v('end_date') ?>" required <?= $disabled ?>></div>
-                <div><label>Total Kontrak <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="total_calc" value="" readonly><input type="hidden" name="total_calculated" id="total_calc_h" value="<?= $v('total_calculated') ?>"></div>
-                <div><label>Harga / Bulan <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="monthly_disp" value="" readonly><input type="hidden" name="monthly_amount" id="monthly_amount" value="<?= $v('monthly_amount') ?>"></div>
-                <div class="wide"><label>Harga Nego Final <span class="muted" style="font-weight:400">(opsional — override)</span></label><input type="text" inputmode="numeric" id="override_fmt" placeholder="Kosongkan = pakai hasil kalkulasi di atas"><input type="hidden" name="override_amount" id="override_amount" value="<?= (int)($offer['override_amount'] ?? 0) ?: '' ?>"><div class="help">Override: isi bila nilai final tidak sama dengan hasil kalkulasi.</div></div>
+                <div class="single-price"><label>Total Kontrak <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="total_calc" value="" readonly><input type="hidden" name="total_calculated" id="total_calc_h" value="<?= $v('total_calculated') ?>"></div>
+                <div class="single-price"><label>Harga / Bulan <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="monthly_disp" value="" readonly><input type="hidden" name="monthly_amount" id="monthly_amount" value="<?= $v('monthly_amount') ?>"></div>
+                <div class="wide single-price"><label>Harga Nego Final <span class="muted" style="font-weight:400">(opsional — override)</span></label><input type="text" inputmode="numeric" id="override_fmt" placeholder="Kosongkan = pakai hasil kalkulasi di atas"><input type="hidden" name="override_amount" id="override_amount" value="<?= (int)($offer['override_amount'] ?? 0) ?: '' ?>"><div class="help">Override: isi bila nilai final tidak sama dengan hasil kalkulasi.</div></div>
             </div>
             <?php if ($editable): ?>
-            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px">
+            <div class="single-price" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px">
                 <button type="button" class="btn light" id="btn-kalkulasi" style="background:#0ea5e9;color:#fff">Kalkulasi Total</button>
                 <div id="kalkulasi-result" style="display:none;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:8px 14px;font-size:13px;color:#166534"></div>
             </div>
-            <div id="kalkulasi-spread" style="display:none;margin-top:8px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 16px;font-size:12.5px;line-height:1.7"></div>
-            <div id="overlap-warn" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-top:10px;font-size:12.5px;color:#92400e"></div>
+            <div id="kalkulasi-spread" class="single-price" style="display:none;margin-top:8px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 16px;font-size:12.5px;line-height:1.7"></div>
+            <div id="overlap-warn" class="single-price" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-top:10px;font-size:12.5px;color:#92400e"></div>
             <?php endif; ?>
 
             <h3>Pengakuan & Recurring</h3>
@@ -758,6 +971,7 @@ function offer_form(PDO $pdo): void
                 </div>
             </div>
 
+            <div id="single-pay" style="<?= $isBundle ? 'display:none' : '' ?>">
             <h3>Pembayaran <span style="font-weight:400;font-size:12px;color:var(--muted)">(DP & deposit dihitung dari harga/bulan; bisa di-override)</span></h3>
             <div id="tpl-note" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:9px 13px;margin-bottom:10px;font-size:12.5px;color:#075985"></div>
             <div class="form-grid">
@@ -766,6 +980,7 @@ function offer_form(PDO $pdo): void
                 <div><label>Deposit (bulan)</label><input type="number" step="0.5" min="0" name="deposit_months" id="deposit_months" value="<?= $v('deposit_months', '1') ?>" <?= $disabled ?>></div>
                 <div><label>Nominal Deposit <span class="muted" style="font-weight:400">(otomatis, bisa diubah)</span></label><input type="text" inputmode="numeric" id="dep_fmt" placeholder="0" <?= $disabled ?>><input type="hidden" name="deposit_amount" id="deposit_amount" value="<?= (int)($offer['deposit_amount'] ?? 0) ?: '' ?>"></div>
             </div>
+            </div><!-- /#single-pay -->
 
             <?php if ($offer && $editable): ?>
             <h3>Catatan Revisi / Nego</h3>
@@ -793,6 +1008,54 @@ function offer_form(PDO $pdo): void
                 });
             }
             fillContacts();
+
+            // ── Paket Bundling: toggle mode + editor komponen ──────────────────
+            var bundleChk = document.getElementById('is_bundle');
+            function bundleOn() { return !!(bundleChk && bundleChk.checked); }
+            function setVis(el, show) { if (el) el.style.display = show ? '' : 'none'; }
+            function applyBundleMode() {
+                var on = bundleOn();
+                setVis(document.getElementById('bundle-fields'), on);
+                setVis(document.getElementById('single-fields'), !on);
+                setVis(document.getElementById('single-pay'), !on);
+                setVis(document.getElementById('ph-price-hd'), !on);
+                document.querySelectorAll('.single-price').forEach(function (el) {
+                    // hormati elemen yg memang disembunyikan default (spread/overlap)
+                    if (on) { el.dataset.prevDisplay = el.style.display; el.style.display = 'none'; }
+                    else { el.style.display = el.dataset.prevDisplay || ''; }
+                });
+                // master_code wajib hanya di mode tunggal (agar paket bisa disubmit)
+                var mc = document.getElementById('master_code');
+                if (mc) { if (on) mc.removeAttribute('required'); else mc.setAttribute('required', 'required'); }
+            }
+            // format ribuan utk input nominal komponen
+            function bundleFmt(inp) {
+                inp.addEventListener('input', function () {
+                    var raw = this.value.replace(/\D/g, '');
+                    this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                });
+            }
+            function wireRow(tr) {
+                tr.querySelectorAll('input[name="item_monthly[]"],input[name="item_dp[]"],input[name="item_deposit[]"]').forEach(bundleFmt);
+                var del = tr.querySelector('.bundle-del');
+                if (del) del.addEventListener('click', function () {
+                    var body = document.getElementById('bundle-body');
+                    if (body && body.querySelectorAll('.bundle-row').length > 1) tr.remove();
+                    else { tr.querySelectorAll('input').forEach(function (i) { i.value = ''; }); }
+                });
+            }
+            document.querySelectorAll('#bundle-body .bundle-row').forEach(wireRow);
+            var addBtn = document.getElementById('bundle-add');
+            if (addBtn) addBtn.addEventListener('click', function () {
+                var body = document.getElementById('bundle-body');
+                var rows = body.querySelectorAll('.bundle-row');
+                var clone = rows[rows.length - 1].cloneNode(true);
+                clone.querySelectorAll('input').forEach(function (i) { i.value = ''; });
+                var sel = clone.querySelector('select[name="item_segment[]"]'); if (sel) sel.selectedIndex = 0;
+                body.appendChild(clone); wireRow(clone);
+            });
+            if (bundleChk) bundleChk.addEventListener('change', applyBundleMode);
+            applyBundleMode();
 
             // ── Picker unit (searchable, sama seperti input transaksi) ──
             var masters = <?= json_encode(array_values($masters)) ?>;
@@ -863,7 +1126,7 @@ function offer_form(PDO $pdo): void
                 src.addEventListener('blur', function () { setTimeout(function () { dd.style.display = 'none'; }, 200); });
                 window.addEventListener('scroll', function () { if (dd.style.display !== 'none') pos(); }, true);
                 document.querySelectorAll('#offer-form button[type=submit]').forEach(function (btn) {
-                    btn.addEventListener('click', function (e) { if (!hid.value) { e.preventDefault(); e.stopImmediatePropagation(); src.style.outline = '2px solid #EF4444'; src.focus(); } });
+                    btn.addEventListener('click', function (e) { if (bundleOn()) return; if (!hid.value) { e.preventDefault(); e.stopImmediatePropagation(); src.style.outline = '2px solid #EF4444'; src.focus(); } });
                 });
             })();
 
@@ -1117,7 +1380,34 @@ function offer_save(PDO $pdo): void
         'perihal'         => $tpl['perihal'] ?: ('Surat Penawaran Sewa Area Pameran' . ($days > 0 ? ' ' . $days . ' Hari' : '')),
         'letter_json'     => $letterJson,
         'offer_date'      => date('Y-m-d'),
+        'is_bundle'       => 0,
     ];
+
+    // Paket: bila >=2 komponen dikirim, timpa agregat & tandai is_bundle.
+    // Periode SAMA utk semua item; harga eksplisit per item → total = Σ item.
+    $isBundle = post('is_bundle') === '1';
+    $bundleItems = $isBundle ? _offer_parse_bundle_items($months) : [];
+    if ($isBundle && count($bundleItems) >= 2) {
+        $conf = _offer_slot_conflicts($pdo, $pid, $bundleItems, $start, $end, $id);
+        if ($conf) { flash('Bentrok slot: ' . implode('; ', $conf) . '. Perbaiki dulu.'); redirect_to('offer_form', $id ? ['id' => $id] : ['bundle' => 1]); }
+        $data['module']           = 'bundle';
+        $data['is_bundle']        = 1;
+        $data['master_code']      = null;
+        $data['monthly_amount']   = array_sum(array_column($bundleItems, 'monthly_amount'));
+        $data['total_calculated'] = array_sum(array_column($bundleItems, 'total_amount'));
+        $data['override_amount']  = $data['total_calculated'];
+        $data['dp_amount']        = array_sum(array_column($bundleItems, 'dp_amount'));
+        $data['deposit_amount']   = array_sum(array_column($bundleItems, 'deposit_amount'));
+        $data['dp_months']        = 0;
+        $data['deposit_months']   = 0;
+        $data['perihal']          = 'Surat Penawaran Paket';
+        $data['letter_json']      = json_encode([
+            'template' => 'Paket', 'unit_type' => '', 'perihal' => 'Surat Penawaran Paket',
+            'intro' => '', 'fasilitas' => [], 'payment' => [], 'terms' => [], 'dp_required' => 0, 'bundle' => true,
+        ], JSON_UNESCAPED_UNICODE);
+    } elseif ($isBundle) {
+        flash('Paket minimal 2 komponen.'); redirect_to('offer_form', $id ? ['id' => $id] : ['bundle' => 1]);
+    }
 
     if ($id) {
         $cur = $pdo->prepare('SELECT * FROM offers WHERE id=? AND property_id=?');
@@ -1134,6 +1424,10 @@ function offer_save(PDO $pdo): void
         $snap = array_intersect_key(array_merge($offer, $data), array_flip(_offer_fields()));
         $pdo->prepare('INSERT INTO offer_revisions (offer_id, rev_no, snapshot_json, note, created_by) VALUES (?,?,?,?,?)')
             ->execute([$id, $newRev, json_encode($snap, JSON_UNESCAPED_UNICODE), trim((string) post('rev_note')) ?: null, $uname]);
+        // Rekonsiliasi komponen: selalu replace-all. Bila is_bundle di-uncheck,
+        // tulis [] agar offer_items lama TERHAPUS (cegah orphan yg bisa meledak
+        // jadi transaksi basi saat approve). Lihat review bundling.
+        _offer_write_items($pdo, $id, $isBundle ? $bundleItems : []);
         audit($pdo, 'update', 'offers', (string) $id, $data);
         flash("Revisi #$newRev disimpan.");
         redirect_to('offer_view', ['id' => $id]);
@@ -1154,6 +1448,7 @@ function offer_save(PDO $pdo): void
     $pdo->prepare('INSERT INTO offers (property_id, offer_no, status, created_by, ' . implode(', ', $cols) . ')
                    VALUES (:pid, :no, \'draft\', :uname, ' . implode(', ', $place) . ')')->execute($vals);
     $newId = (int) $pdo->lastInsertId();
+    if ($isBundle) _offer_write_items($pdo, $newId, $bundleItems);
     $pdo->prepare('INSERT INTO offer_revisions (offer_id, rev_no, snapshot_json, note, created_by) VALUES (?,0,?,?,?)')
         ->execute([$newId, json_encode(array_intersect_key($data, array_flip(_offer_fields())), JSON_UNESCAPED_UNICODE), 'Penawaran awal', $uname]);
     audit($pdo, 'create', 'offers', (string) $newId, $data);
@@ -1259,6 +1554,7 @@ function offer_print(PDO $pdo): void
     }
     $prop = current_property();
     $letter = offer_letter($pdo, $o);   // isi surat per jenis booth (snapshot/template)
+    $items = !empty($o['is_bundle']) ? offer_items($pdo, (int) $o['id']) : []; // komponen paket
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
@@ -1422,6 +1718,7 @@ function offer_sign_page(PDO $pdo): void
     }
     $a = $d['amounts'] ?? [];
     $letter = offer_letter($pdo, $o);   // isi surat per jenis booth (snapshot/template)
+    $items = !empty($o['is_bundle']) ? offer_items($pdo, (int) $o['id']) : []; // komponen paket
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
     include __DIR__ . '/offer_sign_template.php';

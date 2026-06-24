@@ -70,6 +70,8 @@ lewat **aplikasi HP (CLARA mobile/PWA)**.
 
 > 💡 Masa berlaku penawaran **7 hari**. PPN tertulis 12% (beban efektif 11%).
 
+> 🎁 **Penawaran Paket:** centang **"Penawaran Paket"** → **+ Tambah komponen** untuk tiap booth/titik media (jenis, kode, nama, harga/DP/deposit per komponen; harga tiap titik boleh beda). Periode **satu** untuk semua. Hasilnya **1 surat + 1 TTD**; saat SKP di-approve terbit **transaksi terpisah per komponen** (laporan akurat) tapi **dihitung 1 deal**. Unit/titik yang bentrok periode dgn penawaran lain otomatis **ditolak**.
+
 ---
 
 ## TAHAP 2 — Kirim Penawaran ke Customer

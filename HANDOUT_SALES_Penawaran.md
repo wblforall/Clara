@@ -72,6 +72,18 @@ Isi formulir:
 > 💡 **Masa berlaku penawaran = 7 hari** sejak tanggal terbit (tertera di PDF).
 > 💡 **PPN tertulis 12%**, beban efektif **11%** (DPP Nilai Lain) — ini benar, bukan salah ketik.
 
+### 🎁 Penawaran PAKET (gabungan beberapa booth / titik media)
+
+Untuk menawarkan **beberapa unit sekaligus dalam 1 surat** (mis. 1 booth + beberapa titik media, atau multi-booth):
+
+1. Centang **"Penawaran Paket"** di form.
+2. Klik **+ Tambah komponen** untuk tiap unit/titik. Per baris isi: **Jenis** (Exhibition/Media), **kode unit/titik**, **nama**, dan **harga/bulan, DP, Deposit komponen itu** (harga tiap titik boleh beda).
+3. **Periode satu** untuk seluruh paket (semua komponen tanggalnya sama).
+4. Simpan → **1 Surat Penawaran** memuat semua komponen + **total paket**, **1 TTD** untuk semua.
+
+> 📊 Saat SKP Paket di-approve, sistem otomatis menerbitkan **transaksi terpisah per komponen** (Exhibition & Media masing-masing) agar laporan tiap segmen akurat — tapi di laporan **dihitung sebagai 1 deal**.
+> ⛔ Bila sebuah unit/titik sudah dipakai penawaran aktif lain di periode bertumpukan, sistem **menolak** (cegah dobel-booking).
+
 ---
 
 ## TAHAP 2 — Kirim Penawaran ke Customer

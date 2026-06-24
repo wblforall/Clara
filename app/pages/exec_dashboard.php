@@ -656,8 +656,8 @@ function _exec_fetch_prop_data(PDO $pdo, int $pid, string $period, int $periodDa
         "SELECT p.name pic_name, COALESCE(p.role_name,'-') role_name, COALESCE(p.target_share,0) target_share,
                 COALESCE(SUM(a.amount),0) actual,
                 COALESCE(SUM(CASE WHEN " . recurring_match_sql('t') . " THEN a.amount ELSE 0 END),0) actual_recurring,
-                COUNT(DISTINCT t.id) trx_count,
-                COUNT(DISTINCT CASE WHEN " . recurring_match_sql('t') . " THEN t.id END) trx_recurring,
+                COUNT(DISTINCT COALESCE(t.bundle_id, CONCAT('t', t.id))) trx_count,
+                COUNT(DISTINCT CASE WHEN " . recurring_match_sql('t') . " THEN COALESCE(t.bundle_id, CONCAT('t', t.id)) END) trx_recurring,
                 COUNT(DISTINCT CASE WHEN t.client_id IS NOT NULL AND prev.client_id IS NULL THEN t.client_id END) AS new_clients
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?

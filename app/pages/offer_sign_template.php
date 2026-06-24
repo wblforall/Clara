@@ -56,6 +56,50 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
             <?php if (!empty($d['cp_name'])): ?><tr><td class="l">Penanggung Jawab</td><td class="v"><?= $h($d['cp_name']) ?></td></tr><?php endif; ?>
         </table>
 
+<?php
+        $isBundle = !empty($o['is_bundle']) && !empty($items);
+        $segLabels = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
+        if ($isBundle):
+        ?>
+        <div class="sec">Komponen Paket</div>
+        <table class="pay">
+            <tr><td><strong>Nama Booth / Item</strong></td><td><strong>Jenis</strong></td><td class="amt"><strong>Nilai Sewa</strong></td><td><strong>Kode</strong></td></tr>
+            <?php foreach ($items as $it): ?>
+            <tr>
+                <td><?= $h($it['name_snapshot'] ?: $it['master_code']) ?></td>
+                <td><?= $h($segLabels[$it['segment']] ?? $it['segment']) ?></td>
+                <td class="amt"><?= $rp($it['total_amount'] ?? 0) ?></td>
+                <td><?= $h($it['master_code']) ?></td>
+            </tr>
+            <?php endforeach; ?>
+        </table>
+        <table class="kv" style="margin-top:8px">
+            <tr><td class="l">Periode Sewa</td><td class="v"><?= $h($d['periode'] ?? '-') ?><?= !empty($d['days']) ? ' (' . (int)$d['days'] . ' hari)' : '' ?></td></tr>
+        </table>
+
+        <?php
+        $total   = (float)$o['total_calculated'];
+        $ppn     = round($total * 11 / 12 * 0.12);
+        $afterPpn = $total + $ppn;
+        $deposit = (float)$o['deposit_amount'];
+        $grand   = $afterPpn + $deposit;
+        $sumDp   = array_sum(array_column($items, 'dp_amount'));
+        ?>
+        <div class="sec">Rincian Biaya</div>
+        <table class="pay">
+            <?php foreach ($items as $it): ?>
+            <tr><td><?= $h($it['name_snapshot'] ?: $it['master_code']) ?> <span class="muted">(<?= $h($segLabels[$it['segment']] ?? $it['segment']) ?>)</span></td><td class="amt"><?= $rp($it['total_amount'] ?? 0) ?></td></tr>
+            <?php endforeach; ?>
+            <tr><td>Subtotal sewa paket</td><td class="amt"><?= $rp($total) ?></td></tr>
+            <tr><td>PPN 12% <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppn) ?></td></tr>
+            <tr><td>Total setelah PPN</td><td class="amt"><?= $rp($afterPpn) ?></td></tr>
+            <?php if ($sumDp > 0): ?>
+            <tr><td>DP / Uang Muka</td><td class="amt"><?= $rp($sumDp) ?></td></tr>
+            <?php endif; ?>
+            <tr><td>Security Deposit</td><td class="amt"><?= $rp($deposit) ?></td></tr>
+            <tr class="grand"><td>Grand Total</td><td class="amt"><?= $rp($grand) ?></td></tr>
+        </table>
+        <?php else: ?>
         <div class="sec">Tempat & Periode</div>
         <table class="kv">
             <tr><td class="l">Lokasi</td><td class="v"><?= $h($d['location'] ?? '-') ?></td></tr>
@@ -71,6 +115,7 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
             <tr><td>Deposit / Jaminan <span class="muted">(<?= $h($a['dep_bln'] ?? '0') ?> bln)</span></td><td class="amt"><?= $rp($a['deposit'] ?? 0) ?></td></tr>
             <tr class="grand"><td>Grand Total</td><td class="amt"><?= $rp($a['grand'] ?? 0) ?></td></tr>
         </table>
+        <?php endif; ?>
         <?php if (!$signed && !empty($d['berlaku'])): ?>
         <div class="valid">Penawaran ini berlaku s/d <strong><?= $h($d['berlaku']) ?></strong>.</div>
         <?php endif; ?>

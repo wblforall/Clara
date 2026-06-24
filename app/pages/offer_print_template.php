@@ -143,14 +143,30 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
 
     <p class="intro" style="margin:8px 0">Dengan hormat,<br><?= $h($letter['intro'] ?: 'Bersama ini kami Management e-Walk dan Pentacity Mall Balikpapan menawarkan space exhibition sebagai berikut:') ?></p>
 
+<?php $isBundle = !empty($o['is_bundle']) && !empty($items);
+    $segLbl = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
+    $sumDp = $isBundle ? array_sum(array_column($items, 'dp_amount')) : (float) $o['dp_amount']; ?>
     <table class="obj">
-        <thead><tr><th>Lokasi</th><th>Luasan</th><th>Harga Sewa / Periode</th><th>Keterangan</th></tr></thead>
-        <tbody><tr>
-            <td><?= $h(($o['location_name'] ?: $o['master_code']) . ($o['floor'] ? ' (Lt. ' . $o['floor'] . ')' : '')) ?></td>
-            <td><?= $o['area_sqm'] ? number_format((float)$o['area_sqm'], 2, ',', '.') . ' m²' : '-' ?></td>
-            <td><?= $rp($total) ?></td>
-            <td><?= $h($o['keterangan'] ?? '-') ?></td>
-        </tr></tbody>
+        <thead><tr><th>Lokasi / Titik</th><th><?= $isBundle ? 'Jenis' : 'Luasan' ?></th><th>Harga Sewa / Periode</th><th>Keterangan</th></tr></thead>
+        <tbody>
+        <?php if ($isBundle): ?>
+            <?php foreach ($items as $it): ?>
+            <tr>
+                <td><?= $h($it['name_snapshot'] ?: $it['master_code']) ?></td>
+                <td><?= $h($segLbl[$it['segment']] ?? $it['segment']) ?></td>
+                <td><?= $rp($it['total_amount']) ?></td>
+                <td><?= $h($it['master_code'] ?? '-') ?></td>
+            </tr>
+            <?php endforeach; ?>
+        <?php else: ?>
+            <tr>
+                <td><?= $h(($o['location_name'] ?: $o['master_code']) . ($o['floor'] ? ' (Lt. ' . $o['floor'] . ')' : '')) ?></td>
+                <td><?= $o['area_sqm'] ? number_format((float)$o['area_sqm'], 2, ',', '.') . ' m²' : '-' ?></td>
+                <td><?= $rp($total) ?></td>
+                <td><?= $h($o['keterangan'] ?? '-') ?></td>
+            </tr>
+        <?php endif; ?>
+        </tbody>
     </table>
     <div style="line-height:1.7;margin-top:4px">
         Masa sewa: <strong><?= $h($durasi) ?></strong> &nbsp;·&nbsp; Periode: <strong><?= $h($periode) ?></strong>
@@ -158,11 +174,21 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
 
     <div class="sec">Rincian Biaya</div>
     <table class="cost">
-        <tr><td class="lbl">Harga Sewa / Periode</td><td class="amt"><?= $rp($total) ?></td></tr>
-        <tr><td class="lbl">Masa sewa</td><td class="amt"><?= $h($durasi) ?></td></tr>
-        <tr class="sub"><td class="lbl">Subtotal sewa</td><td class="amt"><?= $rp($total) ?></td></tr>
+        <?php if ($isBundle): ?>
+            <?php foreach ($items as $it): ?>
+            <tr><td class="lbl"><?= $h($it['name_snapshot'] ?: $it['master_code']) ?> <span class="muted" style="font-weight:400">(<?= $h($segLbl[$it['segment']] ?? $it['segment']) ?>)</span></td><td class="amt"><?= $rp($it['total_amount']) ?></td></tr>
+            <?php endforeach; ?>
+            <tr class="sub"><td class="lbl">Subtotal sewa paket</td><td class="amt"><?= $rp($total) ?></td></tr>
+        <?php else: ?>
+            <tr><td class="lbl">Harga Sewa / Periode</td><td class="amt"><?= $rp($total) ?></td></tr>
+            <tr><td class="lbl">Masa sewa</td><td class="amt"><?= $h($durasi) ?></td></tr>
+            <tr class="sub"><td class="lbl">Subtotal sewa</td><td class="amt"><?= $rp($total) ?></td></tr>
+        <?php endif; ?>
         <tr><td class="lbl">PPN 12% <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppn) ?></td></tr>
         <tr class="tot"><td class="lbl">Total setelah PPN</td><td class="amt"><?= $rp($afterPpn) ?></td></tr>
+        <?php if ($isBundle && $sumDp > 0): ?>
+        <tr><td class="lbl">DP / Uang Muka (bagian dari total)</td><td class="amt"><?= $rp($sumDp) ?></td></tr>
+        <?php endif; ?>
         <tr><td class="lbl">Security Deposit (dikembalikan 100%)</td><td class="amt"><?= $rp($deposit) ?></td></tr>
         <tr class="grand"><td class="lbl">Grand Total (pembayaran awal + deposit)</td><td class="amt"><?= $rp($grand) ?></td></tr>
     </table>

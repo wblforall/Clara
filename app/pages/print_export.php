@@ -39,8 +39,8 @@ function print_dashboard(PDO $pdo): void
     $picStmt = $pdo->prepare(
         "SELECT p.name pic_name, COALESCE(p.role_name,'-') role_name, COALESCE(p.target_share,0) target_share,
                 COALESCE(SUM(a.amount),0) actual,
-                COUNT(DISTINCT t.id) trx_count,
-                COUNT(DISTINCT CASE WHEN " . recurring_match_sql('t') . " THEN t.id END) trx_recurring,
+                COUNT(DISTINCT COALESCE(t.bundle_id, CONCAT('t', t.id))) trx_count,
+                COUNT(DISTINCT CASE WHEN " . recurring_match_sql('t') . " THEN COALESCE(t.bundle_id, CONCAT('t', t.id)) END) trx_recurring,
                 COUNT(DISTINCT CASE WHEN t.client_id IS NOT NULL AND prev.client_id IS NULL THEN t.client_id END) AS new_clients
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
@@ -461,8 +461,8 @@ function print_exec(PDO $pdo): void
     $picStmt = $pdo->prepare(
         "SELECT p.name pic_name, COALESCE(p.role_name,'-') role_name, COALESCE(p.target_share,0) target_share,
                 COALESCE(SUM(a.amount),0) actual,
-                COUNT(DISTINCT t.id) trx_count,
-                COUNT(DISTINCT CASE WHEN " . recurring_match_sql('t') . " THEN t.id END) trx_recurring,
+                COUNT(DISTINCT COALESCE(t.bundle_id, CONCAT('t', t.id))) trx_count,
+                COUNT(DISTINCT CASE WHEN " . recurring_match_sql('t') . " THEN COALESCE(t.bundle_id, CONCAT('t', t.id)) END) trx_recurring,
                 COUNT(DISTINCT CASE WHEN t.client_id IS NOT NULL AND prev.client_id IS NULL THEN t.client_id END) AS new_clients
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
@@ -849,8 +849,8 @@ function print_exec_summary(PDO $pdo): void
         $s = $pdo->prepare(
             "SELECT p.name pic_name, COALESCE(p.role_name,'-') role_name, COALESCE(p.target_share,0) target_share,
                     COALESCE(SUM(a.amount),0) actual,
-                    COUNT(DISTINCT t.id) trx_count,
-                    COUNT(DISTINCT CASE WHEN " . recurring_match_sql('t') . " THEN t.id END) trx_recurring,
+                    COUNT(DISTINCT COALESCE(t.bundle_id, CONCAT('t', t.id))) trx_count,
+                    COUNT(DISTINCT CASE WHEN " . recurring_match_sql('t') . " THEN COALESCE(t.bundle_id, CONCAT('t', t.id)) END) trx_recurring,
                     COUNT(DISTINCT CASE WHEN t.client_id IS NOT NULL AND prev.client_id IS NULL THEN t.client_id END) AS new_clients
              FROM master_pic p
              LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
@@ -1706,7 +1706,7 @@ function export_pic_report_xlsx(PDO $pdo): void
                 COALESCE(SUM(CASE WHEN a.module='media'  THEN a.amount ELSE 0 END),0) actual_media,
                 COALESCE(SUM(CASE WHEN a.module='gudang' THEN a.amount ELSE 0 END),0) actual_gudang,
                 COALESCE(SUM(a.amount),0) actual_total,
-                COUNT(DISTINCT t.id) trx_count
+                COUNT(DISTINCT COALESCE(t.bundle_id, CONCAT('t', t.id))) trx_count
          FROM master_pic p
          LEFT JOIN transaction_allocations a ON a.pic_name=p.name AND a.period_key=? AND a.property_id=?
          LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL

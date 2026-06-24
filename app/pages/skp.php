@@ -641,12 +641,22 @@ function skp_save(PDO $pdo): void
  * Buat transaksi + alokasi dari konfirmasi yang di-approve (offer-based).
  * Ini titik di mana deal masuk ke analitik CLARA (Dashboard/Achievement/Recurring).
  */
-function _skp_create_transaction(PDO $pdo, array $skp, array $src, int $pid): int
+// $item != null → mode PAKET: transaksi untuk satu komponen offer_items
+// (segmen/titik/harga sendiri), periode & client tetap dari $src (level offer).
+function _skp_create_transaction(PDO $pdo, array $skp, array $src, int $pid, ?array $item = null): int
 {
     $start  = (string) $src['start_date'];
     $end    = (string) $src['end_date'];
     $months = (int) ($src['contract_months'] ?? 1);
-    $total  = (float) ($src['final_amount'] ?: $src['total_calculated']);
+    // Nilai per-komponen bila paket, else nilai offer tunggal.
+    $module     = $item ? $item['segment']                 : $src['module'];
+    $masterCode = $item ? $item['master_code']             : $src['master_code'];
+    $total      = $item ? (float) $item['total_amount']    : (float) ($src['final_amount'] ?: $src['total_calculated']);
+    $unitRate   = $item ? (float) $item['unit_rate']       : (float) ($src['unit_rate'] ?? 0);
+    $area       = $item ? (float) $item['area_sqm']        : (float) ($src['area_sqm'] ?? 0);
+    $slots      = $item ? (float) $item['slots']           : (float) ($src['slots'] ?? 1);
+    $pricing    = $item ? ($item['pricing_type'] ?: $src['pricing_type']) : $src['pricing_type'];
+    $noteAdd    = $item ? trim((string) ($item['name_snapshot'] ?? '')) : '';
     $crossMonth = substr($start, 0, 7) !== substr($end, 0, 7);
     // Pengakuan ditentukan di penawaran (billing_method). Bila tak ada (legacy),
     // jatuh ke tebakan: multi-bulan/lintas bulan → spread.
@@ -658,19 +668,19 @@ function _skp_create_transaction(PDO $pdo, array $skp, array $src, int $pid): in
 
     $trx = [
         'property_id'      => $pid,
-        'module'           => $src['module'],
+        'module'           => $module,
         'client_id'        => $src['client_id'] ?: null,
         'contact_id'       => $src['contact_id'] ?: null,
-        'master_code'      => $src['master_code'],
+        'master_code'      => $masterCode,
         'period_key'       => substr($start, 0, 7),
-        'content_note'     => $src['content_note'] ?? null,
+        'content_note'     => $noteAdd ?: ($src['content_note'] ?? null),
         'start_date'       => $start,
         'end_date'         => $end,
         'quantity'         => (float) ($src['quantity'] ?? 1),
-        'slots'            => (float) ($src['slots'] ?? 1),
-        'area_sqm'         => (float) ($src['area_sqm'] ?? 0),
-        'pricing_type'     => $src['pricing_type'],
-        'unit_rate'        => (float) ($src['unit_rate'] ?? 0),
+        'slots'            => $slots,
+        'area_sqm'         => $area,
+        'pricing_type'     => $pricing,
+        'unit_rate'        => $unitRate,
         'contract_months'  => $months ?: null,
         'billing_method'   => $spread ? 'spread' : 'anchor_cycle',
         'recurring_flag'   => (int) ($src['recurring_flag'] ?? 0),
@@ -680,7 +690,7 @@ function _skp_create_transaction(PDO $pdo, array $skp, array $src, int $pid): in
         'final_amount'     => $total,
         'pic_name'         => $src['pic_name'] ?? null,
         'referrer_name'    => $src['referrer_name'] ?? null,
-        'remarks'          => 'Dari ' . (($skp['doc_type'] ?? 'skp') === 'sks' ? 'SKS' : 'SKP') . ' ' . ($skp['skp_no'] ?? ''),
+        'remarks'          => 'Dari ' . (($skp['doc_type'] ?? 'skp') === 'sks' ? 'SKS' : 'SKP') . ' ' . ($skp['skp_no'] ?? '') . ($noteAdd ? ' · ' . $noteAdd : ''),
         'invoice_no'       => null,
         'created_by'       => $_SESSION['user']['name'] ?? 'system',
     ];
@@ -721,15 +731,31 @@ function skp_approve(PDO $pdo): void
     $code  = _skp_prop_code($prop['key'] ?? '');
     $prefix = ($skp['doc_type'] ?? 'skp') === 'sks' ? 'SKS' : 'SKP';
 
+    // Paket: ambil komponen lebih dulu (dipakai utk snapshot itemize + loop transaksi).
+    $isBundleSrc = !empty($src['is_bundle']);
+    $bundleRows = [];
+    if ($isBundleSrc && !empty($skp['offer_id'])) {
+        $bq = $pdo->prepare('SELECT * FROM offer_items WHERE offer_id = ? ORDER BY sort_order ASC, id ASC');
+        $bq->execute([(int) $skp['offer_id']]);
+        $bundleRows = $bq->fetchAll();
+    }
+
     // Snapshot nilai cetak
     $days  = _skp_days($src['start_date'], $src['end_date']);
     $total = (float) ($src['final_amount'] ?: $src['total_calculated']);
     $amt   = _skp_amounts($total, (float) $src['unit_rate'], (float) $skp['deposit_amount']);
+    // Paket: lokasi & komponen utk ditampilkan di dokumen SKP.
+    $bundleLoc = $bundleRows ? ('Paket (' . count($bundleRows) . ' komponen)') : '';
+    $bundleItemsSnap = array_map(fn($r) => [
+        'segment' => $r['segment'], 'master_code' => $r['master_code'],
+        'name' => $r['name_snapshot'], 'total' => (float) $r['total_amount'],
+    ], $bundleRows);
     $snapshot = [
         'company_name' => $src['company_name'], 'npwp' => $src['npwp'], 'siup' => $src['siup'] ?? null, 'address' => $src['address'],
         'cp_name' => $skp['cp_name'] ?: $src['cp_name'], 'phone' => $skp['phone_pj'] ?: $src['cp_phone'],
         'ktp_pj' => $skp['ktp_pj'], 'business_type' => $src['business_type'], 'produk' => $skp['produk'],
-        'location' => $src['location_name'] ?: $src['master_code'], 'floor' => $src['floor'],
+        'location' => ($src['location_name'] ?: $src['master_code']) ?: $bundleLoc, 'floor' => $src['floor'],
+        'is_bundle' => $isBundleSrc ? 1 : 0, 'bundle_items' => $bundleItemsSnap,
         'area' => (float) ($src['area_sqm'] ?: $src['unit_area']), 'seating_area' => $skp['seating_area'],
         'start_date' => $src['start_date'], 'end_date' => $src['end_date'], 'days' => $days,
         'status_sewa' => $skp['status_sewa'],
@@ -762,10 +788,34 @@ function skp_approve(PDO $pdo): void
         // Transaksi + alokasi terbit saat approve (offer-based, bila belum ada).
         // Inilah titik deal masuk ke Dashboard/Achievement/Recurring.
         if (empty($skp['transaction_id']) && !empty($skp['offer_id'])) {
-            $newTrxId = _skp_create_transaction($pdo, array_merge($skp, ['skp_no' => $skpNo]), $src, $pid);
-            $pdo->prepare('UPDATE skp_documents SET transaction_id=? WHERE id=? AND property_id=?')->execute([$newTrxId, $id, $pid]);
-            audit($pdo, 'create', 'transactions', (string) $newTrxId, ['from_skp' => $id, 'skp_no' => $skpNo]);
-            $trxMsg = ' Transaksi #' . $newTrxId . ' terbit & masuk laporan.';
+            $offerId = (int) $skp['offer_id'];
+            // PAKET: hanya bila offer memang is_bundle DAN punya komponen. Gating
+            // ganda (is_bundle + $bundleRows) mencegah offer yg dikembalikan ke
+            // single tapi masih punya offer_items basi ikut meledak jadi N transaksi.
+            // 1 transaksi per komponen, diikat bundle_id = offer.id (dedupe COUNT).
+            $rows = $isBundleSrc ? $bundleRows : [];
+            $skpArg = array_merge($skp, ['skp_no' => $skpNo]);
+            if ($rows) {
+                $repId = 0; $ids = [];
+                foreach ($rows as $it) {
+                    $tid = _skp_create_transaction($pdo, $skpArg, $src, $pid, $it);
+                    $pdo->prepare('UPDATE transactions SET bundle_id=?, skp_id=?, offer_item_id=? WHERE id=?')
+                        ->execute([$offerId, $id, (int) $it['id'], $tid]);
+                    if (!$repId) $repId = $tid;
+                    $ids[] = '#' . $tid;
+                }
+                // transaction_id SKP = transaksi perwakilan (komponen pertama);
+                // tautan lengkap via transactions.skp_id.
+                $pdo->prepare('UPDATE skp_documents SET transaction_id=? WHERE id=? AND property_id=?')->execute([$repId, $id, $pid]);
+                audit($pdo, 'create', 'transactions', (string) $repId, ['from_skp' => $id, 'skp_no' => $skpNo, 'bundle' => $offerId, 'count' => count($rows)]);
+                $trxMsg = ' ' . count($rows) . ' transaksi paket terbit (' . implode(', ', $ids) . ') & masuk laporan.';
+            } else {
+                $newTrxId = _skp_create_transaction($pdo, $skpArg, $src, $pid);
+                $pdo->prepare('UPDATE transactions SET skp_id=? WHERE id=?')->execute([$id, $newTrxId]);
+                $pdo->prepare('UPDATE skp_documents SET transaction_id=? WHERE id=? AND property_id=?')->execute([$newTrxId, $id, $pid]);
+                audit($pdo, 'create', 'transactions', (string) $newTrxId, ['from_skp' => $id, 'skp_no' => $skpNo]);
+                $trxMsg = ' Transaksi #' . $newTrxId . ' terbit & masuk laporan.';
+            }
         }
 
         $pdo->commit();

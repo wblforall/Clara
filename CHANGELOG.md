@@ -11,6 +11,17 @@
 
 ---
 
+## Version 4.24 — 24 Juni 2026
+
+### Penawaran PAKET (bundling Exhibition + Media)
+
+- **Satu Surat Penawaran kini bisa memuat beberapa komponen** (multi-booth dan/atau multi-titik media) dengan **harga sendiri-sendiri per komponen** dan **periode yang sama**. Centang "Penawaran Paket" lalu **+ Tambah komponen**.
+- **1 surat → 1 TTD → 1 SKP Paket**. Dokumen (Surat Penawaran, halaman TTD, SKP) **mengitemkan tiap komponen** + total paket.
+- Saat **SKP Paket di-approve**, sistem menerbitkan **transaksi terpisah per komponen** (Exhibition & Media masing-masing, segmen + recurring sendiri) → laporan tiap segmen tetap akurat. Di metrik **jumlah deal**, satu paket **dihitung 1 deal** (bukan N).
+- **Cek bentrok slot:** unit/titik yang sudah dipakai penawaran aktif lain pada periode bertumpukan otomatis ditolak (cegah dobel-booking).
+
+---
+
 ## Version 4.23 — 15 Juni 2026
 
 ### SKP — kelengkapan identitas & lampiran (KTP, NPWP, SIUP)
