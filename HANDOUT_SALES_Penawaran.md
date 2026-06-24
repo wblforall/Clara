@@ -83,6 +83,7 @@ Untuk menawarkan **beberapa unit sekaligus dalam 1 surat** (mis. 1 booth + beber
 
 > 📊 Saat SKP Paket di-approve, sistem otomatis menerbitkan **transaksi terpisah per komponen** (Exhibition & Media masing-masing) agar laporan tiap segmen akurat — tapi di laporan **dihitung sebagai 1 deal**.
 > ⛔ Bila sebuah unit/titik sudah dipakai penawaran aktif lain di periode bertumpukan, sistem **menolak** (cegah dobel-booking).
+> ✂️ **Batal sebagian:** kalau satu komponen batal (mis. 1 titik media), **manajer** bisa membatalkan komponen itu saja (di halaman penawaran paket, **wajib isi alasan**) — komponen lain tetap jalan.
 
 ---
 

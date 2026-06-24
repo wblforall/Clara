@@ -670,6 +670,55 @@ function offer_view(PDO $pdo): void
             </table>
             </div>
         </div>
+        <?php
+            // Transaksi turunan paket (terbit setelah SKP approve) + batal sebagian.
+            $btx = $pdo->prepare('SELECT id, module, master_code, final_amount, deleted_at, cancel_reason
+                                  FROM transactions WHERE bundle_id = ? ORDER BY id');
+            $btx->execute([(int) $offer['id']]);
+            $btxRows = $btx->fetchAll();
+            $canCancel = function_exists('can') && can('approve_skp');
+        ?>
+        <?php if ($btxRows): ?>
+        <div class="panel" style="margin-top:12px">
+            <h3 style="margin-top:0">Transaksi Paket Terbit</h3>
+            <p style="color:var(--muted);font-size:12px;margin-top:0">Tiap komponen = transaksi sendiri. Batal sebagian (komponen) butuh <strong>alasan</strong> &amp; hanya bisa oleh manajer (approval).</p>
+            <div style="overflow-x:auto">
+            <table class="table" style="width:100%;border-collapse:collapse;font-size:13px">
+                <thead><tr style="text-align:left;border-bottom:2px solid #e2e8f0">
+                    <th style="padding:8px 10px">#</th><th style="padding:8px 10px">Segmen / Titik</th>
+                    <th style="padding:8px 10px;text-align:right">Nilai</th><th style="padding:8px 10px">Status</th>
+                    <?php if ($canCancel): ?><th style="padding:8px 10px">Batalkan komponen</th><?php endif; ?>
+                </tr></thead>
+                <tbody>
+                <?php foreach ($btxRows as $bt): $cancelled = !empty($bt['deleted_at']); ?>
+                    <tr style="border-bottom:1px solid #f1f5f9<?= $cancelled ? ';opacity:.55' : '' ?>">
+                        <td style="padding:8px 10px">#<?= (int) $bt['id'] ?></td>
+                        <td style="padding:8px 10px"><?= h(($segLbl[$bt['module']] ?? $bt['module']) . ' · ' . ($bt['master_code'] ?: '-')) ?></td>
+                        <td style="padding:8px 10px;text-align:right"><?= $rp($bt['final_amount']) ?></td>
+                        <td style="padding:8px 10px"><?= $cancelled
+                            ? '<span style="color:#b91c1c">Dibatalkan</span>' . ($bt['cancel_reason'] ? '<br><span style="color:var(--muted);font-size:11px">' . h($bt['cancel_reason']) . '</span>' : '')
+                            : '<span style="color:#15803d">Aktif</span>' ?></td>
+                        <?php if ($canCancel): ?>
+                        <td style="padding:8px 10px">
+                            <?php if (!$cancelled): ?>
+                            <form method="post" action="?r=transaction_cancel" style="display:flex;gap:6px;align-items:center" onsubmit="return confirm('Batalkan komponen ini? Alasan akan tercatat.')">
+                                <input type="hidden" name="_csrf" value="<?= h(csrf_token()) ?>">
+                                <input type="hidden" name="id" value="<?= (int) $bt['id'] ?>">
+                                <input type="hidden" name="return" value="offer_view">
+                                <input type="hidden" name="return_id" value="<?= (int) $offer['id'] ?>">
+                                <input type="text" name="reason" placeholder="Alasan (wajib)" required style="font-size:12px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px">
+                                <button type="submit" class="btn light" style="font-size:12px;color:#b91c1c">Batalkan</button>
+                            </form>
+                            <?php else: ?><span style="color:var(--muted)">—</span><?php endif; ?>
+                        </td>
+                        <?php endif; ?>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+        </div>
+        <?php endif; ?>
         <?php endif; ?>
         <?php
     });

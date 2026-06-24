@@ -343,6 +343,7 @@ function permission_for_route(string $route): string
         'transactions', 'transaction_form', 'transaction_edit', 'allocation_detail' => 'view_transactions',
         'transaction_save', 'transaction_update' => 'manage_transactions',
         'transaction_delete', 'deleted_transactions' => 'manage_deleted',
+        'transaction_cancel' => 'approve_skp',
         'transaction_history' => 'view_transactions',
         'master' => 'view_master',
         'master_form', 'master_save', 'generate_periods' => 'manage_master',

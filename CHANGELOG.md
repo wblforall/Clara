@@ -19,6 +19,7 @@
 - **1 surat → 1 TTD → 1 SKP Paket**. Dokumen (Surat Penawaran, halaman TTD, SKP) **mengitemkan tiap komponen** + total paket.
 - Saat **SKP Paket di-approve**, sistem menerbitkan **transaksi terpisah per komponen** (Exhibition & Media masing-masing, segmen + recurring sendiri) → laporan tiap segmen tetap akurat. Di metrik **jumlah deal**, satu paket **dihitung 1 deal** (bukan N).
 - **Cek bentrok slot:** unit/titik yang sudah dipakai penawaran aktif lain pada periode bertumpukan otomatis ditolak (cegah dobel-booking).
+- **Batal sebagian:** satu komponen paket bisa dibatalkan tanpa membatalkan yang lain — **wajib alasan & hanya oleh manajer** (tercatat di audit). Komponen lain tetap berjalan.
 
 ---
 

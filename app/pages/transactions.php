@@ -244,6 +244,54 @@ function transaction_delete(PDO $pdo): void
     redirect_to('transactions', ['module' => $trx['module']]);
 }
 
+/**
+ * Batalkan SATU komponen paket (atau transaksi mana pun) — dipakai utk "batal
+ * sebagian" paket bundling. Wajib oleh manajer (approve_skp) DENGAN ALASAN.
+ * Soft-delete + simpan cancel_reason + hapus alokasi, atomik & ter-audit.
+ * Komponen lain dalam paket tetap berjalan. Lihat [[project-bundling-package]].
+ */
+function transaction_cancel(PDO $pdo): void
+{
+    require_permission('approve_skp');   // gate manajer
+    verify_csrf();
+    $id     = (int) post('id');
+    $reason = trim((string) post('reason'));
+    $back   = post('return') ?: 'transactions';
+    $backId = (int) post('return_id');
+    if (!$id) { redirect_to('transactions'); }
+    if ($reason === '') {
+        flash('Alasan pembatalan wajib diisi.');
+        $back === 'offer_view' && $backId ? redirect_to('offer_view', ['id' => $backId]) : redirect_to('transactions');
+    }
+    $pid = current_property_id();
+    $st = $pdo->prepare('SELECT * FROM transactions WHERE id = ? AND deleted_at IS NULL AND property_id = ?');
+    $st->execute([$id, $pid]);
+    $trx = $st->fetch();
+    if (!$trx) {
+        flash('Transaksi tidak ditemukan atau sudah dibatalkan.');
+        $back === 'offer_view' && $backId ? redirect_to('offer_view', ['id' => $backId]) : redirect_to('transactions');
+    }
+    // Khusus komponen PAKET (punya bundle_id). Transaksi tunggal dibatalkan lewat
+    // jalur hapus standar (superadmin) — jaga pemisahan wewenang.
+    if (empty($trx['bundle_id'])) {
+        flash('Aksi ini hanya untuk komponen paket.');
+        redirect_to('transactions', ['module' => $trx['module']]);
+    }
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('UPDATE transactions SET deleted_at = ?, deleted_by = ?, cancel_reason = ? WHERE id = ? AND property_id = ?')
+            ->execute([date('Y-m-d H:i:s'), $_SESSION['user']['email'] ?? 'system', $reason, $id, $pid]);
+        $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ? AND property_id = ?')->execute([$id, $pid]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    audit($pdo, 'cancel_component', 'transactions', (string) $id, ['reason' => $reason, 'bundle_id' => $trx['bundle_id'] ?? null], (array) $trx);
+    flash('Komponen (transaksi #' . $id . ') dibatalkan. Alasan tercatat.');
+    $back === 'offer_view' && $backId ? redirect_to('offer_view', ['id' => $backId]) : redirect_to('transactions', ['module' => $trx['module']]);
+}
+
 function deleted_transactions_page(PDO $pdo): void
 {
     if (current_role() !== 'superadmin') {
