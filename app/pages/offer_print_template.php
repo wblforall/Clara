@@ -43,7 +43,7 @@ $ketentuan = ($letter['terms'] ?? []) ?: offer_terms();
 <?php if (!$PDF_MODE): ?>
 /* ── Mode LAYAR/print-browser: kop via thead/tfoot (tetap utk pratinjau & fallback). ── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111;background:#fff}
+body{font-family:Helvetica, Arial, sans-serif;font-size:11px;color:#111;background:#fff}
 @page{size:A4 portrait;margin:0}
 table.paper{width:100%;border-collapse:collapse}
 table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:0}
@@ -75,7 +75,7 @@ table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:
 /* ── Mode PDF (mPDF): kop dipasang via SetHTMLHeader/Footer; di sini CSS KONTEN saja
    (TANPA @page agar tak menimpa margin mPDF; tanpa padding .sheet krn margin sudah diatur). ── */
 *{box-sizing:border-box}
-body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111}
+body{font-family:Helvetica, Arial, sans-serif;font-size:11px;color:#111}
 <?php endif; ?>
 .sign{page-break-inside:avoid}
 .meta{margin-bottom:10px;line-height:1.7}
@@ -91,13 +91,13 @@ table.cost tr.sub td{background:#f8fafc}
 table.cost tr.tot td{background:#f1f5f9;font-weight:700}
 table.cost tr.grand td{background:#f0fdfa;color:#0f766e;font-weight:800;font-size:11px}
 .validbox{display:inline-block;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:600;margin-top:4px}
-.sec{font-weight:800;margin:14px 0 5px;color:#0D9488;text-transform:uppercase;font-size:11px;letter-spacing:.03em}
+.sec{font-weight:800;margin:14px 0 5px;color:#0D9488;text-transform:uppercase;font-size:11px;letter-spacing:.03em;page-break-after:avoid}
 ul,ol{margin:0 0 0 18px}
 li{margin-bottom:3px;line-height:1.45;text-align:justify}
 .intro,.closing{text-align:justify}
 .pay li{font-size:11px}
 .rek{background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;margin-top:6px;font-size:11px;line-height:1.7}
-.tnc li{font-size:11px;color:#374151}
+.tnc li{font-size:11px;color:#374151;page-break-inside:avoid}
 .sign{width:100%;border-collapse:collapse;margin-top:22px;page-break-inside:avoid;table-layout:fixed}
 .sign td.col{width:50%;vertical-align:top;padding:0 6px}
 .sign .sigarea{height:78px}

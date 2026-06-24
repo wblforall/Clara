@@ -11,7 +11,7 @@ $docTitle = ($skp['doc_type'] ?? 'skp') === 'sks' ? 'Surat Konfirmasi Sewa' : 'S
 <link rel="icon" type="image/png" href="assets/clara-logo.png">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',Arial,sans-serif;background:#eef2f6;color:#111;font-size:14px;padding:16px;min-height:100vh}
+body{font-family:Helvetica, Arial, sans-serif;background:#eef2f6;color:#111;font-size:14px;padding:16px;min-height:100vh}
 .wrap{max-width:540px;margin:24px auto}
 .card{background:#fff;border-radius:16px;box-shadow:0 4px 18px rgba(16,24,40,.08);overflow:hidden}
 .bar{padding:18px 22px;color:#fff;text-align:center}

@@ -462,7 +462,7 @@ function contract_legal_page(PDO $pdo): void
     <html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Permintaan Kontrak <?= $h($cr['req_no']) ?></title>
     <style>
-    *{box-sizing:border-box} body{font-family:'Inter',Arial,sans-serif;background:#f3f4f6;color:#111;margin:0;padding:18px;font-size:14px}
+    *{box-sizing:border-box} body{font-family:Helvetica, Arial, sans-serif;background:#f3f4f6;color:#111;margin:0;padding:18px;font-size:14px}
     .card{max-width:760px;margin:0 auto;background:#fff;border-radius:14px;box-shadow:0 6px 30px rgba(0,0,0,.08);overflow:hidden}
     .hd{background:#6d28d9;color:#fff;padding:18px 22px}
     .hd h1{margin:0;font-size:17px} .hd p{margin:4px 0 0;opacity:.9;font-size:13px}

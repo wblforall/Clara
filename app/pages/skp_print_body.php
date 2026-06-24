@@ -19,7 +19,7 @@ $skpHasQr = !empty($skp['sign_token']);
 <style>
 .skpdoc .doc-title { text-align: center; font-size: 16px; font-weight: 800; letter-spacing: .5px; margin: 0 0 2px; text-transform: uppercase; color: #111; }
 .skpdoc .doc-no { text-align: center; font-size: 11px; color: #555; margin-bottom: 14px; }
-.skpdoc .sec { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #0D9488; border-bottom: 1px solid #d1d5db; padding-bottom: 3px; margin: 14px 0 7px; }
+.skpdoc .sec { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #0D9488; border-bottom: 1px solid #d1d5db; padding-bottom: 3px; margin: 14px 0 7px; page-break-after: avoid; }
 .skpdoc table.kv { width: 100%; border-collapse: collapse; }
 .skpdoc table.kv td { padding: 2.5px 0; vertical-align: top; border: none; font-size: 11px; }
 .skpdoc table.kv td.l { width: 38%; color: #374151; }
@@ -31,8 +31,9 @@ $skpHasQr = !empty($skp['sign_token']);
 .skpdoc table.pay tr.grand td { background: #f0fdfa; font-weight: 800; color: #0f766e; }
 .skpdoc .chk { font-size: 13px; }
 .skpdoc table.notes { width: 100%; border-collapse: collapse; margin-top: 4px; }
-.skpdoc table.notes td.nn { width: 20px; vertical-align: top; font-weight: 700; font-size: 9.5px; color: #374151; }
-.skpdoc table.notes td.nt { font-size: 9.5px; color: #374151; line-height: 1.45; padding-bottom: 3px; text-align: justify; }
+.skpdoc table.notes tr { page-break-inside: avoid; }
+.skpdoc table.notes td.nn { width: 20px; vertical-align: top; font-weight: 700; font-size: 11px; color: #374151; }
+.skpdoc table.notes td.nt { font-size: 11px; color: #374151; line-height: 1.45; padding-bottom: 3px; text-align: justify; }
 .skpdoc table.sign { width: 100%; border-collapse: collapse; margin-top: 22px; page-break-inside: avoid; table-layout: fixed; }
 .skpdoc table.sign td.col { width: 33.33%; font-size: 10.5px; text-align: center; vertical-align: top; padding: 0 6px; }
 .skpdoc table.sign td.col img { max-width: 100%; height: auto; }

@@ -1299,7 +1299,7 @@ function offer_verify_page(PDO $pdo): void
     <html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Validasi Penawaran</title>
     <style>
-    *{box-sizing:border-box} body{font-family:'Inter',Arial,sans-serif;background:#f3f4f6;color:#111;margin:0;padding:20px;font-size:14px}
+    *{box-sizing:border-box} body{font-family:Helvetica, Arial, sans-serif;background:#f3f4f6;color:#111;margin:0;padding:20px;font-size:14px}
     .card{max-width:460px;margin:24px auto;background:#fff;border-radius:14px;box-shadow:0 6px 30px rgba(0,0,0,.08);overflow:hidden}
     .hd{padding:20px 22px;color:#fff;text-align:center}
     .ok{background:#0d9488}.bad{background:#991b1b}

@@ -18,7 +18,7 @@ $tglAju = (int) date('d', $rd) . ' ' . $months[(int) date('n', $rd)] . ' ' . dat
 <style>
 <?php if (!$PDF_MODE): ?>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111;background:#fff}
+body{font-family:Helvetica, Arial, sans-serif;font-size:11px;color:#111;background:#fff}
 @page{size:A4 portrait;margin:0}
 table.paper{width:100%;border-collapse:collapse}
 table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:0}
@@ -52,11 +52,11 @@ table.paper>thead>tr>td,table.paper>tfoot>tr>td,table.paper>tbody>tr>td{padding:
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 <?php else: ?>
 *{box-sizing:border-box}
-body{font-family:'Inter',Arial,sans-serif;font-size:11px;color:#111}
+body{font-family:Helvetica, Arial, sans-serif;font-size:11px;color:#111}
 <?php endif; ?>
 h1{font-size:13.5px;text-align:center;text-transform:uppercase;letter-spacing:.02em;margin-bottom:2px}
 .sub{text-align:center;color:#374151;font-size:10.5px;margin-bottom:14px}
-.sec{font-weight:700;margin:16px 0 6px;color:#111;text-transform:uppercase;font-size:11px;letter-spacing:.02em;border-bottom:1.5px solid #111;padding-bottom:3px}
+.sec{font-weight:700;margin:16px 0 6px;color:#111;text-transform:uppercase;font-size:11px;letter-spacing:.02em;border-bottom:1.5px solid #111;padding-bottom:3px;page-break-after:avoid}
 .intro{font-size:10.5px;line-height:1.55;color:#374151;text-align:justify;margin-bottom:8px}
 table.kv{width:100%;border-collapse:collapse}
 table.kv td{padding:6px 8px;border:1px solid #111;font-size:11px;vertical-align:top}

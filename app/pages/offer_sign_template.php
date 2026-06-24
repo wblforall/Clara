@@ -12,7 +12,7 @@ if (!isset($o)) { http_response_code(400); exit('Konteks tidak valid.'); }
 <link rel="icon" type="image/png" href="assets/clara-logo.png">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',Arial,sans-serif;background:#eef2f6;color:#111;font-size:14px;padding:16px}
+body{font-family:Helvetica, Arial, sans-serif;background:#eef2f6;color:#111;font-size:14px;padding:16px}
 .wrap{max-width:680px;margin:0 auto}
 .card{background:#fff;border-radius:14px;box-shadow:0 2px 10px rgba(16,24,40,.06);padding:20px 22px;margin-bottom:14px}
 .hdr{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #0D9488;padding-bottom:10px;margin-bottom:6px}
