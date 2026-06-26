@@ -11,6 +11,23 @@
 
 ---
 
+## Version 4.25 — 27 Juni 2026
+
+### Hardening keamanan (hasil pentest white-box)
+
+Audit menyeluruh (kode + uji HTTP langsung) menemukan & menutup 8 temuan. Tidak ada SQL injection/RCE/path-traversal yang ditemukan; perbaikan fokus pada eksposur berkas, kontrol akses, dan kebersihan token.
+
+- **[H1] Skrip maintenance tidak lagi bisa dipanggil via web.** `db_migrate.php`, `db_check.php`, `migrate.php` sebelumnya bisa di-hit lewat HTTP (memicu DDL ke DB tanpa login). Kini ditolak (guard `PHP_SAPI==='cli'` + blok `.htaccess`); tetap jalan dari command line.
+- **[H2] Berkas unggahan (KTP/NPWP/akta/surat-kuasa/TTD basah) tidak lagi world-readable.** Dulu bisa diunduh siapa pun via URL `/uploads/...`. Kini disajikan lewat route `?r=file` yang mewajibkan **sesi login** atau **share_token Legal yang sah** dan **dibatasi ke berkas milik token tsb**; akses langsung HTTP diblok total.
+- **[H3] Link tanda tangan SKP & Penawaran kini kedaluwarsa (30 hari).** Sebelumnya berlaku selamanya → link bocor memaparkan PII/harga permanen. Halaman validasi QR sengaja tetap permanen (sebagai bukti). *(migrasi 040)*
+- **[M1] Kelola Master Referrer (no. rekening komisi) kini wajib `manage_master`** — sebelumnya cukup izin baca.
+- **[M2] Stored-XSS dropdown** input transaksi & penawaran ditutup (`json_encode` HEX-flag + escape `innerHTML`).
+- **[M3] Buka link TTD Penawaran tidak lagi mengubah status** (draft→sent) saat GET — promosi dipindah ke proses tanda tangan (POST), mencegah crawler/prefetch merusak metrik.
+- **[M4] Form periode reward** kini berproteksi CSRF.
+- **[Low] Token TV Display dirotasi** ke nilai acak kuat — **perlu update URL display TV** dengan token baru.
+
+---
+
 ## Version 4.24 — 24 Juni 2026
 
 ### Penawaran PAKET (bundling Exhibition + Media)

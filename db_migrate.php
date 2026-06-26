@@ -6,6 +6,15 @@
 
 declare(strict_types=1);
 
+// KEAMANAN: skrip maintenance — HANYA boleh dijalankan dari command line.
+// Tanpa guard ini, file fisik di web root bisa dipanggil via HTTP (rewrite
+// ke public/ tidak menangkap file -f yang nyata) sehingga siapa pun dapat
+// memicu DDL ke database produksi tanpa autentikasi (temuan pentest H1).
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+
 define('CLARA_ROOT', __DIR__);
 require_once __DIR__ . '/app/Database.php';
 require_once __DIR__ . '/app/env.php';

@@ -244,6 +244,15 @@ if ($route === 'offer_verify') {
     exit;
 }
 
+// ─── Penyaji berkas unggahan ber-gerbang (temuan H2): sesi login ATAU share_token ─
+// Tidak require_login agar halaman Legal publik (share_token) bisa memuat lampiran,
+// tapi akses tanpa sesi dibatasi ke berkas milik token tsb (lihat secure_file()).
+if ($route === 'file') {
+    require_once APP_ROOT . '/app/pages/contract_request.php';
+    secure_file($pdo);
+    exit;
+}
+
 // ─── Penawaran: tanda tangan customer (publik, via sign_token, tanpa login) ───
 if (in_array($route, ['offer_sign', 'offer_sign_save'], true)) {
     require_once APP_ROOT . '/app/pages/offers.php';

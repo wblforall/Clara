@@ -58,7 +58,7 @@ function my_signature_page(PDO $pdo): void
             <?php if ($cur): ?>
             <div style="margin-bottom:14px">
                 <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Tanda tangan saat ini:</div>
-                <img src="<?= h($cur) ?>" alt="TTD" style="max-height:90px;max-width:240px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:6px">
+                <img src="<?= h(upload_url($cur)) ?>" alt="TTD" style="max-height:90px;max-width:240px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:6px">
             </div>
             <?php else: ?>
             <div style="font-size:13px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 12px;margin-bottom:12px">Belum ada tanda tangan terdaftar.</div>

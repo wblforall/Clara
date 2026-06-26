@@ -178,7 +178,7 @@ function skp_list_page(PDO $pdo): void
                             <td style="white-space:nowrap">
                                 <a class="btn light" href="?r=skp_form&id=<?= (int)$r['id'] ?>"><?= $r['status'] === 'draft' || $r['status'] === 'rejected' ? 'Edit' : 'Lihat' ?></a>
                                 <?php if (in_array($r['status'], ['approved', 'signed'], true)): ?><a class="btn light" href="?r=skp_print&id=<?= (int)$r['id'] ?>" target="_blank">PDF</a><?php endif; ?>
-                                <?php if (($r['sign_method'] ?? '') === 'wet' && !empty($r['signed_doc_path'])): ?><a class="btn light" href="<?= h($r['signed_doc_path']) ?>" target="_blank">Scan TTD</a><?php endif; ?>
+                                <?php if (($r['sign_method'] ?? '') === 'wet' && !empty($r['signed_doc_path'])): ?><a class="btn light" href="<?= h(upload_url($r['signed_doc_path'])) ?>" target="_blank">Scan TTD</a><?php endif; ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -289,7 +289,7 @@ function skp_form(PDO $pdo): void
                 <div>
                     <label><?= $lbl ?><?= in_array($kind, $wajib, true) ? ' <span style="color:#dc2626">*</span>' : '' ?></label>
                     <?php if ($has): ?>
-                        <div style="font-size:12px"><a href="<?= h($has['file_path']) ?>" target="_blank">📎 <?= h($has['original_name'] ?: 'lihat') ?></a></div>
+                        <div style="font-size:12px"><a href="<?= h(upload_url($has['file_path'])) ?>" target="_blank">📎 <?= h($has['original_name'] ?: 'lihat') ?></a></div>
                     <?php endif; ?>
                     <?php
                     $prev = (!$has && $editable) ? ($reuse[$kind] ?? null) : null;
@@ -386,7 +386,7 @@ function skp_form(PDO $pdo): void
             <?php if ($skp['status'] === 'signed'): ?>
                 <?php if (($skp['sign_method'] ?? 'online') === 'wet'): ?>
                 <p style="margin:0;color:#166534">✓ <strong>Ditandatangani basah (scan)</strong> a.n. <strong><?= h($skp['sign_name']) ?></strong> pada <?= h(substr($skp['signed_at'], 0, 16)) ?>.
-                    <?php if (!empty($skp['signed_doc_path'])): ?> <a class="btn light" href="<?= h($skp['signed_doc_path']) ?>" target="_blank">Lihat Scan TTD</a><?php endif; ?></p>
+                    <?php if (!empty($skp['signed_doc_path'])): ?> <a class="btn light" href="<?= h(upload_url($skp['signed_doc_path'])) ?>" target="_blank">Lihat Scan TTD</a><?php endif; ?></p>
                 <?php else: ?>
                 <p style="margin:0;color:#166534">✓ <strong>Ditandatangani online</strong> oleh <strong><?= h($skp['sign_name']) ?></strong> pada <?= h(substr($skp['signed_at'], 0, 16)) ?> (IP <?= h($skp['sign_ip']) ?>).</p>
                 <?php endif; ?>
@@ -782,7 +782,7 @@ function skp_approve(PDO $pdo): void
 
         $pdo->prepare(
             'UPDATE skp_documents SET status=\'approved\', skp_no=?, approved_by=?, approved_at=CURRENT_TIMESTAMP,
-             snapshot_json=?, sign_token=? WHERE id=? AND property_id=?'
+             snapshot_json=?, sign_token=?, sign_token_expires_at=DATE_ADD(NOW(), INTERVAL 30 DAY) WHERE id=? AND property_id=?'
         )->execute([$skpNo, $_SESSION['user']['name'] ?? 'manager', json_encode($snapshot, JSON_UNESCAPED_UNICODE), $signToken, $id, $pid]);
 
         // Transaksi + alokasi terbit saat approve (offer-based, bila belum ada).
@@ -938,6 +938,9 @@ function skp_sign_save(PDO $pdo): void
     if (!$skp || !in_array($skp['status'], ['approved'], true)) {
         http_response_code(403); exit('Tautan tidak valid atau dokumen sudah ditandatangani.');
     }
+    if (sign_token_expired($skp['sign_token_expires_at'] ?? null)) {  // H3
+        http_response_code(410); exit('Tautan tanda tangan sudah kedaluwarsa. Hubungi sales untuk link baru.');
+    }
     $name = trim((string) post('sign_name'));
     $data = (string) post('signature');
     if ($name === '' || !preg_match('#^data:image/png;base64,#', $data)) {
@@ -970,6 +973,12 @@ function skp_sign_page(PDO $pdo): void
     if (!$skp || !in_array($skp['status'], ['approved', 'signed'], true) || empty($skp['snapshot_json'])) {
         http_response_code(404);
         exit('Tautan tanda tangan tidak valid atau sudah kedaluwarsa.');
+    }
+    // H3 — link kedaluwarsa & belum TTD: tutup paparan PII. Yang sudah TTD tetap
+    // bisa dilihat lewat halaman validasi (doc_verify) sebagai bukti.
+    if ($skp['status'] !== 'signed' && sign_token_expired($skp['sign_token_expires_at'] ?? null)) {
+        http_response_code(410);
+        exit('Tautan tanda tangan sudah kedaluwarsa. Hubungi sales untuk link baru.');
     }
     $d = json_decode($skp['snapshot_json'], true) ?: [];
     $a = $d['amounts'] ?? [];

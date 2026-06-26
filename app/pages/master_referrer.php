@@ -8,9 +8,15 @@ function master_referrer_page(PDO $pdo): void
     $action = getv('action', 'list');
     $id     = (int) getv('id', 0);
 
+    // Daftar boleh dilihat dengan view_master, tetapi membuat/mengubah referrer
+    // (termasuk no. rekening & nama bank yang dipakai pembayaran komisi) WAJIB
+    // manage_master — sebelumnya seluruh route hanya butuh view_master sehingga
+    // user read-only bisa menulis data payout (temuan pentest M1).
     if ($action === 'edit' && $id) {
+        require_permission('manage_master');
         _referrer_form($pdo, $id);
     } elseif ($action === 'add') {
+        require_permission('manage_master');
         _referrer_form($pdo, 0);
     } else {
         _referrer_list($pdo);

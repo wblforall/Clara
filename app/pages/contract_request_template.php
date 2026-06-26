@@ -176,7 +176,7 @@ table.sign td{width:50%;font-size:11px;padding-top:6px;vertical-align:top}
         <?php if ($sfWet): ?>
             <div class="sec">Lampiran: SKP Final (TTD basah) — No. <?= $h($sf['skp_no']) ?></div>
             <?php if ($scanImg): ?>
-                <img src="<?= $h($sf['signed_doc_path']) ?>" alt="SKP TTD basah" style="display:block;max-width:100%;max-height:235mm;margin:6px auto 0;object-fit:contain">
+                <img src="<?= $h(upload_url($sf['signed_doc_path'], $cr['share_token'])) ?>" alt="SKP TTD basah" style="display:block;max-width:100%;max-height:235mm;margin:6px auto 0;object-fit:contain">
             <?php else: ?>
                 <div style="border:1px solid #111;padding:12px;font-size:10.5px">Scan SKP ber-TTD basah dalam format <?= $h(strtoupper($scanExt) ?: 'PDF') ?> (<?= $h(basename((string) $sf['signed_doc_path'])) ?>). Tidak dapat disisipkan otomatis ke PDF — buka berkas terpisah.</div>
             <?php endif; ?>
@@ -201,7 +201,7 @@ table.sign td{width:50%;font-size:11px;padding-top:6px;vertical-align:top}
     <div style="page-break-before:always;padding-top:6mm">
         <div class="sec">Lampiran: <?= $h($lbl) ?></div>
         <?php if ($isImg): ?>
-            <img src="<?= $h($path) ?>" alt="<?= $h($lbl) ?>" style="display:block;max-width:100%;max-height:215mm;margin:0 auto;object-fit:contain">
+            <img src="<?= $h(upload_url($path, $cr['share_token'])) ?>" alt="<?= $h($lbl) ?>" style="display:block;max-width:100%;max-height:215mm;margin:0 auto;object-fit:contain">
         <?php else: ?>
             <div style="border:1px solid #111;padding:14px;font-size:11px;color:#374151">Berkas dalam format <strong><?= $h(strtoupper($ext)) ?></strong> (<?= $h(basename((string) $path)) ?>). Tidak dapat disisipkan otomatis ke PDF — silakan buka via tautan/berkas terpisah.</div>
         <?php endif; ?>

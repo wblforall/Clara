@@ -559,7 +559,7 @@ function contract_legal_page(PDO $pdo): void
                 <div class="att" style="margin-top:8px">
                     <a href="<?= $h($skpUrl) ?>" target="_blank">📄 Buka SKP Final</a>
                     <?php if (($sf['sign_method'] ?? '') === 'wet' && !empty($sf['signed_doc_path'])): ?>
-                        <a href="<?= $h($asset($sf['signed_doc_path'])) ?>" target="_blank">🖋️ Scan SKP ber-TTD</a>
+                        <a href="<?= $h(upload_url($sf['signed_doc_path'], $cr['share_token'])) ?>" target="_blank">🖋️ Scan SKP ber-TTD</a>
                     <?php endif; ?>
                 </div>
             </div>
@@ -582,9 +582,9 @@ function contract_legal_page(PDO $pdo): void
                 <div style="margin-top:10px">
                     <div style="font-weight:700;margin-bottom:4px"><?= $h($lbl) ?></div>
                     <?php if ($isImg): ?>
-                        <img class="lampimg" src="<?= $h($asset($path)) ?>" alt="<?= $h($lbl) ?>">
+                        <img class="lampimg" src="<?= $h(upload_url($path, $cr['share_token'])) ?>" alt="<?= $h($lbl) ?>">
                     <?php else: ?>
-                        <div class="att"><a href="<?= $h($asset($path)) ?>" target="_blank">📎 Buka <?= $h(strtoupper($ext)) ?> — <?= $h($lbl) ?></a></div>
+                        <div class="att"><a href="<?= $h(upload_url($path, $cr['share_token'])) ?>" target="_blank">📎 Buka <?= $h(strtoupper($ext)) ?> — <?= $h($lbl) ?></a></div>
                     <?php endif; ?>
                 </div>
             <?php endforeach; endif; ?>
@@ -649,6 +649,61 @@ function contract_legal_approve(PDO $pdo): void
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
     header('Location: ' . $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/?r=contract_legal&token=' . urlencode($token));
+    exit;
+}
+
+// ─── Penyaji berkas unggahan ber-gerbang (temuan pentest H2) ─────────────────
+// Menggantikan link langsung ke /uploads/... yang world-readable & permanen.
+// Akses diberikan bila: (a) sesi login aktif, ATAU (b) ada share_token contract
+// yang sah & berkas yang diminta MEMANG milik permintaan kontrak token tsb.
+// Path divalidasi ketat (whitelist subfolder + anti traversal + realpath).
+function _files_allowed_by_token(PDO $pdo, string $tok): array
+{
+    if ($tok === '') return [];
+    $st = $pdo->prepare('SELECT * FROM contract_requests WHERE share_token = ? AND status IN ("sent","approved") AND (share_token_expires_at IS NULL OR share_token_expires_at > NOW()) LIMIT 1');
+    $st->execute([$tok]);
+    $cr = $st->fetch();
+    if (!$cr) return [];
+    $allowed = [];
+    foreach (_cr_all_attachments($pdo, $cr) as [$lbl, $p]) {
+        if (!empty($p)) $allowed[] = ltrim((string) $p, '/');
+    }
+    $sf = _cr_skp_final($pdo, (int) $cr['skp_id']);
+    if (!empty($sf['signed_doc_path'])) $allowed[] = ltrim((string) $sf['signed_doc_path'], '/');
+    return array_values(array_unique($allowed));
+}
+
+function secure_file(PDO $pdo): void
+{
+    $rel = ltrim((string) getv('p', ''), '/');
+    // Whitelist subfolder + karakter nama; tolak path traversal.
+    if (!preg_match('#^uploads/(skp|contract|signatures)/[A-Za-z0-9._-]+$#', $rel) || strpos($rel, '..') !== false) {
+        http_response_code(404);
+        exit('Berkas tidak ditemukan.');
+    }
+    $base = realpath(APP_PUBLIC . '/uploads');
+    $full = realpath(APP_PUBLIC . '/' . $rel);
+    if ($base === false || $full === false || strncmp($full, $base . DIRECTORY_SEPARATOR, strlen($base) + 1) !== 0 || !is_file($full)) {
+        http_response_code(404);
+        exit('Berkas tidak ditemukan.');
+    }
+
+    if (empty($_SESSION['user'])) {
+        $tok = (string) getv('t', '');
+        if (!in_array($rel, _files_allowed_by_token($pdo, $tok), true)) {
+            http_response_code(403);
+            exit('Akses ditolak.');
+        }
+    }
+
+    $ext   = strtolower(pathinfo($full, PATHINFO_EXTENSION));
+    $types = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'webp' => 'image/webp', 'pdf' => 'application/pdf'];
+    header('Content-Type: ' . ($types[$ext] ?? 'application/octet-stream'));
+    header('X-Content-Type-Options: nosniff');
+    header('Content-Disposition: inline; filename="' . basename($full) . '"');
+    header('Cache-Control: private, max-age=300');
+    header('Content-Length: ' . (string) filesize($full));
+    readfile($full);
     exit;
 }
 

@@ -6,6 +6,12 @@
  */
 declare(strict_types=1);
 
+// KEAMANAN: skrip maintenance — HANYA command line (temuan pentest H1).
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+
 define('CLARA_ROOT', __DIR__);
 require_once __DIR__ . '/app/Database.php';
 require_once __DIR__ . '/app/env.php';

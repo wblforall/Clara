@@ -11,6 +11,12 @@ Options -Indexes
     Require all denied
 </FilesMatch>
 
+# Skrip maintenance CLI — blokir akses HTTP (temuan pentest H1). Guard PHP_SAPI
+# di tiap file adalah pertahanan utama; ini lapisan kedua.
+<FilesMatch "^(db_check|db_migrate|migrate)\.php$">
+    Require all denied
+</FilesMatch>
+
 # Blok seluruh direktori .git/ (cegah dump source + history)
 RedirectMatch 403 (?i)(^|/)\.git(/|$)
 

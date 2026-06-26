@@ -562,6 +562,35 @@ function snapshot_potential(PDO $pdo, string $segment, int $slotId, string $slot
     )->execute([$pid, $periodKey, $segment, $slotId, $slotCode, $newValue]);
 }
 
+/**
+ * URL aman untuk berkas unggahan (temuan H2). Mengganti link langsung ke
+ * /uploads/... (yang world-readable & permanen). Semua berkas KTP/NPWP/akta/
+ * surat-kuasa/TTD basah kini disajikan lewat route ?r=file yang mewajibkan
+ * sesi login ATAU token share yang sah (lihat secure_file()). $rel = path
+ * relatif tersimpan, mis. 'uploads/skp/skp1_ktp_xx.png'. $token opsional untuk
+ * akses publik via share_token (halaman Legal).
+ */
+function upload_url(?string $rel, string $token = ''): string
+{
+    $rel = ltrim((string) $rel, '/');
+    if ($rel === '') return '';
+    $u = '?r=file&p=' . urlencode($rel);
+    if ($token !== '') $u .= '&t=' . urlencode($token);
+    return $u;
+}
+
+/**
+ * Token tanda tangan customer (sign_token offers/SKP) kedaluwarsa? (temuan H3)
+ * NULL/kosong = legacy tanpa kedaluwarsa → dianggap masih berlaku agar link lama
+ * tidak putus. Dipakai HANYA di halaman tanda tangan, bukan halaman validasi QR.
+ */
+function sign_token_expired(?string $expiresAt): bool
+{
+    if (empty($expiresAt)) return false;
+    $ts = strtotime($expiresAt);
+    return $ts !== false && $ts < time();
+}
+
 function validate_password(string $pw): ?string
 {
     if (strlen($pw) < 8)                          return 'Password minimal 8 karakter.';

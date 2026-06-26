@@ -919,7 +919,7 @@ function mobile_skp_page(PDO $pdo): void
                         <a href="#" onclick="claraSharePdf('?r=skp_print&id=<?= (int) $s['id'] ?>','<?= h(($s['skp_no'] ?: 'SKP')) ?>',this);return false">📤 Bagikan</a>
                     <?php endif; ?>
                     <?php if (($s['sign_method'] ?? '') === 'wet' && !empty($s['signed_doc_path'])): ?>
-                        <a href="<?= h($s['signed_doc_path']) ?>" target="_blank">📄 Scan</a>
+                        <a href="<?= h(upload_url($s['signed_doc_path'])) ?>" target="_blank">📄 Scan</a>
                     <?php endif; ?>
                 </div>
             </div>

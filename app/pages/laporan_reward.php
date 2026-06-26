@@ -139,6 +139,7 @@ function pic_reward_page(PDO $pdo): void
                 </div>
             </div>
             <form method="post" action="?r=pic_reward_save" style="display:flex;gap:8px;align-items:center">
+                <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
                 <input type="month" name="reward_start_period" value="<?= h($startPeriod) ?>"
                        class="form-control" style="width:auto" required>
                 <button type="submit" class="btn btn-sm">Simpan</button>
@@ -319,6 +320,7 @@ function pic_reward_page(PDO $pdo): void
 
 function pic_reward_save(PDO $pdo): void
 {
+    verify_csrf(); // temuan pentest M4 — sebelumnya tanpa proteksi CSRF
     require_permission('view_pic_report');
     if (!in_array(current_role(), ['superadmin', 'admin'], true)) {
         http_response_code(403);

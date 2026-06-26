@@ -490,7 +490,7 @@ function offer_view(PDO $pdo): void
     if (!empty($offer['offer_no']) && $offer['status'] !== 'cancelled') {
         if (empty($offer['sign_token'])) {
             $offer['sign_token'] = bin2hex(random_bytes(20));
-            $pdo->prepare('UPDATE offers SET sign_token=? WHERE id=? AND property_id=?')->execute([$offer['sign_token'], $id, $pid]);
+            $pdo->prepare('UPDATE offers SET sign_token=?, sign_token_expires_at=DATE_ADD(NOW(), INTERVAL 30 DAY) WHERE id=? AND property_id=?')->execute([$offer['sign_token'], $id, $pid]);
         }
         // Catatan #7: status TIDAK dipromosikan di sini — membuka detail untuk
         // ditinjau tidak boleh mengubah status. Promosi draft→sent terjadi saat
@@ -1043,7 +1043,9 @@ function offer_form(PDO $pdo): void
 
         <script>
         (function () {
-            var contacts = <?= json_encode($contacts) ?>;
+            // esc(): cegah stored-XSS saat membangun innerHTML dari data DB (M2).
+            window.esc = window.esc || (s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
+            var contacts = <?= json_encode($contacts, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
             var clientHid = document.getElementById('client_id'), contactSel = document.getElementById('contact_id');
             var curContact = <?= (int)($offer['contact_id'] ?? 0) ?>;
             function fillContacts() {
@@ -1107,7 +1109,7 @@ function offer_form(PDO $pdo): void
             applyBundleMode();
 
             // ── Picker unit (searchable, sama seperti input transaksi) ──
-            var masters = <?= json_encode(array_values($masters)) ?>;
+            var masters = <?= json_encode(array_values($masters), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
             var byCode = Object.fromEntries(masters.map(function (m) { return [m.code, m]; }));
             function parseSizeM2(size) {
                 var m = String(size || '').replace(/[mM²]/g, '').match(/(\d+\.?\d*)\s*[×xX]\s*(\d+\.?\d*)/);
@@ -1136,10 +1138,10 @@ function offer_form(PDO $pdo): void
                     .then(function (d) {
                         var dpm = document.getElementById('dp_months');
                         if (d.dp_required) {
-                            note.innerHTML = '📄 Tipe <strong>' + (d.unit_type || '-') + '</strong> · template <strong>' + d.template + '</strong> · <strong>DP wajib</strong> (default ' + d.dp_months_default + ' bln).';
+                            note.innerHTML = '📄 Tipe <strong>' + esc(d.unit_type || '-') + '</strong> · template <strong>' + esc(d.template) + '</strong> · <strong>DP wajib</strong> (default ' + esc(d.dp_months_default) + ' bln).';
                             if (dpm) { dpm.min = '1'; if (!dpm.value || dpm.value === '0') dpm.value = d.dp_months_default || 1; }
                         } else {
-                            note.innerHTML = '📄 Tipe <strong>' + (d.unit_type || '-') + '</strong> · template <strong>' + d.template + '</strong> · <strong>tanpa DP</strong> (deposit-only). Kosongkan DP.';
+                            note.innerHTML = '📄 Tipe <strong>' + esc(d.unit_type || '-') + '</strong> · template <strong>' + esc(d.template) + '</strong> · <strong>tanpa DP</strong> (deposit-only). Kosongkan DP.';
                             if (dpm) { dpm.min = '0'; dpm.value = '0'; }
                         }
                         note.style.display = '';
@@ -1181,7 +1183,7 @@ function offer_form(PDO $pdo): void
 
             // ── Picker client (searchable, sama seperti input transaksi) ──
             (function () {
-                var cliData = <?= json_encode(array_values($clients)) ?>;
+                var cliData = <?= json_encode(array_values($clients), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
                 var src = document.getElementById('cliSearch'), hid = document.getElementById('client_id'), dd = document.getElementById('cliDrop');
                 if (!src || !hid || !dd) return;
                 document.body.appendChild(dd);
@@ -1194,7 +1196,7 @@ function offer_form(PDO $pdo): void
                     list.slice(0, 60).forEach(function (c) {
                         var d = document.createElement('div');
                         d.style.cssText = 'padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9';
-                        d.innerHTML = '<strong>' + c.company_name + '</strong>' + (c.brand_name ? ' <span style="color:var(--muted);font-size:11px">(' + c.brand_name + ')</span>' : '');
+                        d.innerHTML = '<strong>' + esc(c.company_name) + '</strong>' + (c.brand_name ? ' <span style="color:var(--muted);font-size:11px">(' + esc(c.brand_name) + ')</span>' : '');
                         d.addEventListener('mouseover', function () { this.style.background = '#f0fdf4'; });
                         d.addEventListener('mouseout', function () { this.style.background = ''; });
                         d.addEventListener('mousedown', function (e) { e.preventDefault(); src.value = c.company_name + (c.brand_name ? ' (' + c.brand_name + ')' : ''); hid.value = c.id; src.style.outline = ''; dd.style.display = 'none'; curContact = 0; fillContacts(); });
@@ -1599,7 +1601,7 @@ function offer_print(PDO $pdo): void
     // Token verifikasi (QR "Scan untuk validasi" di TTD sales) — terbit sekali.
     if (empty($o['sign_token'])) {
         $o['sign_token'] = bin2hex(random_bytes(20));
-        $pdo->prepare('UPDATE offers SET sign_token=? WHERE id=? AND property_id=?')->execute([$o['sign_token'], $id, $pid]);
+        $pdo->prepare('UPDATE offers SET sign_token=?, sign_token_expires_at=DATE_ADD(NOW(), INTERVAL 30 DAY) WHERE id=? AND property_id=?')->execute([$o['sign_token'], $id, $pid]);
     }
     $prop = current_property();
     $letter = offer_letter($pdo, $o);   // isi surat per jenis booth (snapshot/template)
@@ -1742,15 +1744,17 @@ function offer_sign_page(PDO $pdo): void
         http_response_code(404);
         exit('Tautan tanda tangan tidak valid atau sudah kedaluwarsa.');
     }
-    // #7 — auto-promote: customer membuka link TTD = penawaran "terkirim".
-    // Berlaku dari 'draft' MAUPUN 'nego' (boleh TTD langsung dari negosiasi),
-    // tidak menurunkan 'deal'/'cancelled'. Idempoten via WHERE. Inilah syarat
-    // agar offer_sign_save (yang mewajibkan status='sent') bisa lanjut.
-    if (in_array($o['status'], ['draft', 'nego'], true)) {
-        $pdo->prepare("UPDATE offers SET status='sent', sent_at=COALESCE(sent_at, CURRENT_TIMESTAMP) WHERE id=? AND status IN ('draft','nego')")
-            ->execute([(int) $o['id']]);
-        $o['status'] = 'sent';
+    // H3 — link kedaluwarsa & belum TTD: tutup paparan PII/harga. Penawaran yang
+    // sudah TTD tetap bisa diverifikasi lewat halaman validasi (offer_verify).
+    if (empty($o['signed_at']) && sign_token_expired($o['sign_token_expires_at'] ?? null)) {
+        http_response_code(410);
+        exit('Tautan tanda tangan sudah kedaluwarsa. Hubungi sales untuk link baru.');
     }
+    // Temuan pentest M3: JANGAN mengubah state pada GET. Sebelumnya membuka link
+    // (draft/nego → sent) dieksekusi saat render, sehingga link-prefetcher / crawler
+    // WhatsApp / antivirus yang men-fetch URL diam-diam mempromosikan penawaran &
+    // merusak metrik (sent_at dipakai deteksi fiktif). Promosi sekarang terjadi
+    // ATOMIK di offer_sign_save (POST) bersamaan dengan penandatanganan.
     $signed = !empty($o['signed_at']);
     // Bila sudah TTD, tampilkan dari snapshot terkunci; bila belum, dari data live.
     // #9 — penawaran yg SUDAH TTD wajib punya snapshot valid; jangan diam-diam
@@ -1778,9 +1782,10 @@ function offer_sign_save(PDO $pdo): void
 {
     $token = (string) post('token', getv('token', ''));
     $o = _offer_by_token($pdo, $token);
-    // #7 — TTD customer hanya boleh utk penawaran berstatus 'sent' (sudah dibagikan),
-    // belum ditandatangani, & nomor terbit. Draft/nego/deal/cancelled ditolak.
-    if (!$o || empty($o['offer_no']) || $o['status'] !== 'sent' || !empty($o['signed_at'])) {
+    // #7 + M3 — TTD customer boleh dari status 'draft'/'nego'/'sent' (belum TTD,
+    // nomor terbit, bukan cancelled). Promosi ke 'sent' kini terjadi di sini (POST),
+    // bukan saat GET render, agar tidak ada efek-samping dari fetch otomatis.
+    if (!$o || empty($o['offer_no']) || !in_array($o['status'], ['draft', 'nego', 'sent'], true) || !empty($o['signed_at'])) {
         http_response_code(403);
         exit('Tautan tidak valid atau dokumen sudah ditandatangani.');
     }
@@ -1789,6 +1794,10 @@ function offer_sign_save(PDO $pdo): void
     if ($validTs !== false && time() > $validTs) {
         http_response_code(410);
         exit('Penawaran sudah kedaluwarsa.');
+    }
+    if (sign_token_expired($o['sign_token_expires_at'] ?? null)) {  // H3
+        http_response_code(410);
+        exit('Tautan tanda tangan sudah kedaluwarsa.');
     }
     $name = trim((string) post('sign_name'));
     $data = (string) post('signature');
@@ -1802,11 +1811,15 @@ function offer_sign_save(PDO $pdo): void
     // Snapshot dikunci pada saat TTD (sales boleh revisi sampai detik ini).
     $snap = _offer_sign_view($o);
     $snap['offer_no'] = $o['offer_no'];
+    // Promosi sent_at di-stamp di sini (M3) bila belum pernah — menggantikan
+    // auto-promote saat GET. Status 'deal' menutup; WHERE membatasi ke dokumen
+    // belum-TTD pada status yang sah agar tetap atomik & anti-replay.
     $pdo->prepare(
         "UPDATE offers SET status='deal', deal_at=COALESCE(deal_at, CURRENT_TIMESTAMP),
+                sent_at=COALESCE(sent_at, CURRENT_TIMESTAMP),
                 sign_name=?, sign_ip=?, sign_ua=?, signature_data=?, signed_at=CURRENT_TIMESTAMP,
                 snapshot_json=?
-         WHERE id=? AND sign_token=? AND signed_at IS NULL AND status='sent'"
+         WHERE id=? AND sign_token=? AND signed_at IS NULL AND status IN ('draft','nego','sent')"
     )->execute([
         $name,
         substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),

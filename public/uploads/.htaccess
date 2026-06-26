@@ -12,3 +12,11 @@
 Options -ExecCGI -Indexes
 RemoveHandler .php .phtml .phar
 RemoveType .php .phtml .phar
+
+# Temuan pentest H2: TOLAK akses HTTP langsung ke berkas unggahan (KTP/NPWP/akta/
+# surat-kuasa/TTD basah/TTD PIC). Berkas hanya boleh disajikan lewat route
+# ?r=file (secure_file) yang membaca via filesystem & mewajibkan sesi/login atau
+# share_token sah. Sebelumnya berkas world-readable & link permanen.
+<FilesMatch "\.(jpg|jpeg|png|webp|gif|bmp|tif|tiff|pdf|svg)$">
+    Require all denied
+</FilesMatch>

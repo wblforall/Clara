@@ -8,6 +8,12 @@
 
 declare(strict_types=1);
 
+// KEAMANAN: skrip migrasi data — HANYA command line (temuan pentest H1).
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+
 $dsn_opts = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC];
 $ewalk   = new PDO('mysql:host=localhost;dbname=clara_ewalk;charset=utf8mb4',   'root', '', $dsn_opts);
 $penta   = new PDO('mysql:host=localhost;dbname=clara_pentacity;charset=utf8mb4','root', '', $dsn_opts);

@@ -553,9 +553,11 @@ function transaction_form(PDO $pdo): void
                     });
                 });
             })();
-            const masters = <?= json_encode($masters) ?>;
+            // esc(): cegah stored-XSS saat membangun innerHTML dari data DB (M2).
+            window.esc = window.esc || (s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
+            const masters = <?= json_encode($masters, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
             const byCode = Object.fromEntries(masters.map(m => [m.code, m]));
-            const allContacts = <?= json_encode($allContacts) ?>;
+            const allContacts = <?= json_encode($allContacts, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 
             function filterContacts(selectedContactId) {
                 const clientId = document.getElementById('client_id').value;
@@ -587,7 +589,7 @@ function transaction_form(PDO $pdo): void
                     list.forEach(function(m) {
                         const d = document.createElement('div');
                         d.style.cssText = 'padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:8px';
-                        d.innerHTML = '<span style="font-weight:600">' + m.label + '</span><span style="color:var(--muted);font-size:11px;flex-shrink:0">' + m.code + '</span>';
+                        d.innerHTML = '<span style="font-weight:600">' + esc(m.label) + '</span><span style="color:var(--muted);font-size:11px;flex-shrink:0">' + esc(m.code) + '</span>';
                         d.addEventListener('mouseover', function(){ this.style.background='#f0fdf4'; });
                         d.addEventListener('mouseout',  function(){ this.style.background=''; });
                         d.addEventListener('mousedown', function(e){
@@ -614,7 +616,7 @@ function transaction_form(PDO $pdo): void
 
             // Searchable client picker
             (function(){
-                const cliData = <?= json_encode(array_values($clients)) ?>;
+                const cliData = <?= json_encode(array_values($clients), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
                 const src = document.getElementById('cliSearch');
                 const hid = document.getElementById('client_id');
                 const dd  = document.getElementById('cliDrop');
@@ -637,7 +639,7 @@ function transaction_form(PDO $pdo): void
                     list.slice(0, 60).forEach(function(c) {
                         const d = document.createElement('div');
                         d.style.cssText = 'padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9';
-                        d.innerHTML = '<strong>' + c.company_name + '</strong>' + (c.brand_name ? ' <span style="color:var(--muted);font-size:11px">(' + c.brand_name + ')</span>' : '');
+                        d.innerHTML = '<strong>' + esc(c.company_name) + '</strong>' + (c.brand_name ? ' <span style="color:var(--muted);font-size:11px">(' + esc(c.brand_name) + ')</span>' : '');
                         d.addEventListener('mouseover', function(){ this.style.background='#f0fdf4'; });
                         d.addEventListener('mouseout',  function(){ this.style.background=''; });
                         d.addEventListener('mousedown', function(e){
@@ -1201,9 +1203,11 @@ function transaction_edit(PDO $pdo): void
                     });
                 });
             })();
-            const masters = <?= json_encode($masters) ?>;
+            // esc(): cegah stored-XSS saat membangun innerHTML dari data DB (M2).
+            window.esc = window.esc || (s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
+            const masters = <?= json_encode($masters, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
             const byCode = Object.fromEntries(masters.map(m => [m.code, m]));
-            const allContacts = <?= json_encode($allContacts) ?>;
+            const allContacts = <?= json_encode($allContacts, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
             const currentContactId = <?= (int) ($trx['contact_id'] ?? 0) ?>;
 
             // Searchable master picker (edit form)
@@ -1222,7 +1226,7 @@ function transaction_edit(PDO $pdo): void
                     list.forEach(function(m) {
                         const d = document.createElement('div');
                         d.style.cssText = 'padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:8px';
-                        d.innerHTML = '<span style="font-weight:600">' + m.label + '</span><span style="color:var(--muted);font-size:11px;flex-shrink:0">' + m.code + '</span>';
+                        d.innerHTML = '<span style="font-weight:600">' + esc(m.label) + '</span><span style="color:var(--muted);font-size:11px;flex-shrink:0">' + esc(m.code) + '</span>';
                         d.addEventListener('mouseover', function(){ this.style.background='#f0fdf4'; });
                         d.addEventListener('mouseout',  function(){ this.style.background=''; });
                         d.addEventListener('mousedown', function(e){
@@ -1259,7 +1263,7 @@ function transaction_edit(PDO $pdo): void
 
             // Searchable client picker
             (function(){
-                const cliData = <?= json_encode(array_values($clients)) ?>;
+                const cliData = <?= json_encode(array_values($clients), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
                 const src = document.getElementById('cliSearch');
                 const hid = document.getElementById('client_id');
                 const dd  = document.getElementById('cliDrop');
@@ -1282,7 +1286,7 @@ function transaction_edit(PDO $pdo): void
                     list.slice(0, 60).forEach(function(c) {
                         const d = document.createElement('div');
                         d.style.cssText = 'padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9';
-                        d.innerHTML = '<strong>' + c.company_name + '</strong>' + (c.brand_name ? ' <span style="color:var(--muted);font-size:11px">(' + c.brand_name + ')</span>' : '');
+                        d.innerHTML = '<strong>' + esc(c.company_name) + '</strong>' + (c.brand_name ? ' <span style="color:var(--muted);font-size:11px">(' + esc(c.brand_name) + ')</span>' : '');
                         d.addEventListener('mouseover', function(){ this.style.background='#f0fdf4'; });
                         d.addEventListener('mouseout',  function(){ this.style.background=''; });
                         d.addEventListener('mousedown', function(e){
