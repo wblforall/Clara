@@ -16,6 +16,10 @@ HANDOUT_SALES.html
 HANDOUT_SALES.pdf
 scripts/handout_assets/
 
+# Aset screenshot user guide (besar / hasil generate via scripts/userguide_screenshot.js)
+# Source guide (docs/PANDUAN_*.md) & script TETAP di-commit; PNG di-regenerate.
+scripts/userguide_assets/
+
 # File kerja lokal (PDF/dokumen contoh, dll)
 *.doc
 *.docx
