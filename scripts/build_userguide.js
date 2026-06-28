@@ -13,11 +13,19 @@ const ROOT = path.resolve(__dirname, '..') + '/';
 const SHOTS = __dirname + '/userguide_assets/';
 const OUTDIR = (process.env.HOME || '/Users/affanridha') + '/Documents/Handout Program/clara/';
 
+// Logo CLARA utk cover (badge putih agar kontras di gradient teal).
+const LOGO_FILE = ROOT + 'public/assets/clara-logo.png';
+const LOGO_B64 = fs.existsSync(LOGO_FILE) ? fs.readFileSync(LOGO_FILE).toString('base64') : '';
+const LOGO_HTML = LOGO_B64
+  ? `<img class="cover-logo" src="data:image/png;base64,${LOGO_B64}" alt="CLARA">`
+  : '';
+
 const css = `
 *{box-sizing:border-box} body{font-family:Helvetica,Arial,sans-serif;color:#0f172a;margin:0;font-size:12.5px;line-height:1.6;background:#fff}
 .content{background:#fff;padding:18mm 16mm}
 .cover{height:297mm;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;
   background:linear-gradient(135deg,#115E59,#0D9488,#0891B2);color:#fff;page-break-after:always;padding:0 30mm}
+.cover .cover-logo{width:200px;height:auto;display:block;margin-bottom:28px}
 .cover .brand{font-size:13px;letter-spacing:.35em;text-transform:uppercase;opacity:.9;margin-bottom:18px}
 .cover h1{font-size:38px;font-weight:800;margin:0 0 14px;line-height:1.15}
 .cover .sub{font-size:15px;opacity:.92;max-width:150mm}
@@ -57,7 +65,7 @@ async function build(role, browser) {
   const h1 = (md.split('\n').find(l => l.startsWith('# ')) || '# User Guide CLARA').replace(/^# /, '');
   const body = marked.parse(md.replace(/^# .*\n/, ''));
   const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><style>${css}</style></head><body>
-    <section class="cover"><div class="brand">CLARA · Casual Leasing Achievement &amp; Revenue Analytics</div>
+    <section class="cover">${LOGO_HTML}<div class="brand">CLARA · Casual Leasing Achievement &amp; Revenue Analytics</div>
     <h1>${h1}</h1><div class="sub">Panduan penggunaan aplikasi CLARA — PT. Wulandari Bangun Laksana Tbk.</div>
     <div class="foot">Dokumen internal • v1.0</div></section>
     <main class="content">${body}</main></body></html>`;
