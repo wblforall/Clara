@@ -209,6 +209,14 @@ function dashboard(PDO $pdo): void
                 </div>
             </div>
             <div style="display:flex;align-items:center;gap:12px">
+                <?php
+                // Tombol buka TV Display di tab baru. Token disisipkan server-side
+                // dari DISPLAY_TOKEN (hanya untuk user berhak yang sudah login) —
+                // tim tak perlu tahu/menyalin token. Ikut otomatis bila token dirotasi.
+                $displayUrl = function_exists('display_url') ? display_url() : '';
+                if ($displayUrl !== '' && can('view_exec_summary')): ?>
+                    <a class="btn light" href="<?= h($displayUrl) ?>" target="_blank" rel="noopener" style="background:#ecfeff;color:#0e7490;border:1px solid #a5f3fc">📺 Display TV</a>
+                <?php endif; ?>
                 <?php if (can('export_reports')): ?><a class="btn light" href="?r=export_summary&period=<?= h($period) ?>">Export CSV</a><?php endif; ?>
                 <a class="btn light" href="?r=print_dashboard&period=<?= h($period) ?>" target="_blank" style="background:#f1f5f9;color:var(--ink2);border:1px solid var(--line)">🖨 Print / PDF</a>
                 <div style="text-align:right;line-height:1.35">

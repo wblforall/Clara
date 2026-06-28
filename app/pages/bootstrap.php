@@ -21,6 +21,24 @@ function display_authorized(array $config): bool
     return $ok;
 }
 
+/**
+ * URL TV Display lengkap dengan token, untuk tombol "Display TV" di dashboard.
+ * Mengambil token PERTAMA yang valid dari DISPLAY_TOKEN (boleh daftar koma).
+ * Return '' bila tidak ada token sah (mis. masih placeholder) → tombol disembunyikan.
+ * Token hanya disisipkan untuk user terautentikasi yang berhak (lihat pemanggil),
+ * jadi customer/publik tidak pernah melihatnya dari sini.
+ */
+function display_url(): string
+{
+    $raw = env_value('DISPLAY_TOKEN', '');
+    foreach (array_map('trim', explode(',', (string) $raw)) as $t) {
+        if ($t !== '' && $t !== 'change-this-display-token') {
+            return '?r=display&token=' . urlencode($t);
+        }
+    }
+    return '';
+}
+
 function xlsx_download(string $filename, array $headers, array $rows): void
 {
     $col = static function (int $n): string {
