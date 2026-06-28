@@ -49,13 +49,21 @@ CLARA_TEST_PASS='...' NODE_PATH="$SCRATCH/node_modules" node scripts/userguide_s
 # 2) build PDF (Sales|Manager|Superadmin|all)
 NODE_PATH="$SCRATCH/node_modules" node scripts/build_userguide.js all
 ```
-puppeteer-core + marked tak ter-install di repo; pakai `NODE_PATH` ke node_modules scratchpad (`npm i marked puppeteer-core` sekali).
+Deps (TIDAK di repo): `npm i marked puppeteer-core pdf-lib` sekali di scratchpad, lalu `NODE_PATH` ke node_modules-nya.
 
-**Sisip screenshot ke konten:** di `docs/PANDUAN_[Peran].md` tulis token pada baris sendiri:
-- `@@SHOT:nama|caption@@` — gambar desktop (lebar penuh)
-- `@@SHOTM:nama|caption@@` — gambar mobile (sempit, terpusat)
+**Pola build (mengikuti MIC):** cover full-bleed (margin 0) + konten ber-margin (puppeteer `margin:{top:13mm,right:18mm,bottom:16mm,left:18mm}` + footer nomor halaman) dirender TERPISAH, lalu digabung via **pdf-lib**. JANGAN satu HTML margin:0 (konten jadi mepet/berantakan).
 
-`nama` = nama file di `scripts/userguide_assets/` tanpa `.png`. Build mengganti token jadi `<figure>` base64; token tanpa file → dihapus + warning.
+**Sisip screenshot — token pada baris sendiri** di `docs/PANDUAN_[Peran].md`:
+- `@@PAIR:desk|mob|caption@@` — desktop + mobile **berdampingan** (pakai utk layar yg punya versi HP: offers↔m_offers, skp↔m_skp, trx↔m_transactions, dashboard↔m_home, exec↔m_exec)
+- `@@SHOT:nama|caption@@` — satu gambar desktop (lebar penuh)
+- `@@SHOTM:nama|caption@@` — satu gambar mobile (sempit, terpusat)
+- `@@PB@@` — page-break (mulai halaman baru)
+
+`nama` = file di `scripts/userguide_assets/` tanpa `.png`. Token tanpa file → placeholder + warning.
+
+**Screenshot = viewport (BUKAN fullPage)** — rasio konsisten, tidak meledak/pecah antar halaman. Tinggi gambar dibatasi di CSS (`object-fit:cover/contain`). Semua figure/tabel/callout `page-break-inside:avoid`.
+
+**Verifikasi PDF:** `pdftoppm -png -r 110 -f N -l M file.pdf out` lalu Read PNG-nya (Read tool tak selalu render PDF langsung).
 
 Node: `/opt/homebrew/bin/node` · Chrome: `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` · puppeteer-core (`npm i puppeteer-core` di scratchpad — TIDAK unduh Chromium). Apache XAMPP harus jalan (`http://localhost/clara/public/`). Lihat [[reference-headless-screenshot]].
 

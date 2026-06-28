@@ -23,7 +23,7 @@ Urutannya **offer-first**: semua berawal dari Surat Penawaran, bukan input trans
 
 ### A. Buat Surat Penawaran
 
-@@SHOT:offers|Daftar Surat Penawaran — tab status (On Going / Deal / Tidak Deal) + filter modul@@
+@@PAIR:offers|m_offers|Daftar Surat Penawaran — tab status (On Going / Deal / Tidak Deal) & filter modul@@
 
 1. Menu **Surat Penawaran** → **+ Buat Penawaran**.
 2. Pilih **Client** (ketik untuk cari; bila baru, tambahkan di Master Client).
@@ -47,7 +47,7 @@ Urutannya **offer-first**: semua berawal dari Surat Penawaran, bukan input trans
 3. **Submit untuk approval.** ✋ Anda **tidak** menyetujui sendiri — SKP masuk antrean **Manajer** untuk di-approve.
 4. Setelah di-approve manajer, SKP final + transaksi otomatis terbit (masuk ke dashboard/achievement).
 
-@@SHOT:skp|Daftar SKP Pameran — status submitted menunggu approval manajer@@
+@@PAIR:skp|m_skp|Daftar SKP Pameran — status submitted menunggu approval manajer@@
 
 ### D. Permintaan Kontrak ke Legal
 1. Menu **Permintaan Kontrak** → buat dari SKP final.
@@ -64,7 +64,7 @@ Urutannya **offer-first**: semua berawal dari Surat Penawaran, bukan input trans
 - **Laporan PIC / Performa / Pipeline / Reward**: menampilkan **angka Anda sendiri** — pencapaian vs target, pipeline penawaran, dan reward.
 - **Dashboard / Trend / Occupancy**: gambaran umum revenue & keterisian.
 
-@@SHOT:trx|Daftar transaksi Exhibition — input & pantau transaksi@@
+@@PAIR:trx|m_transactions|Daftar transaksi Exhibition — input & pantau transaksi@@
 
 @@SHOT:pic|Laporan PIC — pencapaian vs target (data Anda sendiri)@@
 
@@ -79,9 +79,7 @@ Bottom-nav menyesuaikan izin Anda: **Beranda · Penawaran · Transaksi**.
 - **Penawaran / SKP:** kartu daftar + filter + aksi (Edit / PDF / Bagikan).
 - Tombol **Bagikan** mengirim PDF langsung (butuh HTTPS).
 
-@@SHOTM:m_home|Beranda mobile — pencapaian & menu cepat@@
-
-@@SHOTM:m_offers|Daftar Penawaran versi HP — kartu + aksi@@
+@@PAIR:dashboard|m_home|Beranda CLARA — tampilan desktop & versi HP (bottom-nav)@@
 
 ---
 

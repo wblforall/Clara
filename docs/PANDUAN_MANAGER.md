@@ -52,7 +52,7 @@ Berbeda dari sales (yang hanya lihat datanya sendiri), Anda melihat **semua sale
 - **📺 Display TV** — tombol di **Dashboard** membuka tampilan TV di tab baru (token otomatis; tak perlu menyalin apa pun). Cocok untuk layar di kantor.
 - **Trend Revenue / Perbandingan Periode / Occupancy Harian** — analisa pergerakan.
 
-@@SHOT:exec|Executive Summary — revenue, target, occupancy semua properti (tombol 📺 Display TV di kanan atas)@@
+@@PAIR:exec|m_exec|Executive Summary — revenue, target, occupancy semua properti (tombol 📺 Display TV di kanan atas)@@
 
 ---
 

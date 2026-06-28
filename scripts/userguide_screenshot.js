@@ -35,9 +35,11 @@ const desk = [
 ];
 // Mobile (390x844)
 const mob = [
-  { n: 'm_home',   u: 'm_home' },
-  { n: 'm_offers', u: 'm_offers' },
-  { n: 'm_exec',   u: 'm_exec' },
+  { n: 'm_home',         u: 'm_home' },
+  { n: 'm_offers',       u: 'm_offers' },
+  { n: 'm_skp',          u: 'm_skp' },
+  { n: 'm_transactions', u: 'm_transactions' },
+  { n: 'm_exec',         u: 'm_exec' },
 ];
 
 async function login(p) {
@@ -63,18 +65,20 @@ async function login(p) {
   await p.screenshot({ path: OUT + 'login.png' }); console.log('OK login');
   await login(p);
   const cookies = await p.cookies();
+  // Desktop: viewport (BUKAN fullPage) → rasio konsisten ~3:2, layout rapi di PDF.
   for (const s of desk) {
     if (s.noLogin) continue;
-    await p.setViewport({ width: 1280, height: 1000, deviceScaleFactor: 1 });
+    await p.setViewport({ width: 1280, height: 860, deviceScaleFactor: 1 });
     await p.goto(BASE + '?r=' + s.u, { waitUntil: 'networkidle2' }); await sleep(500);
-    await p.screenshot({ path: OUT + s.n + '.png', fullPage: true }); console.log('OK', s.n);
+    await p.screenshot({ path: OUT + s.n + '.png', fullPage: false }); console.log('OK', s.n);
   }
+  // Mobile: viewport 1 layar (BUKAN fullPage) → tampil berdampingan dgn desktop (ssPair).
   const pm = await b.newPage();
   await pm.setCookie(...cookies, { name: 'clara_view', value: 'mobile', domain: 'localhost', path: '/' });
   for (const s of mob) {
     await pm.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true });
     await pm.goto(BASE + '?r=' + s.u, { waitUntil: 'networkidle2' }); await sleep(600);
-    await pm.screenshot({ path: OUT + s.n + '.png', fullPage: true }); console.log('OK', s.n);
+    await pm.screenshot({ path: OUT + s.n + '.png', fullPage: false }); console.log('OK', s.n);
   }
   await b.close();
 })().catch(e => { console.error('ERR', e.message); process.exit(1); });
