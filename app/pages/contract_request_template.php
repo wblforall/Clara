@@ -6,6 +6,21 @@ $rd = $cr['request_date'] ? strtotime($cr['request_date']) : time();
 $tglAju = (int) date('d', $rd) . ' ' . $months[(int) date('n', $rd)] . ' ' . date('Y', $rd);
 ?>
 <?php $PDF_MODE = !empty($PDF_MODE); /* diset oleh contract_request_print() utk jalur mPDF */ ?>
+<?php
+/**
+ * Sumber <img> lampiran. Jalur mPDF (PDF_MODE) membaca gambar dari FILESYSTEM,
+ * bukan HTTP — jadi pakai path absolut di disk; route ber-gerbang ?r=file (URL
+ * query) TIDAK bisa di-resolve mPDF dan gambar hilang diam-diam. Jalur browser
+ * (Legal print) tetap lewat upload_url() ber-token agar tetap ter-gerbang H2.
+ */
+$imgSrc = function (?string $rel) use ($PDF_MODE, $cr, $h) {
+    $rel = ltrim((string) $rel, '/');
+    if ($PDF_MODE) {
+        return $h((defined('APP_PUBLIC') ? APP_PUBLIC : dirname(__DIR__, 2) . '/public') . '/' . $rel);
+    }
+    return $h(upload_url($rel, $cr['share_token'] ?? ''));
+};
+?>
 <?php if (!$PDF_MODE): ?>
 <!doctype html>
 <html lang="id">
@@ -176,7 +191,7 @@ table.sign td{width:50%;font-size:11px;padding-top:6px;vertical-align:top}
         <?php if ($sfWet): ?>
             <div class="sec">Lampiran: SKP Final (TTD basah) — No. <?= $h($sf['skp_no']) ?></div>
             <?php if ($scanImg): ?>
-                <img src="<?= $h(upload_url($sf['signed_doc_path'], $cr['share_token'])) ?>" alt="SKP TTD basah" style="display:block;max-width:100%;max-height:235mm;margin:6px auto 0;object-fit:contain">
+                <img src="<?= $imgSrc($sf['signed_doc_path']) ?>" alt="SKP TTD basah" style="display:block;max-width:100%;max-height:235mm;margin:6px auto 0;object-fit:contain">
             <?php else: ?>
                 <div style="border:1px solid #111;padding:12px;font-size:10.5px">Scan SKP ber-TTD basah dalam format <?= $h(strtoupper($scanExt) ?: 'PDF') ?> (<?= $h(basename((string) $sf['signed_doc_path'])) ?>). Tidak dapat disisipkan otomatis ke PDF — buka berkas terpisah.</div>
             <?php endif; ?>
@@ -201,7 +216,7 @@ table.sign td{width:50%;font-size:11px;padding-top:6px;vertical-align:top}
     <div style="page-break-before:always;padding-top:6mm">
         <div class="sec">Lampiran: <?= $h($lbl) ?></div>
         <?php if ($isImg): ?>
-            <img src="<?= $h(upload_url($path, $cr['share_token'])) ?>" alt="<?= $h($lbl) ?>" style="display:block;max-width:100%;max-height:215mm;margin:0 auto;object-fit:contain">
+            <img src="<?= $imgSrc($path) ?>" alt="<?= $h($lbl) ?>" style="display:block;max-width:100%;max-height:215mm;margin:0 auto;object-fit:contain">
         <?php else: ?>
             <div style="border:1px solid #111;padding:14px;font-size:11px;color:#374151">Berkas dalam format <strong><?= $h(strtoupper($ext)) ?></strong> (<?= $h(basename((string) $path)) ?>). Tidak dapat disisipkan otomatis ke PDF — silakan buka via tautan/berkas terpisah.</div>
         <?php endif; ?>
