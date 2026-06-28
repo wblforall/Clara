@@ -1,12 +1,24 @@
 <?php
 declare(strict_types=1);
 
+/**
+ * Validasi token TV Display. DISPLAY_TOKEN boleh berisi BEBERAPA token dipisah
+ * koma — semua berlaku sekaligus. Ini memungkinkan rotasi tanpa downtime:
+ * tambahkan token baru di samping yang lama, bagikan URL baru ke tim, lalu
+ * hapus token lama setelah semua TV pindah. Token placeholder default & nilai
+ * kosong selalu ditolak. Perbandingan timing-safe (hash_equals untuk tiap token).
+ */
 function display_authorized(array $config): bool
 {
     $token = (string) getv('token', '');
-    return $token !== ''
-        && $config['display_token'] !== 'change-this-display-token'
-        && hash_equals($config['display_token'], $token);
+    if ($token === '') return false;
+    $valid = array_filter(array_map('trim', explode(',', (string) $config['display_token'])));
+    $ok = false;
+    foreach ($valid as $t) {
+        if ($t === '' || $t === 'change-this-display-token') continue;
+        if (hash_equals($t, $token)) $ok = true; // tanpa break: timing-safe
+    }
+    return $ok;
 }
 
 function xlsx_download(string $filename, array $headers, array $rows): void
