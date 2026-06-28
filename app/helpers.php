@@ -580,6 +580,16 @@ function upload_url(?string $rel, string $token = ''): string
 }
 
 /**
+ * Ekspresi SQL masa berlaku token tanda tangan customer (H3) — sumber tunggal
+ * kebijakan 30 hari, dipakai di semua titik penerbitan token (offers & SKP) agar
+ * tidak tercecer. Bukan input user (literal konstan), aman diinterpolasi ke SQL.
+ */
+function sign_token_expiry_sql(): string
+{
+    return 'DATE_ADD(NOW(), INTERVAL 30 DAY)';
+}
+
+/**
  * Token tanda tangan customer (sign_token offers/SKP) kedaluwarsa? (temuan H3)
  * NULL/kosong = legacy tanpa kedaluwarsa → dianggap masih berlaku agar link lama
  * tidak putus. Dipakai HANYA di halaman tanda tangan, bukan halaman validasi QR.

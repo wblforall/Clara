@@ -676,8 +676,10 @@ function _files_allowed_by_token(PDO $pdo, string $tok): array
 function secure_file(PDO $pdo): void
 {
     $rel = ltrim((string) getv('p', ''), '/');
-    // Whitelist subfolder + karakter nama; tolak path traversal.
-    if (!preg_match('#^uploads/(skp|contract|signatures)/[A-Za-z0-9._-]+$#', $rel) || strpos($rel, '..') !== false) {
+    // Whitelist subfolder + karakter nama + EKSTENSI yang sah; tolak path traversal.
+    // Ekstensi dibatasi di regex (bukan cuma untuk Content-Type) supaya tak ada
+    // tipe berkas lain yang ikut tersaji walau lolos folder & realpath (review #1).
+    if (!preg_match('#^uploads/(skp|contract|signatures)/[A-Za-z0-9._-]+\.(png|jpe?g|webp|pdf)$#i', $rel) || strpos($rel, '..') !== false) {
         http_response_code(404);
         exit('Berkas tidak ditemukan.');
     }

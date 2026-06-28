@@ -1,6 +1,15 @@
 // Spread table helpers — dipakai di form input dan edit transaksi recurring.
 // Global vars (spreadOverrides, spreadBaseTotal, dll) didefinisikan di PHP template.
 
+// esc(): escape HTML untuk pembangunan innerHTML dari data DB (anti stored-XSS).
+// Sumber tunggal — dipanggil oleh picker transaksi & penawaran (form pakai layout()
+// yang memuat file ini). Idempoten agar aman bila skrip dimuat lebih dari sekali.
+window.esc = window.esc || function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c];
+    });
+};
+
 function parseLocalDate(s) {
     var p = s.split('-'); return new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
 }

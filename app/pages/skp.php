@@ -782,7 +782,7 @@ function skp_approve(PDO $pdo): void
 
         $pdo->prepare(
             'UPDATE skp_documents SET status=\'approved\', skp_no=?, approved_by=?, approved_at=CURRENT_TIMESTAMP,
-             snapshot_json=?, sign_token=?, sign_token_expires_at=DATE_ADD(NOW(), INTERVAL 30 DAY) WHERE id=? AND property_id=?'
+             snapshot_json=?, sign_token=?, sign_token_expires_at=' . sign_token_expiry_sql() . ' WHERE id=? AND property_id=?'
         )->execute([$skpNo, $_SESSION['user']['name'] ?? 'manager', json_encode($snapshot, JSON_UNESCAPED_UNICODE), $signToken, $id, $pid]);
 
         // Transaksi + alokasi terbit saat approve (offer-based, bila belum ada).

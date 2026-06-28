@@ -490,7 +490,7 @@ function offer_view(PDO $pdo): void
     if (!empty($offer['offer_no']) && $offer['status'] !== 'cancelled') {
         if (empty($offer['sign_token'])) {
             $offer['sign_token'] = bin2hex(random_bytes(20));
-            $pdo->prepare('UPDATE offers SET sign_token=?, sign_token_expires_at=DATE_ADD(NOW(), INTERVAL 30 DAY) WHERE id=? AND property_id=?')->execute([$offer['sign_token'], $id, $pid]);
+            $pdo->prepare('UPDATE offers SET sign_token=?, sign_token_expires_at=' . sign_token_expiry_sql() . ' WHERE id=? AND property_id=?')->execute([$offer['sign_token'], $id, $pid]);
         }
         // Catatan #7: status TIDAK dipromosikan di sini — membuka detail untuk
         // ditinjau tidak boleh mengubah status. Promosi draft→sent terjadi saat
@@ -1043,9 +1043,8 @@ function offer_form(PDO $pdo): void
 
         <script>
         (function () {
-            // esc(): cegah stored-XSS saat membangun innerHTML dari data DB (M2).
-            window.esc = window.esc || (s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
-            var contacts = <?= json_encode($contacts, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+            // esc() didefinisikan global di assets/spread-table.js (M2).
+            var contacts =<?= json_encode($contacts, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
             var clientHid = document.getElementById('client_id'), contactSel = document.getElementById('contact_id');
             var curContact = <?= (int)($offer['contact_id'] ?? 0) ?>;
             function fillContacts() {
@@ -1601,7 +1600,7 @@ function offer_print(PDO $pdo): void
     // Token verifikasi (QR "Scan untuk validasi" di TTD sales) — terbit sekali.
     if (empty($o['sign_token'])) {
         $o['sign_token'] = bin2hex(random_bytes(20));
-        $pdo->prepare('UPDATE offers SET sign_token=?, sign_token_expires_at=DATE_ADD(NOW(), INTERVAL 30 DAY) WHERE id=? AND property_id=?')->execute([$o['sign_token'], $id, $pid]);
+        $pdo->prepare('UPDATE offers SET sign_token=?, sign_token_expires_at=' . sign_token_expiry_sql() . ' WHERE id=? AND property_id=?')->execute([$o['sign_token'], $id, $pid]);
     }
     $prop = current_property();
     $letter = offer_letter($pdo, $o);   // isi surat per jenis booth (snapshot/template)

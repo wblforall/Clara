@@ -553,9 +553,8 @@ function transaction_form(PDO $pdo): void
                     });
                 });
             })();
-            // esc(): cegah stored-XSS saat membangun innerHTML dari data DB (M2).
-            window.esc = window.esc || (s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
-            const masters = <?= json_encode($masters, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+            // esc() didefinisikan global di assets/spread-table.js (M2).
+            const masters =<?= json_encode($masters, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
             const byCode = Object.fromEntries(masters.map(m => [m.code, m]));
             const allContacts = <?= json_encode($allContacts, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 
@@ -1203,9 +1202,8 @@ function transaction_edit(PDO $pdo): void
                     });
                 });
             })();
-            // esc(): cegah stored-XSS saat membangun innerHTML dari data DB (M2).
-            window.esc = window.esc || (s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
-            const masters = <?= json_encode($masters, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+            // esc() didefinisikan global di assets/spread-table.js (M2).
+            const masters =<?= json_encode($masters, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
             const byCode = Object.fromEntries(masters.map(m => [m.code, m]));
             const allContacts = <?= json_encode($allContacts, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
             const currentContactId = <?= (int) ($trx['contact_id'] ?? 0) ?>;

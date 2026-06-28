@@ -2,41 +2,42 @@
 declare(strict_types=1);
 
 /**
- * Validasi token TV Display. DISPLAY_TOKEN boleh berisi BEBERAPA token dipisah
- * koma — semua berlaku sekaligus. Ini memungkinkan rotasi tanpa downtime:
- * tambahkan token baru di samping yang lama, bagikan URL baru ke tim, lalu
- * hapus token lama setelah semua TV pindah. Token placeholder default & nilai
- * kosong selalu ditolak. Perbandingan timing-safe (hash_equals untuk tiap token).
+ * Daftar token TV Display yang sah dari nilai DISPLAY_TOKEN (boleh berisi
+ * BEBERAPA token dipisah koma). Membuang nilai kosong & placeholder default.
+ * Sumber tunggal parsing untuk display_authorized() & display_url() agar tak
+ * bisa drift. Mendukung rotasi tanpa downtime: token lama & baru berlaku
+ * bersamaan, lalu yang lama dihapus setelah semua TV pindah.
  */
+function display_tokens(string $raw): array
+{
+    $out = [];
+    foreach (array_map('trim', explode(',', $raw)) as $t) {
+        if ($t !== '' && $t !== 'change-this-display-token') $out[] = $t;
+    }
+    return $out;
+}
+
+/** Validasi token TV Display (timing-safe: hash_equals untuk tiap token, tanpa break). */
 function display_authorized(array $config): bool
 {
     $token = (string) getv('token', '');
     if ($token === '') return false;
-    $valid = array_filter(array_map('trim', explode(',', (string) $config['display_token'])));
     $ok = false;
-    foreach ($valid as $t) {
-        if ($t === '' || $t === 'change-this-display-token') continue;
-        if (hash_equals($t, $token)) $ok = true; // tanpa break: timing-safe
+    foreach (display_tokens((string) $config['display_token']) as $t) {
+        if (hash_equals($t, $token)) $ok = true;
     }
     return $ok;
 }
 
 /**
  * URL TV Display lengkap dengan token, untuk tombol "Display TV" di dashboard.
- * Mengambil token PERTAMA yang valid dari DISPLAY_TOKEN (boleh daftar koma).
- * Return '' bila tidak ada token sah (mis. masih placeholder) → tombol disembunyikan.
- * Token hanya disisipkan untuk user terautentikasi yang berhak (lihat pemanggil),
- * jadi customer/publik tidak pernah melihatnya dari sini.
+ * Mengambil token PERTAMA yang sah. Return '' bila tak ada (mis. masih placeholder)
+ * → tombol disembunyikan. Token hanya disisipkan untuk user berhak yang sudah login.
  */
 function display_url(): string
 {
-    $raw = env_value('DISPLAY_TOKEN', '');
-    foreach (array_map('trim', explode(',', (string) $raw)) as $t) {
-        if ($t !== '' && $t !== 'change-this-display-token') {
-            return '?r=display&token=' . urlencode($t);
-        }
-    }
-    return '';
+    $tokens = display_tokens((string) env_value('DISPLAY_TOKEN', ''));
+    return $tokens ? '?r=display&token=' . urlencode($tokens[0]) : '';
 }
 
 function xlsx_download(string $filename, array $headers, array $rows): void
