@@ -11,6 +11,16 @@
 
 ---
 
+## Dokumentasi — 28 Juni 2026
+
+### User Guide PDF per peran (Sales / Manager / Superadmin)
+
+- **Tiga panduan penggunaan CLARA** dibuat sesuai peran: **Sales** (alur Penawaran→SKP→Kontrak, pantau data sendiri), **Manajer** (approve SKP/kontrak Legal, pengawasan tim, ringkasan eksekutif), **Superadmin** (pengguna & hak akses, audit, master data, konfigurasi). Setiap PDF berisi **screenshot asli aplikasi** (tampilan desktop + HP berdampingan) dan langkah ber-ilustrasi.
+- Naskah sumber di `docs/PANDUAN_*.md`; PDF dibangkitkan ulang via `scripts/build_userguide.js` (+ `userguide_screenshot.js`). Tersedia juga skill internal `/userguide` untuk membuat/audit/update guide.
+- PDF jadi disimpan terpisah (di luar repo), bukan bagian aplikasi.
+
+---
+
 ## Version 4.25 — 27 Juni 2026
 
 ### Hardening keamanan (hasil pentest white-box)
