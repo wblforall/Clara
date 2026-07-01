@@ -1962,7 +1962,9 @@ function offer_template_save(PDO $pdo): void
         'status'            => post('status') === 'inactive' ? 'inactive' : 'active',
     ];
     if ($id) {
-        $sets = implode(', ', array_map(fn($k) => "$k=:$k", array_keys($data)));
+        $updateData = $data;
+        unset($updateData['property_id']);
+        $sets = implode(', ', array_map(fn($k) => "$k=:$k", array_keys($updateData)));
         $data['id'] = $id;
         $pdo->prepare("UPDATE offer_templates SET $sets, updated_at=NOW() WHERE id=:id AND property_id=:property_id")->execute($data);
         audit($pdo, 'update', 'offer_templates', (string) $id, $data);
