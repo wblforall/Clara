@@ -611,3 +611,10 @@ function validate_password(string $pw): ?string
     if ($pw === '123456')                          return 'Gunakan password selain password default.';
     return null;
 }
+
+/** Formatter untuk mendukung **bold** dengan aman (pentest-safe karena di-escape dulu). */
+function clara_format_bold(?string $text): string
+{
+    $escaped = h($text);
+    return preg_replace('/\*\*(.*?)\*\*/s', '<strong>$1</strong>', $escaped);
+}

@@ -127,11 +127,11 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
         $payWa = $o['pic_phone'] ?? ''; $payWa = $payWa !== '' ? $payWa : '0542-8520555';
         ?>
         <div class="sec">Fasilitas</div>
-        <ul class="lst"><?php foreach ($facil as $f): ?><li><?= $h($f) ?></li><?php endforeach; ?></ul>
+        <ul class="lst"><?php foreach ($facil as $f): ?><li><?= clara_format_bold($f) ?></li><?php endforeach; ?></ul>
 
         <?php if ($payList): ?>
         <div class="sec">Cara Pembayaran</div>
-        <ol class="lst"><?php foreach ($payList as $p): ?><li><?= $h(offer_letter_fill((string) $p, $a)) ?></li><?php endforeach; ?></ol>
+        <ol class="lst"><?php foreach ($payList as $p): ?><li><?= clara_format_bold(offer_letter_fill((string) $p, $a)) ?></li><?php endforeach; ?></ol>
         <?php endif; ?>
         <div class="rek">
             Pembayaran ditransfer ke rekening:<br>
@@ -141,7 +141,7 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
 
         <?php $termList = ($L['terms'] ?? []) ?: offer_terms(); ?>
         <div class="sec">Ketentuan &amp; Persyaratan</div>
-        <ol class="lst tnc"><?php foreach ($termList as $t): ?><li><?= $h($t) ?></li><?php endforeach; ?></ol>
+        <ol class="lst tnc"><?php foreach ($termList as $t): ?><li><?= clara_format_bold($t) ?></li><?php endforeach; ?></ol>
     </div>
 
     <div class="card">
