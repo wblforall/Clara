@@ -1,0 +1,436 @@
+📋 L A P O R A N A U D I T P E N G U J I A N & K E A M A N A N — D O K U M E N T E K N I S R E S M I
+SUPERVISOR
+UAT AUDIT
+REPORT
+Senin, 29 Juni 2026 	Fadli Zainul Ihsani (Supervisor) 	⚠ Selesai — Temuan Kritis
+Tercatat
+Lokal — Port 8000 	Laravel / MySQL / Tailwind 	E2E Automation (Puppeteer)
+Pengujian End-to-End (E2E) Sistem CLARA — Analisis Arsitektur, Validasi
+Fungsi Manajerial, dan Audit Keamanan Aplikasi Web.
+📅 TA N G G A L E K S E K U S I	👤 A U D I T O R / A K U N	🎯 S TAT U S
+🌐 L I N G K U N G A N	🏗 S TA C K	🤖 M E T O D E U J I
+Laporan Audit E2E — CLARA System
+Halaman 1 dari 12
+
+-- 1 of 12 --
+
+Pendahuluan
+Laporan audit ini disusun oleh Senior QA Automation Engineer & Senior System Architect untuk
+mengevaluasi stabilitas, keamanan, dan fungsionalitas sistem CLARA, khususnya dengan menggunakan
+perspektif akses Supervisor.
+Data Lingkungan Sistem
+URL Aplikasi Lokal: http://localhost:8000
+Basis Data: clara_unified (MySQL)
+Peran Akun Penguji: Supervisor ( fadli-supervisor@gmail.com )
+Fokus Audit: Manajemen Alur Persetujuan, Keamanan Role-Based Access Control (RBAC), Integritas Data, dan
+Kerentanan Arsitektur UI/UX.
+B A G I A N 1
+Data Lingkungan & Ruang Lingkup Sistem.
+Laporan Audit E2E — CLARA System
+Halaman 2 dari 12
+
+-- 2 of 12 --
+
+Skenario Pengujian Lanjutan (E2E Testing Scripts Scenario)
+2.1 Alur Login & Multi-Properti (E-Walk ke Pentacity)
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1. Akses Login 	Buka /?r=login 	Form login tampil tanpa error. 	PASS
+2. Input
+Kredensial
+Email: fadli-
+supervisor@gmail.com
+Pass: Balikpapan2k26!@
+Sistem mengotentikasi dan mengarahkan ke
+Dashboard.
+PASS
+3. Verifikasi
+Properti Awal
+Periksa menu header atas 	Properti "E-Walk Simply FUNtastic" terpilih
+secara default.
+PASS
+4. Ganti
+Properti
+Klik dropdown properti, pilih
+"Pentacity"
+Data dashboard, SKP, dan transaksi beralih
+menyesuaikan properti Pentacity tanpa reload
+penuh (AJAX).
+PASS
+Bukti Visual (2.1): Kiri: Form autentikasi. Kanan: Dashboard utama setelah berhasil login.
+2.2 Pengujian Modul Persetujuan & Pembatalan (Approval & Cancellation)
+A. Meninjau & Menyetujui SKP
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1. Buka SKP 	Navigasi ke menu SKP
+Pameran. Cari SKP status
+Submitted.
+Daftar transaksi status Submitted (menunggu
+persetujuan) tampil.
+PASS
+2. Tinjau Data
+& Dokumen
+Klik detail SKP. Periksa KTP,
+NPWP, nominal sewa,
+periode, dan lampiran.
+Informasi penyewa, harga, dan semua lampiran
+dokumen pendukung dapat dilihat.
+PASS
+B A G I A N 2
+Langkah detail untuk mereplikasi fungsi kritis sistem dari kacamata Supervisor beserta visualisasinya.
+Laporan Audit E2E — CLARA System
+Halaman 3 dari 12
+
+-- 3 of 12 --
+
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+3. Uji Coba
+Reject
+Klik tombol "Reject". Kirim
+penolakan tanpa/dengan
+alasan.
+Sistem mewajibkan pengisian alasan penolakan.
+Status SKP berubah menjadi Ditolak dan kembali ke
+Sales.
+PASS
+4. Uji Coba
+Approve
+Klik "Approve" pada dokumen
+SKP yang valid.
+Muncul konfirmasi aksi. Setelah disetujui, Nomor SKP
+Final, Transaksi, dan Alokasi diterbitkan. Data masuk
+ke Dashboard, Achievement, dan Laporan Recurring.
+PASS
+Bukti Visual (2.2A): Modul SKP Pameran tempat Supervisor menyetujui atau menolak dokumen sewa yang diajukan sales.
+B. Menyetujui Permintaan Kontrak (Peran Legal / Approver)
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1. Buka
+Permintaan
+Kontrak
+Navigasi ke menu Permintaan
+Kontrak, buka salah satu
+pengajuan.
+Formulir pengajuan kontrak dan riwayat tampil
+di layar.
+PASS
+2. Tinjau
+Dokumen
+Tinjau lampiran: KTP, NPWP,
+Akta, Surat Kuasa, dan SKP ttd.
+Semua file dokumen lampiran dari Sales dapat
+diunduh/dilihat.
+PASS
+3. Setujui Kontrak 	Klik tombol "Setujui" 	Status berubah menjadi Disetujui Legal.
+Perubahan ini juga tampil real-time di akun
+Sales pemohon.
+PASS
+Laporan Audit E2E — CLARA System
+Halaman 4 dari 12
+
+-- 4 of 12 --
+
+Bukti Visual (2.2B): Papan Permintaan Kontrak yang menunggu tinjauan dan persetujuan legal/supervisor.
+C. Pembatalan Transaksi (Batal Transaksi)
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1. Buka Daftar
+Transaksi
+Buka daftar Transaksi, pilih transaksi
+aktif (atau satu komponen dari
+Paket).
+Data transaksi aktif tampil beserta tombol
+aksi.
+PASS
+2. Proses
+Pembatalan
+Klik tombol "Batalkan". 	Sistem mewajibkan pengisian kolom
+alasan pembatalan sebelum proses bisa
+dilanjutkan.
+PASS
+3. Verifikasi Log 	Cek Activity Log. 	Pembatalan transaksi tercatat di Activity Log
+beserta alasan yang diinputkan.
+PASS
+4. Verifikasi
+Paket
+Cek komponen lain dalam paket
+transaksi yang sama.
+(Khusus Paket) Komponen lain tetap aktif
+meskipun salah satu dibatalkan.
+PASS
+Bukti Visual (2.2C): Kiri: Transaksi Exhibition aktif. Kanan: Transaksi Media (Di mana fitur pembatalan transaksi dipicu).
+Laporan Audit E2E — CLARA System
+Halaman 5 dari 12
+
+-- 5 of 12 --
+
+2.3 Pengujian Pengawasan Tim Lintas-Sales
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1. Buka
+Laporan PIC
+Akses menu Laporan PIC 	Dapat melihat daftar semua staf Sales dengan
+visualisasi target vs pencapaian masing-
+masing.
+PASS
+2. Performa &
+Pipeline
+Buka sub-menu Performa PIC &
+Aktivitas/Pipeline PIC.
+Grafik produktivitas corong (funnel) penawaran
+seluruh tim sales tertampil akurat.
+PASS
+3. Export
+Laporan
+Klik Export laporan (unduh file
+Excel/CSV atau tes Print).
+File berhasil terunduh dengan struktur data
+yang valid (cocok untuk rapat).
+PASS
+4. Rewarding
+PIC
+Buka menu Rewarding PIC, atur
+target reward periode tertentu.
+Sistem mengkalkulasi data komisi/reward per
+PIC secara otomatis.
+PASS
+Bukti Visual (2.3): Laporan PIC (kiri) menampilkan pencapaian lintas sales, sementara Performa PIC (kanan) memetakan pipeline.
+2.4 Pengujian Pandangan Eksekutif & TV Display
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1. Buka
+Executive
+Summary
+Akses menu Executive Summary. 	Data agregat (Ringkasan Revenue, Target,
+Occupancy seluruh mal) tertampil.
+PASS
+2. Uji Grafik
+Eksekutif
+Buka Trend Revenue,
+Perbandingan Periode, dan
+Occupancy Harian.
+Grafik dan perbandingan data termuat dan
+dapat difilter dengan baik.
+PASS
+3. Uji Coba TV
+Display
+Klik tombol Display TV di pojok
+kanan atas Dashboard.
+TV Display terbuka di tab baru tanpa meminta
+login ulang (memakai token otomatis dari sisi
+administrator).
+PASS
+4. Tinjau Layout
+TV
+Periksa UI halaman TV Display. 	Tampilan ramah TV, bersih dari navigasi menu
+samping (full screen layout).
+PASS
+Laporan Audit E2E — CLARA System
+Halaman 6 dari 12
+
+-- 6 of 12 --
+
+Bukti Visual (2.4): Ringkasan Eksekutif (kiri) menyajikan metrik makro, sementara Trend Revenue (kanan) memetakan pergerakan bulanan.
+2.5 Pengujian Manajemen Revenue (Renewal & Komisi)
+A. Papan Renewal Kontrak
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1. Papan
+Renewal
+Buka menu Renewal Kontrak. 	Daftar kontrak yang akan habis (rentang -7 s/d
++30 hari) ditampilkan.
+PASS
+2. Indikator
+Warna
+Periksa warna indikator urgensi
+per kontrak.
+Merah: Sisa waktu ≤ 15 hari. Kuning: Sisa waktu
+16–30 hari.
+PASS
+3. Update Status 	Ubah status perpanjangan
+(misal: Nego / Akan
+Perpanjang).
+Status berhasil diperbarui dan tersimpan dalam
+riwayat kontrak.
+PASS
+4. Buat
+Perpanjangan
+Klik tombol + Perpanjang pada
+kontrak yang disepakati.
+Sistem otomatis membuat Surat Penawaran baru
+yang datanya disalin/terisi otomatis dari kontrak
+lama.
+PASS
+B. Simulasi Komisi
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1. Kalkulator
+Komisi
+Buka menu Simulasi Komisi,
+masukkan nominal skenario angka.
+Kalkulator komisi menghitung persentase
+secara akurat sebelum keputusan final diambil.
+PASS
+Bukti Visual (2.5): Manajemen Kontrak yang akan expired (kiri) dan alat bantu Simulasi Komisi untuk Sales (kanan).
+Laporan Audit E2E — CLARA System
+Halaman 7 dari 12
+
+-- 7 of 12 --
+
+2.6 Verifikasi Restriksi Manajemen Pengguna (Keamanan RBAC)
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1. Bypass URL
+Users
+Akses paksa /?
+r=users
+Sistem menolak akses (403 Forbidden / Redirect ke
+Dashboard).
+PASS
+2. Bypass URL
+Audit
+Akses paksa /?
+r=audit
+Akses ke log sistem ditolak. 	PASS
+3. Cek Sidebar 	Inspeksi menu navigasi
+kiri
+Menu konfigurasi peran, pengguna, dan trash tidak
+dirender.
+PASS
+Bukti Visual (2.6): Sistem berhasil memblokir akses Supervisor ke modul administrasi Superadmin secara aman (RBAC).
+Laporan Audit E2E — CLARA System
+Halaman 8 dari 12
+
+-- 8 of 12 --
+
+Analisis Sistem & Potensi Celah (System Analysis)
+Berdasarkan audit mendalam, ditemukan dua kerentanan fungsional/arsitektur yang signifikan. Meskipun
+modul ini diperuntukkan bagi Superadmin/Admin, dampaknya beresonansi pada integritas operasional
+secara keseluruhan.
+🔴 1. Celah Integritas Data: Tidak Ada Tombol "Restore" di Halaman
+Transaksi Dihapus
+HIGH — KRITIS
+Lokasi: /?r=deleted_transactions
+Deskripsi Masalah: Sistem CLARA telah mengimplementasikan konsep Soft Deletes di level database (kolom
+deleted_at ), dan transaksi yang dihapus berhasil dipindahkan ke halaman "Transaksi Dihapus". Namun,
+secara UI/UX, tidak disediakan aksi atau tombol untuk "Memulihkan" (Restore) data tersebut.
+Dampak Analisis Sistem:
+Bottleneck Operasional: Jika terjadi human error (salah hapus), pengguna tidak dapat membatalkannya. Tim
+IT/Database Administrator harus dihubungi untuk menjalankan kueri SQL DML manual ( UPDATE
+transactions SET deleted_at = NULL ).
+Risiko Audit: Pemulihan manual melalui SQL tidak akan tercatat dalam Activity Log (Log Audit) aplikasi,
+sehingga memutus rantai keterlacakan (traceability).
+Bukti Visual Defect-01: Halaman transaksi terhapus hanya berupa tabel baca (read-only) tanpa aksi perbaikan.
+🟠 2. Kerentanan Stabilitas: TV Display Crash Fatal Tanpa Token Valid 	MEDIUM
+B A G I A N 3
+Penilaian arsitektural atas cacat fungsional yang ditemukan di dalam sistem CLARA.
+Laporan Audit E2E — CLARA System
+Halaman 9 dari 12
+
+-- 9 of 12 --
+
+Lokasi: /?r=display
+Deskripsi Masalah: Halaman TV Display (yang biasanya ditampilkan di monitor publik mall) menggunakan
+validasi token berbasis URL ( ?token=xxx ). Jika URL diakses tanpa token atau token kadaluarsa, aplikasi
+memunculkan Fatal Error "Display token tidak valid" secara vulgar di layar, tanpa mekanisme graceful
+degradation atau fallback.
+Dampak Analisis Sistem:
+Risiko Reputasi: Layar publik di mal yang menampilkan stack trace error atau pesan error fatal merusak citra
+profesional.
+Kelemahan Arsitektur URL Token: Bergantung pada parameter URL rentan terhadap auto-refresh browser
+yang menghapus query string. Disarankan migrasi ke autentikasi berbasis sesi (cookie) yang persisten khusus
+untuk perangkat display.
+Bukti Visual Defect-02: Fatal error (crash code Laravel) saat mengakses modul TV Display tanpa parameter
+kredensial URL.
+Laporan Audit E2E — CLARA System
+Halaman 10 dari 12
+
+-- 10 of 12 --
+
+Laporan Rekomendasi & Saran Peningkatan (System
+Improvements Report)
+Berikut adalah rekomendasi perbaikan arsitektural dan fungsional yang disusun berdasarkan prioritas
+penyelesaian sebelum perilisan versi produksi.
+REKOMENDASI
+PENINGKATAN URGENSI ALASAN REKOMENDASI /
+USABILITY DAMPAK POSITIF
+Implementasi Fitur
+Restore (Pulihkan)
+Transaksi
+HIGH 	Ketiadaan tombol restore di UI
+memaksa intervensi database
+manual yang berisiko merusak
+integritas relasional data.
+Admin dapat secara mandiri
+memulihkan kesalahan
+penghapusan, dan setiap tindakan
+pemulihan akan tercatat otomatis di
+Activity Log.
+Restriksi Ketat Hak
+Akses Administrasi
+Non-Superadmin
+(Mencabut permission:
+manage_users, view_logs,
+manage_deleted)
+HIGH 	Peran seperti Supervisor tidak
+boleh memiliki wewenang
+untuk mengubah data user lain
+atau menghapus jejak audit,
+sesuai prinsip Least Privilege.
+Mencegah ancaman internal (insider
+threats) dan memastikan log audit
+bersifat tamper-proof (tidak dapat
+diubah oleh pihak berkepentingan).
+Migrasi Dropdown
+Geografis ke Kode ID
+Wilayah BPS
+MEDIUM 	Menyimpan nama wilayah
+sebagai String literal (misal:
+"Kalimantan Timur") rentan
+terhadap typo, duplikasi, dan
+menyulitkan integrasi API pihak
+ketiga.
+Basis data menjadi lebih efisien
+(integer ID vs string), pencarian lebih
+cepat, dan data langsung kompatibel
+dengan standar e-Faktur Pajak atau
+Logistik Nasional.
+Graceful Fallback untuk
+TV Display Error
+MEDIUM 	Layar publik tidak boleh
+menampilkan stack trace error
+fatal jika token tidak valid.
+Menjaga profesionalisme dengan
+menampilkan UI khusus "Menunggu
+Koneksi/Token" yang melakukan
+auto-retry ke server.
+Auto-Select /
+Pembersihan Otomatis
+pada Input Angka (Porsi
+Target PIC)
+LOW 	Saat ini field angka memiliki
+default "0". Jika user mengetik
+tanpa menghapus, input bisa
+menjadi "0100" yang
+menyebabkan error validasi
+HTML5.
+Meningkatkan UX (User Experience)
+secara signifikan. Angka "0" akan
+otomatis terhapus saat field diklik,
+mempercepat entri data sales.
+Kesimpulan Tindakan Prioritas (Pre-Release Blocker)
+🚨 Tindakan Wajib Sebelum Rilis Produksi (Blocker)
+1. Restriksi Hak Akses (RBAC) untuk memastikan Supervisor dan Sales benar-benar tidak dapat mengakses
+manage_users , view_logs , dan manage_deleted . (Celah keamanan langsung).
+B A G I A N 4
+Rencana tindak lanjut taktis untuk tim Developer guna memperbaiki stabilitas & UX.
+Laporan Audit E2E — CLARA System
+Halaman 11 dari 12
+
+-- 11 of 12 --
+
+2. Implementasi Tombol Restore Transaksi. Sistem yang mengizinkan penghapusan tanpa mekanisme
+pemulihan UI akan menjadi beban operasional harian IT (High Maintenance Overhead).
+⚠ Tindakan Menengah (Fast-Follow Post Release)
+Migrasi Dropdown Geografis ke Standar BPS dan penanganan error TV Display harus masuk dalam siklus Sprint
+berikutnya untuk menjaga skalabilitas jangka panjang.
+Laporan Audit disusun oleh:
+Fadli Zainul Ihsani
+Senior QA Automation Engineer & System Architect
+✅ Dokumen Telah Diverifikasi
+Laporan Audit E2E — CLARA System
+Halaman 12 dari 12
+
+-- 12 of 12 --
+

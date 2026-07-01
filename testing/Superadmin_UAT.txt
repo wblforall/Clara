@@ -1,0 +1,706 @@
+📋 L A P O R A N A U D I T P E N G U J I A N — D O K U M E N T E K N I S R E S M I
+SUPERADMIN
+UAT AUDIT
+REPORTPengujian End-to-End Menyeluruh Sistem Casual Leasing
+Achievement & Revenue Analytics (CLARA) — Validasi
+Kepatuhan Alur Operasional, Keamanan Gerbang Dokumen,
+dan Keandalan Arsitektur.
+📅 TA N G G A L E K S E K U S I
+Senin, 29 Juni 2026
+👤 P E N G U J I & A K U N
+Fadli Zainul Ihsani
+(Superadmin)
+🎯 S TAT U S K E S E L U R U H A N
+⚠ Selesai — Ada Temuan
+🌐 L I N G K U N G A N TA R G E T
+Lokal — Port 8000
+🏗 T E K N O L O G I S TA C K
+Laravel / MySQL / Tailwind
+CSS
+🤖 M E T O D E P E N G U J I A N
+Puppeteer Headless E2E
+Superadmin UAT Audit Report — CLARA System
+Halaman 1 dari 23
+
+-- 1 of 23 --
+
+Daftar Isi
+1 	Pendahuluan & Lingkungan Pengujian
+2 	Skenario Pengujian E2E (E2E Testing Scenarios)— Alur Login, User, PIC, Client, Keamanan
+3 	Hasil Eksekusi Per Modul— Screenshot & Status Setiap Halaman
+4 	Analisis Sistem & Potensi Celah— Restore Trash, Display TV, Dropdown Geografis
+5 	Audit Temuan Cacat Sistem (True Defects)— Bug Kritis & Medium
+6 	Ringkasan Analitik Kuantitatif— Metrics & Statistik Hasil Uji
+7 	Laporan Rekomendasi & Saran Peningkatan— Tabel Prioritas Tindakan
+8 	Lampiran UAT Checklist— Daftar Item Pengujian Superadmin
+Superadmin UAT Audit Report — CLARA System
+Halaman 2 dari 23
+
+-- 2 of 23 --
+
+Pendahuluan & Lingkungan Pengujian
+Laporan ini mendokumentasikan secara komprehensif hasil pengujian penerimaan pengguna (
+User
+Acceptance Testing / UAT) atas perangkat lunak CLARA (Casual Leasing Achievement & Revenue
+Analytics). Pengujian difokuskan pada peran Superadmin dengan cakupan menyeluruh terhadap alur
+fungsional, keamanan gerbang akses, dan keandalan antarmuka.
+Konfigurasi Lingkungan Pengujian
+PARAMETER 	NILAI
+URL Target 	http://192.168.10.10:8000
+Basis Data 	MySQL — clara_unified
+Akun Pengujian 	fadli@gmail.com / Superadmin
+Stack Teknologi 	Laravel PHP, MySQL, Tailwind CSS
+Properti Aktif 	E-Walk Simply FUNtastic & Pentacity Shopping Venue
+Alat Pengujian 	Puppeteer Headless Browser (Chromium)
+Metode 	End-to-End (E2E) Automation + Manual Verification
+Tanggal Eksekusi 	Senin, 29 Juni 2026
+ℹ Cakupan Ruang Lingkup Pengujian
+Seluruh skenario mencakup: manajemen pengguna & RBAC, master data (Exhibition, PIC, Target, Client),
+alur penawaran & konfirmasi SKP, audit log, transaksi terhapus, konversi recurring, keamanan akses
+berkas, dan responsivitas antarmuka mobile.
+B A B 1
+Latar belakang, tujuan, dan konfigurasi teknis sesi pengujian.
+Superadmin UAT Audit Report — CLARA System
+Halaman 3 dari 23
+
+-- 3 of 23 --
+
+Gambar 1.1 — Dashboard Bulanan CLARA (Role: Superadmin) setelah login berhasil.
+Superadmin UAT Audit Report — CLARA System
+Halaman 4 dari 23
+
+-- 4 of 23 --
+
+Skenario Pengujian E2E — Testing Scenarios
+2.1 Alur Login & Pemilihan Multi-Properti
+Skenario berikut memvalidasi alur autentikasi awal dan mekanisme pemilihan properti bagi akun Superadmin
+multi-site.
+# 	LANGKAH 	INPUT / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1 	Akses halaman
+login
+Buka /?r=login 	Form login tampil dengan input Email
+& Password
+PASS
+2 	Isi kredensial
+valid
+Email: fadli@gmail.com | Pass:
+Balikpapan2k!@
+Sistem memproses autentikasi tanpa
+error
+PASS
+3 	Submit &
+redirect
+Tekan Enter / Klik Masuk 	Redirect ke /?r=dashboard dengan
+sesi aktif
+PASS
+4 	Cek properti
+aktif
+Perhatikan topbar 	Dropdown properti menampilkan: E-
+Walk Simply FUNtastic
+PASS
+5 	Pindah properti 	Klik tab Pentacity Shopping
+Venue di topbar
+Data dashboard berubah ke portofolio
+Pentacity secara instan
+PASS
+Gambar 2.1 — Halaman login CLARA sebelum autentikasi Superadmin.
+B A B 2
+Skenario langkah-demi-langkah yang dapat direplikasi untuk setiap modul kritis.
+Superadmin UAT Audit Report — CLARA System
+Halaman 5 dari 23
+
+-- 5 of 23 --
+
+2.2 Alur Manajemen Pengguna (Tambah, Nonaktifkan & Proteksi Login)
+Skenario ini memvalidasi alur lengkap pembuatan user baru, penonaktifan akun, dan verifikasi bahwa sistem
+menolak login akun nonaktif.
+# 	LANGKAH 	INPUT / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1 	Buka menu
+Users & Role
+Navigasi ke /?r=users 	Daftar pengguna sistem
+ditampilkan
+PASS
+2 	Buat user baru 	Klik + Tambah User 	Modal/form input pengguna
+baru terbuka
+PASS
+3 	Isi data Sales
+Budi
+Nama: Sales Budi | Email:
+sales.budi@clara.local | Role: Sales |
+Status: Active
+Form tervalidasi dan disimpan,
+user muncul di daftar
+PASS
+4 	Nonaktifkan
+user
+Edit user Sales Budi → Status: Inactive
+→ Simpan
+Status berubah ke Inactive
+tanpa menghapus data
+PASS
+5 	Test proteksi
+login
+Login sebagai sales.budi@clara.local 	Sistem menampilkan flash
+error: "User tidak aktif.
+Hubungi admin."
+PASS
+6 	Verifikasi
+sistem audit
+Cek Activity Log setelah langkah 4-5 	Log mencatat: update_user
+(before: active, after: inactive)
++ failed_login
+PASS
+Gambar 2.2 — Halaman Users & Role Management CLARA.
+Superadmin UAT Audit Report — CLARA System
+Halaman 6 dari 23
+
+-- 6 of 23 --
+
+Gambar 2.3 — Matriks Role & Permission yang dapat dikonfigurasi per-role.
+2.3 Alur Pembuatan Master PIC & Target Share Bulanan
+Memvalidasi proses penautan entitas PIC ke akun login pengguna beserta penetapan target nominal performa
+bulanan.
+# 	LANGKAH 	INPUT / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1 	Buka Master
+PIC
+Navigasi ke /?r=master&type=pic 	Daftar PIC aktif beserta
+porsi target masing-masing
+ditampilkan
+PASS
+2 	Tambah PIC
+baru
+Klik Tambah Data → Isi: Nama PIC Sales
+Budi, Jabatan: Sales, Email, No. WA
+Form tersimpan, PIC baru
+muncul di tabel
+PASS
+3 	Tautkan ke
+User Akun
+Dropdown User Akun → pilih:
+sales.budi@clara.local
+Relasi foreign key terbentuk
+antara tabel pics dan tabel
+users
+PASS
+4 	Set Porsi
+Target
+Isi: Target Share = 100%	
+Angka masuk benar tanpa
+prefix "0" ganda (catatan:
+bug UX potensial)
+PASS
+5 	Set Target
+Bulanan
+Navigasi ke /?r=master&type=target →
+Tambah target: Rp 50.000.000 untuk
+periode berjalan
+Nilai tersimpan dengan
+format currency dan
+period_key bulan berjalan
+PASS
+Superadmin UAT Audit Report — CLARA System
+Halaman 7 dari 23
+
+-- 7 of 23 --
+
+Gambar 2.4 — Kiri: Halaman Master PIC. Kanan: Halaman Target Bulanan.
+2.4 Alur Validasi Geografis Client Baru (Dropdown Dinamis)
+Memvalidasi bahwa dropdown Kota/Kabupaten memuat ulang data secara dinamis berdasarkan pilihan
+Provinsi.
+# 	LANGKAH 	INPUT / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1 	Buka Master
+Client
+Navigasi ke /?r=clients 	Daftar client aktif ditampilkan dalam
+format tabel
+PASS
+2 	Tambah
+Client Baru
+Klik Tambah Client → Isi:
+Nama: Fiktif Corp, Brand: Fiktif
+Brand
+Form terbuka dengan semua kolom input
+tersedia
+PASS
+3 	Pilih Provinsi 	Dropdown Provinsi →
+Kalimantan Timur
+Sistem memuat ulang (AJAX/Livewire)
+dropdown Kota dengan daftar kota di
+Kaltim
+PASS
+4 	Pilih Kota 	Dropdown Kota → Balikpapan 	Nilai "Balikpapan" terpilih dan siap
+disimpan
+PASS
+5 	Simpan &
+Verifikasi
+Klik Simpan Client 	Record client tersimpan, halaman detail
+menampilkan data geografis yang benar
+PASS
+Superadmin UAT Audit Report — CLARA System
+Halaman 8 dari 23
+
+-- 8 of 23 --
+
+Gambar 2.5 — Halaman daftar Master Client & Referrer.
+2.5 Pengujian Keamanan — Bypass URL Akses Berkas Sensitif
+Memvalidasi bahwa server menolak akses langsung ke berkas sensitif (direktori signatures/ ) tanpa sesi
+login yang valid.
+# 	LANGKAH 	INPUT / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1 	Buka
+browser
+bersih
+Buka window browser baru tanpa cookie
+sesi (incognito/clean profile)
+Tidak ada sesi aktif di
+browser
+PASS
+2 	Akses URL
+langsung
+Navigasi ke: /?
+r=file&file=signatures/test.png
+Server HARUS
+mengembalikan HTTP 403
+Forbidden ATAU redirect ke
+halaman login
+PASS
+3 	Verifikasi
+response
+Periksa pesan error pada halaman 	Berkas tidak dapat
+diunduh/dilihat oleh pihak
+tidak berwenang
+PASS
+4 	Test URL
+traversal
+Coba: /?r=file&file=../../.env 	Server menolak akses berkas
+luar direktori izin (Path
+Traversal Protection)
+PASS
+Superadmin UAT Audit Report — CLARA System
+Halaman 9 dari 23
+
+-- 9 of 23 --
+
+Gambar 2.6 — Hasil akses langsung URL berkas sensitif tanpa sesi valid: server menolak dengan redirect ke login.
+Superadmin UAT Audit Report — CLARA System
+Halaman 10 dari 23
+
+-- 10 of 23 --
+
+Hasil Eksekusi Per Modul
+3.1 Modul Alur Penawaran & SKP
+Gambar 3.1 — Kiri: Daftar Surat Penawaran. Kanan: Dashboard SKP Pameran menunggu approval.
+3.2 Modul Kontrak & Renewal
+Gambar 3.2 — Kiri: Permintaan Kontrak ke Legal. Kanan: Perpanjangan Kontrak (Renewal).
+3.3 Modul Laporan & Analitik
+Gambar 3.3 — Kiri: Executive Summary multi-properti. Kanan: Laporan Performa PIC.
+3.4 Modul Master Data & Template
+B A B 3
+Screenshot dan status validasi visual untuk setiap halaman yang diuji.
+Superadmin UAT Audit Report — CLARA System
+Halaman 11 dari 23
+
+-- 11 of 23 --
+
+Gambar 3.4 — Kiri: Master Exhibition & Unit Sewa. Kanan: Template Surat Penawaran.
+3.5 Modul Audit & Keamanan Data
+Gambar 3.5 — Kiri: Activity Log dengan detail IP, Before/After. Kanan: Transaksi Dihapus (CATATAN: Tombol Restore tidak
+tersedia — Bug Kritis).
+3.6 Modul Display TV & Mobile
+Superadmin UAT Audit Report — CLARA System
+Halaman 12 dari 23
+
+-- 12 of 23 --
+
+Gambar 3.6 — Kiri: Halaman Display TV Informasi Pameran. Kanan: Antarmuka responsif mobile (Bottom Navigation).
+Superadmin UAT Audit Report — CLARA System
+Halaman 13 dari 23
+
+-- 13 of 23 --
+
+Gambar 3.7 — TV Display diakses tanpa parameter token: sistem langsung menolak dengan error fatal (Bug Medium).
+Superadmin UAT Audit Report — CLARA System
+Halaman 14 dari 23
+
+-- 14 of 23 --
+
+Analisis Sistem & Potensi Celah
+4.1 Analisis: Ketiadaan Fungsi "Restore UI" pada Modul Transaksi Dihapus
+Halaman ?r=deleted_transactions menampilkan daftar transaksi yang telah dihapus dengan mekanisme
+soft-delete (kolom deleted_at di tabel MySQL), namun tidak menyediakan tombol atau aksi UI untuk
+memulihkan (restore) data tersebut.
+🔴 Dampak Operasional terhadap Integritas Database clara_unified
+ASPEK RISIKO 	DETAIL DAMPAK
+Pemulihan
+Manual SQL
+Tim IT harus menjalankan UPDATE transactions SET deleted_at = NULL WHERE id =
+X secara manual, meningkatkan risiko human error pada query production database.
+Inkonsistensi
+Data Terkait
+Transaksi berelasi dengan tabel daily_allocations , skp_entries , dan
+pic_achievements . Restore tanpa logika bisnis yang benar dapat menciptakan double-
+counting pada laporan achievement PIC.
+Audit Trail Rusak 	Restore manual SQL tidak menciptakan entri di tabel Activity Log, sehingga aksi tersebut
+tidak traceable — melanggar prinsip audit accountability.
+Downtime
+Operasional
+Setiap kesalahan hapus memerlukan eskalasi ke tim developer/DBA. Dalam lingkungan
+mall dengan transaksi real-time, ini menciptakan bottleneck operasional yang kritis.
+🚨 Penilaian Kritis
+Ketiadaan Restore UI bukan sekadar fitur yang hilang — ini adalah kerentanan integritas data (data
+integrity vulnerability). Sistem yang menawarkan soft-delete tanpa UI restore secara arsitektural
+incomplete dan tidak layak produksi.
+4.2 Analisis: Kegagalan Arsitektur TV Display (Token Berbasis URL)
+Modul Display TV menggunakan pendekatan URL-based token authentication: ?r=display&token=tv-token-
+12345 . Jika token kosong atau tidak ada di URL, sistem langsung crash dengan error fatal tanpa fallback.
+Perbandingan Pendekatan Arsitektur
+B A B 4
+Evaluasi teknis mendalam atas kelemahan arsitektur dan risiko operasional yang ditemukan.
+Superadmin UAT Audit Report — CLARA System
+Halaman 15 dari 23
+
+-- 15 of 23 --
+
+ASPEK 	IMPLEMENTASI SAAT INI (URL TOKEN) REKOMENDASI (SESSION-BASED /
+LONG-LIVED TOKEN)
+Ketahanan
+Refresh
+❌ Browser TV yang me-reload halaman akan
+kehilangan token jika tidak di-bookmark
+dengan benar
+✅ Token tersimpan di
+localStorage/Cookie, refresh tidak
+memutus tampilan
+Keamanan 	⚠ Token terekspos di URL bar, mudah disalin
+dan disalahgunakan
+✅ Token tersimpan di HttpOnly cookie,
+tidak terlihat di URL
+Pengalaman
+Operasional
+❌ Operator harus me-bookmark URL panjang
+dengan token. Jika terhapus, display mati
+✅ TV Display dapat dibuka dari
+halaman dashboard admin dengan satu
+klik
+Keandalan (SLA) 	❌ Single point of failure pada parameter URL 	✅ Sistem redundan dengan fallback
+auto-refresh token
+4.3 Analisis: Penyimpanan String Nama Daerah vs Kode ID BPS
+Dropdown geografis menyimpan nilai literal string seperti "Kalimantan Timur" dan "Balikpapan" langsung
+ke kolom database, alih-alih menggunakan ID numerik standar BPS (Badan Pusat Statistik).
+DIMENSI
+ANALISIS STRING LITERAL (SAAT INI) 	KODE ID BPS (REKOMENDASI)
+Skalabilitas 	Perubahan nama daerah administratif (misal:
+pemekaran kabupaten) menyebabkan inkonsistensi
+data lama vs baru
+ID tidak berubah meskipun nama
+resmi berubah — data historis tetap
+valid
+Integrasi API 	Gagal mapping saat integrasi dengan API pajak
+(eFaktur), e-commerce, atau sistem logistik yang
+mengandalkan kode wilayah BPS
+Kompatibel langsung dengan semua
+API government & swasta Indonesia
+Ukuran
+Database
+String "Kalimantan Timur" = 16 byte, vs ID "64" = 2
+byte — pada skala ribuan record menciptakan
+overhead signifikan
+Efisiensi storage dan indexing lebih
+baik dengan integer ID
+Akurasi Filter 	Rentan terhadap duplikasi dari variasi penulisan:
+"Kaltim", "Kalimantan-Timur", typo
+Filter berdasarkan ID selalu akurat
+dan case-insensitive
+Superadmin UAT Audit Report — CLARA System
+Halaman 16 dari 23
+
+-- 16 of 23 --
+
+Audit Temuan Cacat Sistem (True Defects)
+🔴 DEF-001: Halaman Transaksi Dihapus Tidak Memiliki Tombol/Aksi
+Restore
+HIGH — Kritis
+Lokasi: /?r=deleted_transactions
+Deskripsi: Fitur soft-delete pada transaksi tersedia dan berfungsi — transaksi yang dihapus masuk ke
+halaman ini dengan kolom deleted_at terisi. Namun, antarmuka tidak menyediakan tombol "Pulihkan" /
+"Restore" apapun. Halaman bersifat read-only (tabel statis).
+Repro Steps:
+1. Login sebagai Superadmin.
+2. Hapus sembarang transaksi dari daftar transaksi aktif.
+3. Buka /?r=deleted_transactions .
+4. Amati: tidak ada tombol restore/pulihkan pada baris manapun.
+Dampak: Superadmin tidak dapat memulihkan kesalahan penghapusan secara mandiri. Pemulihan hanya
+bisa dilakukan via DML SQL manual oleh Database Administrator, menciptakan bottleneck, risiko human
+error, dan ketidakterlacakan aksi restore di Activity Log.
+🟠 DEF-002: TV Display Crash Fatal Saat Akses Tanpa Parameter Token 	MEDIUM
+Lokasi: /?r=display (tanpa parameter token )
+B A B 5
+Dokumentasi formal atas kerusakan fungsional nyata yang ditemukan selama pengujian E2E.
+Superadmin UAT Audit Report — CLARA System
+Halaman 17 dari 23
+
+-- 17 of 23 --
+
+Deskripsi: Halaman TV Display menampilkan error fatal
+"Display token tidak valid" ketika diakses tanpa
+parameter token di URL, alih-alih memberikan halaman error yang informatif atau me-redirect ke admin
+dashboard untuk regenerasi token.
+Repro Steps:
+1. Buka browser baru (atau hilangkan parameter token dari URL bookmark).
+2. Navigasi ke http://192.168.10.10:8000/?r=display
+3. Amati: error fatal langsung tampil tanpa fallback yang ramah.
+Dampak: Monitor TV yang terpasang di area publik mall akan menampilkan layar error kepada pengunjung
+jika browser melakukan auto-refresh atau kehilangan parameter URL. Mengganggu pengalaman visual dan
+profesionalitas mal.
+Superadmin UAT Audit Report — CLARA System
+Halaman 18 dari 23
+
+-- 18 of 23 --
+
+Ringkasan Analitik Kuantitatif
+TOTAL SKENARIO UJI
+27
+Item Checklist
+SKENARIO SUKSES
+25
+Items PASS
+CACAT DITEMUKAN
+2
+True Defects
+TINGKAT
+KEBERHASILAN
+92.6%
+Pass Rate
+Tabel Ringkasan per Area Pengujian
+AREA / MODUL PENGUJIAN 	CHECKLIST 	PASS 	FAIL 	PERSENTASE
+Login & Keamanan Akun 	5 	5 	0 	100%
+Manajemen User & RBAC 	6 	6 	0 	100%
+Master Data (Exhibition, PIC, Target, Client) 	6 	6 	0 	100%
+Alur Penawaran & SKP 	4 	4 	0 	100%
+Audit Log & Transaksi Dihapus 	3 	2 	1 	66.7%
+Laporan & Display TV 	3 	2 	1 	66.7%
+Keamanan Berkas & Mobile 	2 	2 	0 	100%
+⚠ Penilaian Kelayakan Produksi
+Dengan 2 cacat sistem aktif (1 Kritis, 1 Medium), aplikasi CLARA belum direkomendasikan untuk rilis ke
+lingkungan produksi penuh hingga DEF-001 (Restore UI) diselesaikan terlebih dahulu. DEF-002 dapat
+masuk backlog sprint berikutnya dengan workaround dokumentasi bookmark URL.
+B A B 6
+Statistik dan metrik hasil pengujian E2E secara keseluruhan.
+Superadmin UAT Audit Report — CLARA System
+Halaman 19 dari 23
+
+-- 19 of 23 --
+
+Laporan Rekomendasi & Saran Peningkatan
+7.1 Tabel Rekomendasi Sistem
+REKOMENDASI PENINGKATAN 	URGENSI ALASAN REKOMENDASI /
+USABILITY
+DAMPAK POSITIF JIKA
+DIIMPLEMENTASIKAN
+Implementasi Restore UI
+pada Halaman Transaksi
+Dihapus
+Tambahkan tombol "Pulihkan" per
+baris dan endpoint POST
+/restore/{id} yang mencatat
+aksi ke Activity Log secara atomik.
+HIGH 	Halaman soft-delete tanpa
+restore adalah arsitektur
+yang tidak lengkap.
+Pemulihan manual via SQL
+berbahaya di lingkungan
+produksi dan tidak terlacak
+di audit log.
+Superadmin dapat mandiri
+memulihkan kesalahan
+hapus tanpa eskalasi ke
+DBA. Audit trail terjaga.
+Integritas data relasional
+terlindungi melalui logika
+bisnis yang terkontrol.
+Migrasi TV Display ke
+Session-Based / Persistent
+Token Storage
+Simpan token di database dengan
+TTL panjang (90 hari) dan baca dari
+cookie HttpOnly saat browser
+melakukan reload.
+MEDIUM 	URL-based token tidak tahan
+terhadap browser refresh
+atau kehilangan bookmark
+pada monitor TV publik.
+Setiap insiden mematikan
+tampilan informasi publik
+mall secara tiba-tiba.
+TV Display tetap aktif 24/7
+tanpa intervensi manual.
+Token aman tersimpan di
+cookie, tidak terekspos di
+address bar, dan dapat di-
+revoke kapan saja dari
+dashboard admin.
+Auto-Clear / Auto-Select
+Input Kolom Porsi Target PIC
+Tambahkan atribut
+onclick="this.select()"
+pada input porsi target agar nilai
+default "0" otomatis terpilih saat
+fokus.
+LOW 	Input default "0" yang tidak
+auto-clear menyebabkan
+operator mengetik angka
+yang tergabung (misalnya
+"0100" atau "1000"),
+memerlukan penghapusan
+manual yang tidak intuitif.
+Menghindari error validasi
+HTML5 yang
+membingungkan.
+Meningkatkan kecepatan
+input data dan mengurangi
+kesalahan entry staf
+administrasi keuangan
+secara signifikan.
+Migrasi Dropdown Geografis
+ke Kode ID Wilayah BPS
+Gunakan tabel provinces dan
+cities dengan kolom ID BPS,
+simpan FK integer ke tabel client,
+tampilkan nama di view layer saja.
+LOW 	Penyimpanan string literal
+"Kalimantan Timur" rentan
+terhadap inkonsistensi nama
+administratif, typo, dan tidak
+kompatibel dengan API
+eksternal (eFaktur, logistik,
+sistem nasional).
+Integritas referensial
+geografis terjamin meski ada
+pemekaran wilayah.
+Kompatibel langsung dengan
+API pajak dan logistik
+nasional. Efisiensi storage
+meningkat signifikan pada
+skala ribuan client.
+Restriksi Ketat Hak Akses
+Administratif Non-
+Superadmin
+Cabut permission
+manage_users ,
+HIGH 	Role Supervisor/Manajer
+yang memiliki akses ke
+manage_users dan
+view_logs dapat
+memodifikasi akun staf lain
+Prinsip
+Least Privilege
+terpenuhi. Mencegah insider
+threat. Akuntabilitas sistem
+terjaga karena hanya
+Superadmin yang dapat
+B A B 7
+Tabel prioritas tindakan yang harus dieksekusi tim developer sebelum rilis produksi.
+Superadmin UAT Audit Report — CLARA System
+Halaman 20 dari 23
+
+-- 20 of 23 --
+
+REKOMENDASI PENINGKATAN 	URGENSI ALASAN REKOMENDASI /
+USABILITY
+DAMPAK POSITIF JIKA
+DIIMPLEMENTASIKAN
+view_logs , dan
+manage_deleted dari semua
+role di bawah Superadmin secara
+default.
+atau menghapus jejak audit
+aktivitas mencurigakan yang
+mereka lakukan sendiri.
+memodifikasi pengguna dan
+membaca log sensitif.
+7.2 Kesimpulan Tindakan Prioritas
+🔴 PRIORITAS 1 — Harus Diselesaikan Sebelum Rilis Produksi
+DEF-001: Implementasi Restore UI pada halaman Transaksi Dihapus.
+Estimasi: 1-2 hari developer. Tanpa ini, sistem berisiko kehilangan data permanen tanpa jalur pemulihan
+yang aman dan terdokumentasi.
+🔴 PRIORITAS 2 — Harus Diselesaikan Sebelum Rilis Produksi
+Restriksi Ketat Hak Akses Role Non-Superadmin (manage_users, view_logs, manage_deleted).
+Estimasi: setengah hari developer. Risiko keamanan langsung jika tidak ditangani.
+🟠 PRIORITAS 3 — Sprint Berikutnya (Dalam 2 Minggu Setelah Rilis)
+DEF-002: Refactor TV Display ke session-based/persistent token.
+Workaround sementara: Dokumentasikan URL lengkap dengan token ke dalam bookmark wajib browser TV.
+ℹ PRIORITAS 4 & 5 — Backlog Teknis (1-2 Sprint ke Depan)
+Migrasi Dropdown Geografis ke Kode BPS dan Auto-Clear Input Porsi Target.
+Tidak memblokir rilis, namun berdampak pada skalabilitas jangka panjang dan UX.
+Superadmin UAT Audit Report — CLARA System
+Halaman 21 dari 23
+
+-- 21 of 23 --
+
+Lampiran: UAT Checklist Superadmin CLARA
+NO. 	AREA 	ITEM CHECKLIST 	STATUS
+1 	Login 	Buka halaman login dan masuk menggunakan akun Superadmin 	PASS
+2 	Login 	Lengkapi Tanda Tangan Saya melalui menu akun di pojok kanan
+atas
+PASS
+3 	Users & Role 	Buat user baru "Sales Budi", isi nama, email, pilih role Sales 	PASS
+4 	Users & Role 	Tautkan akun Sales ke Master PIC agar laporan bisa akurat 	PASS
+5 	Users & Role 	Nonaktifkan user dan verifikasi sistem menolak login akun
+inactive
+PASS
+6 	Role &
+Permission
+Buat Role baru "Manajer Khusus" dengan permission spesifik 	PASS
+7 	Role &
+Permission
+Pastikan manage_users, view_logs, manage_deleted TIDAK
+tercentang untuk Manajer
+PASS
+8 	Master Data 	Tambah unit exhibition fiktif beserta tarif dan tipenya 	PASS
+9 	Master Data 	Edit Template Penawaran untuk memastikan teks klausul
+berubah
+PASS
+10 	Master Data 	Setel target fiktif untuk akun Sales di sub-menu PIC & Target
+Bulanan
+PASS
+11 	Master Data 	Tambah Client baru dengan validasi dropdown geografis dinamis 	PASS
+12 	Master Data 	Ubah pilihan baku di Kelola Opsi Dropdown 	PASS
+13 	Penawaran 	Buat Surat Penawaran Exhibition, Media, dan Gudang 	PASS
+14 	Penawaran 	Buat Penawaran Paket dan download PDF Surat Penawaran 	PASS
+15 	Penawaran 	Uji Link TTD WhatsApp dan proses tanda tangan online oleh
+customer
+PASS
+16 	SKP 	Approve SKP dan pastikan Nomor SKP/SKS final terbit 	PASS
+B A B 8
+Daftar item pengujian mandiri yang telah diselesaikan oleh penguji.
+Superadmin UAT Audit Report — CLARA System
+Halaman 22 dari 23
+
+-- 22 of 23 --
+
+NO. 	AREA 	ITEM CHECKLIST 	STATUS
+17 	SKP 	Uji Reject SKP dan batalkan transaksi dengan alasan wajib 	PASS
+18 	Kontrak 	Buat permintaan kontrak dan setujui hingga status Disetujui Legal 	PASS
+19 	Renewal 	Klik Perpanjang pada kontrak mendekati habis dan verifikasi
+form baru
+PASS
+20 	Audit Log 	Verifikasi Activity Log mencatat detail IP, Before/After setiap aksi 	PASS
+21 	Trash 	Hapus transaksi fiktif dan verifikasi masuk ke Transaksi Dihapus 	PASS
+22 	Trash 	Uji tombol Pulihkan/Restore pada transaksi yang dihapus 	FAIL — DEF-
+001
+23 	Dashboard 	Buka Executive Summary dan verifikasi agregat multi-properti 	PASS
+24 	TV Display 	Klik Display TV di Dashboard dan pastikan terbuka dengan benar 	PASS
+25 	TV Display 	Akses Display TV tanpa token — pastikan ada fallback yang
+informatif
+FAIL — DEF-
+002
+26 	Mobile 	Verifikasi tampilan responsif Mobile (Bottom-Nav & layout HP) 	PASS
+27 	Keamanan 	Akses langsung berkas sensitif tanpa sesi: server menolak
+(403/Redirect)
+PASS
+Laporan ini disusun oleh:
+Fadli Zainul Ihsani
+✅ Pengujian Selesai — 2 Cacat Aktif Dilaporkan
+Superadmin UAT Audit Report — CLARA System
+Halaman 23 dari 23
+
+-- 23 of 23 --
+

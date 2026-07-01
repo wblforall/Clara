@@ -1,0 +1,335 @@
+📋 L A P O R A N A U D I T P E N G U J I A N & K E A M A N A N — D O K U M E N T E K N I S R E S M I
+SALES
+UAT AUDIT
+REPORT
+Senin, 29 Juni 2026 	Fadli Zainul Ihsani (Sales) 	⚠ Selesai — Temuan Kritis
+Tercatat
+Lokal — Port 8000 	Laravel / MySQL / Tailwind 	E2E Automation (Puppeteer)
+Pengujian End-to-End (E2E) Sistem CLARA — Analisis Alur Pembuatan
+Surat Penawaran, Tanda Tangan Kontrak, dan Privasi Data Sales (Data
+Isolation).
+📅 TA N G G A L E K S E K U S I	👤 A U D I T O R / A K U N	🎯 S TAT U S
+🌐 L I N G K U N G A N	🏗 S TA C K	🤖 M E T O D E U J I
+Laporan Audit E2E — CLARA System (Peran Sales)
+Halaman 1 dari 10
+
+-- 1 of 10 --
+
+Pendahuluan
+Laporan audit ini disusun oleh Senior QA Automation Engineer & Senior System Architect untuk
+mengevaluasi stabilitas, keamanan, dan fungsionalitas sistem CLARA, khususnya dengan menggunakan
+perspektif akses Sales (Tenaga Penjualan).
+Data Lingkungan Sistem
+URL Aplikasi Lokal: http://localhost:8000
+Basis Data: clara_unified (MySQL)
+Peran Akun Penguji: Sales ( fadli-sales@gmail.com )
+Fokus Audit: Alur Penerbitan Surat Penawaran (Offer-First), Tanda Tangan Elektronik Pelanggan (DEAL), Pengajuan
+SKP, Pengajuan Kontrak, dan Privasi Dasbor Pribadi (Data Isolation).
+B A G I A N 1
+Data Lingkungan & Ruang Lingkup Sistem.
+Laporan Audit E2E — CLARA System (Peran Sales)
+Halaman 2 dari 10
+
+-- 2 of 10 --
+
+Skenario Pengujian Lanjutan (E2E Testing Scripts Scenario)
+2.1 Pengujian Persiapan Akun & Login
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1. Login
+Pertama Kali
+Masukkan email fadli-
+sales@gmail.com dan password
+default.
+Sistem meminta penggantian password
+baru (min 8 karakter, huruf besar/kecil,
+angka, simbol).
+PASS
+2. Pengaturan
+Tanda Tangan
+Buka menu Akun -> Tanda Tangan
+Saya. Unggah gambar tanda tangan.
+Gambar berhasil tersimpan di profil Sales. 	PASS
+3. Validasi Tanda
+Tangan
+Cetak salah satu dokumen PDF
+penawaran fiktif.
+Tanda tangan yang muncul berupa QR
+Code Validasi (bukan gambar mentah)
+untuk menghindari pemalsuan.
+PASS
+Bukti Visual (2.1): Halaman Login (Kiri) dan Menu Manajemen Tanda Tangan Sales (Kanan).
+2.2 Pengujian Pembuatan Surat Penawaran (Offer-First)
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1. Buka Menu
+Penawaran
+Navigasi ke Surat
+Penawaran -> + Buat
+Penawaran .
+Form penawaran tampil dengan bersih. 	PASS
+2. Pilih Client 	Cari dan pilih nama Client
+(atau tambah baru).
+Data Client berhasil terasosiasi dengan penawaran. 	PASS
+3. Pilih Unit Sewa 	Cari unit Exhibition / Media. 	Harga (rate) dan tipe unit terisi secara otomatis. 	PASS
+4. Input Periode &
+Biaya
+Tentukan tanggal mulai &
+selesai, masukkan nominal.
+Sistem otomatis menghitung Total Biaya dan DP
+berdasarkan tipe unit (misal DP=0 jika tipe
+Food/Fashion Stall).
+PASS
+B A G I A N 2
+Langkah detail untuk mereplikasi fungsi kritis sistem dari kacamata Sales beserta visualisasinya.
+Laporan Audit E2E — CLARA System (Peran Sales)
+Halaman 3 dari 10
+
+-- 3 of 10 --
+
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+5. Penawaran
+Paket (Bundling)
+Centang "Penawaran
+Paket", klik + Tambah
+Komponen .
+Dapat menggabungkan beberapa unit/booth ke
+dalam satu dokumen penawaran.
+PASS
+6. Simpan Draft 	Klik Simpan. 	Nomor Penawaran baru terbit dengan status Draft. 	PASS
+Bukti Visual (2.2): Modul Surat Penawaran, di mana Sales membuat draft dan mengirim penawaran (bundling/paket).
+2.3 Pengujian Negosiasi & Tanda Tangan Customer (DEAL)
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1. Bagikan Link
+Penawaran
+Di detail Penawaran, klik
+Bagikan / Link TTD . Kirim
+(via WA).
+Sistem meng-generate URL unik penawaran. 	PASS
+2. Simulasi
+Customer
+Buka link di browser Incognito.
+Tinjau rincian biaya, cara bayar.
+Halaman customer tertampil lengkap tanpa
+perlu login sistem.
+PASS
+3. TTD Customer 	Bubuhkan tanda tangan di layar
+(jari/mouse) & Submit.
+Tanda tangan diterima sistem. 	PASS
+4. Verifikasi Status 	Cek di Dasbor Sales. 	Status otomatis berubah menjadi DEAL. Nilai
+transaksi terkunci (snapshot) dan tidak dapat
+diedit lagi.
+PASS
+5. Link
+Kedaluwarsa
+Uji coba link kadaluarsa (> 30
+hari).
+Sistem menyediakan tombol untuk
+menerbitkan link/token baru.
+PASS
+Laporan Audit E2E — CLARA System (Peran Sales)
+Halaman 4 dari 10
+
+-- 4 of 10 --
+
+2.4 Pengujian Pembuatan SKP / SKS & Pengajuan Persetujuan
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1. Buat
+SKP/SKS
+Pada penawaran status
+DEAL, klik "Buat SKP".
+Form transisi SKP terbuka. 	PASS
+2. Data
+Identitas
+Input No KTP & NPWP. 	Data tersimpan ke Master Client otomatis. 	PASS
+3. Unggah
+Dokumen
+Unggah KTP, NPWP, dan
+Bukti Transfer (Wajib).
+Sistem memvalidasi file unggahan. 	PASS
+4. Ajukan
+Persetujuan
+Klik Submit untuk
+Approval.
+Status berubah menjadi Submitted / Menunggu
+Persetujuan. Dokumen masuk ke Manajer. Sales TIDAK
+BISA meng-approve sendiri.
+PASS
+Bukti Visual (2.4): Papan SKP tempat Sales dapat melihat status persetujuan dari Manajer.
+2.5 Pengujian Pengajuan Kontrak ke Departemen Legal
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1. Ajukan
+Kontrak
+Di menu Permintaan Kontrak, buat
+pengajuan dari SKP final.
+Tarik data otomatis dari SKP bersangkutan. 	PASS
+2. Dokumen
+Legal
+Unggah Akta Perusahaan / Surat
+Kuasa.
+Berkas dilampirkan dengan aman. 	PASS
+Laporan Audit E2E — CLARA System (Peran Sales)
+Halaman 5 dari 10
+
+-- 5 of 10 --
+
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+3. Kirim ke
+Legal
+Klik Kirim. Pantau status
+persetujuan.
+Tautan peninjauan terkirim ke Legal. Sales dapat
+memantau status secara berkala di tabel.
+PASS
+Bukti Visual (2.5): Daftar pengajuan kontrak dari Sales ke departemen Legal.
+2.6 Pengujian Dasbor Pribadi & Pemantauan Kinerja (Data Isolation)
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1. Dasbor
+Pribadi
+Buka Dashboard / Beranda Sales. 	Angka grafik/pencapaian yang tertampil
+HANYA mencakup transaksi milik Sales
+pribadi.
+PASS
+2. Privasi
+Laporan PIC
+Buka Laporan PIC, Performa,
+Pipeline, dan Reward.
+Data staf/rekan kerja lain TIDAK BOCOR ke
+akun Sales ini (terisolasi secara relasional).
+PASS
+3. Daftar
+Transaksi
+Buka Transaksi
+(Exhibition/Media/Gudang).
+Hanya transaksi Sales tersebut yang tertampil
+di daftar.
+PASS
+Bukti Visual (2.6): Dasbor pribadi Sales (Kiri) dan Laporan PIC yang hanya menampilkan datanya sendiri (Kanan).
+Laporan Audit E2E — CLARA System (Peran Sales)
+Halaman 6 dari 10
+
+-- 6 of 10 --
+
+2.7 Pengujian Masalah Umum (Troubleshooting & Security)
+LANGKAH 	INPUT DATA / AKSI 	EKSPEKTASI SISTEM 	STATUS
+1. Bypass
+URL Manajer
+Akses paksa /?r=users
+atau menu persetujuan
+Manajer.
+Sistem otomatis redirect kembali karena izin ditolak
+(403).
+PASS
+2. Timing
+Kalkulasi
+Cek transaksi yang baru
+berstatus "Submitted".
+Data transaksi yang belum di-Approved Manajer TIDAK
+MASUK ke Dashboard/Achievement (Pencegahan
+inflated revenue).
+PASS
+Bukti Visual (2.7): Sistem secara aktif menolak upaya eskalasi privilege dan memblokir akses ke modul Manajer/Admin.
+Laporan Audit E2E — CLARA System (Peran Sales)
+Halaman 7 dari 10
+
+-- 7 of 10 --
+
+Analisis Sistem & Potensi Celah (System Analysis)
+Berdasarkan audit mendalam lintas-peran (Superadmin, Supervisor, Sales), ditemukan kerentanan
+fungsional yang dampaknya beresonansi pada integritas operasional secara keseluruhan (mempengaruhi
+hulu hingga hilir sistem).
+🔴 1. Celah Integritas Data: Tidak Ada Tombol "Restore" di Halaman
+Transaksi Dihapus
+HIGH — KRITIS
+Lokasi: /?r=deleted_transactions (Modul Admin)
+Deskripsi Masalah: Sistem mengimplementasikan Soft Deletes di database, namun UI tidak menyediakan
+tombol Restore. Jika Manajer salah menghapus SKP yang baru saja disubmit oleh Sales, pemulihan data tidak
+bisa dilakukan tanpa intervensi Database Admin (SQL Query).
+🟠 2. Kerentanan Stabilitas: TV Display Crash Fatal Tanpa Token Valid 	MEDIUM
+Lokasi: /?r=display
+Deskripsi Masalah: Layar publik (yang mungkin dipakai Sales untuk show-off properti) akan mengalami Crash
+Fatal jika diakses tanpa URL Token yang valid, menurunkan profesionalisme di hadapan Client.
+B A G I A N 3
+Penilaian arsitektural atas cacat fungsional yang ditemukan di dalam sistem CLARA.
+Laporan Audit E2E — CLARA System (Peran Sales)
+Halaman 8 dari 10
+
+-- 8 of 10 --
+
+Laporan Rekomendasi & Saran Peningkatan (System
+Improvements Report)
+Berikut adalah rekomendasi perbaikan arsitektural dan fungsional yang disusun berdasarkan prioritas
+penyelesaian sebelum perilisan versi produksi.
+REKOMENDASI
+PENINGKATAN URGENSI ALASAN REKOMENDASI /
+USABILITY DAMPAK POSITIF
+Implementasi Fitur
+Restore (Pulihkan)
+Transaksi
+HIGH 	Ketiadaan tombol restore di UI
+memaksa intervensi database
+manual yang berisiko merusak
+integritas relasional data.
+Admin dapat secara mandiri
+memulihkan kesalahan
+penghapusan, dan setiap tindakan
+pemulihan akan tercatat otomatis di
+Activity Log.
+Restriksi Ketat Hak
+Akses Administrasi
+Non-Superadmin
+HIGH 	Peran seperti Sales &
+Supervisor tidak boleh memiliki
+wewenang administratif lintas
+data (seperti manage_users ).
+Memastikan isolasi data penjualan
+antar Sales (Data Privacy) dan
+mencegah eskalasi privilege.
+Migrasi Dropdown
+Geografis ke Kode ID
+Wilayah BPS
+MEDIUM 	Menyimpan nama wilayah
+sebagai String literal (misal:
+"Kalimantan Timur") rentan
+terhadap typo, duplikasi, dan
+menyulitkan integrasi API pihak
+ketiga.
+Basis data menjadi lebih efisien
+(integer ID vs string), pencarian lebih
+cepat, dan data langsung kompatibel
+dengan standar e-Faktur Pajak atau
+Logistik Nasional.
+Auto-Select /
+Pembersihan Otomatis
+pada Input Angka
+(Target Sales)
+LOW 	Saat ini field angka memiliki
+default "0". Jika user mengetik
+tanpa menghapus, input bisa
+menjadi "0100" yang
+menyebabkan error validasi
+HTML5.
+Meningkatkan UX (User Experience)
+secara signifikan. Angka "0" akan
+otomatis terhapus saat field diklik,
+mempercepat entri data.
+Kesimpulan Tindakan Prioritas (Pre-Release Blocker)
+🚨 Tindakan Wajib Sebelum Rilis Produksi (Blocker)
+1. Penguncian Akses (RBAC) — Sangat krusial untuk memastikan setiap akun Sales benar-benar terisolasi dan
+hanya dapat melihat portofolio klien dan transaksinya sendiri.
+2. Implementasi Tombol Restore Transaksi — Kesalahan hapus transaksi akan berdampak ke komisi Sales;
+sehingga wajib ada fitur pemulihan UI yang aman.
+B A G I A N 4
+Rencana tindak lanjut taktis untuk tim Developer guna memperbaiki stabilitas & UX.
+Laporan Audit E2E — CLARA System (Peran Sales)
+Halaman 9 dari 10
+
+-- 9 of 10 --
+
+Laporan Audit disusun oleh:
+Fadli Zainul Ihsani
+Senior QA Automation Engineer & System Architect
+✅ Dokumen Telah Diverifikasi (Peran Sales)
+Laporan Audit E2E — CLARA System (Peran Sales)
+Halaman 10 dari 10
+
+-- 10 of 10 --
+

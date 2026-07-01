@@ -29,3 +29,6 @@ scripts/userguide_assets/
 # OS
 .DS_Store
 Thumbs.db
+
+# Testing dependencies
+testing/node_modules/

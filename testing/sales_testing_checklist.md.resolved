@@ -1,0 +1,89 @@
+# Checklist Pengujian (Testing) Modul Sales CLARA
+
+Berikut adalah daftar periksa (*checklist*) pengujian *End-to-End* khusus untuk peran **Sales** (Tim Casual Leasing Lapangan). Pengujian difokuskan pada alur kerja operasional harian yang ramah tampilan HP (Mobile) maupun Desktop.
+
+> [!IMPORTANT]
+> Pastikan Anda *login* menggunakan akun yang memiliki peran **Sales** sebelum memulai pengujian ini. Data antar sales terisolasi, sehingga Anda hanya bisa melihat data Anda sendiri.
+
+---
+
+## 1. Pengujian Persiapan Akun & Login
+- [ ] Buka aplikasi CLARA di browser (Desktop maupun HP).
+- [ ] **Login Pertama Kali:**
+  - [ ] Masukkan email dan *password* *default* yang dibuat oleh Admin.
+  - [ ] Pastikan sistem meminta Anda untuk langsung mengganti *password* baru (minimal 8 karakter, wajib kombinasi huruf besar, huruf kecil, angka, dan simbol).
+- [ ] **Pengaturan Tanda Tangan Saya:**
+  - [ ] Buka menu Akun (di pojok kanan atas).
+  - [ ] Cari pilihan **Tanda Tangan Saya**.
+  - [ ] Unggah gambar tanda tangan Anda.
+  - [ ] Cetak salah satu dokumen PDF penawaran fiktif, pastikan tanda tangan Anda muncul sebagai **QR Code Validasi** (bukan file gambar mentah) untuk menghindari pemalsuan.
+
+---
+
+## 2. Pengujian Pembuatan Surat Penawaran (Offer-First)
+- [ ] Buka menu **Surat Penawaran** -> klik tombol **+ Buat Penawaran**.
+- [ ] **Pilih Client:**
+  - [ ] Ketikkan nama client yang sudah terdaftar.
+  - [ ] Coba masukkan client baru jika tidak ditemukan (tambahkan lewat menu Master Client jika diperlukan).
+- [ ] **Pilih Unit / Titik Sewa:**
+  - [ ] Cari unit/titik (Exhibition / Media / Gudang) menggunakan kolom pencarian.
+  - [ ] Pastikan harga sewa (*rate*) dan tipe unit terisi otomatis dari sistem.
+- [ ] **Input Periode & Biaya:**
+  - [ ] Tentukan tanggal mulai dan selesai sewa.
+  - [ ] Masukkan nominal sewa.
+  - [ ] Pastikan sistem menghitung **Total Biaya** dan **Uang Muka (DP)** secara otomatis berdasarkan tipe unit yang dipilih (misal: unit Fashion/Food Stall otomatis DP = 0, hanya Security Deposit).
+- [ ] **Uji Coba Penawaran Paket (Bundling):**
+  - [ ] Centang opsi **"Penawaran Paket"**.
+  - [ ] Klik **+ Tambah Komponen** untuk menggabungkan beberapa unit/booth/titik media yang berbeda ke dalam satu surat penawaran.
+- [ ] Klik **Simpan** dan pastikan Nomor Penawaran baru terbit dengan status **Draft**.
+
+---
+
+## 3. Pengujian Negosiasi & Tanda Tangan Customer (DEAL)
+- [ ] Buka halaman detail Surat Penawaran yang baru saja dibuat.
+- [ ] Klik tombol **Bagikan** / **Link TTD**.
+- [ ] Coba kirimkan tautan tersebut (simulasikan pengiriman via WhatsApp).
+- [ ] Buka tautan tersebut di jendela penyamaran (*Incognito*) seolah-olah Anda adalah customer:
+  - [ ] Pastikan halaman menampilkan seluruh rincian biaya, fasilitas, cara bayar, dan ketentuan hukum.
+  - [ ] Cobalah membubuhkan tanda tangan menggunakan jari (di HP) atau mouse (di Desktop).
+- [ ] Kembali ke akun Sales Anda, lalu verifikasi:
+  - [ ] Status penawaran berubah otomatis dari *Draft/Nego* menjadi **DEAL**.
+  - [ ] Nilai transaksi terkunci rapat (*snapshot*) dan tidak dapat diedit kembali oleh Sales.
+- [ ] Uji coba kasus link kedaluwarsa (masa berlaku 30 hari). Pastikan sistem menyediakan tombol untuk menerbitkan link baru jika link lama kedaluwarsa.
+
+---
+
+## 4. Pengujian Pembuatan SKP / SKS & Pengajuan Persetujuan
+- [ ] Pada penawaran berstatus **DEAL**, klik tombol **"Buat SKP"** (untuk Pameran) atau **"Buat SKS"** (untuk Media/Gudang).
+- [ ] Lengkapi data identitas penanggung jawab:
+  - [ ] Masukkan Nomor KTP dan NPWP (pastikan otomatis tersimpan di Master Client agar tidak perlu ketik ulang nanti).
+- [ ] **Unggah Dokumen Wajib:**
+  - [ ] Unggah foto/scan **KTP**.
+  - [ ] Unggah foto/scan **NPWP**.
+  - [ ] Unggah foto/scan **Bukti Transfer** (Wajib).
+  - [ ] (Opsional) Unggah SIUP atau dokumen pengajuan lainnya jika diperlukan.
+- [ ] Klik **Submit untuk Approval**.
+- [ ] Pastikan status berubah menjadi *Submitted / Menunggu Persetujuan* dan dokumen masuk ke antrean persetujuan Manajer. (Pastikan Sales tidak bisa meng-approve dokumennya sendiri).
+
+---
+
+## 5. Pengujian Pengajuan Kontrak ke Departemen Legal
+- [ ] Setelah SKP disetujui manajer, masuk ke menu **Permintaan Kontrak**.
+- [ ] Buat pengajuan baru dari SKP yang sudah final tersebut.
+- [ ] Unggah berkas pendukung wajib (seperti Akta Perusahaan atau Surat Kuasa jika disyaratkan).
+- [ ] Klik **Kirim** untuk menghasilkan tautan peninjauan bagi Departemen Legal.
+- [ ] Pantau status persetujuan kontrak secara berkala pada tabel di menu ini.
+
+---
+
+## 6. Pengujian Dasbor Pribadi & Pemantauan Kinerja
+- [ ] Buka halaman **Dashboard** / Beranda akun Sales Anda.
+- [ ] Pastikan ringkasan pencapaian yang tertampil di grafik hanya mencakup **angka penjualan pribadi Anda**.
+- [ ] Verifikasi menu **Laporan PIC**, **Performa**, **Pipeline**, dan **Reward**. Pastikan data rekan kerja lain tidak bocor ke akun Anda.
+- [ ] Buka daftar Transaksi (Exhibition / Media / Gudang) untuk memeriksa detail transaksi yang sudah berhasil Anda kumpulkan.
+
+---
+
+## 7. Pengujian Masalah Umum (Troubleshooting)
+- [ ] Coba akses menu Manajer (misal: menu persetujuan atau panel admin) lewat ketik URL langsung. Pastikan sistem me-redirect Anda kembali karena akun Sales tidak memiliki izin akses.
+- [ ] Cek status transaksi yang baru disubmit. Pastikan data transaksi belum masuk ke Dashboard/Laporan PIC sebelum disetujui (*Approved*) oleh Manajer.

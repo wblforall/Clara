@@ -1,0 +1,296 @@
+📋
+Laporan Pengujian E2E
+CLARA — Casual Leasing Achievement & Revenue Analytics
+Versi 4.21
+Properti: E-Walk Simply FUNtastic & Pentacity Shopping Venue
+Peran Manajer (Supervisor)
+Akun Pengujian: adil@gmail.com (Supervisor)
+Tanggal: 29 Juni 2026
+Dokumen ini dihasilkan secara otomatis menggunakan Puppeteer E2E Automation
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 1 dari 34
+
+-- 1 of 34 --
+
+Daftar Isi
+1. Ringkasan Eksekutif & Statistik Pengujian
+2. Detail Pengujian per Skenario
+3. Analisis Keberhasilan & Kegagalan
+4. Audit Temuan: Kerusakan (Bugs)
+5. Audit Temuan: Saran Peningkatan (Improvements)
+6. Kesimpulan
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 2 dari 34
+
+-- 2 of 34 --
+
+1. Ringkasan Eksekutif
+Pengujian End-to-End (E2E) ini dilakukan untuk memvalidasi seluruh fungsionalitas yang tersedia bagi peran Manajer (Supervisor) pada sistem CLARA.
+Total 15 skenario diuji secara otomatis menggunakan Puppeteer headless browser.
+11
+BERHASIL (PASS)
+2
+GAGAL (FAIL)
+2
+TEMUAN BUG
+73%
+TINGKAT KEBERHASILAN
+# 	Skenario 	Status 	Keterangan
+1 	Login Manajer 	✓ PASS 	Login berhasil, dashboard tampil
+2 	SKP Reject (ID 19) 	✓ PASS 	SKP berhasil ditolak dengan catatan
+3 	SKP Approve (ID 23) 	✗ FAIL 	Error SQL: kolom sign_token_expires_at tidak ditemukan
+4a 	Akses Form Kontrak 	✓ PASS 	URL Legal diperoleh
+4b 	Legal Approve Kontrak 	✓ PASS 	Kontrak disetujui Legal
+5 	Batalkan Transaksi 	✓ PASS 	Transaksi dibatalkan dengan alasan
+6 	Audit Log 	✗ FAIL 	HTTP 403 — Akses ditolak untuk role Manajer
+7a 	Laporan PIC 	✓ PASS 	Halaman tampil dengan data lengkap
+7b 	Performa PIC 	✓ PASS 	Grafik performa tampil
+7c 	Pipeline PIC 	✓ PASS 	Pipeline funnel tampil
+7d 	Rewarding PIC 	✓ PASS 	Halaman tampil, form simpan tidak tersedia (sesuai permission)
+8a 	Executive Dashboard 	✓ PASS 	Revenue, target, occupancy tampil
+8b 	TV Display 	✓ PASS 	Tampilan TV tanpa login
+9 	Renewal Kontrak 	✓ PASS 	71 kartu renewal tampil (read-only untuk Manajer)
+10 	Simulasi Komisi 	✓ PASS 	Kalkulator tampil dengan data komisi per PIC
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 3 dari 34
+
+-- 3 of 34 --
+
+2. Detail Pengujian per Skenario
+2.1 Login Manajer
+Pengguna berhasil login menggunakan akun adil@gmail.com dengan peran Supervisor. Setelah login, pengguna diarahkan ke halaman pemilihan
+properti, kemudian ke dashboard utama.
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 4 dari 34
+
+-- 4 of 34 --
+
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 5 dari 34
+
+-- 5 of 34 --
+
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 6 dari 34
+
+-- 6 of 34 --
+
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 7 dari 34
+
+-- 7 of 34 --
+
+2.2 SKP Reject (ID 19)
+Manajer membuka halaman detail SKP ID 19 yang berstatus
+Submitted. Panel "Approval Manager" tampil dengan tombol Setujui dan Tolak. Catatan
+penolakan diisi, lalu form dikirim. Setelah submit, status SKP berubah menjadi
+Ditolak.
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 8 dari 34
+
+-- 8 of 34 --
+
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 9 dari 34
+
+-- 9 of 34 --
+
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 10 dari 34
+
+-- 10 of 34 --
+
+2.3 SKP Approve (ID 23) — GAGAL
+Manajer membuka SKP ID 23 dan mencoba menyetujui. Sistem menampilkan pesan error SQL:
+"Column not found: 1054 Unknown column
+'sign_token_expires_at' in 'field list'". Ini menunjukkan kolom database sign_token_expires_at belum ditambahkan ke tabel skp_documents.
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 11 dari 34
+
+-- 11 of 34 --
+
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 12 dari 34
+
+-- 12 of 34 --
+
+2.4 Permintaan Kontrak & Legal Approve
+Manajer membuka form permintaan kontrak ID 2 dan memperoleh URL Legal Share. Halaman legal terbuka dengan form persetujuan. Setelah disetujui,
+status kontrak berubah menjadi
+Disetujui Legal.
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 13 dari 34
+
+-- 13 of 34 --
+
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 14 dari 34
+
+-- 14 of 34 --
+
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 15 dari 34
+
+-- 15 of 34 --
+
+2.5 Pembatalan Transaksi
+Manajer membuka detail penawaran dan mengklik tombol pembatalan transaksi. Alasan pembatalan diisi. Proses pembatalan berhasil dilakukan.
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 16 dari 34
+
+-- 16 of 34 --
+
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 17 dari 34
+
+-- 17 of 34 --
+
+2.6 Audit Log — GAGAL
+Ketika Manajer mengakses halaman Audit Log (?r=audit), sistem mengembalikan HTTP 403 dengan pesan
+"Akses ditolak untuk role Anda". Manajer
+tidak memiliki permission view_audit.
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 18 dari 34
+
+-- 18 of 34 --
+
+2.7 Laporan & Pengawasan Tim
+Semua halaman laporan PIC dapat diakses oleh Manajer: Laporan PIC, Performa PIC, Pipeline PIC, dan Rewarding PIC. Pada halaman Rewarding PIC,
+form penyimpanan target/reward tidak tersedia — sesuai dengan konfigurasi permission yang membatasi aksi simpan hanya untuk Superadmin dan
+Admin.
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 19 dari 34
+
+-- 19 of 34 --
+
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 20 dari 34
+
+-- 20 of 34 --
+
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 21 dari 34
+
+-- 21 of 34 --
+
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 22 dari 34
+
+-- 22 of 34 --
+
+2.8 Executive Dashboard & TV Display
+Dashboard eksekutif menampilkan data revenue, target, dan occupancy. Halaman TV Display berhasil dibuka tanpa memerlukan login ulang.
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 23 dari 34
+
+-- 23 of 34 --
+
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 24 dari 34
+
+-- 24 of 34 --
+
+2.9 Renewal Kontrak
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 25 dari 34
+
+-- 25 of 34 --
+
+Halaman Renewal Kontrak menampilkan 71 kartu kontrak yang mendekati jatuh tempo. Namun, Manajer tidak dapat mengubah status renewal karena
+tidak memiliki permission manage_renewals. Form select dan tombol submit tidak ditampilkan.
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 26 dari 34
+
+-- 26 of 34 --
+
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 27 dari 34
+
+-- 27 of 34 --
+
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 28 dari 34
+
+-- 28 of 34 --
+
+2.10 Simulasi Komisi
+Halaman Simulasi Komisi PIC tampil dengan data komisi lengkap per role (Sales, Manager, Asst. Manager, Admin). Total revenue, target, achievement,
+dan breakdown per PIC ditampilkan secara akurat.
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 29 dari 34
+
+-- 29 of 34 --
+
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 30 dari 34
+
+-- 30 of 34 --
+
+3. Analisis Keberhasilan & Kegagalan
+Dari 15 skenario yang diuji, 11 skenario (73%) berhasil dan 2 skenario gagal. Dua temuan lainnya merupakan keterbatasan permission yang
+by design
+(Rewarding PIC read-only, Renewal Kontrak read-only).
+Skenario Gagal #1: SKP Approve (ID 23)
+Item 	Detail
+Ekspektasi 	Manajer mengklik Setujui → nomor SKP terbit otomatis, transaksi & alokasi dibuat
+Realita 	Sistem menampilkan error SQL:
+Unknown column 'sign_token_expires_at'. SKP tidak disetujui.
+Akar Masalah 	Kolom sign_token_expires_at direferensikan oleh fungsi skp_approve() di skp.php tetapi belum ada di tabel
+skp_documents pada database yang digunakan.
+Dampak 	Seluruh alur persetujuan SKP tidak dapat berjalan. Ini memblokir penerbitan nomor SKP, pembuatan transaksi otomatis,
+dan alur downstream lainnya.
+Skenario Gagal #2: Audit Log
+Item 	Detail
+Ekspektasi 	Manajer dapat melihat log audit untuk memantau aktivitas tim
+Realita 	HTTP 403 — "Akses ditolak untuk role Anda"
+Akar Masalah 	Permission view_audit tidak diberikan ke role supervisor di permission_matrix()
+Dampak 	Manajer tidak dapat melakukan pengawasan melalui log aktivitas sistem
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 31 dari 34
+
+-- 31 of 34 --
+
+4. Audit Temuan: Kerusakan Fungsional (Bugs)
+# 	Deskripsi 	Urgensi 	Dampak 	Rekomendasi
+BUG-
+01
+SKP Approve gagal — kolom
+sign_token_expires_at tidak ditemukan
+Fungsi skp_approve() mereferensikan kolom
+yang belum ada di database dump saat ini.
+KRITIS 	Seluruh alur approval SKP
+terblokir. Tidak ada nomor SKP
+yang bisa terbit.
+Jalankan migrasi: ALTER TABLE skp_documents ADD
+COLUMN sign_token_expires_at DATETIME NULL;
+BUG-
+02
+Audit Log tidak dapat diakses oleh Manajer
+Route ?r=audit membutuhkan permission
+yang tidak dimiliki role supervisor.
+SEDANG 	Manajer tidak bisa memantau
+aktivitas sistem dan tim melalui
+audit trail.
+Tambahkan 'view_audit' ke array permission role
+supervisor di helpers.php
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 32 dari 34
+
+-- 32 of 34 --
+
+5. Audit Temuan: Saran Peningkatan (Improvements)
+# 	Deskripsi 	Urgensi 	Alasan
+SUG-
+01
+Renewal Kontrak — Manajer tidak bisa
+mengubah status tindak lanjut
+Manajer hanya bisa melihat papan renewal tanpa
+bisa memperbarui status (contacted, nego, dll).
+SEDANG 	Manajer perlu memantau dan menindaklanjuti renewal aktif sebagai bagian dari tugas
+operasional harian. Pertimbangkan menambahkan permission manage_renewals
+untuk role supervisor.
+SUG-
+02
+Rewarding PIC — Manajer tidak bisa menyimpan
+target/reward
+Form input target disembunyikan dari role
+supervisor, hanya tersedia untuk
+superadmin/admin.
+RENDAH 	Jika kebijakan bisnis mengizinkan Manajer mengatur target PIC, tambahkan
+permission yang sesuai. Jika hanya admin yang berwenang, ini sudah benar.
+SUG-
+03
+Tombol "Cetak/Ajukan" pada Simulasi Komisi
+tidak memiliki ID unik
+Tidak ada elemen #calc-btn di halaman; tombol
+menggunakan class atau inline event.
+RENDAH 	Untuk mendukung automated testing dan aksesibilitas, tambahkan ID unik pada
+elemen interaktif kunci.
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 33 dari 34
+
+-- 33 of 34 --
+
+6. Kesimpulan
+Pengujian E2E peran Manajer menunjukkan bahwa sebagian besar fungsionalitas inti berjalan dengan baik (73% skenario berhasil). Fitur-fitur seperti
+penolakan SKP, persetujuan kontrak legal, pembatalan transaksi, laporan PIC, executive dashboard, TV display, renewal kontrak, dan simulasi komisi
+semuanya dapat diakses dan berfungsi sesuai harapan.
+Terdapat 2 kerusakan fungsional yang perlu diperbaiki:
+1. BUG-01 (KRITIS): SKP Approve gagal akibat kolom database sign_token_expires_at yang belum ada. Ini memblokir seluruh alur persetujuan SKP.
+2. BUG-02 (SEDANG): Audit Log tidak bisa diakses oleh Manajer karena ketiadaan permission.
+Terdapat 3 saran peningkatan terkait permission dan aksesibilitas yang dapat dipertimbangkan sesuai kebijakan bisnis.
+Rekomendasi Prioritas:
+1. Segera jalankan migrasi database untuk menambahkan kolom sign_token_expires_at
+2. Evaluasi apakah permission audit log perlu diberikan ke Manajer
+3. Uji ulang skenario SKP Approve setelah migrasi diterapkan
+Laporan Pengujian Manajer — CLARA v4.21 	Halaman 34 dari 34
+
+-- 34 of 34 --
+

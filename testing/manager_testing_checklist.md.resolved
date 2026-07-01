@@ -1,0 +1,84 @@
+# Checklist Pengujian (Testing) Modul Manajer CLARA
+
+Berikut adalah daftar periksa (*checklist*) pengujian *End-to-End* khusus untuk peran **Manajer** (Manajer CL / Casual Leasing). Anda bisa mencentang kotak-kotak ini saat melakukan simulasi langsung di aplikasi.
+
+> [!IMPORTANT]
+> Pastikan Anda *login* menggunakan akun yang memiliki peran **Manajer** (atau akun Superadmin yang memiliki izin manajerial) sebelum memulai pengujian ini.
+
+---
+
+## 1. Pengujian Modul Persetujuan & Pembatalan (Approval & Cancellation)
+### A. Meninjau & Menyetujui SKP (Surat Konfirmasi Pemesanan)
+- [ ] Buka menu **SKP Pameran**.
+- [ ] Cari dokumen SKP yang berstatus *Submitted* (menunggu persetujuan).
+- [ ] Klik dan periksa halaman detail SKP:
+  - [ ] Periksa kelengkapan identitas customer (KTP & NPWP).
+  - [ ] Periksa nominal harga sewa dan periode sewa.
+  - [ ] Periksa dokumen lampiran pendukung.
+- [ ] **Uji Coba Reject (Penolakan):**
+  - [ ] Klik tombol **Reject**.
+  - [ ] Pastikan sistem meminta alasan penolakan (alasan wajib diisi).
+  - [ ] Kirim penolakan, lalu pastikan status SKP berubah menjadi *Ditolak* (kembali ke Sales).
+- [ ] **Uji Coba Approve (Persetujuan):**
+  - [ ] Klik tombol **Approve** pada dokumen SKP lain (atau yang sudah diperbaiki oleh Sales).
+  - [ ] Pastikan muncul peringatan konfirmasi (karena bersifat sekali-jalan & mengunci data).
+  - [ ] Setujui, lalu pastikan sistem secara otomatis menerbitkan **Nomor SKP Final**, **Transaksi**, dan **Alokasi**.
+  - [ ] Verifikasi bahwa data transaksi tersebut masuk ke Dashboard, Achievement, dan Laporan Recurring.
+
+### B. Menyetujui Permintaan Kontrak (Peran Legal / Approver)
+- [ ] Buka menu **Permintaan Kontrak**.
+- [ ] Buka salah satu pengajuan kontrak yang masuk.
+- [ ] Tinjau formulir dan semua dokumen lampiran (KTP, NPWP, Akta, Surat Kuasa, dan SKP yang sudah bertanda tangan).
+- [ ] Klik **Setujui** dan pastikan status berubah menjadi **Disetujui Legal**.
+- [ ] Verifikasi bahwa staf Sales pemohon bisa melihat perubahan status ini dari akun mereka.
+
+### C. Pembatalan Transaksi (Batal Transaksi)
+- [ ] Buka daftar Transaksi.
+- [ ] Pilih salah satu transaksi aktif (atau satu komponen dari Transaksi Paket).
+- [ ] Klik tombol **Batalkan**.
+- [ ] Pastikan sistem mewajibkan pengisian kolom alasan pembatalan.
+- [ ] Batalkan transaksi, lalu pastikan pembatalan tersebut tercatat di **Activity Log** beserta alasan pembatalannya.
+- [ ] (Khusus transaksi Paket) Pastikan komponen paket lainnya tetap berjalan aktif meskipun salah satu komponen dibatalkan.
+
+---
+
+## 2. Pengujian Pengawasan Tim (Lintas-Sales)
+- [ ] Buka menu **Laporan PIC**.
+- [ ] Pastikan Anda dapat melihat daftar semua staf Sales beserta visualisasi target vs pencapaian masing-masing (bukan hanya data milik satu sales saja).
+- [ ] Buka sub-menu **Performa PIC** & **Aktivitas/Pipeline PIC**.
+- [ ] Periksa apakah grafik produktivitas corong (*funnel*) penawaran tim sales tertampil dengan benar.
+- [ ] Cobalah melakukan **Export** laporan (unduh file berbentuk CSV / Excel, atau tes fungsi Print) untuk bahan rapat.
+- [ ] Buka menu **Rewarding PIC**.
+- [ ] Atur target reward untuk periode tertentu dan pastikan data komisi/reward per PIC terhitung otomatis.
+
+---
+
+## 3. Pengujian Pandangan Eksekutif (Executive Summary & Display TV)
+- [ ] Buka menu **Executive Summary**.
+- [ ] Verifikasi bahwa sistem menampilkan data agregat (gabungan) berupa:
+  - [ ] Ringkasan *Revenue* (Pendapatan).
+  - [ ] Target perusahaan.
+  - [ ] Tingkat keterisian properti (*Occupancy*) dari seluruh mal yang dikelola.
+- [ ] Uji coba grafik **Trend Revenue**, **Perbandingan Periode**, dan **Occupancy Harian**.
+- [ ] **Uji Coba TV Display:**
+  - [ ] Di halaman Dashboard/Summary, klik tombol **Display TV** (biasanya di kanan atas).
+  - [ ] Pastikan halaman Display TV terbuka di *tab* baru tanpa meminta *login* ulang (memakai token otomatis).
+  - [ ] Periksa apakah tampilannya ramah untuk layar TV kantor (bersih dari navigasi menu samping).
+
+---
+
+## 4. Pengujian Manajemen Revenue (Renewal Kontrak & Simulasi Komisi)
+### A. Papan Renewal Kontrak (Perpanjangan)
+- [ ] Buka menu **Renewal Kontrak**.
+- [ ] Periksa apakah terdapat papan/daftar kontrak yang akan segera habis (rentang waktu -7 hari s/d +30 hari).
+- [ ] Periksa indikator warna urgensinya:
+  - [ ] Warna **Merah** untuk sisa waktu $\le$ 15 hari.
+  - [ ] Warna **Kuning** untuk sisa waktu 16–30 hari.
+- [ ] Coba perbarui status perpanjangan salah satu kontrak (contoh: ubah dari *Belum Dihubungi* menjadi *Nego* / *Akan Perpanjang* / *Diperpanjang* / *Tidak Lanjut*).
+- [ ] Klik tombol **+ Perpanjang** pada kontrak yang disepakati untuk diperpanjang.
+- [ ] Pastikan sistem otomatis membuat Surat Penawaran baru yang datanya terisi otomatis dari kontrak lama.
+
+### B. Simulasi Komisi
+- [ ] Buka menu **Simulasi Komisi**.
+- [ ] Masukkan nominal atau skenario angka transaksi tertentu.
+- [ ] Pastikan kalkulator komisi menghitung persentase komisi secara akurat sebelum keputusan final diambil.

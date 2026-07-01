@@ -1,0 +1,104 @@
+[
+  {
+    "step": "1. Login Manager",
+    "status": "PASS",
+    "detail": "Berhasil login sebagai adil@gmail.com (Supervisor)",
+    "time": "2026-06-29T05:40:34.421Z"
+  },
+  {
+    "step": "2. SKP Reject (ID 19)",
+    "status": "PASS",
+    "detail": "SKP berhasil ditolak, status berubah menjadi Rejected",
+    "time": "2026-06-29T05:40:41.317Z"
+  },
+  {
+    "step": "3. SKP Approve (ID 23)",
+    "status": "PASS",
+    "detail": "Form approve tersubmit",
+    "time": "2026-06-29T05:40:45.263Z"
+  },
+  {
+    "step": "4a. Akses Form Kontrak",
+    "status": "PASS",
+    "detail": "Legal URL: http://localhost:8000/?r=contract_legal&token=8856970f6ce8a3eecfbc7e63f480e015bb2bc942",
+    "time": "2026-06-29T05:40:46.668Z"
+  },
+  {
+    "step": "4b. Legal Approve Kontrak",
+    "status": "PASS",
+    "detail": "Kontrak disetujui oleh Legal",
+    "time": "2026-06-29T05:40:50.457Z"
+  },
+  {
+    "step": "5. Batalkan Transaksi (ID 1142)",
+    "status": "PASS",
+    "detail": "Transaksi berhasil dibatalkan",
+    "time": "2026-06-29T05:40:54.372Z"
+  },
+  {
+    "step": "6. Audit Log",
+    "status": "PASS",
+    "detail": "Halaman log audit dapat diakses",
+    "time": "2026-06-29T05:40:55.773Z"
+  },
+  {
+    "step": "7a. Laporan PIC",
+    "status": "PASS",
+    "detail": "Halaman laporan PIC tampil",
+    "time": "2026-06-29T05:40:57.364Z"
+  },
+  {
+    "step": "7b. Performa PIC",
+    "status": "PASS",
+    "detail": "Halaman performa PIC tampil",
+    "time": "2026-06-29T05:40:58.524Z"
+  },
+  {
+    "step": "7c. Pipeline PIC",
+    "status": "PASS",
+    "detail": "Halaman pipeline PIC tampil",
+    "time": "2026-06-29T05:40:59.803Z"
+  },
+  {
+    "step": "7d. Rewarding PIC",
+    "status": "PASS",
+    "detail": "Halaman reward tampil (form simpan tidak tersedia untuk Manajer — sesuai permission)",
+    "time": "2026-06-29T05:41:01.042Z"
+  },
+  {
+    "step": "8a. Executive Dashboard",
+    "status": "PASS",
+    "detail": "Dashboard eksekutif tampil dengan data revenue & occupancy",
+    "time": "2026-06-29T05:41:04.048Z"
+  },
+  {
+    "step": "8b. TV Display",
+    "status": "PASS",
+    "detail": "Halaman display TV terbuka tanpa login",
+    "time": "2026-06-29T05:41:06.315Z"
+  },
+  {
+    "step": "9a. Update Renewal Status",
+    "status": "FAIL",
+    "detail": "Select renewal_status tidak ditemukan — kemungkinan Manajer hanya bisa melihat",
+    "time": "2026-06-29T05:41:08.185Z"
+  },
+  {
+    "step": "9b. Papan Renewal",
+    "status": "PASS",
+    "detail": "71 kartu renewal tampil",
+    "time": "2026-06-29T05:41:08.574Z"
+  },
+  {
+    "step": "10. Simulasi Komisi",
+    "status": "FAIL",
+    "detail": "Tombol Hitung tidak ditemukan",
+    "time": "2026-06-29T05:41:10.547Z"
+  },
+  {
+    "step": "11. Daftar SKP",
+    "status": "PASS",
+    "detail": "Halaman daftar SKP dapat diakses",
+    "time": "2026-06-29T05:41:12.092Z"
+  }
+]

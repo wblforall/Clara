@@ -1,0 +1,439 @@
+PENGUJIAN END-TO-END
+SUPERADMIN AUDIT
+Casual Leasing Achievement & Revenue Analytics (CLARA) -
+Evaluasi Kepatuhan Alur Operasional & Keamanan Gerbang
+Dokumen
+TANGGAL PELAKSANA AN
+Senin, 29 Juni 2026
+PENGUJI / AKUN
+saadilaeffendi@gmail.com (Superadmin)
+STATUS PENGUJIAN
+Selesai (Dengan Temuan)
+PLATFORM TARGET
+Web App Lokal (Port 8000)
+L A P O R A N AU D I T P E N G U J I A N
+Laporan Pengujian E2E Superadmin Clara 	Halaman 1 dari 23
+
+-- 1 of 23 --
+
+1. Pendahuluan
+Laporan ini disusun untuk mendokumentasikan hasil pengujian fungsionalitas end-to-end (E2E) dan
+kepatuhan sistem keamanan pada aplikasi CLARA (Casual Leasing Achievement & Revenue Analytics).
+Pengujian dilakukan menggunakan akun superadmin utama saadilaeffendi@gmail.com dengan tujuan
+memvalidasi alur kerja administrasi, manajemen pengguna, pengaturan hak akses peran, data master
+exhibition, pic, target penjualan, manajemen client, log audit, serta memeriksa celah keamanan akses
+langsung ke berkas sensitif di server.
+Seluruh skenario pengujian dieksekusi secara otomatis menggunakan Puppeteer headless browser di
+lingkungan lokal. Hasil capture layar (screenshot) disematkan pada setiap langkah untuk memverifikasi
+kesesuaian visual dan perilaku sistem.
+Informasi Lingkungan Pengujian:
+• URL Aplikasi: http://localhost:8000
+• Database: clara_unified (MySQL di XAMPP)
+• Akun Uji: saadilaeffendi@gmail.com / pok3mon (Superadmin)
+Laporan Pengujian E2E Superadmin Clara 	Halaman 2 dari 23
+
+-- 2 of 23 --
+
+2. Login & Pemilihan Properti
+Skenario ini memverifikasi bahwa akun Superadmin dapat melakukan autentikasi dengan kredensial
+yang valid dan dialihkan ke gerbang pemilihan properti jika akun tersebut ditugaskan ke lebih dari satu
+properti. Setelah memilih properti, pengguna diarahkan ke dashboard utama.
+1. Membuka halaman login utama /?r=login.
+2. Mengisi alamat email saadilaeffendi@gmail.com dan sandi baru pok3mon.
+3. Menekan tombol "Masuk" dan memastikan sistem mengalihkan pengguna ke halaman pemilihan
+properti.
+4. Memilih properti E-Walk Simply FUNtastic untuk masuk ke dashboard.
+Gambar 2.1: Halaman Dashboard Utama setelah login superadmin dan memilih properti E-Walk.
+Catatan Desain: Halaman Dashboard menyajikan ringkasan visual pencapaian secara interaktif dengan indikator
+properti aktif yang jelas pada bagian top bar.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 3 dari 23
+
+-- 3 of 23 --
+
+3. Manajemen User (Tambah Pengguna)
+Menguji antarmuka pembuatan pengguna baru di bawah kendali Superadmin. Pengguna baru yang
+ditambahkan memiliki peran sebagai Sales dengan status aktif dan ditugaskan ke properti E-Walk.
+Nama Field 	Wajib 	Penjelasan
+Nama Lengkap 	Ya 	Nama lengkap dari pengguna baru. Contoh: Sales Budi.
+Email 	Ya 	Email unik untuk login. Contoh: sales.budi@clara.local.
+Role 	Ya 	Peran otorisasi sistem (Superadmin / Admin / Supervisor / Sales / Keuangan).
+Status 	Ya 	Status keaktifan login (Active / Inactive).
+Daftar Properti 	Ya 	Checkbox untuk menetapkan akses properti bagi pengguna.
+1. Membuka daftar pengguna di menu /?r=users.
+2. Menekan tombol "Tambah User" menuju form input.
+3. Mengisi data pengguna baru: Sales Budi, sales.budi@clara.local, peran Sales, status Active, dan
+memilih properti E-Walk.
+4. Menyimpan data dan memastikan sistem menampilkan pesan sukses.
+Gambar 3.1: Form Pengisian Data Pembuatan Pengguna Baru (Sales Budi).
+Laporan Pengujian E2E Superadmin Clara 	Halaman 4 dari 23
+
+-- 4 of 23 --
+
+Gambar 3.2: Daftar pengguna setelah Sales Budi berhasil ditambahkan ke database.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 5 dari 23
+
+-- 5 of 23 --
+
+4. Pembuatan Master PIC & Penautan Akun
+Menguji penautan entitas PIC (Person In Charge) dengan akun login pengguna yang baru dibuat.
+Langkah ini penting agar transaksi yang dibuat oleh Sales Budi dapat terlacak secara otomatis ke dalam
+target performa PIC yang bersangkutan.
+Nama Field 	Wajib 	Penjelasan
+Nama PIC 	Ya 	Nama PIC yang akan ditampilkan pada surat penawaran dan laporan.
+Jabatan 	Ya 	Jabatan struktural. Contoh: Sales.
+Email 	Ya 	Alamat email korespondensi penawaran.
+No. WhatsApp 	Ya 	Nomor kontak untuk tautan pengiriman surat penawaran.
+User Akun 	Tidak 	Dropdown untuk menghubungkan ke akun login di tabel users.
+Porsi Target 	Ya 	Persentase beban target bulanan (0 - 100%).
+1. Membuka Master PIC di menu /?r=master&type=pic.
+2. Menekan "Tambah Data" PIC.
+3. Mengisi data PIC Sales Budi, memasukkan target share 100%, dan memilih Akun User Sales Budi.
+4. Menyimpan dan memvalidasi data PIC tersimpan di list.
+Gambar 4.1: Pengisian form penautan PIC dengan akun user login Sales Budi.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 6 dari 23
+
+-- 6 of 23 --
+
+5. Penonaktifan Pengguna & Proteksi Keamanan Login
+Skenario ini memvalidasi bahwa penonaktifan akun oleh Superadmin bekerja seketika. Akun yang telah
+berstatus Inactive harus segera ditolak oleh gerbang autentikasi meskipun menggunakan kata sandi
+yang benar.
+1. Membuka kembali form edit user Sales Budi.
+2. Mengubah status dari Active menjadi Inactive, kemudian menyimpan perubahan.
+3. Melakukan logout dari akun Superadmin.
+4. Mencoba masuk kembali menggunakan akun Sales Budi (sales.budi@clara.local / 123456).
+5. Memastikan sistem menampilkan pesan error flash:
+"User tidak aktif. Hubungi admin.".
+6. Login kembali sebagai Superadmin untuk melanjutkan sisa pengujian.
+Gambar 5.1: Mengubah status pengguna Sales Budi menjadi Inactive.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 7 dari 23
+
+-- 7 of 23 --
+
+Gambar 5.2: Pesan penolakan login sistem akibat deteksi akun tidak aktif.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 8 dari 23
+
+-- 8 of 23 --
+
+6. Manajemen Peran & Izin Akses (Roles & Permissions)
+Menguji konfigurasi hak akses granular untuk peran Supervisor. Pengujian dilakukan untuk memastikan
+Superadmin dapat mencentang izin spesifik dan membatalkan izin administratif tingkat tinggi untuk
+Supervisor.
+1. Membuka menu Hak Akses & Peran pada /?r=roles.
+2. Menyesuaikan izin peran Supervisor sesuai ketentuan:
+• Diberikan: approve_skp, manage_offers, manage_skp, view_exec_summary, view_renewals,
+view_commission_sim, export_reports, view_pic_report.
+• Dicabut: manage_users, view_logs, manage_deleted.
+3. Menyimpan pengaturan peran dan memastikan data tersimpan di basis data.
+Gambar 6.1: Matriks konfigurasi hak akses peran Supervisor di aplikasi.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 9 dari 23
+
+-- 9 of 23 --
+
+7. Manajemen Master Exhibition (Unit Sewa)
+Memvalidasi pembuatan unit sewa fiktif baru pada kategori Exhibition di Ground Floor (GF) dengan
+sistem perhitungan potensi pendapatan bulanan otomatis.
+Nama Field 	Wajib 	Penjelasan
+Nama Lokasi 	Ya 	Nama area / unit stan pameran. Contoh: Fiktif Unit.
+Lantai 	Ya 	Dropdown lokasi lantai unit (LG / GF / UG / FF / SF).
+Luas m2 	Ya 	Luas fisik unit stan dalam satuan meter persegi.
+Rate Harian/m2 	Ya 	Nilai sewa harian per meter persegi (menggunakan format mata uang).
+1. Membuka halaman Master Exhibition di /?r=master&type=cl.
+2. Menekan "Tambah Data" untuk memunculkan form.
+3. Mengisi data lokasi Fiktif Unit, lantai GF, luas 25 m2, dan rate harian Rp 150.000.
+4. Menekan tombol "Simpan" dan memvalidasi unit baru muncul pada tabel daftar unit exhibition.
+Gambar 7.1: Pengisian form penambahan unit stan pameran baru (Fiktif Unit).
+Laporan Pengujian E2E Superadmin Clara 	Halaman 10 dari 23
+
+-- 10 of 23 --
+
+Gambar 7.2: Daftar unit sewa Exhibition yang diperbarui dengan masuknya Fiktif Unit.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 11 dari 23
+
+-- 11 of 23 --
+
+8. Manajemen Master Target Bulanan
+Menguji fungsionalitas pengisian target nominal bulanan untuk properti aktif pada periode bulan
+berjalan. Nilai input harus diformat secara otomatis dengan pemisah ribuan rupiah.
+1. Membuka menu Target Bulanan di /?r=master&type=target.
+2. Menekan tombol "Tambah Data" target.
+3. Memasukkan Target Amount sebesar Rp 50.000.000 (Rp 50 Juta) dan memastikan period key terisi
+otomatis untuk bulan berjalan.
+4. Menyimpan target dan memastikan entitas tersimpan.
+Gambar 8.1: Form pengisian target bulanan properti sebesar Rp 50 Juta.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 12 dari 23
+
+-- 12 of 23 --
+
+9. Pendaftaran Client Baru (Master Client)
+Menguji fungsionalitas pembuatan profil client baru dengan integrasi data geografis wilayah Indonesia.
+Form harus dapat merespons perubahan provinsi dengan memuat daftar kota yang relevan secara
+dinamis.
+Nama Field 	Wajib 	Penjelasan
+Nama Perusahaan 	Ya 	Nama badan usaha client. Contoh: Fiktif Corp.
+Nama Brand 	Tidak 	Nama merek dagang jika berbeda dari nama perusahaan.
+NPWP 	Tidak 	Nomor Pokok Wajib Pajak badan usaha (15 digit).
+Provinsi 	Ya 	Dropdown pilihan provinsi terdaftar.
+Kota / Kabupaten 	Ya 	Dropdown dinamis yang memuat wilayah kota dari provinsi terpilih.
+1. Membuka menu daftar client di /?r=clients.
+2. Menekan "Tambah Client" untuk membuka formulir pendaftaran.
+3. Mengisi data: nama perusahaan Fiktif Corp, brand Fiktif Brand, alamat Jalan Fiktif No 1.
+4. Memilih Provinsi Kalimantan Timur, dan memastikan Kota Balikpapan dapat dipilih pada dropdown
+berikutnya.
+5. Menyimpan form dan memvalidasi halaman detail profil client yang baru saja dibuat.
+Gambar 9.1: Pengisian data identitas dan alamat geografis client baru.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 13 dari 23
+
+-- 13 of 23 --
+
+Gambar 9.2: Halaman profil data terpusat Fiktif Corp setelah berhasil disimpan.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 14 dari 23
+
+-- 14 of 23 --
+
+10. Fitur Administratif, Log Audit, Sampah & Recurring
+Bagian ini mendokumentasikan antarmuka fitur pendukung sistem: halaman pengelolaan opsi dropdown
+lookup, halaman rekaman log aktivitas sistem, halaman daftar transaksi terhapus (soft-deletes), serta
+konversi transaksi berulang (recurring).
+Gambar 10.1: Menu Kelola Opsi Dropdown untuk menjaga konsistensi nilai master data.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 15 dari 23
+
+-- 15 of 23 --
+
+Gambar 10.2: Halaman Log Aktivitas (Audit Log) yang merekam operasi pembuatan dan pembaruan data.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 16 dari 23
+
+-- 16 of 23 --
+
+Gambar 10.3: Halaman Transaksi Dihapus (Keranjang Sampah) untuk menampung data soft-deleted.
+Gambar 10.4: Fitur Konversi Recurring untuk memecah transaksi utama menjadi cicilan berkala.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 17 dari 23
+
+-- 17 of 23 --
+
+11. Pergantian Properti & Dashboard TV Display
+Menguji fungsionalitas pergantian properti secara dinamis melalui bilah menu atas tanpa memutus sesi
+pengguna, serta memvalidasi halaman eksekutif dan display TV pameran yang dioptimalkan untuk
+monitor informasi publik.
+1. Membuka dashboard properti E-Walk.
+2. Menekan tautan alih properti di topbar ke Pentacity Shopping Venue.
+3. Memastikan tampilan data beralih ke portofolio Pentacity secara instan.
+4. Membuka Executive Summary untuk melihat visualisasi tren pendapatan multisektor.
+5. Membuka halaman Display TV di rute /?r=display.
+Gambar 11.1: Dashboard Pentacity setelah melakukan pergantian properti dari E-Walk.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 18 dari 23
+
+-- 18 of 23 --
+
+Gambar 11.2: Antarmuka minimalis Display TV yang ditujukan untuk papan informasi digital (digital signage).
+Laporan Pengujian E2E Superadmin Clara 	Halaman 19 dari 23
+
+-- 19 of 23 --
+
+12. Pengujian Celah Keamanan Akses Berkas Langsung
+(Direct File Access)
+Pengujian keamanan difokuskan pada perlindungan berkas tanda tangan digital dan lampiran dokumen
+penawaran. Sistem wajib memverifikasi kepemilikan sesi sebelum melayani pengunduhan berkas sensitif
+dari direktori signatures/.
+1. Membuka peramban baru tanpa sesi login aktif (tanpa cookie).
+2. Mengakses URL penjarahan dokumen secara langsung: http://localhost:8000/?
+r=file&file=signatures/test.png.
+3. Memastikan server menolak akses dengan respons HTTP 403 Forbidden atau mengalihkan ke
+gerbang login.
+Gambar 12.1: Bukti penolakan server (HTTP 403 / Halaman Kosong/Blocked) ketika diakses langsung tanpa sesi.
+Analisis Keamanan: Mekanisme autentikasi pada rute ?r=file berjalan dengan baik. Server memverifikasi
+keberadaan session cookie sebelum membaca isi disk, mencegah kebocoran dokumen oleh pihak eksternal yang
+tidak memiliki otorisasi.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 20 dari 23
+
+-- 20 of 23 --
+
+13. Ringkasan & Analitik Hasil Pengujian (E2E Test Analytics)
+Proses pengujian otomatis
+End-to-End (E2E) dijalankan menggunakan Puppeteer untuk mensimulasikan
+seluruh rangkaian pekerjaan operasional yang diinstruksikan dalam berkas panduan Superadmin.
+Berikut adalah ringkasan kuantitatif dari hasil pengujian:
+TINGKAT KEBERHASILAN
+95.65%
+TOTAL SKENARIO
+23 Item
+SKENARIO SUKSES
+22 Item
+SKENARIO GAGAL
+1 Item
+Area / Modul Pengujian Jumlah
+Checklist Berhasil (Pass) 	Gagal (Fail) 	Persentase
+1. Manajemen Pengguna & Hak
+Akses (Users & Role) 6 	6 	0 	100.00%
+2. Pengelolaan Master Data
+(Exhibition, Client, dsb.) 6 	6 	0 	100.00%
+3. Audit & Pemulihan (Log & Trash) 	3 	2 	1 	66.67%
+4. Fitur Khusus & Lintas-Properti
+(Switch, TV Display) 4 	4 	0 	100.00%
+5. Sisi Keamanan Teknis (CLI check,
+Bypass URL check) 4 	4 	0 	100.00%
+Laporan Pengujian E2E Superadmin Clara 	Halaman 21 dari 23
+
+-- 21 of 23 --
+
+14. Audit Temuan Kesalahan & Kerusakan Sistem (True
+Defects / Bugs)
+Bagian ini merangkum seluruh temuan kesalahan fungsional nyata atau cacat sistem (
+bugs/defects)
+yang terdeteksi secara langsung selama proses simulasi pengujian E2E, di mana sistem gagal memenuhi
+instruksi tertulis pada buku panduan.
+Kerusakan / Cacat
+Sistem Urgensi Ekspektasi (Harusnya
+Bagaimana)
+Realita (Malah
+Bagaimana)
+Dampak &
+Kenapa Harus
+Diperbaiki
+Ketiadaan Tombol &
+Aksi "Pulihkan /
+Restore" Transaksi
+Lokasi: ?
+r=deleted_transactions
+HIGH
+Superadmin dapat
+menekan tombol aksi
+"Pulihkan" atau
+"Restore" pada daftar
+transaksi terhapus untuk
+mengembalikan data
+tersebut ke daftar aktif
+secara otomatis.
+Tidak ada tombol aksi,
+tautan, atau endpoint di
+frontend/backend
+untuk memicu
+pemulihan data;
+halaman hanya
+berfungsi sebagai tabel
+log statis.
+Kritis: Pemulihan
+data yang
+terhapus secara
+tidak sengaja
+tidak dapat
+dilakukan via UI,
+memaksa admin
+melakukan
+manipulasi DML
+manual di SQL
+database,
+berisiko tinggi
+merusak
+integritas alokasi
+transaksi.
+Kegagalan TV Display
+Tanpa Token
+Parameter
+Lokasi: ?r=display
+MEDIUM
+Halaman TV Display
+dapat diakses polos
+atau secara otomatis
+mendeteksi/menyisipkan
+parameter token aktif
+dari sesi login
+administrator agar TV
+monitor tetap menyala
+secara dinamis.
+Sistem langsung
+menampilkan pesan
+error fatal "Display
+token tidak valid" dan
+memutus tampilan layar
+jika parameter token di
+URL kosong.
+Operasional
+Terganggu:
+Monitor publik
+TV Display di
+mall akan
+mengalami
+downtime (layar
+error) setiap kali
+terjadi restart
+otomatis, reset
+cache browser,
+atau pemuatan
+ulang halaman
+tanpa parameter
+URL yang tepat.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 22 dari 23
+
+-- 22 of 23 --
+
+15. Laporan Rekomendasi & Saran Peningkatan (System
+Improvements)
+Bagian ini merangkum saran peningkatan arsitektur, optimalisasi alur antarmuka pengguna (
+usability),
+serta penguatan keamanan yang direkomendasikan demi ketahanan sistem jangka panjang (bukan
+merupakan kerusakan sistem secara langsung).
+Rekomendasi Peningkatan 	Urgensi 	Alasan Rekomendasi / Usability Dampak Positif / Kenapa
+Diimplementasikan
+Auto-Select atau
+Pembersihan Otomatis
+Input Porsi Target PIC
+Lokasi: Form Target Bulanan
+LOW
+Kolom persentase
+(target_share_pct) memiliki
+nilai default numerik "0". Jika
+pengguna mengetik langsung
+angka "100", nilai terinput
+menjadi "1000" atau "0100"
+yang gagal divalidasi oleh
+browser.
+Meningkatkan kenyamanan
+input data bagi staf
+administrasi keuangan dan
+mencegah kesalahan validasi
+HTML5 yang membingungkan
+akibat nilai default yang
+menempel.
+Penyimpanan Kode ID
+Wilayah (Bukan String
+Nama Geografis)
+Lokasi: Dropdown Geografis
+Master Client
+LOW
+Dropdown Provinsi menyimpan
+teks literal "Kalimantan Timur"
+alih-alih ID numerik standar BPS
+(seperti "64"). Hal ini rentan
+terhadap inkonsistensi penulisan
+nama daerah.
+Menjamin integrasi API masa
+depan dengan sistem luar
+(seperti perpajakan atau
+pengiriman nasional) agar
+lebih andal dan meminimalisir
+inkonsistensi basis data.
+Restriksi Ketat Hak Akses
+Administratif Non-
+Superadmin
+Lokasi: Konfigurasi Role &
+Permission
+HIGH
+Mencegah kebocoran data
+sensitif operasional dan
+memastikan akuntabilitas admin
+dengan membatasi role non-
+superadmin dari rute manajemen
+pengguna dan log audit.
+Menghindari modifikasi tidak
+sah terhadap akun staf, serta
+mencegah oknum internal
+untuk menghapus jejak log
+audit di dalam sistem.
+Kesimpulan Tindakan Prioritas: Perbaikan pada Fitur Pulihkan Transaksi (Kategori: Kerusakan Sistem - Urgensi:
+Tinggi) dan penyesuaian Restriksi Hak Akses (Kategori: Rekomendasi - Urgensi: Tinggi) wajib menjadi prioritas
+utama tim pengembang sebelum peluncuran sistem Clara versi produksi secara massal.
+Laporan Pengujian E2E Superadmin Clara 	Halaman 23 dari 23
+
+-- 23 of 23 --
+
