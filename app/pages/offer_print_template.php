@@ -141,7 +141,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
         Di Tempat
     </div>
 
-    <p class="intro" style="margin:8px 0">Dengan hormat,<br><?= $h($letter['intro'] ?: 'Bersama ini kami Management e-Walk dan Pentacity Mall Balikpapan menawarkan space exhibition sebagai berikut:') ?></p>
+    <p class="intro" style="margin:8px 0">Dengan hormat,<br><?= clara_format_bold($letter['intro'] ?: 'Bersama ini kami Management e-Walk dan Pentacity Mall Balikpapan menawarkan space exhibition sebagai berikut:') ?></p>
 
 <?php $isBundle = !empty($o['is_bundle']) && !empty($items);
     $segLbl = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
@@ -199,11 +199,11 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     $amts = ['dp' => $o['dp_amount'] ?: 0, 'deposit' => $deposit, 'total' => $total, 'ppn' => $ppn, 'grand' => $grand];
     ?>
     <div class="sec">Fasilitas</div>
-    <ul><?php foreach ($facil as $f): ?><li><?= $h($f) ?></li><?php endforeach; ?></ul>
+    <ul><?php foreach ($facil as $f): ?><li><?= clara_format_bold($f) ?></li><?php endforeach; ?></ul>
 
     <?php if ($payList): ?>
     <div class="sec">Cara Pembayaran</div>
-    <ol class="pay"><?php foreach ($payList as $p): ?><li><?= $h(offer_letter_fill((string) $p, $amts)) ?></li><?php endforeach; ?></ol>
+    <ol class="pay"><?php foreach ($payList as $p): ?><li><?= clara_format_bold(offer_letter_fill((string) $p, $amts)) ?></li><?php endforeach; ?></ol>
     <?php endif; ?>
     <div class="rek">
         Pembayaran ditransfer ke rekening:<br>
@@ -212,7 +212,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     </div>
 
     <div class="sec">Ketentuan &amp; Persyaratan</div>
-    <ol class="tnc"><?php foreach ($ketentuan as $t): ?><li><?= $h($t) ?></li><?php endforeach; ?></ol>
+    <ol class="tnc"><?php foreach ($ketentuan as $t): ?><li><?= clara_format_bold($t) ?></li><?php endforeach; ?></ol>
     <div class="validbox" style="margin-top:8px">Penawaran ini berlaku s/d <?= $h($berlaku) ?></div>
 
     <p style="margin-top:12px">Untuk keterangan lebih lanjut dapat menghubungi <strong><?= $h($o['pic_name'] ?: 'tim Casual Leasing') ?></strong><?= $o['pic_phone'] ? ' (' . $h($o['pic_phone']) . ')' : '' ?> atau kantor kami <strong><?= $h($OFFICE_PHONE) ?></strong>.</p>

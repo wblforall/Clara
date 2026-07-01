@@ -1929,6 +1929,23 @@ function offer_template_form(PDO $pdo): void
 
             <p class="form-actions" style="margin-top:16px"><button type="submit">💾 Simpan Template</button> <a class="btn secondary" href="?r=offer_templates">Batal</a></p>
         </form>
+        <script>
+        document.querySelectorAll('textarea').forEach(function(tx) {
+            tx.addEventListener('keydown', function(e) {
+                if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+                    e.preventDefault();
+                    var start = this.selectionStart;
+                    var end = this.selectionEnd;
+                    var val = this.value;
+                    var selected = val.substring(start, end);
+                    var replacement = '**' + selected + '**';
+                    this.value = val.substring(0, start) + replacement + val.substring(end);
+                    this.selectionStart = start + 2;
+                    this.selectionEnd = start + 2 + selected.length;
+                }
+            });
+        });
+        </script>
         <?php
     });
 }
