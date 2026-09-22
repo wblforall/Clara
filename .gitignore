@@ -32,3 +32,25 @@ Thumbs.db
 
 # Testing dependencies
 testing/node_modules/
+
+# Unggahan klien (KTP / NPWP / SIUP / bukti transfer / scan surat ber-TTD).
+# Repo ini PUBLIK — berkas ini tidak boleh ikut ter-commit.
+public/uploads/*
+!public/uploads/.htaccess
+!public/uploads/.mpdf
+public/uploads/.mpdf/*
+!public/uploads/.mpdf/.gitignore
+!public/uploads/.mpdf/.gitkeep
+public/report_recurring.pdf
+
+# Laporan jadi + aset screenshot: memuat nama & dokumen klien nyata.
+# Sumber pembangunnya (scripts/build_*.php) boleh di-commit, hasilnya tidak.
+docs/*.pdf
+docs/*_assets/
+/Laporan_*.pdf
+/Laporan_*/
+/Perbaikan_*/
+/Rekonsiliasi_*/
+/Audit_*/
+/Panduan_*/
+*.numbers
