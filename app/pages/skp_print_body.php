@@ -125,7 +125,17 @@ $skpHasQr = !empty($skp['sign_token']);
             <div class="name"<?= $skpHasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($skp['approved_by'] ?? '-') ?><br><span class="muted" style="font-weight:400">Casual Leasing Manager</span></div>
         </td>
         <td class="col"><div class="role">Menyetujui,</div>
-            <div class="sigarea"><?php if (($skp['status'] ?? '') === 'signed' && !empty($skp['signature_data'])): ?><img src="<?= $h($skp['signature_data']) ?>" alt="TTD" style="max-height:60px;max-width:100%"><?php endif; ?></div>
+            <?php if (($skp['status'] ?? '') === 'signed' && !empty($skp['signature_data'])): ?>
+            <div class="sigarea"><img src="<?= $h($skp['signature_data']) ?>" alt="TTD" style="max-height:60px;max-width:100%"></div>
+            <?php else: ?>
+            <?php /* Ruang kosong untuk tanda tangan saat dicetak. mPDF mengabaikan
+                     height pada div tapi menghormatinya pada sel tabel, jadi
+                     dipakai tabel 1 sel bergaris bawah. Sama seperti di Surat
+                     Penawaran (offer_print_template.php). */ ?>
+            <table style="width:26mm;border-collapse:collapse;margin-bottom:2mm"><tr>
+                <td style="height:20mm;border-bottom:1px solid #111;font-size:1pt;color:#ffffff">&nbsp;</td>
+            </tr></table>
+            <?php endif; ?>
             <?php if (($skp['status'] ?? '') === 'signed' && !empty($skp['signature_data'])): ?>
                 <div class="name"<?= ' style="border-top:none;padding-top:0"' ?>><?= $h($skp['sign_name'] ?: ($d['cp_name'] ?? '-')) ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span><br><span class="muted" style="font-weight:400;font-size:8px"><span style="color:#16a34a">■</span> Ditandatangani elektronik <?= $h(substr($skp['signed_at'] ?? '', 0, 16)) ?></span></div>
             <?php elseif (($skp['sign_method'] ?? '') === 'wet' && ($skp['status'] ?? '') === 'signed'): ?>

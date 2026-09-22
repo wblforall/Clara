@@ -198,6 +198,10 @@ function skp_form(PDO $pdo): void
     $id  = (int) getv('id');
     $trxId   = (int) getv('transaction_id');
     $offerId = (int) getv('offer_id');
+    // Datang dari tombol "Perpanjang" di daftar transaksi → Status Sewa default
+    // "Perpanjangan". Transaksinya memang baru, jadi renewal_status-nya masih
+    // 'none' dan tidak bisa dipakai sebagai penanda.
+    $isRenew = getv('renew') === '1';
     $skp = null;
 
     if ($id) {
@@ -246,8 +250,8 @@ function skp_form(PDO $pdo): void
     $reuse = $editable ? _skp_reusable_attachments($pdo, (int) ($src['client_id'] ?? 0), (int) ($skp['id'] ?? 0)) : [];
     $val = fn(string $k, $def = '') => h((string) ($skp[$k] ?? $def));
 
-    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . ($docType === 'sks' ? 'SKS' : 'SKP'), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $atts, $reuse, $val, $pid) {
-        $statusSewaDefault = !empty($src['renewal_status']) && $src['renewal_status'] !== 'none' ? 'Perpanjangan' : 'Baru';
+    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . ($docType === 'sks' ? 'SKS' : 'SKP'), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $atts, $reuse, $val, $pid, $isRenew) {
+        $statusSewaDefault = ($isRenew || (!empty($src['renewal_status']) && $src['renewal_status'] !== 'none')) ? 'Perpanjangan' : 'Baru';
         ?>
         <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=<?= $offerId ? 'offer_form&id=' . (int)$offerId : 'allocation_detail&id=' . (int)$trxId ?>">← <?= $offerId ? 'Penawaran' : 'Detail Alokasi' ?></a><a class="btn light" href="?r=skp">Daftar Dokumen</a> <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h($docLabel) ?></span></div>
 
@@ -281,8 +285,11 @@ function skp_form(PDO $pdo): void
             <h3>Lampiran <span style="font-weight:400;font-size:12px;color:var(--muted)">(<span style="color:#dc2626">*</span> wajib sebelum submit approval; Pengajuan opsional)</span></h3>
             <div class="form-grid">
                 <?php
-                $reqLbl = ['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP', 'siup' => 'Scan SIUP (opsional)', 'bukti_transfer' => 'Bukti Transfer', 'pengajuan' => 'Pengajuan (opsional)'];
-                $wajib  = ['ktp', 'npwp', 'bukti_transfer'];
+                // Bukti Transfer SENGAJA tidak ada di sini. Urutan nyata di lapangan:
+                // klien butuh SKP/invoice dulu sebagai dasar membayar. Unggahnya
+                // pindah ke Permintaan Kontrak (wajib sebelum berkas ke Legal).
+                $reqLbl = ['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP', 'siup' => 'Scan SIUP (opsional)', 'pengajuan' => 'Pengajuan (opsional)'];
+                $wajib  = ['ktp', 'npwp'];
                 foreach ($reqLbl as $kind => $lbl):
                     $has = $atts[$kind] ?? null;
                 ?>
@@ -339,7 +346,8 @@ function skp_form(PDO $pdo): void
             <textarea name="note" rows="2" <?= $editable ? '' : 'disabled' ?>><?= h($skp['note'] ?? '') ?></textarea>
 
             <?php if ($editable): ?>
-            <p class="help" style="margin-top:16px;color:#92400e">Submit untuk approval hanya bisa setelah <strong>Scan KTP</strong>, <strong>Scan NPWP</strong>, dan <strong>Bukti Transfer</strong> terunggah.</p>
+            <p class="help" style="margin-top:16px;color:#92400e">Submit untuk approval hanya bisa setelah <strong>Scan KTP</strong> dan <strong>Scan NPWP</strong> terunggah.<br>
+                <strong>Bukti Transfer</strong> tidak diunggah di sini &mdash; tempatnya di <strong>Permintaan Kontrak</strong>, sebelum berkas dikirim ke Legal.</p>
             <p class="form-actions" style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">
                 <button type="submit" onclick="document.getElementById('skp-action').value='save'" class="btn secondary">Simpan Draft</button>
                 <button type="submit" onclick="document.getElementById('skp-action').value='submit'" style="background:#0369a1">Simpan & Submit untuk Approval</button>
@@ -515,7 +523,8 @@ function _skp_update_master(PDO $pdo, int $clientId, ?string $ktp, ?string $npwp
 /** Lampiran wajib sebelum submit approval. Return label yang BELUM ada. */
 function _skp_missing_required(PDO $pdo, int $skpId): array
 {
-    $need = ['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP', 'bukti_transfer' => 'Bukti Transfer'];
+    // Bukti Transfer sengaja tidak di sini — lihat catatan di form lampiran.
+    $need = ['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP'];
     $st = $pdo->prepare('SELECT DISTINCT kind FROM skp_attachments WHERE skp_id=?');
     $st->execute([$skpId]);
     $have = $st->fetchAll(PDO::FETCH_COLUMN);

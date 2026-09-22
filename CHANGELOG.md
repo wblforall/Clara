@@ -11,6 +11,55 @@
 
 ---
 
+## Fitur & Perbaikan — 22 September 2026
+
+### Surat Penawaran: dua cara persetujuan customer
+
+- **Opsi A (tetap seperti sebelumnya).** Tautan dikirim ke customer, customer meninjau lalu menandatangani langsung di layar.
+- **Opsi B (baru).** Untuk customer yang lebih suka menandatangani di berkasnya sendiri: surat dikirim/dicetak, customer menandatangani, lalu sales **mengunggah kembali PDF** (atau foto/scan) yang sudah ber-TTD di halaman penawaran. Hasil akhirnya sama dengan Opsi A — penawaran menjadi **DEAL**, nilainya dikunci lewat snapshot, dan bisa langsung dilanjutkan ke SKP.
+- Pengaman: hanya penawaran bernomor yang belum DEAL/batal; berkas pdf/jpg/png/webp maksimal 8 MB tersimpan di `public/uploads/offer`; tercatat di Activity Log sebagai `customer_sign_wet`; memakai hak **Kelola Surat Penawaran** yang sudah ada. *(migrasi 043: kolom `sign_method` & `signed_doc_path`)*
+
+### Ruang tanda tangan pada PDF Surat Penawaran & SKP
+
+- Dokumen yang dicetak sebelumnya tidak menyediakan tempat menandatangani — nama penanggung jawab menempel tepat di bawah kata "Menyetujui". Sekarang tersedia **ruang 20 mm bergaris** di atas nama, pada Surat Penawaran maupun SKP/SKS.
+- Dokumen yang sudah ditandatangani elektronik tidak berubah: gambar tanda tangan beserta keterangan waktunya tetap tampil.
+
+### Bukti Transfer pindah dari SKP ke Permintaan Kontrak
+
+- Urutan di lapangan adalah **SKP terbit → klien membayar → bukti transfer masuk → berkas ke Legal**, sedangkan sistem menuntut bukti transfer lebih dulu. Lampiran wajib SKP kini tinggal **Scan KTP** dan **Scan NPWP**.
+- Bukti transfer diunggah di **Permintaan Kontrak** dan menjadi **syarat sebelum formulir ditandai terkirim ke Legal** — tanpa bukti, perubahan tetap tersimpan sebagai draft disertai pesan yang jelas. Berkasnya disimpan sebagai lampiran SKP terkait supaya Legal tetap menerima satu berkas utuh.
+
+### Perbaikan lain
+
+- **Nominal DP / Deposit Rp 0 tidak lagi tertimpa.** Nilai nol yang disengaja sebelumnya tidak bisa dibedakan dari "belum diisi", sehingga terisi ulang oleh hitungan otomatis begitu penawaran dibuka untuk revisi.
+- **Tombol "Perpanjang" di daftar transaksi.** Membuat periode lanjutan dari kontrak berjalan lalu langsung membuka formulir SKP perpanjangan (Status Sewa otomatis "Perpanjangan").
+- **Scan surat ber-TTD bisa dibuka** lewat penyaji berkas aman (`secure_file`) — folder `uploads/offer` ikut masuk daftar yang diizinkan.
+
+---
+## Perbaikan — 27 Agustus 2026
+
+### Transaksi tanpa tanggal ikut terhitung di pencapaian PIC
+
+- **Temuan.** Achievement Juni 2026 Evan terbaca Rp 337.858.267, sedangkan file operasional Rp 334.080.357. Selisih Rp 3.777.910 berasal dari **transaksi #914 (P502, gudang)** yang tersimpan dengan `start_date`/`end_date` = `0000-00-00`. Alokasinya tetap terbentuk — memakai tanggal input (2 Juni 2026) — sehingga nilainya ikut dihitung padahal transaksinya tidak punya periode kontrak.
+- **Penyebab.** `transaction_save`/`transaction_update` tidak memvalidasi tanggal di sisi server; atribut `required` di form bisa terlewat. String kosong tersimpan sebagai `0000-00-00` (MySQL non-strict), lalu `AllocationService` membaca string kosong sebagai "hari ini".
+- **Perbaikan.** Tanggal mulai kini wajib valid dan tanggal selesai tidak boleh mendahuluinya — transaksi ditolak dengan pesan yang jelas dan tidak ada baris rusak yang tersimpan. `AllocationService::preview()` juga menolak tanggal kosong/`0000-00-00` sebagai penjagaan lapis kedua.
+- **Pemeriksaan berkala.** `scripts/audit/cek_integritas.sql` — enam pemeriksaan (tanggal kosong, alokasi di luar periode, alokasi yatim, alokasi milik transaksi terhapus, jumlah alokasi ≠ nilai transaksi, tanggal terbalik). Selain #914, data lain bersih.
+- **Tindakan data.** Transaksi #914 perlu dihapus lewat menu Gudang (hak Superadmin) — penghapusan otomatis membuang alokasinya. Setelah itu Juni Evan menjadi Rp 334.080.358, cocok dengan file operasional.
+
+---
+
+## Fitur — 15 Agustus 2026
+
+### Menu baru: Laporan Stock counter (replika form kertas, bisa diisi dari HP)
+
+- **Menu "Laporan Stock"** (grup Input) — mencatat stock counter brand **TRISET / WATCHOUT / TRISET KIDS** persis seperti form kertasnya: judul, baris brand ber-coret, Nama Counter, Periode, tipe "NORMAL"/"DISCOUNT", Barang Datang, Retur, Terjual, Discount, Stock Akhir, sampai baris **GRAND TOTAL**.
+- **Kolom tabel** sesuai urutan yang dipakai counter: ARTIKEL, WARNA, **36–41**, STOCK AWAL, STOCK AKHIR, HARGA, KETERANGAN. Tersedia **baris grup** (TE / TF / TQ / TZ) dengan satu kolom panjang di kanannya untuk keterangan kelompok artikel.
+- **Lembarnya berupa kanvas**: kertas bisa **dicubit untuk zoom** dan **digeser**, jadi tetap berbentuk kertas walau dibuka di HP. Mengisinya lewat panel besar di bawah layar (bukan mengetik di sel kecil).
+- **Hitungan stok mengikuti kertas**: stock awal = jumlah turus semua ukuran; tiap penjualan mencoret satu turus dan menulis tanggalnya (merah); **stock akhir dihitung otomatis** (awal − laku), begitu pula Terjual & Stock Akhir di kepala laporan. Turus tidak bisa dikurangi di bawah jumlah yang sudah laku, dan ukuran yang habis tidak bisa dijual lagi.
+- Tersedia **versi cetak** (`?r=stock_sheet&id=…&print=1`) berukuran A4 tanpa kerangka aplikasi. *(migrasi 042; hak akses baru: **Lihat Laporan Stock** & **Isi Laporan Stock** — atur di Role & Permission)*
+
+---
+
 ## Dokumentasi — 28 Juni 2026
 
 ### User Guide PDF per peran (Sales / Manager / Superadmin)

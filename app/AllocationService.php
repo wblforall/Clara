@@ -4,6 +4,18 @@ final class AllocationService
 {
     public static function preview(array $trx): array
     {
+        // Penjaga lapis kedua: string kosong dibaca PHP sebagai "hari ini" dan
+        // 0000-00-00 sebagai tanggal ngawur, sehingga alokasi bisa terbentuk di
+        // bulan yang tidak ada hubungannya dengan kontraknya (lihat #914).
+        $tglMulai   = (string) ($trx['start_date'] ?? '');
+        $tglSelesai = (string) ($trx['end_date'] ?? '');
+        foreach ([$tglMulai, $tglSelesai] as $t) {
+            $d = DateTimeImmutable::createFromFormat('Y-m-d', $t);
+            if (!($d instanceof DateTimeImmutable) || $d->format('Y-m-d') !== $t) {
+                throw new InvalidArgumentException('Tanggal transaksi belum diisi dengan benar.');
+            }
+        }
+
         $start = new DateTimeImmutable($trx['start_date']);
         $end = new DateTimeImmutable($trx['end_date']);
         if ($end < $start) {

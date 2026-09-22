@@ -319,6 +319,8 @@ function roles_page(PDO $pdo): void
         'manage_offers'       => 'Kelola Surat Penawaran',
         'manage_skp'          => 'Kelola SKP',
         'approve_skp'         => 'Approve SKP',
+        'view_stock_report'   => 'Lihat Laporan Stock',
+        'manage_stock_report' => 'Isi Laporan Stock',
         'view_logs'           => 'Activity Log',
         'manage_users'        => 'Kelola Users',
         'manage_deleted'      => 'Hapus Transaksi',
