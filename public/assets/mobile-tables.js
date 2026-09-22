@@ -32,6 +32,13 @@
     document.querySelectorAll('.main table').forEach(function (table) {
       if (table.dataset.mcDone) return;
 
+      // Opt-out: tabel yang BENTUKNYA memang isi halaman (mis. replika kertas
+      // Laporan Stock) tidak boleh dipecah jadi kartu — kolomnya justru inti.
+      if (table.dataset.noMc || table.closest('.no-mobile-cards')) {
+        table.dataset.mcDone = '1';
+        return;
+      }
+
       // Ambil baris header daun (thead tr terakhir).
       var headRows = table.querySelectorAll('thead tr');
       var headRow = headRows.length ? headRows[headRows.length - 1] : null;

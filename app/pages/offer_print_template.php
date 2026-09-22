@@ -245,11 +245,22 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
         <td class="col">
             <div>Menyetujui,</div>
             <div style="font-weight:600">Calon Penyewa</div>
-            <div class="sigarea"><?php if ($custSigned && !empty($o['signature_data'])): ?><img class="ttd-img" height="58" src="<?= $h($o['signature_data']) ?>" alt="TTD"><?php endif; ?></div>
-            <?php if ($custSigned): ?>
+            <?php if ($custSigned && !empty($o['signature_data'])): ?>
+            <div class="sigarea"><img class="ttd-img" height="58" src="<?= $h($o['signature_data']) ?>" alt="TTD"></div>
+            <?php else: ?>
+            <?php /* Ruang kosong untuk tanda tangan saat dicetak. mPDF mengabaikan height pada div,
+                       tapi menghormatinya pada sel tabel — jadi dipakai tabel 1 sel
+                       dengan garis bawah sebagai tempat membubuhkan tanda tangan. */ ?>
+            <table style="width:26mm;border-collapse:collapse;margin-bottom:2mm"><tr>
+                <td style="height:20mm;border-bottom:1px solid #111;font-size:1pt;color:#ffffff">&nbsp;</td>
+            </tr></table>
+            <?php endif; ?>
+            <?php if ($custSigned && ($o['sign_method'] ?? 'online') === 'wet'): ?>
+            <div class="nm"><?= $h($o['sign_name'] ?: ($o['cp_name'] ?? '-')) ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span><br><span class="muted" style="font-weight:400;font-size:8px"><span style="color:#16a34a">■</span> Ditandatangani <?= $h(substr((string) $o['signed_at'], 0, 16)) ?> &middot; dokumen ber-TTD tersimpan</span></div>
+            <?php elseif ($custSigned): ?>
             <div class="nm" style="border-top:none;padding-top:0"><?= $h($o['sign_name'] ?: ($o['cp_name'] ?? '-')) ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span><br><span class="muted" style="font-weight:400;font-size:8px"><span style="color:#16a34a">■</span> Ditandatangani elektronik <?= $h(substr($o['signed_at'], 0, 16)) ?></span></div>
             <?php else: ?>
-            <div class="nm"><?= $h($o['cp_name'] ?? '') ?: '&nbsp;' ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span></div>
+            <div class="nm" style="border-top:none;padding-top:0"><?= $h($o['cp_name'] ?? '') ?: '&nbsp;' ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span></div>
             <?php endif; ?>
         </td>
     </tr>

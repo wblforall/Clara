@@ -61,7 +61,40 @@ function _cr_skp_context(PDO $pdo, int $skpId, int $pid): ?array
         'sales'        => $d['sales'] ?? '',
         'has_ktp'      => in_array('ktp', $kinds, true),
         'has_npwp'     => in_array('npwp', $kinds, true),
+        // Bukti Transfer dipindah ke tahap ini (tidak lagi wajib di SKP):
+        // klien baru bisa membayar setelah SKP terbit sebagai dasar tagihan.
+        'has_bukti'    => in_array('bukti_transfer', $kinds, true),
+        'bukti_file'   => _cr_bukti_file($pdo, $skpId),
     ];
+}
+
+/**
+ * Simpan unggahan Bukti Transfer ke lampiran SKP. Ditaruh di sini (bukan di
+ * skp.php) karena rute contract_request_save tidak memuat skp.php.
+ */
+function _cr_upload_bukti(PDO $pdo, int $skpId, string $uname): void
+{
+    if ($skpId <= 0) return;
+    if (empty($_FILES['att_bukti_transfer']['tmp_name']) || !is_uploaded_file($_FILES['att_bukti_transfer']['tmp_name'])) return;
+    $f = $_FILES['att_bukti_transfer'];
+    if ($f['size'] <= 0 || $f['size'] > 5 * 1024 * 1024) return;
+    $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'], true)) return;
+    $dir = dirname(__DIR__, 2) . '/public/uploads/skp';
+    if (!is_dir($dir)) @mkdir($dir, 0777, true);
+    $fname = 'skp' . $skpId . '_bukti_transfer_' . bin2hex(random_bytes(4)) . '.' . $ext;
+    if (!@move_uploaded_file($f['tmp_name'], $dir . '/' . $fname)) return;
+    $pdo->prepare("DELETE FROM skp_attachments WHERE skp_id=? AND kind='bukti_transfer'")->execute([$skpId]);
+    $pdo->prepare('INSERT INTO skp_attachments (skp_id, kind, file_path, original_name, uploaded_by) VALUES (?,?,?,?,?)')
+        ->execute([$skpId, 'bukti_transfer', 'uploads/skp/' . $fname, substr((string) $f['name'], 0, 190), $uname]);
+}
+
+/** Berkas Bukti Transfer milik sebuah SKP (null bila belum ada). */
+function _cr_bukti_file(PDO $pdo, int $skpId): ?array
+{
+    $st = $pdo->prepare("SELECT file_path, original_name FROM skp_attachments WHERE skp_id=? AND kind='bukti_transfer' LIMIT 1");
+    $st->execute([$skpId]);
+    return $st->fetch() ?: null;
 }
 
 // ─── Daftar ──────────────────────────────────────────────────────────────────
@@ -261,6 +294,23 @@ function contract_request_form(PDO $pdo): void
                 <?php endforeach; ?>
             </div>
 
+            <h3>Bukti Transfer <span style="font-weight:400;font-size:12px;color:var(--muted)">(wajib sebelum dikirim ke Legal)</span></h3>
+            <?php $bukti = $ctx['bukti_file'] ?? null; ?>
+            <div class="panel" style="padding:12px 14px;margin:0 0 10px;background:<?= $bukti ? '#f0fdf4' : '#fffbeb' ?>;border:1px solid <?= $bukti ? '#bbf7d0' : '#fde68a' ?>">
+                <?php if ($bukti): ?>
+                    <div style="font-size:13px;color:#166534">✓ Sudah ada: <a href="<?= h(upload_url($bukti['file_path'])) ?>" target="_blank">📎 <?= h($bukti['original_name'] ?: 'lihat berkas') ?></a></div>
+                <?php else: ?>
+                    <div style="font-size:13px;color:#92400e"><strong>Belum ada.</strong> Formulir tidak bisa ditandai terkirim ke Legal sebelum bukti transfer diunggah.</div>
+                <?php endif; ?>
+                <?php if ($editable): ?>
+                <div style="margin-top:8px">
+                    <label style="font-size:12px;font-weight:700;display:block">Unggah Bukti Transfer</label>
+                    <input type="file" name="att_bukti_transfer" accept="image/*,.pdf">
+                    <span class="help" style="font-size:11px">jpg/png/pdf, ≤5MB. Tersimpan di lampiran SKP <?= h($ctx['skp_no'] ?: '') ?>.<?= $bukti ? ' Pilih berkas untuk mengganti.' : '' ?></span>
+                </div>
+                <?php endif; ?>
+            </div>
+
             <h3>Poin-Poin Penting untuk Kontrak</h3>
             <p class="help" style="margin-top:0">Selain yang sudah tercantum di SKP / Surat Penawaran, atau hal lain yang perlu diperjelas.</p>
             <textarea name="important_points" rows="4" style="width:100%" placeholder="mis. denda keterlambatan, klausul perpanjangan, dll." <?= $dis ?>><?= $v('important_points') ?></textarea>
@@ -355,6 +405,15 @@ function contract_request_save(PDO $pdo): void
 
     // Upload Akta / Surat Kuasa (bila ada file baru) → set path + centang otomatis.
     _cr_handle_uploads($pdo, $id);
+    // Bukti Transfer diunggah di tahap ini (bukan lagi di SKP). Disimpan ke
+    // lampiran SKP terkait supaya Legal tetap melihatnya di satu berkas.
+    _cr_upload_bukti($pdo, $skpId, $uname);
+
+    // Penghalang: berkas tidak boleh dikirim ke Legal tanpa bukti bayar.
+    if ($action === 'send' && !_cr_bukti_file($pdo, $skpId)) {
+        flash('Belum bisa dikirim ke Legal — unggah Bukti Transfer dulu. Perubahan lain sudah disimpan sebagai draft.');
+        redirect_to('contract_request_form', ['id' => $id]);
+    }
 
     if ($action === 'send') {
         // Terbitkan nomor formulir bila belum ada, set status terkirim.
@@ -679,7 +738,7 @@ function secure_file(PDO $pdo): void
     // Whitelist subfolder + karakter nama + EKSTENSI yang sah; tolak path traversal.
     // Ekstensi dibatasi di regex (bukan cuma untuk Content-Type) supaya tak ada
     // tipe berkas lain yang ikut tersaji walau lolos folder & realpath (review #1).
-    if (!preg_match('#^uploads/(skp|contract|signatures)/[A-Za-z0-9._-]+\.(png|jpe?g|webp|pdf)$#i', $rel) || strpos($rel, '..') !== false) {
+    if (!preg_match('#^uploads/(skp|offer|contract|signatures)/[A-Za-z0-9._-]+\.(png|jpe?g|webp|pdf)$#i', $rel) || strpos($rel, '..') !== false) {
         http_response_code(404);
         exit('Berkas tidak ditemukan.');
     }

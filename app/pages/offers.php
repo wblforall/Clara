@@ -588,10 +588,13 @@ function offer_view(PDO $pdo): void
             $waText = rawurlencode($waMsg); ?>
         <div class="panel" style="margin-top:12px;background:#f0f9ff;border-color:#bae6fd">
             <h3 style="margin-top:0;color:#0369a1">📝 Persetujuan & TTD Customer</h3>
-            <?php if ($isSigned): ?>
+            <?php if ($isSigned && ($offer['sign_method'] ?? 'online') === 'wet'): ?>
+                <p style="margin:0;color:#166534">✓ <strong>Ditandatangani</strong> (dari dokumen terunggah) oleh <strong><?= h($offer['sign_name']) ?></strong> pada <?= h(substr($offer['signed_at'], 0, 16)) ?>. Penawaran menjadi <strong>DEAL</strong> &amp; nilai terkunci.
+                <?php if (!empty($offer['signed_doc_path'])): ?> <a class="btn light" href="<?= h(upload_url($offer['signed_doc_path'])) ?>" target="_blank">Lihat Dokumen ber-TTD</a><?php endif; ?></p>
+            <?php elseif ($isSigned): ?>
                 <p style="margin:0;color:#166534">✓ <strong>Disetujui &amp; ditandatangani online</strong> oleh <strong><?= h($offer['sign_name']) ?></strong> pada <?= h(substr($offer['signed_at'], 0, 16)) ?> (IP <?= h($offer['sign_ip']) ?>). Penawaran menjadi <strong>DEAL</strong> &amp; nilai terkunci.</p>
             <?php else: ?>
-                <p style="margin:0 0 8px;color:#374151">Kirim tautan ini ke customer untuk meninjau &amp; menandatangani penawaran. Saat customer TTD, penawaran otomatis menjadi <strong>DEAL</strong> dan nilainya dikunci. <strong>Sebelum customer TTD, Anda masih bisa merevisi penawaran.</strong></p>
+                <p style="margin:0 0 8px;color:#374151"><strong>Opsi A — customer tanda tangan langsung.</strong> Kirim tautan ini ke customer untuk meninjau &amp; menandatangani penawaran. Saat customer TTD, penawaran otomatis menjadi <strong>DEAL</strong> dan nilainya dikunci. <strong>Sebelum customer TTD, Anda masih bisa merevisi penawaran.</strong></p>
                 <textarea id="of-wa-msg" style="position:absolute;left:-9999px" readonly><?= h($waMsg) ?></textarea>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
                     <input id="of-sign-url" value="<?= h($signUrl) ?>" readonly style="flex:1;min-width:260px;font-size:12px" onclick="this.select()">
@@ -600,6 +603,14 @@ function offer_view(PDO $pdo): void
                     <a class="btn" style="background:#16a34a" target="_blank" href="https://wa.me/?text=<?= $waText ?>">Kirim via WhatsApp</a>
                 </div>
                 <p style="margin:8px 0 0;font-size:11.5px;color:#64748b">Tautan bersifat rahasia &amp; khusus untuk customer ini. <strong>Jika lewat WhatsApp Desktop hanya link yang terkirim</strong>, gunakan <strong>Salin Pesan</strong> lalu tempel (paste) di chat — teks lengkap akan ikut.</p>
+                <hr style="margin:14px 0;border:none;border-top:1px dashed #bae6fd">
+                <p style="margin:0 0 8px;color:#374151"><strong>Opsi B — unggah dokumen yang sudah ditandatangani.</strong> Untuk customer yang lebih suka menandatangani di berkasnya sendiri: kirim/cetak suratnya, minta customer menandatangani, lalu unggah kembali <strong>PDF</strong> (atau foto/scan) yang sudah ber-TTD di sini. <strong>Hasilnya sama dengan Opsi A</strong> — penawaran langsung DEAL dan bisa dilanjutkan ke SKP.</p>
+                <form method="post" action="?r=offer_sign_upload" enctype="multipart/form-data" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end" onsubmit="return confirm('Tandai penawaran ini sudah ditandatangani sesuai dokumen yang diunggah? Status menjadi DEAL dan nilainya dikunci.')">
+                    <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$offer['id'] ?>">
+                    <div><label style="font-size:12px;font-weight:700;display:block">Nama Penanda Tangan</label><input name="sign_name" required placeholder="Nama customer" value="<?= h($offer['cp_name'] ?? '') ?>" style="min-width:200px"></div>
+                    <div><label style="font-size:12px;font-weight:700;display:block">Dokumen sudah ber-TTD (pdf/foto/jpg/png, ≤8MB)</label><input type="file" name="signed_doc" accept="image/*,.pdf" required></div>
+                    <button type="submit" class="btn" style="background:#0369a1">Unggah &amp; Tandai TTD</button>
+                </form>
             <?php endif; ?>
         </div>
         <?php endif; ?>
@@ -1025,9 +1036,9 @@ function offer_form(PDO $pdo): void
             <div id="tpl-note" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:9px 13px;margin-bottom:10px;font-size:12.5px;color:#075985"></div>
             <div class="form-grid">
                 <div><label>DP (bulan, min 1)</label><input type="number" step="0.5" min="1" name="dp_months" id="dp_months" value="<?= $v('dp_months', '1') ?>" <?= $disabled ?>></div>
-                <div><label>Nominal DP <span class="muted" style="font-weight:400">(otomatis, bisa diubah)</span></label><input type="text" inputmode="numeric" id="dp_fmt" placeholder="0" <?= $disabled ?>><input type="hidden" name="dp_amount" id="dp_amount" value="<?= (int)($offer['dp_amount'] ?? 0) ?: '' ?>"></div>
+                <div><label>Nominal DP <span class="muted" style="font-weight:400">(otomatis, bisa diubah)</span></label><input type="text" inputmode="numeric" id="dp_fmt" placeholder="0" <?= $disabled ?>><input type="hidden" name="dp_amount" id="dp_amount" value="<?= $existing ? (int)($offer['dp_amount'] ?? 0) : '' ?>"></div>
                 <div><label>Deposit (bulan)</label><input type="number" step="0.5" min="0" name="deposit_months" id="deposit_months" value="<?= $v('deposit_months', '1') ?>" <?= $disabled ?>></div>
-                <div><label>Nominal Deposit <span class="muted" style="font-weight:400">(otomatis, bisa diubah)</span></label><input type="text" inputmode="numeric" id="dep_fmt" placeholder="0" <?= $disabled ?>><input type="hidden" name="deposit_amount" id="deposit_amount" value="<?= (int)($offer['deposit_amount'] ?? 0) ?: '' ?>"></div>
+                <div><label>Nominal Deposit <span class="muted" style="font-weight:400">(otomatis, bisa diubah)</span></label><input type="text" inputmode="numeric" id="dep_fmt" placeholder="0" <?= $disabled ?>><input type="hidden" name="deposit_amount" id="deposit_amount" value="<?= $existing ? (int)($offer['deposit_amount'] ?? 0) : '' ?>"></div>
             </div>
             </div><!-- /#single-pay -->
 
@@ -1231,7 +1242,10 @@ function offer_form(PDO $pdo): void
             function bindMoney(fmtId, hidId, onChange) {
                 var fmt = document.getElementById(fmtId), hid = document.getElementById(hidId);
                 if (!fmt || !hid) return;
-                if (hid.value && hid.value !== '0') { fmt.value = fmtNum(parseInt(hid.value, 10)); fmt.dataset.touched = '1'; }
+                // Nilai '0' yang tersimpan HARUS dihitung sudah-diisi. Sebelumnya 0
+                // disamakan dgn kosong, sehingga DP yang sengaja dinolkan ketimpa
+                // hitungan otomatis begitu penawaran dibuka untuk revisi.
+                if (hid.value !== '' && hid.value !== null) { fmt.value = fmtNum(parseInt(hid.value, 10) || 0); fmt.dataset.touched = '1'; }
                 fmt.addEventListener('input', function () {
                     var raw = this.value.replace(/\D/g, '');
                     this.value = raw ? fmtNum(parseInt(raw, 10)) : '';
@@ -1735,6 +1749,84 @@ function _offer_sign_view(array $o): array
 }
 
 /** Halaman publik: customer review Surat Penawaran + tanda tangan. */
+/**
+ * Opsi B: sales mengunggah berkas surat penawaran yang sudah ditandatangani
+ * customer — PDF hasil TTD digital maupun scan/foto dokumen kertas. Setara
+ * dengan TTD online lewat tautan: penawaran menjadi DEAL dan nilainya dikunci
+ * lewat snapshot, sehingga bisa langsung dilanjutkan ke SKP. Nilai kolom
+ * sign_method tetap 'wet' mengikuti skp_sign_upload() supaya datanya seragam.
+ */
+function offer_sign_upload(PDO $pdo): void
+{
+    require_permission('manage_offers');
+    verify_csrf();
+    $pid = current_property_id();
+    $id  = (int) post('id');
+
+    $st = $pdo->prepare('SELECT * FROM offers WHERE id=? AND property_id=?');
+    $st->execute([$id, $pid]);
+    $o = $st->fetch();
+    if (!$o) { flash('Penawaran tidak ditemukan.'); redirect_to('offers'); }
+    if (!empty($o['signed_at'])) { flash('Penawaran ini sudah ditandatangani.'); redirect_to('offer_view', ['id' => $id]); }
+    if (empty($o['offer_no']) || !in_array($o['status'], ['draft', 'nego', 'sent'], true)) {
+        flash('Hanya penawaran bernomor yang belum DEAL/batal yang bisa ditandai TTD.');
+        redirect_to('offer_view', ['id' => $id]);
+    }
+
+    $name = trim((string) post('sign_name'));
+    if ($name === '') { flash('Nama penanda tangan wajib diisi.'); redirect_to('offer_view', ['id' => $id]); }
+    if (empty($_FILES['signed_doc']['tmp_name']) || !is_uploaded_file($_FILES['signed_doc']['tmp_name'])) {
+        flash('Dokumen penawaran yang sudah ber-TTD wajib diunggah.'); redirect_to('offer_view', ['id' => $id]);
+    }
+    $f = $_FILES['signed_doc'];
+    if ($f['size'] <= 0 || $f['size'] > 8 * 1024 * 1024) { flash('Ukuran file maksimal 8MB.'); redirect_to('offer_view', ['id' => $id]); }
+    $ext = strtolower(pathinfo((string) $f['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'], true)) {
+        flash('Format harus jpg/png/webp/pdf.'); redirect_to('offer_view', ['id' => $id]);
+    }
+
+    $dir = dirname(__DIR__, 2) . '/public/uploads/offer';
+    if (!is_dir($dir)) @mkdir($dir, 0777, true);
+    $fname = 'offer' . $id . '_signed_' . bin2hex(random_bytes(4)) . '.' . $ext;
+    if (!@move_uploaded_file($f['tmp_name'], $dir . '/' . $fname)) {
+        flash('Gagal menyimpan file.'); redirect_to('offer_view', ['id' => $id]);
+    }
+    $rel = 'uploads/offer/' . $fname;
+
+    // Snapshot dikunci sama seperti jalur TTD online, supaya nilai yang jadi
+    // dasar SKP tidak ikut berubah kalau penawaran diutak-atik setelah ini.
+    $full = $pdo->prepare(
+        "SELECT o.*, c.company_name, c.brand_name, c.address, ct.name cp_name, ct.phone cp_phone,
+                p.email pic_email, p.phone pic_phone
+         FROM offers o
+         LEFT JOIN master_clients c ON c.id=o.client_id
+         LEFT JOIN master_client_contacts ct ON ct.id=o.contact_id
+         LEFT JOIN master_pic p ON p.name=o.pic_name AND p.property_id=o.property_id
+         WHERE o.id=? AND o.property_id=? LIMIT 1"
+    );
+    $full->execute([$id, $pid]);
+    $row  = $full->fetch() ?: $o;
+    $snap = _offer_sign_view($row);
+    $snap['offer_no'] = $o['offer_no'];
+
+    $ok = $pdo->prepare(
+        "UPDATE offers SET status='deal', deal_at=COALESCE(deal_at, CURRENT_TIMESTAMP),
+                sent_at=COALESCE(sent_at, CURRENT_TIMESTAMP),
+                sign_method='wet', sign_name=?, signed_doc_path=?, signed_at=CURRENT_TIMESTAMP,
+                snapshot_json=?
+         WHERE id=? AND property_id=? AND signed_at IS NULL AND status IN ('draft','nego','sent')"
+    );
+    $ok->execute([$name, $rel, json_encode($snap, JSON_UNESCAPED_UNICODE), $id, $pid]);
+    if (!$ok->rowCount()) {
+        flash('Status penawaran berubah sebelum unggahan selesai. Coba lagi.');
+        redirect_to('offer_view', ['id' => $id]);
+    }
+
+    audit($pdo, 'customer_sign_wet', 'offers', (string) $id, ['name' => $name, 'file' => $rel], [], 'offer');
+    flash('Penawaran ditandai sudah ditandatangani sesuai dokumen terunggah. Status DEAL — bisa dilanjutkan ke SKP.');
+    redirect_to('offer_view', ['id' => $id]);
+}
+
 function offer_sign_page(PDO $pdo): void
 {
     $token = (string) getv('token', '');

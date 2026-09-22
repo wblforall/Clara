@@ -169,6 +169,11 @@ function transactions_page(PDO $pdo): void
                         <td style="white-space:nowrap">
                             <?php if (can('manage_transactions')): ?><a class="btn light" href="?r=transaction_edit&id=<?= h((string) $row['id']) ?>">Edit</a> <?php endif; ?>
                             <a class="btn light" href="?r=allocation_detail&id=<?= h((string) $row['id']) ?>">Alokasi</a>
+                            <?php if (can('manage_transactions') && can('manage_skp')): ?>
+                            <a class="btn light" style="border-color:#99f6e4;color:#0f766e"
+                               title="Buat periode lanjutan dari kontrak ini, lalu langsung ke SKP"
+                               href="?r=transaction_form&module=<?= h($module) ?>&renew_from=<?= (int) $row['id'] ?>&to_skp=1">Perpanjang</a>
+                            <?php endif; ?>
                             <?php if (current_role() === 'superadmin'): ?>
                             <form method="post" action="?r=transaction_delete" style="display:inline" onsubmit="return confirm('Hapus transaksi #<?= (int)$row['id'] ?>? Data tidak akan muncul di daftar, tapi tetap tersimpan.')">
                                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
@@ -405,16 +410,21 @@ function transaction_form(PDO $pdo): void
         }
     }
 
-    layout('Tambah Transaksi ' . ($moduleLabel[$module] ?? strtoupper($module)), function () use ($module, $masters, $clients, $allContacts, $pics, $linkedPic, $referrers, $prefill) {
+    // Perpanjang dari daftar transaksi: setelah simpan, langsung ke form SKP.
+    $toSkp = $renewFrom && getv('to_skp') === '1';
+
+    layout('Tambah Transaksi ' . ($moduleLabel[$module] ?? strtoupper($module)), function () use ($module, $masters, $clients, $allContacts, $pics, $linkedPic, $referrers, $prefill, $toSkp) {
         ?>
         <?php if ($prefill): ?>
         <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:#065f46">
-            <strong>🔄 Perpanjangan kontrak</strong> — data unit, client, PIC, dan rate sudah diisi dari kontrak sebelumnya. Periksa & sesuaikan <strong>Tanggal Mulai/Selesai</strong> lalu simpan.
+            <strong>🔄 Perpanjangan kontrak</strong> — data unit, client, PIC, dan rate sudah diisi dari kontrak sebelumnya. Periksa &amp; sesuaikan <strong>Tanggal Mulai/Selesai</strong> lalu simpan.
+            <?php if ($toSkp): ?><br>Setelah disimpan Anda langsung diarahkan ke <strong>form SKP</strong> untuk periode baru ini.<?php endif; ?>
         </div>
         <?php endif; ?>
         <form class="panel panel-anim" method="post" action="?r=transaction_save" style="animation-delay:.05s">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="module" value="<?= h($module) ?>">
+            <?php if ($toSkp): ?><input type="hidden" name="to_skp" value="1"><?php endif; ?>
             <div class="form-grid form-anim">
                 <div class="wide">
                     <label>Unit / Lokasi</label>
@@ -833,17 +843,42 @@ function transaction_form(PDO $pdo): void
     });
 }
 
+/**
+ * Tanggal transaksi wajib benar sebelum apa pun dihitung.
+ *
+ * Tanpa penjagaan ini, form yang terkirim tanpa tanggal tersimpan sebagai
+ * 0000-00-00 (MySQL non-strict), sementara AllocationService membaca string
+ * kosong sebagai "hari ini" sehingga alokasinya jatuh di bulan berjalan —
+ * nilainya ikut terhitung di dashboard padahal transaksinya tidak punya
+ * periode. Ditemukan Juni 2026 pada transaksi #914 (P502): pencapaian PIC
+ * kelebihan Rp 3.777.910 dan tidak bisa dicocokkan dengan file operasional.
+ */
+function transaction_date_ok(string $tanggal): bool
+{
+    $d = DateTimeImmutable::createFromFormat('Y-m-d', $tanggal);
+    return $d instanceof DateTimeImmutable && $d->format('Y-m-d') === $tanggal;
+}
+
 function transaction_save(PDO $pdo): void
 {
     verify_csrf();
     $start = (string) post('start_date');
     $end = (string) post('end_date');
     $months = (int) post('contract_months', 0);
+    $kembali = ['module' => (string) post('module', 'cl')];   // daftar transaksi modul terkait
+    if (!transaction_date_ok($start)) {
+        flash('Transaksi tidak disimpan: tanggal mulai wajib diisi dengan tanggal yang benar.');
+        redirect_to('transactions', $kembali);
+    }
     if (!$end && $months > 0) {
         $end = (new DateTimeImmutable($start))->modify('+' . $months . ' month')->modify('-1 day')->format('Y-m-d');
     }
     if (!$end) {
         $end = $start;
+    }
+    if (!transaction_date_ok($end) || $end < $start) {
+        flash('Transaksi tidak disimpan: tanggal selesai tidak valid atau lebih awal dari tanggal mulai.');
+        redirect_to('transactions', $kembali);
     }
 
     $clientId  = (int) post('client_id');
@@ -937,6 +972,12 @@ function transaction_save(PDO $pdo): void
         $pdo->prepare('UPDATE transactions SET final_amount=? WHERE id=?')->execute([$newFinal, $id]);
     }
     audit($pdo, 'create', 'transactions', (string) $id, $trx);
+    // Datang dari tombol "Perpanjang": lanjut langsung ke form SKP periode baru
+    // (status sewa otomatis "Perpanjangan"), bukan ke detail alokasi.
+    if (post('to_skp') === '1' && can('manage_skp')) {
+        flash('Periode baru tersimpan. Lanjutkan pengisian SKP perpanjangan di bawah ini.');
+        redirect_to('skp_form', ['transaction_id' => $id, 'renew' => 1]);
+    }
     flash('Transaksi tersimpan dan alokasi bulanan sudah dihitung.');
     redirect_to('allocation_detail', ['id' => $id]);
 }
@@ -1485,11 +1526,19 @@ function transaction_update(PDO $pdo): void
     $start  = (string) post('start_date');
     $end    = (string) post('end_date');
     $months = (int) post('contract_months', 0);
+    if (!transaction_date_ok($start)) {
+        flash('Perubahan tidak disimpan: tanggal mulai wajib diisi dengan tanggal yang benar.');
+        redirect_to('transaction_edit', ['id' => $id]);
+    }
     if (!$end && $months > 0) {
         $end = (new DateTimeImmutable($start))->modify('+' . $months . ' month')->modify('-1 day')->format('Y-m-d');
     }
     if (!$end) {
         $end = $start;
+    }
+    if (!transaction_date_ok($end) || $end < $start) {
+        flash('Perubahan tidak disimpan: tanggal selesai tidak valid atau lebih awal dari tanggal mulai.');
+        redirect_to('transaction_edit', ['id' => $id]);
     }
 
     $clientId  = (int) post('client_id');
