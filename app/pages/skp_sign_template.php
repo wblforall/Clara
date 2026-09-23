@@ -59,7 +59,7 @@ ol.tnc li{font-size:12px;color:#374151;margin-bottom:4px;line-height:1.5;text-al
             <tr><td class="l">Lokasi</td><td class="v"><?= $h($d['location'] ?? '-') ?> — Lt. <?= $h($d['floor'] ?? '-') ?></td></tr>
             <tr><td class="l">Luas Area</td><td class="v"><?= number_format((float)($d['area'] ?? 0), 2, ',', '.') ?> m²</td></tr>
             <tr><td class="l">Masa Sewa</td><td class="v"><?= $h(date('d/m/Y', strtotime($d['start_date'])) . ' s/d ' . date('d/m/Y', strtotime($d['end_date']))) ?> (<?= (int)($d['days'] ?? 0) ?> hari)</td></tr>
-            <tr><td class="l">Produk</td><td class="v"><?= $h($d['produk'] ?? '-') ?></td></tr>
+            <tr><td class="l">Produk</td><td class="v"><?= $h(($d['produk'] ?? '') ?: ($d['brand_name'] ?? '-')) ?></td></tr>
         </table>
 
         <div class="sec">Rincian Pembayaran</div>

@@ -84,7 +84,7 @@ $skpHasQr = !empty($skp['sign_token']);
         <tr><td class="l">Masa Sewa</td><td class="c">:</td><td class="v"><?= $h(date('d/m/Y', strtotime($d['start_date'])) . ' s/d ' . date('d/m/Y', strtotime($d['end_date']))) ?> (<?= (int) ($d['days'] ?? 0) ?> hari)</td></tr>
         <tr><td class="l">Status Sewa</td><td class="c">:</td><td class="v"><?= $h($d['status_sewa'] ?? '-') ?></td></tr>
         <tr><td class="l">Jenis Usaha / Kegiatan</td><td class="c">:</td><td class="v"><?= $h($d['business_type'] ?? '-') ?></td></tr>
-        <tr><td class="l">Produk</td><td class="c">:</td><td class="v"><?= $h($d['produk'] ?? '-') ?></td></tr>
+        <tr><td class="l">Produk</td><td class="c">:</td><td class="v"><?= $h(($d['produk'] ?? '') ?: ($d['brand_name'] ?? '-')) ?></td></tr>
     </table>
 
     <?php if (!empty($d['is_bundle']) && !empty($d['bundle_items'])): $segL = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang']; ?>

@@ -33,7 +33,7 @@ function _skp_prop_code(string $key): string
 function _skp_source(PDO $pdo, int $trxId, int $pid): ?array
 {
     $stmt = $pdo->prepare(
-        "SELECT t.*, c.company_name, c.npwp, c.ktp AS client_ktp, c.siup, c.address, c.business_type,
+        "SELECT t.*, c.company_name, c.brand_name, c.npwp, c.ktp AS client_ktp, c.siup, c.address, c.business_type,
                 ct.name cp_name, ct.phone cp_phone,
                 u.location_name, u.floor, u.area_sqm AS unit_area
          FROM transactions t
@@ -51,7 +51,7 @@ function _skp_source_from_offer(PDO $pdo, int $offerId, int $pid): ?array
 {
     $stmt = $pdo->prepare(
         "SELECT o.*, o.keterangan AS content_note, o.total_calculated AS final_amount,
-                c.company_name, c.npwp, c.ktp AS client_ktp, c.siup, c.address, c.business_type,
+                c.company_name, c.brand_name, c.npwp, c.ktp AS client_ktp, c.siup, c.address, c.business_type,
                 ct.name cp_name, ct.phone cp_phone,
                 u.location_name, u.floor, u.area_sqm AS unit_area
          FROM offers o
@@ -329,7 +329,7 @@ function skp_form(PDO $pdo): void
                     </select>
                 </div>
                 <div><label>Jenis Usaha / Kegiatan</label><input value="<?= h($src['business_type'] ?? '-') ?>" disabled></div>
-                <div><label>Produk</label><input name="produk" value="<?= $val('produk', $src['content_note'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></div>
+                <div><label>Produk <span class="muted" style="font-weight:400">(nama brand client)</span></label><input name="produk" value="<?= $val('produk', $src['brand_name'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></div>
             </div>
 
             <h3>Rincian Pembayaran</h3>
@@ -762,7 +762,8 @@ function skp_approve(PDO $pdo): void
     $snapshot = [
         'company_name' => $src['company_name'], 'npwp' => $src['npwp'], 'siup' => $src['siup'] ?? null, 'address' => $src['address'],
         'cp_name' => $skp['cp_name'] ?: $src['cp_name'], 'phone' => $skp['phone_pj'] ?: $src['cp_phone'],
-        'ktp_pj' => $skp['ktp_pj'], 'business_type' => $src['business_type'], 'produk' => $skp['produk'],
+        'ktp_pj' => $skp['ktp_pj'], 'business_type' => $src['business_type'],
+        'produk' => $skp['produk'] ?: ($src['brand_name'] ?? null), 'brand_name' => $src['brand_name'] ?? null,
         'location' => ($src['location_name'] ?: $src['master_code']) ?: $bundleLoc, 'floor' => $src['floor'],
         'is_bundle' => $isBundleSrc ? 1 : 0, 'bundle_items' => $bundleItemsSnap,
         'area' => (float) ($src['area_sqm'] ?: $src['unit_area']), 'seating_area' => $skp['seating_area'],
