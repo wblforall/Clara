@@ -1,7 +1,18 @@
 <?php
 /** Halaman publik tanda tangan customer. Vars: $skp, $d, $a, $signed, $rp, $h, $token. */
 if (!isset($skp)) { http_response_code(400); exit('Konteks tidak valid.'); }
-$docTitle = ($skp['doc_type'] ?? 'skp') === 'sks' ? 'Surat Konfirmasi Sewa' : 'Surat Konfirmasi Pameran';
+// Judul, rincian, dan ketentuan mengikuti jenis dokumennya — Gudang (SKS) dan
+// Media (Form Utilities) punya isi sendiri, bukan ketentuan pameran.
+if (!function_exists('skp_doc_title')) require_once __DIR__ . '/skp_modules.php';
+$sgTipe  = (string) ($skp['doc_type'] ?? 'skp');
+$docTitle = skp_doc_title($sgTipe);
+$sgTpl   = $d['tpl'] ?? [];
+$sgDet   = $d['detail'] ?? [];
+// Ketentuan: dokumen modul memakai teks templatenya sendiri.
+$sgTerms = $sgTipe === 'skp' ? skp_terms() : (array) ($sgTpl['terms'] ?? []);
+// Media boleh menimpa PPN & total akhir dari formulirnya.
+$sgPpn   = (float) ($sgDet['ppn'] ?? 0) > 0 ? (float) $sgDet['ppn'] : (float) ($a['ppn'] ?? 0);
+$sgGrand = (float) ($sgDet['grand'] ?? 0) > 0 ? (float) $sgDet['grand'] : (float) ($a['total'] ?? 0) + $sgPpn;
 ?>
 <!doctype html>
 <html lang="id">
@@ -56,18 +67,27 @@ ol.tnc li{font-size:12px;color:#374151;margin-bottom:4px;line-height:1.5;text-al
 
         <div class="sec">Tempat & Periode</div>
         <table class="kv">
-            <tr><td class="l">Lokasi</td><td class="v"><?= $h($d['location'] ?? '-') ?> — Lt. <?= $h($d['floor'] ?? '-') ?></td></tr>
+            <tr><td class="l"><?= $sgTipe === 'fu' ? 'Titik Media' : 'Lokasi' ?></td><td class="v"><?= $h($d['location'] ?? '-') ?><?= $sgTipe === 'fu' ? '' : ' — Lt. ' . $h($d['floor'] ?? '-') ?></td></tr>
+            <?php if ($sgTipe !== 'fu'): /* titik media dijual per hari, bukan per m² */ ?>
             <tr><td class="l">Luas Area</td><td class="v"><?= number_format((float)($d['area'] ?? 0), 2, ',', '.') ?> m²</td></tr>
+            <?php endif; ?>
             <tr><td class="l">Masa Sewa</td><td class="v"><?= $h(date('d/m/Y', strtotime($d['start_date'])) . ' s/d ' . date('d/m/Y', strtotime($d['end_date']))) ?> (<?= (int)($d['days'] ?? 0) ?> hari)</td></tr>
+            <?php if ($sgTipe === 'fu' && trim((string) ($sgDet['lokasi_kegiatan'] ?? '')) !== ''): ?>
+            <tr><td class="l">Lokasi Kegiatan</td><td class="v"><?= $h($sgDet['lokasi_kegiatan']) ?></td></tr>
+            <?php endif; ?>
             <tr><td class="l">Produk</td><td class="v"><?= $h(($d['produk'] ?? '') ?: ($d['brand_name'] ?? '-')) ?></td></tr>
         </table>
 
-        <div class="sec">Rincian Pembayaran</div>
+        <div class="sec">Rincian <?= $sgTipe === 'fu' ? 'Biaya' : 'Pembayaran' ?></div>
         <table class="pay">
             <tr><td>Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
-            <tr><td>PPN 12%</td><td class="amt"><?= $rp($a['ppn'] ?? 0) ?></td></tr>
+            <tr><td>PPN 12%</td><td class="amt"><?= $rp($sgPpn) ?></td></tr>
+            <?php if ($sgTipe === 'fu'): ?>
+            <tr class="grand"><td>Total Biaya Sewa + PPN 12%</td><td class="amt"><?= $rp($sgGrand) ?></td></tr>
+            <?php else: ?>
             <tr><td>Jaminan / Security Deposit</td><td class="amt"><?= $rp($a['deposit'] ?? 0) ?></td></tr>
             <tr class="grand"><td>Grand Total</td><td class="amt"><?= $rp($a['grand_total'] ?? 0) ?></td></tr>
+            <?php endif; ?>
         </table>
 
         <?php
@@ -83,8 +103,10 @@ ol.tnc li{font-size:12px;color:#374151;margin-bottom:4px;line-height:1.5;text-al
         </table>
         <?php endif; ?>
 
-        <div class="sec">Ketentuan / Note</div>
-        <ol class="tnc"><?php foreach (skp_terms() as $t): ?><li><?= $h($t) ?></li><?php endforeach; ?></ol>
+        <?php if ($sgTerms): ?>
+        <div class="sec"><?= $sgTipe === 'sks' ? 'Peraturan Sewa Gudang' : 'Ketentuan / Note' ?></div>
+        <ol class="tnc"><?php foreach ($sgTerms as $t): ?><li><?= $h($t) ?></li><?php endforeach; ?></ol>
+        <?php endif; ?>
     </div>
 
     <div class="card">
@@ -118,7 +140,15 @@ ol.tnc li{font-size:12px;color:#374151;margin-bottom:4px;line-height:1.5;text-al
 (function(){
     var canvas=document.getElementById('pad'),ctx=canvas.getContext('2d'),drawing=false,dirty=false,last=null;
     function resize(){var r=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;canvas.width=r.width*dpr;canvas.height=r.height*dpr;ctx.scale(dpr,dpr);ctx.lineWidth=2.2;ctx.lineCap='round';ctx.strokeStyle='#0f172a';}
-    resize();window.addEventListener('resize',function(){var img=canvas.toDataURL();resize();});
+    resize();
+    // Layar diputar / jendela diubah ukurannya: kanvas ikut diatur ulang dan itu
+    // MENGHAPUS isinya — coretan yang sudah dibuat dipasang kembali supaya tidak
+    // hilang di tengah jalan.
+    window.addEventListener('resize',function(){
+        var img=canvas.toDataURL(),ada=dirty;resize();
+        if(!ada)return;
+        var g=new Image();g.onload=function(){ctx.drawImage(g,0,0,canvas.width/(window.devicePixelRatio||1),canvas.height/(window.devicePixelRatio||1));dirty=true;};g.src=img;
+    });
     function pos(e){var r=canvas.getBoundingClientRect();var t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top};}
     function start(e){drawing=true;last=pos(e);e.preventDefault();}
     function move(e){if(!drawing)return;var p=pos(e);ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;dirty=true;e.preventDefault();}

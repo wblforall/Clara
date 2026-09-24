@@ -10,7 +10,10 @@ $today = date('d') . ' ' . ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<?php $docTitle = ($skp['doc_type'] ?? 'skp') === 'sks' ? 'Surat Konfirmasi Sewa' : 'Surat Konfirmasi Pameran'; ?>
+<?php
+if (!function_exists('skp_doc_title')) require_once __DIR__ . '/skp_modules.php';
+$docTitle = skp_doc_title((string) ($skp['doc_type'] ?? 'skp'));
+?>
 <title><?= $h($skp['skp_no']) ?> — <?= $docTitle ?></title>
 <link rel="icon" type="image/png" href="assets/clara-logo.png">
 <style>

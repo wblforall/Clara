@@ -48,6 +48,10 @@ public/report_recurring.pdf
 docs/*.pdf
 docs/*_assets/
 /Laporan_*.pdf
+# Berkas klien / dokumen contoh yang tertinggal di root repo.
+/*.pdf
+# Pembangun laporan modul Gudang & Media: memuat nama client asli pada narasinya.
+scripts/build_laporan_gudang_media.php
 /Laporan_*/
 /Perbaikan_*/
 /Rekonsiliasi_*/

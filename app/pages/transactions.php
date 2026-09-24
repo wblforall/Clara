@@ -169,10 +169,21 @@ function transactions_page(PDO $pdo): void
                         <td style="white-space:nowrap">
                             <?php if (can('manage_transactions')): ?><a class="btn light" href="?r=transaction_edit&id=<?= h((string) $row['id']) ?>">Edit</a> <?php endif; ?>
                             <a class="btn light" href="?r=allocation_detail&id=<?= h((string) $row['id']) ?>">Alokasi</a>
+                            <?php /* Tombol "Perpanjang" dinonaktifkan sementara — alurnya belum siap
+                                     dipakai. Rute & prefill-nya (transaction_form?renew_from=…&to_skp=1)
+                                     sengaja dibiarkan utuh supaya tinggal dibuka lagi kalau sudah matang.
                             <?php if (can('manage_transactions') && can('manage_skp')): ?>
                             <a class="btn light" style="border-color:#99f6e4;color:#0f766e"
                                title="Buat periode lanjutan dari kontrak ini, lalu langsung ke SKP"
                                href="?r=transaction_form&module=<?= h($module) ?>&renew_from=<?= (int) $row['id'] ?>&to_skp=1">Perpanjang</a>
+                            <?php endif; ?>
+                            */ ?>
+                            <?php /* Gudang & Media tidak lewat Surat Penawaran — dokumen konfirmasinya
+                                     dibuat langsung dari transaksi ini. */ ?>
+                            <?php if (in_array($module, ['gudang', 'media'], true) && can('manage_skp')): ?>
+                            <a class="btn light" style="border-color:#bae6fd;color:#0369a1"
+                               title="Buat dokumen konfirmasi untuk transaksi ini"
+                               href="?r=skp_form&transaction_id=<?= (int) $row['id'] ?>"><?= $module === 'gudang' ? 'Buat SKS' : 'Buat Form Utilities' ?></a>
                             <?php endif; ?>
                             <?php if (current_role() === 'superadmin'): ?>
                             <form method="post" action="?r=transaction_delete" style="display:inline" onsubmit="return confirm('Hapus transaksi #<?= (int)$row['id'] ?>? Data tidak akan muncul di daftar, tapi tetap tersimpan.')">

@@ -4,6 +4,8 @@
 // Alur: sales buat (draft) → submit → manager approve (No. SKP terbit + snapshot)
 //       → cetak/PDF. Lihat [[project-skp]] / migration 013.
 
+require_once __DIR__ . '/skp_modules.php';
+
 /** Ketentuan/Note baku dokumen SKP/SKS (sumber tunggal: cetakan & halaman TTD). */
 function skp_terms(): array
 {
@@ -35,11 +37,15 @@ function _skp_source(PDO $pdo, int $trxId, int $pid): ?array
     $stmt = $pdo->prepare(
         "SELECT t.*, c.company_name, c.brand_name, c.npwp, c.ktp AS client_ktp, c.siup, c.address, c.business_type,
                 ct.name cp_name, ct.phone cp_phone,
-                u.location_name, u.floor, u.area_sqm AS unit_area
+                COALESCE(u.location_name, g.name, CONCAT_WS(' - ', m.media_type, m.location, NULLIF(m.point, ''))) AS location_name,
+                COALESCE(u.floor, g.location, m.location) AS floor,
+                COALESCE(u.area_sqm, g.area_sqm) AS unit_area
          FROM transactions t
          LEFT JOIN master_clients c ON c.id = t.client_id
          LEFT JOIN master_client_contacts ct ON ct.id = t.contact_id
          LEFT JOIN master_cl_units u ON u.code = t.master_code AND u.property_id = t.property_id
+         LEFT JOIN master_gudang   g ON g.code = t.master_code AND g.property_id = t.property_id
+         LEFT JOIN master_media    m ON m.code = t.master_code AND m.property_id = t.property_id
          WHERE t.id = ? AND t.property_id = ? AND t.deleted_at IS NULL"
     );
     $stmt->execute([$trxId, $pid]);
@@ -53,10 +59,14 @@ function _skp_source_from_offer(PDO $pdo, int $offerId, int $pid): ?array
         "SELECT o.*, o.keterangan AS content_note, o.total_calculated AS final_amount,
                 c.company_name, c.brand_name, c.npwp, c.ktp AS client_ktp, c.siup, c.address, c.business_type,
                 ct.name cp_name, ct.phone cp_phone,
-                u.location_name, u.floor, u.area_sqm AS unit_area
+                COALESCE(u.location_name, g.name, CONCAT_WS(' - ', m.media_type, m.location, NULLIF(m.point, ''))) AS location_name,
+                COALESCE(u.floor, g.location, m.location) AS floor,
+                COALESCE(u.area_sqm, g.area_sqm) AS unit_area
          FROM offers o
          LEFT JOIN master_clients c ON c.id = o.client_id
          LEFT JOIN master_client_contacts ct ON ct.id = o.contact_id
+         LEFT JOIN master_gudang   g ON g.code = o.master_code AND g.property_id = o.property_id
+         LEFT JOIN master_media    m ON m.code = o.master_code AND m.property_id = o.property_id
          LEFT JOIN master_cl_units u ON u.code = o.master_code AND u.property_id = o.property_id
          WHERE o.id = ? AND o.property_id = ? AND o.status = 'deal'"
     );
@@ -145,7 +155,21 @@ function skp_list_page(PDO $pdo): void
         ?>
         <?php $mq = $module ? '&module=' . $module : ''; $sq = $status ? '&status=' . $status : ''; ?>
         <div class="toolbar" style="gap:8px;flex-wrap:wrap">
-            <strong style="font-size:16px">Surat Konfirmasi SKP / SKS</strong>
+            <strong style="font-size:16px">Surat Konfirmasi SKP / SKS / Form Utilities</strong>
+            <?php /* Gudang & Media tidak lewat Surat Penawaran — dokumennya dibuat
+                     langsung dari transaksi lewat tombol ini. */ ?>
+            <div class="dd" style="position:relative">
+                <button type="button" class="btn" onclick="var m=this.nextElementSibling;m.style.display=m.style.display==='block'?'none':'block'">+ Buat Dokumen ▾</button>
+                <div class="dd-menu" style="display:none;position:absolute;z-index:30;right:0;top:calc(100% + 4px);min-width:290px;background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12);overflow:hidden">
+                    <?php /* Hanya Gudang & Media yang dibuat dari sini. Exhibition
+                             tetap lahir dari Surat Penawaran yang sudah DEAL,
+                             jadi pilihannya mengarah ke halaman itu. */ ?>
+                    <a class="dd-item" href="?r=skp_form&module=gudang" style="display:block;padding:9px 14px;font-size:13px">📦 SKS Gudang <span style="color:var(--muted,#64748b);font-size:11px">— formulir kosong</span></a>
+                    <a class="dd-item" href="?r=skp_form&module=media" style="display:block;padding:9px 14px;font-size:13px;border-top:1px solid #f1f5f9">📺 Form Utilities <span style="color:var(--muted,#64748b);font-size:11px">— formulir kosong</span></a>
+                    <a class="dd-item" href="?r=offers&tab=deal" style="display:block;padding:9px 14px;font-size:13px;border-top:1px solid #f1f5f9">🏬 SKP Exhibition <span style="color:var(--muted,#64748b);font-size:11px">— buka Surat Penawaran DEAL</span></a>
+                    <a class="dd-item" href="?r=skp_pick&module=gudang" style="display:block;padding:9px 14px;font-size:12px;border-top:1px solid #f1f5f9;color:var(--muted,#64748b)">↗ Dari transaksi yang sudah ada</a>
+                </div>
+            </div>
             <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
                 <?php foreach (['' => 'Semua', 'draft' => 'Draft', 'submitted' => 'Menunggu', 'approved' => 'Perlu TTD', 'signed' => 'Ditandatangani', 'rejected' => 'Ditolak'] as $k => $lbl): ?>
                     <a class="btn light" style="<?= $status === $k ? 'background:var(--primary,#0d9488);color:#fff' : '' ?>" href="?r=skp<?= $k ? '&status=' . $k : '' ?><?= $mq ?>"><?= $lbl ?></a>
@@ -160,7 +184,7 @@ function skp_list_page(PDO $pdo): void
             <?php endforeach; ?>
         </div>
         <div class="panel" style="margin-top:12px">
-            <p style="margin:0 0 10px;color:var(--muted);font-size:13px">SKP/SKS dibuat dari halaman <strong>Preview Penawaran</strong> yang sudah DEAL (tombol "Buat SKP/SKS"). Transaksi terbit otomatis saat SKP disetujui.</p>
+            <p style="margin:0 0 10px;color:var(--muted);font-size:13px"><strong>Exhibition:</strong> SKP dibuat dari <strong>Preview Penawaran</strong> yang sudah DEAL. <strong>Gudang &amp; Media:</strong> tidak lewat Surat Penawaran — tekan <strong>+ Buat Dokumen</strong>, isi formulirnya langsung. Transaksi &amp; alokasi bulanan terbit otomatis saat manager menyetujui.</p>
             <div class="table-wrap">
                 <table style="font-size:12.5px">
                     <thead><tr><th>No. SKP/SKS</th><th>Modul</th><th>Kode</th><th>Client</th><th>Periode</th><th>Status</th><th>Dibuat</th><th></th></tr></thead>
@@ -178,7 +202,76 @@ function skp_list_page(PDO $pdo): void
                             <td style="white-space:nowrap">
                                 <a class="btn light" href="?r=skp_form&id=<?= (int)$r['id'] ?>"><?= $r['status'] === 'draft' || $r['status'] === 'rejected' ? 'Edit' : 'Lihat' ?></a>
                                 <?php if (in_array($r['status'], ['approved', 'signed'], true)): ?><a class="btn light" href="?r=skp_print&id=<?= (int)$r['id'] ?>" target="_blank">PDF</a><?php endif; ?>
-                                <?php if (($r['sign_method'] ?? '') === 'wet' && !empty($r['signed_doc_path'])): ?><a class="btn light" href="<?= h(upload_url($r['signed_doc_path'])) ?>" target="_blank">Scan TTD</a><?php endif; ?>
+                                <?php if (($r['sign_method'] ?? '') === 'wet' && !empty($r['signed_doc_path'])): ?><a class="btn light" href="<?= h(upload_url($r['signed_doc_path'])) ?>" target="_blank">Dokumen ber-TTD</a><?php endif; ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <?php
+    });
+}
+
+/**
+ * Pilih transaksi Gudang / Media yang akan dibuatkan dokumen konfirmasi.
+ * Kedua modul ini tidak melewati Surat Penawaran, jadi sumber dokumennya
+ * langsung transaksi yang sudah tercatat.
+ */
+function skp_pick(PDO $pdo): void
+{
+    require_permission('manage_skp');
+    $pid    = current_property_id();
+    $module = in_array(getv('module'), ['gudang', 'media'], true) ? (string) getv('module') : 'gudang';
+    $q      = trim((string) getv('q', ''));
+    $docLbl = $module === 'gudang' ? 'SKS Gudang' : 'Form Utilities';
+
+    $sql = "SELECT t.id, t.master_code, t.start_date, t.end_date, t.final_amount,
+                   c.company_name, c.brand_name, s.id AS skp_id, s.skp_no, s.status AS skp_status
+            FROM transactions t
+            LEFT JOIN master_clients c ON c.id = t.client_id
+            LEFT JOIN skp_documents s  ON s.transaction_id = t.id AND s.property_id = t.property_id
+            WHERE t.property_id = ? AND t.module = ? AND t.deleted_at IS NULL";
+    $par = [$pid, $module];
+    if ($q !== '') {
+        $sql .= " AND (t.master_code LIKE ? OR c.company_name LIKE ? OR c.brand_name LIKE ?)";
+        array_push($par, "%$q%", "%$q%", "%$q%");
+    }
+    $sql .= ' ORDER BY t.start_date DESC, t.id DESC LIMIT 200';
+    $st = $pdo->prepare($sql);
+    $st->execute($par);
+    $rows = $st->fetchAll();
+
+    layout('Buat ' . $docLbl, function () use ($rows, $module, $q, $docLbl) {
+        ?>
+        <div class="toolbar" style="gap:8px;flex-wrap:wrap">
+            <a class="btn light" href="?r=skp">← Daftar Dokumen</a>
+            <a class="btn light" style="<?= $module === 'gudang' ? 'background:#fef3c7;color:#92400e;font-weight:700' : '' ?>" href="?r=skp_pick&module=gudang">📦 SKS Gudang</a>
+            <a class="btn light" style="<?= $module === 'media' ? 'background:#e0f2fe;color:#0369a1;font-weight:700' : '' ?>" href="?r=skp_pick&module=media">📺 Form Utilities</a>
+        </div>
+        <div class="panel" style="margin-top:12px">
+            <p style="margin:0 0 10px;color:var(--muted);font-size:13px">Pilih transaksi yang akan dibuatkan <strong><?= h($docLbl) ?></strong>. Satu transaksi hanya boleh punya satu dokumen — yang sudah punya ditandai dan tombolnya membuka dokumen itu.</p>
+            <form method="get" style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+                <input type="hidden" name="r" value="skp_pick"><input type="hidden" name="module" value="<?= h($module) ?>">
+                <input name="q" value="<?= h($q) ?>" placeholder="Cari kode unit / client…" style="min-width:240px">
+                <button type="submit" class="btn light">Cari</button>
+                <?php if ($q !== ''): ?><a class="btn light" href="?r=skp_pick&module=<?= h($module) ?>">Reset</a><?php endif; ?>
+            </form>
+            <div class="table-wrap">
+                <table style="font-size:12.5px">
+                    <thead><tr><th>Kode</th><th>Client</th><th>Periode</th><th style="text-align:right">Nilai</th><th>Dokumen</th><th></th></tr></thead>
+                    <tbody>
+                    <?php if (!$rows): ?><tr><td colspan="6" style="text-align:center;color:var(--muted);padding:22px">Tidak ada transaksi <?= h($module === 'gudang' ? 'gudang' : 'media') ?><?= $q !== '' ? ' yang cocok dengan pencarian' : '' ?>.</td></tr><?php endif; ?>
+                    <?php foreach ($rows as $r): ?>
+                        <tr>
+                            <td><strong><?= h($r['master_code']) ?></strong></td>
+                            <td><?= h($r['company_name'] ?: '-') ?><?= $r['brand_name'] ? ' <span class="muted">· ' . h($r['brand_name']) . '</span>' : '' ?></td>
+                            <td style="white-space:nowrap"><?= h(date('d/m/y', strtotime($r['start_date'])) . '–' . date('d/m/y', strtotime($r['end_date']))) ?></td>
+                            <td style="text-align:right;white-space:nowrap"><?= money((float) $r['final_amount']) ?></td>
+                            <td><?= $r['skp_id'] ? '<span class="badge" style="background:#dcfce7;color:#166534">' . h($r['skp_no'] ?: strtoupper((string) $r['skp_status'])) . '</span>' : '<span class="muted">belum ada</span>' ?></td>
+                            <td style="white-space:nowrap">
+                                <a class="btn <?= $r['skp_id'] ? 'light' : '' ?>" href="?r=skp_form&transaction_id=<?= (int) $r['id'] ?>"><?= $r['skp_id'] ? 'Buka Dokumen' : 'Buat ' . h($module === 'gudang' ? 'SKS' : 'Form') ?></a>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -204,6 +297,14 @@ function skp_form(PDO $pdo): void
     $isRenew = getv('renew') === '1';
     $skp = null;
 
+    // Dokumen dari transaksi (Gudang/Media) — cegah duplikat: bila transaksi ini
+    // sudah punya dokumen, buka yang itu, jangan bikin yang kedua.
+    if (!$id && $trxId) {
+        $ex = $pdo->prepare('SELECT id FROM skp_documents WHERE transaction_id = ? AND property_id = ? LIMIT 1');
+        $ex->execute([$trxId, $pid]);
+        if ($exId = $ex->fetchColumn()) redirect_to('skp_form', ['id' => (int) $exId]);
+    }
+
     if ($id) {
         $st = $pdo->prepare('SELECT * FROM skp_documents WHERE id = ? AND property_id = ?');
         $st->execute([$id, $pid]);
@@ -221,8 +322,22 @@ function skp_form(PDO $pdo): void
         if ($exId = $ex->fetchColumn()) { redirect_to('skp_form', ['id' => (int)$exId]); }
     }
 
-    // Sumber data: dari Penawaran (alur baru) atau Transaksi (legacy)
-    $src = $offerId ? _skp_source_from_offer($pdo, $offerId, $pid) : _skp_source($pdo, $trxId, $pid);
+    // Gudang & Media: dokumen berdiri sendiri — tidak lewat Surat Penawaran dan
+    // tidak menumpang transaksi. Datanya diisi di formulir ini, transaksinya
+    // terbit saat manager menyetujui.
+    $standalone = !$offerId && !$trxId;
+    $modKind    = $standalone
+        ? (in_array($skp['module'] ?? getv('module'), ['gudang', 'media'], true) ? (string) ($skp['module'] ?? getv('module')) : '')
+        : '';
+    if ($standalone && $modKind === '') {
+        flash('Pilih jenis dokumen yang mau dibuat.');
+        redirect_to('skp');
+    }
+
+    // Sumber data: dokumen itu sendiri (Gudang/Media), Penawaran, atau Transaksi.
+    $src = $standalone
+        ? skp_standalone_src($pdo, $pid, $modKind, $skp)
+        : ($offerId ? _skp_source_from_offer($pdo, $offerId, $pid) : _skp_source($pdo, $trxId, $pid));
     if (!$src) { flash('Sumber (penawaran/transaksi) tidak ditemukan / belum DEAL.'); redirect_to($offerId ? 'offers' : 'transactions'); }
     // Pembatasan per-sales: hanya boleh akses SKP dari penawaran miliknya / yang ia buat.
     if ($sc = current_sales_scope($pdo, $pid)) {
@@ -230,8 +345,8 @@ function skp_form(PDO $pdo): void
         $ownBy  = ($skp['created_by'] ?? '') === $sc['uname'];
         if (!$ownPic && !$ownBy) { flash('SKP ini bukan milik Anda.'); redirect_to('skp'); }
     }
-    $docType = $skp['doc_type'] ?? ($src['doc_type'] ?? (($src['module'] ?? '') === 'cl' ? 'skp' : 'sks'));
-    $docLabel = $docType === 'sks' ? 'SKS (Surat Konfirmasi Sewa)' : 'SKP (Surat Konfirmasi Pameran)';
+    $docType  = (string) ($skp['doc_type'] ?? skp_doc_type($src['module'] ?? 'cl'));
+    $docLabel = skp_doc_label($docType);
 
     $editable = !$skp || in_array($skp['status'], ['draft', 'rejected'], true);
     $days     = _skp_days($src['start_date'], $src['end_date']);
@@ -239,6 +354,13 @@ function skp_form(PDO $pdo): void
     $defDeposit = (float) ($skp['deposit_amount'] ?? $src['deposit_amount'] ?? 0);
     $amt      = _skp_amounts($total, (float) $src['unit_rate'], $defDeposit);
     $area     = (float) ($src['area_sqm'] ?: $src['unit_area']);
+    // Isi khusus modul: tabel harga Gudang / daftar centang Form Utilities Media.
+    // Teksnya (intro, peraturan, catatan kaki, daftar item) datang dari Template
+    // Dokumen sehingga bisa diubah user tanpa koding.
+    $tplDoc = skp_template($pdo, $pid, skp_doc_module($docType));
+    $detail = ($skp && !empty($skp['detail_json']))
+        ? (json_decode((string) $skp['detail_json'], true) ?: [])
+        : skp_detail_defaults($tplDoc, $docType, $src, $amt);
     // Lampiran tersimpan (untuk edit)
     $atts = [];
     if ($skp) {
@@ -250,10 +372,10 @@ function skp_form(PDO $pdo): void
     $reuse = $editable ? _skp_reusable_attachments($pdo, (int) ($src['client_id'] ?? 0), (int) ($skp['id'] ?? 0)) : [];
     $val = fn(string $k, $def = '') => h((string) ($skp[$k] ?? $def));
 
-    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . ($docType === 'sks' ? 'SKS' : 'SKP'), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $atts, $reuse, $val, $pid, $isRenew) {
+    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind) {
         $statusSewaDefault = ($isRenew || (!empty($src['renewal_status']) && $src['renewal_status'] !== 'none')) ? 'Perpanjangan' : 'Baru';
         ?>
-        <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=<?= $offerId ? 'offer_form&id=' . (int)$offerId : 'allocation_detail&id=' . (int)$trxId ?>">← <?= $offerId ? 'Penawaran' : 'Detail Alokasi' ?></a><a class="btn light" href="?r=skp">Daftar Dokumen</a> <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h($docLabel) ?></span></div>
+        <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=<?= $standalone ? 'skp' : ($offerId ? 'offer_form&id=' . (int)$offerId : 'allocation_detail&id=' . (int)$trxId) ?>">← <?= $standalone ? 'Daftar Dokumen' : ($offerId ? 'Penawaran' : 'Detail Alokasi') ?></a><a class="btn light" href="?r=skp">Daftar Dokumen</a> <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h($docLabel) ?></span></div>
 
         <?php if ($skp && $skp['status'] === 'rejected'): ?>
         <div class="panel" style="margin-top:10px;background:#fef2f2;border:1px solid #fecaca">
@@ -267,15 +389,18 @@ function skp_form(PDO $pdo): void
             <input type="hidden" name="transaction_id" value="<?= (int)$trxId ?>">
             <input type="hidden" name="offer_id" value="<?= (int)$offerId ?>">
             <input type="hidden" name="doc_type" value="<?= h($docType) ?>">
+            <?php if ($standalone): ?><input type="hidden" name="standalone" value="1"><input type="hidden" name="module" value="<?= h($modKind) ?>"><?php endif; ?>
             <!-- action via hidden field (di-set onclick) — handler anti-double-submit
                  global men-disable tombol saat submit, jadi name/value tombol hilang. -->
             <input type="hidden" name="action" id="skp-action" value="save">
 
-            <h3 style="margin-top:0">Identitas Penyewa</h3>
+            <?php if ($standalone) skp_standalone_form($pdo, $pid, $modKind, $src, $editable); ?>
+
+            <h3<?= $standalone ? '' : ' style="margin-top:0"' ?>>Identitas Penyewa</h3>
             <div class="form-grid">
-                <div><label>Nama Perusahaan</label><input value="<?= h($src['company_name'] ?? '-') ?>" disabled></div>
+                <div><label>Nama Perusahaan</label><input id="idn-company" value="<?= h($src['company_name'] ?? '-') ?>" disabled></div>
                 <div><label>Nama Penanggung Jawab</label><input name="cp_name" value="<?= $val('cp_name', $src['cp_name'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></div>
-                <div class="wide"><label>Alamat</label><input value="<?= h($src['address'] ?? '-') ?>" disabled></div>
+                <div class="wide"><label>Alamat</label><input id="idn-address" value="<?= h($src['address'] ?? '-') ?>" disabled></div>
                 <div><label>Nomor KTP Penanggung Jawab <span style="color:#dc2626">*</span></label><input name="ktp_pj" value="<?= $val('ktp_pj', $src['client_ktp'] ?? '') ?>" inputmode="numeric" <?= $editable ? '' : 'disabled' ?>><span class="help" style="font-size:11px">Tersimpan ke Master Client (auto next)</span></div>
                 <div><label>Nomor NPWP <span style="color:#dc2626">*</span></label><input name="npwp_no" value="<?= $val('npwp_no', $src['npwp'] ?? '') ?>" inputmode="numeric" <?= $editable ? '' : 'disabled' ?>><span class="help" style="font-size:11px">Tersimpan ke Master Client (auto next)</span></div>
                 <div><label>Nomor SIUP <span class="muted" style="font-weight:400;font-size:11px">(opsional)</span></label><input name="siup_no" value="<?= $val('siup_no', $src['siup'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>><span class="help" style="font-size:11px">Tersimpan ke Master Client (auto next)</span></div>
@@ -315,11 +440,15 @@ function skp_form(PDO $pdo): void
 
             <h3>Spesifikasi Tempat & Periode</h3>
             <div class="form-grid">
-                <div><label>Lokasi</label><input value="<?= h($src['location_name'] ?? $src['master_code']) ?>" disabled></div>
-                <div><label>Lantai</label><input value="<?= h($src['floor'] ?? '-') ?>" disabled></div>
-                <div><label>Luas Area (m²)</label><input value="<?= number_format($area, 2, ',', '.') ?>" disabled></div>
+                <div><label>Lokasi</label><input id="spec-lokasi" value="<?= h($src['location_name'] ?? $src['master_code']) ?>" disabled></div>
+                <div><label>Lantai</label><input id="spec-lantai" value="<?= h($src['floor'] ?? '-') ?>" disabled></div>
+                <?php /* Titik media dijual per hari/titik — luas area & seating
+                         tidak dipakai, jadi kolomnya tidak ditampilkan di Media. */ ?>
+                <?php if ($docType !== 'fu'): ?>
+                <div><label>Luas Area (m²)</label><input id="spec-luas" value="<?= number_format($area, 2, ',', '.') ?>" disabled></div>
                 <div><label>Luas Seating Area (m²)</label><input name="seating_area" value="<?= $val('seating_area') ?>" inputmode="decimal" placeholder="opsional" <?= $editable ? '' : 'disabled' ?>></div>
-                <div><label>Masa Sewa</label><input value="<?= h($src['start_date'] . ' s/d ' . $src['end_date']) ?> (<?= $days ?> hari)" disabled></div>
+                <?php endif; ?>
+                <div><label>Masa Sewa</label><input id="spec-masa" value="<?= h($src['start_date'] . ' s/d ' . $src['end_date']) ?> (<?= $days ?> hari)" disabled></div>
                 <div>
                     <label>Status Sewa</label>
                     <select name="status_sewa" <?= $editable ? '' : 'disabled' ?>>
@@ -328,10 +457,44 @@ function skp_form(PDO $pdo): void
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div><label>Jenis Usaha / Kegiatan</label><input value="<?= h($src['business_type'] ?? '-') ?>" disabled></div>
+                <div><label>Jenis Usaha / Kegiatan</label><input id="spec-usaha" value="<?= h($src['business_type'] ?? '-') ?>" disabled></div>
                 <div><label>Produk <span class="muted" style="font-weight:400">(nama brand client)</span></label><input name="produk" value="<?= $val('produk', $src['brand_name'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></div>
             </div>
 
+            <?php if ($docType !== 'skp') skp_detail_form($docType, $detail, $editable); ?>
+
+            <?php /* Gudang punya tabel harganya sendiri (per m²/bulan), jadi rincian
+                     gaya pameran tidak dipakai — cukup Security Deposit yang memang
+                     disebut di Peraturan Sewa Gudang. */ ?>
+            <?php if ($docType === 'sks'): ?>
+            <h3>Security Deposit</h3>
+            <div class="form-grid">
+                <div><label>Jaminan / Security Deposit</label><input name="deposit_amount" class="skp-dep-fmt" value="<?= $defDeposit > 0 ? number_format($defDeposit, 0, ',', '.') : '' ?>" inputmode="numeric" placeholder="0" <?= $editable ? '' : 'disabled' ?>><input type="hidden" name="deposit_raw" class="skp-dep-val" value="<?= (int)$defDeposit ?>"><div class="help">Muncul di butir Peraturan Sewa Gudang. Rincian harganya ambil dari tabel di atas.</div></div>
+            </div>
+            <?php elseif ($docType === 'fu'): ?>
+            <?php
+            // Susunannya mengikuti blok "RINCIAN BIAYA" di formulir kertas:
+            // satu baris "sewa + ppn = Rp. total,-". Ketiga angkanya terisi
+            // otomatis tapi boleh diketik sendiri — yang diketik dipakai apa
+            // adanya, termasuk saat dicetak.
+            $fuPpn   = (float) ($detail['ppn'] ?? 0) ?: (float) $amt['ppn'];
+            $fuGrand = (float) ($detail['grand'] ?? 0) ?: (float) $amt['total'] + $fuPpn;
+            $nf      = fn($v) => number_format((float) $v, 0, ',', '.');
+            ?>
+            <h3 id="fu-rekap">Rincian Biaya <span style="font-weight:400;font-size:12px;color:var(--muted)">(terisi otomatis — semua boleh diketik sendiri)</span></h3>
+            <div class="form-grid">
+                <div>
+                    <label>Total Biaya Sewa <span style="color:#dc2626">*</span></label>
+                    <?php skp_input_rp('s_total_amount', $amt['total'], $editable ? '' : 'disabled', true); ?>
+                    <div class="help" id="s-total-info" style="margin-top:3px">Dihitung otomatis dari tarif × periode — boleh diubah manual.</div>
+                </div>
+                <div><label>PPN 12% <span class="muted" style="font-weight:400">(nilai × 11/12 × 12%)</span></label><?php skp_input_rp('d_ppn', $fuPpn, $editable ? '' : 'disabled'); ?></div>
+                <div><label>Total Biaya Sewa + PPN 12%</label><?php skp_input_rp('d_grand', $fuGrand, $editable ? '' : 'disabled'); ?></div>
+                <div class="wide"><label>Terbilang</label><input name="d_terbilang" id="fu-terbilang" value="<?= h($detail['terbilang'] ?? '') ?>" placeholder="terisi otomatis dari total di atas" <?= $editable ? '' : 'disabled' ?>></div>
+            </div>
+            <p class="help" id="fu-cek-hitung" style="margin-top:6px"></p>
+            <p class="help" style="margin-top:6px">Tercetak di surat: <strong id="fu-baris"><?= h($nf($amt['total']) . ' + ' . $nf($fuPpn) . ' = Rp. ' . $nf($fuGrand) . ',-') ?></strong></p>
+            <?php else: ?>
             <h3>Rincian Pembayaran</h3>
             <div class="form-grid">
                 <div><label>Biaya Sewa / m² / hari</label><input value="<?= money($amt['rate_m_day']) ?>" disabled></div>
@@ -341,6 +504,7 @@ function skp_form(PDO $pdo): void
                 <div><label>Jaminan Area / Security Deposit</label><input name="deposit_amount" class="skp-dep-fmt" value="<?= $defDeposit > 0 ? number_format($defDeposit, 0, ',', '.') : '' ?>" inputmode="numeric" placeholder="0" <?= $editable ? '' : 'disabled' ?>><input type="hidden" name="deposit_raw" class="skp-dep-val" value="<?= (int)$defDeposit ?>"></div>
                 <div><label>Grand Total (estimasi)</label><input id="skp-grand" value="<?= money($amt['grand_total']) ?>" disabled></div>
             </div>
+            <?php endif; ?>
 
             <h3>Catatan Internal</h3>
             <textarea name="note" rows="2" <?= $editable ? '' : 'disabled' ?>><?= h($skp['note'] ?? '') ?></textarea>
@@ -375,7 +539,10 @@ function skp_form(PDO $pdo): void
             $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
             $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
             $signUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/?r=skp_sign&token=' . ($skp['sign_token'] ?? '');
-            $docShort = ($skp['doc_type'] ?? 'skp') === 'sks' ? 'Surat Konfirmasi Sewa (SKS)' : 'Surat Konfirmasi Pameran (SKP)';
+            // Nama dokumen di pesan WhatsApp ikut jenisnya — Media memakai
+            // "Form Utilities", bukan "Surat Konfirmasi Pameran".
+            $dt = (string) ($skp['doc_type'] ?? 'skp');
+            $docShort = skp_doc_title($dt) . ' (' . skp_doc_short($dt) . ')';
             $waMsg = "Yth. " . ($skp['cp_name'] ?: 'Bapak/Ibu') . ",\n\n"
                 . "Berikut " . $docShort . " No. " . $skp['skp_no'] . " untuk " . ($src['company_name'] ?? '-') . " dari Management e-Walk & Pentacity Mall Balikpapan.\n\n"
                 . "Mohon dapat ditinjau dan ditandatangani secara online melalui tautan berikut:\n" . $signUrl . "\n\n"
@@ -393,8 +560,8 @@ function skp_form(PDO $pdo): void
             <h3 style="margin-top:0;color:#0369a1">Tanda Tangan Customer</h3>
             <?php if ($skp['status'] === 'signed'): ?>
                 <?php if (($skp['sign_method'] ?? 'online') === 'wet'): ?>
-                <p style="margin:0;color:#166534">✓ <strong>Ditandatangani basah (scan)</strong> a.n. <strong><?= h($skp['sign_name']) ?></strong> pada <?= h(substr($skp['signed_at'], 0, 16)) ?>.
-                    <?php if (!empty($skp['signed_doc_path'])): ?> <a class="btn light" href="<?= h(upload_url($skp['signed_doc_path'])) ?>" target="_blank">Lihat Scan TTD</a><?php endif; ?></p>
+                <p style="margin:0;color:#166534">✓ <strong>Ditandatangani</strong> (dari dokumen terunggah) a.n. <strong><?= h($skp['sign_name']) ?></strong> pada <?= h(substr($skp['signed_at'], 0, 16)) ?>.
+                    <?php if (!empty($skp['signed_doc_path'])): ?> <a class="btn light" href="<?= h(upload_url($skp['signed_doc_path'])) ?>" target="_blank">Lihat Dokumen ber-TTD</a><?php endif; ?></p>
                 <?php else: ?>
                 <p style="margin:0;color:#166534">✓ <strong>Ditandatangani online</strong> oleh <strong><?= h($skp['sign_name']) ?></strong> pada <?= h(substr($skp['signed_at'], 0, 16)) ?> (IP <?= h($skp['sign_ip']) ?>).</p>
                 <?php endif; ?>
@@ -409,11 +576,11 @@ function skp_form(PDO $pdo): void
                 </div>
                 <p style="margin:8px 0 0;font-size:11.5px;color:#64748b">Tautan bersifat rahasia &amp; berlaku sampai dokumen ditandatangani. <strong>Jika lewat WhatsApp Desktop hanya link yang terkirim</strong>, gunakan <strong>Salin Pesan</strong> lalu tempel (paste) di chat — teks lengkap akan ikut.</p>
                 <hr style="margin:14px 0;border:none;border-top:1px dashed #bae6fd">
-                <p style="margin:0 0 8px;color:#374151"><strong>Opsi B — TTD basah</strong> (untuk customer yang tidak terbiasa online). Cetak SKP, minta customer tanda tangan di atas kertas, lalu unggah hasil scan/fotonya di sini.</p>
-                <form method="post" action="?r=skp_sign_upload" enctype="multipart/form-data" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end" onsubmit="return confirm('Tandai SKP ini sudah ditandatangani (TTD basah)? Status menjadi final.')">
+                <p style="margin:0 0 8px;color:#374151"><strong>Opsi B — unggah dokumen yang sudah ditandatangani.</strong> Kirim/cetak dokumennya, minta customer menandatangani, lalu unggah kembali <strong>PDF</strong> (atau foto/scan) yang sudah ber-TTD di sini. Hasilnya sama dengan Opsi A.</p>
+                <form method="post" action="?r=skp_sign_upload" enctype="multipart/form-data" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end" onsubmit="return confirm('Tandai dokumen ini sudah ditandatangani sesuai berkas yang diunggah? Status menjadi final.')">
                     <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$skp['id'] ?>">
                     <div><label style="font-size:12px;font-weight:700;display:block">Nama Penanda Tangan</label><input name="sign_name" required placeholder="Nama customer" value="<?= h($skp['cp_name'] ?? '') ?>" style="min-width:200px"></div>
-                    <div><label style="font-size:12px;font-weight:700;display:block">Scan SKP ber-TTD (foto/jpg/png/pdf, ≤8MB)</label><input type="file" name="signed_doc" accept="image/*,.pdf" required></div>
+                    <div><label style="font-size:12px;font-weight:700;display:block">Dokumen sudah ber-TTD (pdf/foto/jpg/png, ≤8MB)</label><input type="file" name="signed_doc" accept="image/*,.pdf" required></div>
                     <button type="submit" class="btn" style="background:#0369a1">Unggah &amp; Tandai TTD</button>
                 </form>
             <?php endif; ?>
@@ -541,10 +708,29 @@ function skp_save(PDO $pdo): void
     $id      = (int) post('id');
     $trxId   = (int) post('transaction_id');
     $offerId = (int) post('offer_id');
-    $docType = post('doc_type') === 'sks' ? 'sks' : 'skp';
+    $docType = in_array(post('doc_type'), ['sks', 'fu'], true) ? (string) post('doc_type') : 'skp';
+    // Dokumen Gudang/Media yang berdiri sendiri: sumbernya kolom dokumen ini.
+    $standalone = post('standalone') === '1' && $docType !== 'skp';
+    $modKind    = $standalone ? skp_doc_module($docType) : '';
     $doSubmit = post('action') === 'submit';
 
-    $src = $offerId ? _skp_source_from_offer($pdo, $offerId, $pid) : _skp_source($pdo, $trxId, $pid);
+    $sFields = [];
+    if ($standalone) {
+        $sFields = [
+            'module'       => $modKind,
+            'client_id'    => (int) post('s_client_id') ?: null,
+            'contact_id'   => (int) post('s_contact_id') ?: null,
+            'master_code'  => trim((string) post('s_master_code', '')) ?: null,
+            'start_date'   => trim((string) post('s_start_date', '')) ?: null,
+            'end_date'     => trim((string) post('s_end_date', '')) ?: null,
+            'unit_rate'    => parse_rupiah((string) post('s_unit_rate', '0')),
+            'total_amount' => parse_rupiah((string) post('s_total_amount', '0')),
+            'pic_name'     => trim((string) post('s_pic_name', '')) ?: null,
+        ];
+        $src = skp_standalone_src($pdo, $pid, $modKind, array_merge($sFields, ['deposit_amount' => post('deposit_raw', 0)]));
+    } else {
+        $src = $offerId ? _skp_source_from_offer($pdo, $offerId, $pid) : _skp_source($pdo, $trxId, $pid);
+    }
     if (!$src) { flash('Sumber (penawaran/transaksi) tidak valid.'); redirect_to($offerId ? 'offers' : 'skp'); }
     $clientId = (int) ($src['client_id'] ?? 0);
 
@@ -555,7 +741,7 @@ function skp_save(PDO $pdo): void
         'cp_name'       => trim((string) post('cp_name')) ?: null,
         'ktp_pj'        => $ktp,
         'phone_pj'      => trim((string) post('phone_pj')) ?: null,
-        'seating_area'  => post('seating_area') !== '' ? (float) str_replace(',', '.', post('seating_area')) : null,
+        'seating_area'  => trim((string) post('seating_area', '')) !== '' ? (float) str_replace(',', '.', (string) post('seating_area')) : null,
         'produk'        => trim((string) post('produk')) ?: null,
         'status_sewa'   => post('status_sewa') ?: 'Baru',
         'deposit_amount'=> (float) post('deposit_raw', 0),
@@ -563,7 +749,9 @@ function skp_save(PDO $pdo): void
         'admin_npwp'    => $npwp ? 1 : 0,
         'admin_ktp'     => $ktp ? 1 : 0,
         'note'          => trim((string) post('note')) ?: null,
+        'detail_json'   => $docType === 'skp' ? null : json_encode(skp_detail_from_post($docType), JSON_UNESCAPED_UNICODE),
     ];
+    $fields = array_merge($fields, $sFields);
     $uname = $_SESSION['user']['name'] ?? 'system';
     // Nomor identitas wajib sebelum submit approval (KTP/NPWP/SIUP).
     $missNum = [];
@@ -584,10 +772,10 @@ function skp_save(PDO $pdo): void
             $blockMsg = 'Belum bisa submit — lengkapi dulu: ' . implode(', ', $miss) . '. Disimpan sebagai draft.';
         }
         $newStatus = $doSubmit ? 'submitted' : 'draft';
-        $sql = 'UPDATE skp_documents SET cp_name=:cp_name, ktp_pj=:ktp_pj, phone_pj=:phone_pj,
-                seating_area=:seating_area, produk=:produk, status_sewa=:status_sewa,
-                deposit_amount=:deposit_amount, admin_siup=:admin_siup, admin_npwp=:admin_npwp,
-                admin_ktp=:admin_ktp, note=:note, status=:status, reject_note=NULL,
+        // Kolom yang diperbarui mengikuti $fields — dokumen mandiri otomatis ikut
+        // menyimpan client / unit / periode / nilai miliknya sendiri.
+        $setCols = implode(', ', array_map(fn($c) => "$c=:$c", array_keys($fields)));
+        $sql = 'UPDATE skp_documents SET ' . $setCols . ', status=:status, reject_note=NULL,
                 submitted_at=' . ($doSubmit ? 'CURRENT_TIMESTAMP' : 'submitted_at') . ',
                 updated_at=CURRENT_TIMESTAMP, updated_by=:uname
                 WHERE id=:id AND property_id=:pid';
@@ -699,7 +887,7 @@ function _skp_create_transaction(PDO $pdo, array $skp, array $src, int $pid, ?ar
         'final_amount'     => $total,
         'pic_name'         => $src['pic_name'] ?? null,
         'referrer_name'    => $src['referrer_name'] ?? null,
-        'remarks'          => 'Dari ' . (($skp['doc_type'] ?? 'skp') === 'sks' ? 'SKS' : 'SKP') . ' ' . ($skp['skp_no'] ?? '') . ($noteAdd ? ' · ' . $noteAdd : ''),
+        'remarks'          => 'Dari ' . skp_doc_short((string) ($skp['doc_type'] ?? 'skp')) . ' ' . ($skp['skp_no'] ?? '') . ($noteAdd ? ' · ' . $noteAdd : ''),
         'invoice_no'       => null,
         'created_by'       => $_SESSION['user']['name'] ?? 'system',
     ];
@@ -729,16 +917,24 @@ function skp_approve(PDO $pdo): void
     $skp = $st->fetch();
     if (!$skp || $skp['status'] !== 'submitted') { flash('SKP tidak dalam status menunggu approval.'); redirect_to('skp_form', ['id' => $id]); }
 
-    $src = (int)($skp['offer_id'] ?? 0)
-        ? _skp_source_from_offer($pdo, (int) $skp['offer_id'], $pid)
-        : _skp_source($pdo, (int) $skp['transaction_id'], $pid);
+    // Dokumen Gudang/Media berdiri sendiri: sumbernya kolom dokumen itu sendiri.
+    $standalone = empty($skp['offer_id']) && empty($skp['transaction_id']);
+    $src = $standalone
+        ? skp_standalone_src($pdo, $pid, skp_doc_module((string) $skp['doc_type']), $skp)
+        : ((int) ($skp['offer_id'] ?? 0)
+            ? _skp_source_from_offer($pdo, (int) $skp['offer_id'], $pid)
+            : _skp_source($pdo, (int) $skp['transaction_id'], $pid));
     if (!$src) { flash('Sumber (penawaran/transaksi) tidak ditemukan.'); redirect_to('skp'); }
+    if ($standalone && (empty($src['client_id']) || empty($src['start_date']) || empty($src['end_date']))) {
+        flash('Data sewa belum lengkap (client &amp; periode wajib) — minta sales melengkapi dulu.');
+        redirect_to('skp_form', ['id' => $id]);
+    }
 
     // Nomor dokumen: {SKP|SKS}/{EW|PC}/{tahun}/{urut}
     $year  = (int) date('Y');
     $prop  = current_property();
     $code  = _skp_prop_code($prop['key'] ?? '');
-    $prefix = ($skp['doc_type'] ?? 'skp') === 'sks' ? 'SKS' : 'SKP';
+    $prefix = skp_doc_short((string) ($skp['doc_type'] ?? 'skp'));
 
     // Paket: ambil komponen lebih dulu (dipakai utk snapshot itemize + loop transaksi).
     $isBundleSrc = !empty($src['is_bundle']);
@@ -774,6 +970,13 @@ function skp_approve(PDO $pdo): void
         // Referensi penawaran (offer-based) + daftar lampiran terunggah → tampil di PDF & TTD.
         'offer_no' => $src['offer_no'] ?? null,
         'attachments' => _skp_attachment_list($pdo, $id),
+        // Dokumen Gudang/Media: isi formulir + teks template ikut dikunci di sini
+        // supaya cetakannya tidak berubah walau template diedit setelahnya.
+        'doc_type' => (string) ($skp['doc_type'] ?? 'skp'),
+        'detail'   => json_decode((string) ($skp['detail_json'] ?? ''), true) ?: [],
+        'tpl'      => skp_template($pdo, $pid, skp_doc_module((string) ($skp['doc_type'] ?? 'skp'))),
+        'npwp_no'  => $src['npwp'] ?? null,
+        'doc_date' => date('Y-m-d'),
     ];
 
     $signToken = bin2hex(random_bytes(20));
@@ -797,7 +1000,12 @@ function skp_approve(PDO $pdo): void
 
         // Transaksi + alokasi terbit saat approve (offer-based, bila belum ada).
         // Inilah titik deal masuk ke Dashboard/Achievement/Recurring.
-        if (empty($skp['transaction_id']) && !empty($skp['offer_id'])) {
+        if ($standalone) {
+            // Gudang/Media: transaksi + alokasi terbit dari data dokumen ini.
+            $tid = _skp_create_transaction($pdo, array_merge($skp, ['skp_no' => $skpNo]), $src, $pid);
+            $pdo->prepare('UPDATE skp_documents SET transaction_id=? WHERE id=? AND property_id=?')->execute([$tid, $id, $pid]);
+            $trxMsg = ' Transaksi #' . $tid . ' terbit otomatis.';
+        } elseif (empty($skp['transaction_id']) && !empty($skp['offer_id'])) {
             $offerId = (int) $skp['offer_id'];
             // PAKET: hanya bila offer memang is_bundle DAN punya komponen. Gating
             // ganda (is_bundle + $bundleRows) mencegah offer yg dikembalikan ke
@@ -860,7 +1068,7 @@ function skp_reject(PDO $pdo): void
     redirect_to('skp_form', ['id' => $id]);
 }
 
-// ─── TTD basah (upload scan) — alternatif TTD online utk customer gaptek ──────
+// ─── Opsi B: unggah dokumen ber-TTD — setara TTD online lewat tautan ─────────
 function skp_sign_upload(PDO $pdo): void
 {
     require_permission('manage_skp');
@@ -875,7 +1083,7 @@ function skp_sign_upload(PDO $pdo): void
     $name = trim((string) post('sign_name'));
     if ($name === '') { flash('Nama penanda tangan wajib diisi.'); redirect_to('skp_form', ['id' => $id]); }
     if (empty($_FILES['signed_doc']['tmp_name']) || !is_uploaded_file($_FILES['signed_doc']['tmp_name'])) {
-        flash('File scan SKP ber-TTD wajib diunggah.'); redirect_to('skp_form', ['id' => $id]);
+        flash('Dokumen yang sudah ber-TTD wajib diunggah.'); redirect_to('skp_form', ['id' => $id]);
     }
     $f = $_FILES['signed_doc'];
     if ($f['size'] <= 0 || $f['size'] > 8 * 1024 * 1024) { flash('Ukuran file maksimal 8MB.'); redirect_to('skp_form', ['id' => $id]); }
@@ -893,7 +1101,7 @@ function skp_sign_upload(PDO $pdo): void
          WHERE id=? AND property_id=? AND status='approved'"
     )->execute([$name, $rel, $id, $pid]);
     audit($pdo, 'customer_sign_wet', 'skp_documents', (string) $id, ['name' => $name, 'file' => $rel]);
-    flash('SKP ditandai sudah ditandatangani (TTD basah, scan tersimpan).');
+    flash('Dokumen ditandai sudah ditandatangani sesuai berkas yang diunggah.');
     redirect_to('skp_form', ['id' => $id]);
 }
 
@@ -922,7 +1130,7 @@ function skp_print(PDO $pdo): void
         return;
     }
     require_once dirname(__DIR__) . '/pdf.php';
-    $docTitle = ($skp['doc_type'] ?? 'skp') === 'sks' ? 'Surat Konfirmasi Sewa' : 'Surat Konfirmasi Pameran';
+    $docTitle = skp_doc_title((string) ($skp['doc_type'] ?? 'skp'));
     $PDF_MODE = true;
     ob_start();
     include __DIR__ . '/skp_print_body.php';
