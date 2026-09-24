@@ -444,7 +444,9 @@ function dashboard(PDO $pdo): void
                             <td><?= money($row['actual']) ?></td>
                             <td><?= $row['days'] > 0 ? money($row['actual'] / $row['days'] / $area) : '-' ?></td>
                             <td><?= money($row['actual'] / $periodDays / $area) ?></td>
-                            <td><?= pct($row['projection_monthly'] ? $row['actual'] / $row['projection_monthly'] : 0) ?></td>
+                            <?php /* MySQL mengirim DECIMAL sebagai teks: "0.00" itu TRUTHY, sehingga
+                                     pengecekan lama lolos dan jadi pembagian nol. Dicor ke float dulu. */ ?>
+                            <td><?= pct((float) $row['projection_monthly'] > 0 ? (float) $row['actual'] / (float) $row['projection_monthly'] : 0) ?></td>
                         </tr>
                         <?php endforeach; ?>
                         <?php
@@ -507,7 +509,9 @@ function dashboard(PDO $pdo): void
                             <td><?= money($row['actual']) ?></td>
                             <td><?= $row['days'] > 0 ? money($row['actual'] / $row['days']) : '-' ?></td>
                             <td><?= money($row['actual'] / $periodDays) ?></td>
-                            <td><?= pct($row['projection_monthly'] ? $row['actual'] / $row['projection_monthly'] : 0) ?></td>
+                            <?php /* MySQL mengirim DECIMAL sebagai teks: "0.00" itu TRUTHY, sehingga
+                                     pengecekan lama lolos dan jadi pembagian nol. Dicor ke float dulu. */ ?>
+                            <td><?= pct((float) $row['projection_monthly'] > 0 ? (float) $row['actual'] / (float) $row['projection_monthly'] : 0) ?></td>
                         </tr>
                         <?php endforeach; ?>
                         <?php
@@ -571,7 +575,9 @@ function dashboard(PDO $pdo): void
                             <td><?= money($row['actual']) ?></td>
                             <td><?= $row['days'] > 0 ? money($row['actual'] / $row['days'] / $area) : '-' ?></td>
                             <td><?= money($row['actual'] / $periodDays / $area) ?></td>
-                            <td><?= pct($row['projection_monthly'] ? $row['actual'] / $row['projection_monthly'] : 0) ?></td>
+                            <?php /* MySQL mengirim DECIMAL sebagai teks: "0.00" itu TRUTHY, sehingga
+                                     pengecekan lama lolos dan jadi pembagian nol. Dicor ke float dulu. */ ?>
+                            <td><?= pct((float) $row['projection_monthly'] > 0 ? (float) $row['actual'] / (float) $row['projection_monthly'] : 0) ?></td>
                         </tr>
                         <?php endforeach; ?>
                         <?php

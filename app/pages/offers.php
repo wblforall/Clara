@@ -78,34 +78,63 @@ function _offer_template_norm(array $t): array
 {
     return [
         'name'              => (string) ($t['name'] ?? ''),
+        'module'            => (string) ($t['module'] ?? 'cl'),
         'unit_type'         => (string) ($t['unit_type'] ?? ''),
         'perihal'           => (string) ($t['perihal'] ?? ''),
         'intro'             => (string) ($t['intro'] ?? ''),
         'fasilitas'         => json_decode((string) ($t['fasilitas_json'] ?? '[]'), true) ?: [],
         'payment'           => json_decode((string) ($t['payment_json'] ?? '[]'), true) ?: [],
         'terms'             => json_decode((string) ($t['terms_json'] ?? '[]'), true) ?: [],
+        'notes'             => json_decode((string) ($t['notes_json'] ?? '[]'), true) ?: [],
+        'extra'             => json_decode((string) ($t['extra_json'] ?? '{}'), true) ?: [],
         'dp_required'       => (int) ($t['dp_required'] ?? 1),
         'dp_months_default' => (float) ($t['dp_months_default'] ?? 2),
     ];
 }
 
-/**
- * Resolusi template Surat Penawaran: (properti, unit_type) → default properti
- * (unit_type='') → fallback kode (offer_terms/offer_facilities). Mengembalikan
- * struktur isi surat siap render.
- */
-function offer_template_for(PDO $pdo, int $propertyId, ?string $unitType): array
+/** Daftar modul yang punya template sendiri. */
+function _tpl_modules(): array
 {
-    $st = $pdo->prepare("SELECT * FROM offer_templates WHERE property_id=? AND unit_type=? AND status='active' LIMIT 1");
+    return ['cl' => '🏬 Exhibition', 'media' => '📺 Media', 'gudang' => '📦 Gudang'];
+}
+
+function _tpl_module(string $m): string
+{
+    return isset(_tpl_modules()[$m]) ? $m : 'cl';
+}
+
+/** Keterangan singkat di atas daftar template, per modul. */
+function _tpl_module_help(string $module): string
+{
+    return match ($module) {
+        'gudang' => 'Isi <strong>Surat Konfirmasi Sewa Gudang</strong>: intro, peraturan sewa, catatan kaki (PPN &amp; rekening), dan contoh bullet kolom Keterangan. Semua bisa diubah di sini — dokumen yang sudah terbit tidak ikut berubah.',
+        'media'  => 'Isi <strong>Form Utilities</strong>: daftar utilities, daftar media promo, pilihan parkir kendaraan, catatan kaki, dan catatan bawah formulir. Semua bisa diubah di sini — dokumen yang sudah terbit tidak ikut berubah.',
+        default  => 'Isi Surat Penawaran (perihal, intro, fasilitas, cara pembayaran, ketentuan) &amp; aturan DP berbeda per <strong>jenis booth (Tipe Unit)</strong>. Template <strong>(default)</strong> dipakai bila tipe unit belum punya template khusus. Saat penawaran disimpan, isinya di-<em>snapshot</em> sehingga surat terbit tak berubah walau template diedit.',
+    };
+}
+
+/**
+ * Resolusi template dokumen: (properti, modul, tipe unit) → (properti, modul,
+ * default) → (properti, cl, default) → fallback kode. Tipe unit hanya dipakai
+ * modul Exhibition; Media &amp; Gudang cukup template default modulnya.
+ */
+function offer_template_for(PDO $pdo, int $propertyId, ?string $unitType, string $module = 'cl'): array
+{
+    $module = _tpl_module($module);
+    $st = $pdo->prepare("SELECT * FROM offer_templates WHERE property_id=? AND module=? AND unit_type=? AND status='active' LIMIT 1");
     if ($unitType !== null && $unitType !== '') {
-        $st->execute([$propertyId, $unitType]);
+        $st->execute([$propertyId, $module, $unitType]);
         if ($t = $st->fetch()) return _offer_template_norm($t);
     }
-    $st->execute([$propertyId, '']);
+    $st->execute([$propertyId, $module, '']);
     if ($t = $st->fetch()) return _offer_template_norm($t);
+    if ($module !== 'cl') {   // modul belum punya template sendiri → default properti
+        $st->execute([$propertyId, 'cl', '']);
+        if ($t = $st->fetch()) return _offer_template_norm($t);
+    }
     // Fallback kode (praktis tak terpakai krn migrasi seed default per properti).
     return [
-        'name' => 'Pameran Umum (default)', 'unit_type' => '',
+        'name' => 'Pameran Umum (default)', 'module' => $module, 'unit_type' => '',
         'perihal' => 'Surat Penawaran Sewa Area Pameran',
         'intro'   => 'Bersama ini kami Management e-Walk dan Pentacity Mall Balikpapan menawarkan space exhibition sebagai berikut:',
         'fasilitas' => offer_facilities(),
@@ -114,7 +143,7 @@ function offer_template_for(PDO $pdo, int $propertyId, ?string $unitType): array
             'Wajib membayar Security Deposit (uang jaminan) senilai {deposit} sebagai jaminan kerusakan / pengakhiran kontrak sebelum masa sewa berakhir.',
             'Apabila tidak terjadi kerusakan setelah masa sewa berakhir, Security Deposit dikembalikan 100%.',
         ],
-        'terms' => offer_terms(),
+        'terms' => offer_terms(), 'notes' => [], 'extra' => [],
         'dp_required' => 1, 'dp_months_default' => 2,
     ];
 }
@@ -141,14 +170,16 @@ function offer_letter(PDO $pdo, array $o): array
     if (!empty($o['letter_json'])) {
         $l = json_decode((string) $o['letter_json'], true);
         if (is_array($l)) {
-            return $l + ['perihal' => '', 'intro' => '', 'fasilitas' => [], 'payment' => [], 'terms' => []];
+            return $l + ['perihal' => '', 'intro' => '', 'fasilitas' => [], 'payment' => [], 'terms' => [], 'notes' => [], 'extra' => []];
         }
     }
-    $ut  = offer_unit_type($pdo, (int) $o['property_id'], $o['master_code'] ?? null);
-    $t   = offer_template_for($pdo, (int) $o['property_id'], $ut);
+    $mod = _tpl_module((string) ($o['module'] ?? 'cl'));
+    $ut  = $mod === 'cl' ? offer_unit_type($pdo, (int) $o['property_id'], $o['master_code'] ?? null) : '';
+    $t   = offer_template_for($pdo, (int) $o['property_id'], $ut, $mod);
     return [
         'perihal' => $t['perihal'], 'intro' => $t['intro'],
         'fasilitas' => $t['fasilitas'], 'payment' => $t['payment'], 'terms' => $t['terms'],
+        'notes' => $t['notes'], 'extra' => $t['extra'],
     ];
 }
 
@@ -399,14 +430,11 @@ function offers_list_page(PDO $pdo): void
         ];
         ?>
         <div class="toolbar" style="gap:8px;flex-wrap:wrap">
-            <details style="position:relative;display:inline-block">
-                <summary class="btn" style="list-style:none;cursor:pointer">+ Buat Penawaran ▾</summary>
-                <div style="position:absolute;z-index:30;margin-top:4px;background:#fff;border:1px solid var(--line,#e5e7eb);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.12);min-width:220px;overflow:hidden">
-                    <a class="dd-item" href="?r=offer_form&module=cl" style="display:block;padding:9px 14px;font-size:13px">🏬 Exhibition <span style="color:var(--muted,#64748b);font-size:11px">— area / booth pameran</span></a>
-                    <a class="dd-item" href="?r=offer_form&module=media" style="display:block;padding:9px 14px;font-size:13px;border-top:1px solid #f1f5f9">📺 Media <span style="color:var(--muted,#64748b);font-size:11px">— LED / videotron / TVC</span></a>
-                    <a class="dd-item" href="?r=offer_form&module=gudang" style="display:block;padding:9px 14px;font-size:13px;border-top:1px solid #f1f5f9">📦 Gudang <span style="color:var(--muted,#64748b);font-size:11px">— storage</span></a>
-                </div>
-            </details>
+            <?php /* Penawaran sekarang khusus Exhibition. Gudang & Media tidak
+                     lewat surat penawaran — dokumennya langsung dibuat di menu
+                     SKP (SKS Gudang / Form Utilities). */ ?>
+            <a class="btn" href="?r=offer_form&module=cl">+ Buat Penawaran Exhibition</a>
+            <a class="btn light" href="?r=skp" title="Gudang &amp; Media tidak lewat Surat Penawaran">📦📺 Gudang / Media → buat di SKP</a>
             <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
                 <?php
                 $mq = $module ? '&module=' . $module : '';
@@ -791,6 +819,13 @@ function offer_form(PDO $pdo): void
     $existing = $id > 0;   // true hanya untuk penawaran yang sudah tersimpan (bukan prefill renewal)
     $module  = $offer['module'] ?? getv('module', 'cl');
     if (!in_array($module, ['cl', 'media', 'gudang'], true)) $module = 'cl';
+    // Penawaran BARU hanya untuk Exhibition. Gudang & Media langsung ke dokumen
+    // konfirmasinya (SKS / Form Utilities). Penawaran lama kedua modul itu tetap
+    // bisa dibuka & diproses seperti biasa.
+    if (!$existing && !$isRenew && $module !== 'cl') {
+        flash('Gudang & Media tidak lewat Surat Penawaran — dokumennya dibuat langsung di sini.');
+        redirect_to('skp_form', ['module' => $module]);
+    }
     $editable = !$existing || !in_array($offer['status'], ['deal', 'cancelled'], true);
 
     $masters  = masterOptions($pdo, $module);
@@ -1392,7 +1427,7 @@ function offer_save(PDO $pdo): void
     // pakai jalur netral (unit_type null) agar istilah booth pameran tidak ikut
     // ter-bake ke surat media/gudang.
     $unitType = $module === 'cl' ? offer_unit_type($pdo, $pid, trim((string) post('master_code')) ?: null) : '';
-    $tpl      = offer_template_for($pdo, $pid, $module === 'cl' ? $unitType : null);
+    $tpl      = offer_template_for($pdo, $pid, $module === 'cl' ? $unitType : null, $module);
     // #4 — sinyal non-silent bila unit_type ada tapi template jatuh ke default
     // (unit_type hasil kosong) → terbitnya surat dgn istilah salah bisa dilacak.
     if ($unitType !== '' && ($tpl['unit_type'] ?? '') === '') {
@@ -1412,6 +1447,8 @@ function offer_save(PDO $pdo): void
         'fasilitas'   => $tpl['fasilitas'],
         'payment'     => $tpl['payment'],
         'terms'       => $tpl['terms'],
+        'notes'       => $tpl['notes'],
+        'extra'       => $tpl['extra'],
         'dp_required' => $tpl['dp_required'],
     ], JSON_UNESCAPED_UNICODE);
 
@@ -1934,31 +1971,37 @@ function _tpl_lines(string $raw): array
 function offer_templates_page(PDO $pdo): void
 {
     require_permission('manage_master');
-    $pid = current_property_id();
-    $rows = $pdo->prepare("SELECT * FROM offer_templates WHERE property_id=? ORDER BY sort_order ASC, unit_type ASC");
-    $rows->execute([$pid]);
+    $pid    = current_property_id();
+    $module = _tpl_module((string) getv('module', 'cl'));
+    $rows = $pdo->prepare("SELECT * FROM offer_templates WHERE property_id=? AND module=? ORDER BY sort_order ASC, unit_type ASC");
+    $rows->execute([$pid, $module]);
     $tpls = $rows->fetchAll();
-    layout('Template Surat Penawaran', function () use ($tpls) {
+
+    layout('Template Dokumen', function () use ($tpls, $module) {
+        $n = fn($j) => count(json_decode((string) ($j ?: '[]'), true) ?: []);
         ?>
-        <div class="toolbar" style="gap:8px">
-            <a class="btn" href="?r=offer_template_form">+ Tambah Template</a>
+        <div class="toolbar" style="gap:8px;flex-wrap:wrap;align-items:center">
+            <?php foreach (_tpl_modules() as $mk => $ml): ?>
+            <a class="btn light" style="<?= $mk === $module ? 'background:#0d9488;color:#fff;font-weight:700;border-color:#0d9488' : '' ?>" href="?r=offer_templates&module=<?= h($mk) ?>"><?= h($ml) ?></a>
+            <?php endforeach; ?>
+            <a class="btn" style="margin-left:auto" href="?r=offer_template_form&module=<?= h($module) ?>">+ Tambah Template</a>
         </div>
         <div class="panel" style="margin-top:12px">
-            <p class="muted" style="margin-top:0">Isi surat (perihal, intro, fasilitas, cara pembayaran, ketentuan) &amp; aturan DP berbeda per <strong>jenis booth (Tipe Unit)</strong>. Template <strong>(default)</strong> dipakai bila tipe unit belum punya template khusus. Saat penawaran disimpan, isi template di-<em>snapshot</em> sehingga surat terbit tak berubah walau template diedit.</p>
+            <p class="muted" style="margin-top:0"><?= _tpl_module_help($module) ?></p>
             <table class="data" style="width:100%">
-                <thead><tr><th>Nama</th><th>Tipe Unit</th><th>DP</th><th>Fasilitas/Bayar/Ketentuan</th><th>Status</th><th></th></tr></thead>
+                <thead><tr><th>Nama</th><th><?= $module === 'cl' ? 'Tipe Unit' : 'Berlaku untuk' ?></th><th>DP</th><th>Fasilitas / Bayar / Ketentuan / Catatan</th><th>Status</th><th></th></tr></thead>
                 <tbody>
                 <?php foreach ($tpls as $t): ?>
                     <tr>
                         <td><strong><?= h($t['name']) ?></strong></td>
-                        <td><?= $t['unit_type'] === '' ? '<span class="badge">(default)</span>' : h($t['unit_type']) ?></td>
+                        <td><?php if (($t['unit_type'] ?? '') === ''): ?><span class="badge"><?= $module === 'cl' ? '(default)' : 'semua unit' ?></span><?php else: ?><?= h($t['unit_type']) ?><?php endif; ?></td>
                         <td><?= $t['dp_required'] ? 'Wajib · ' . h(rtrim(rtrim(number_format((float)$t['dp_months_default'],1,',',''),'0'),',')) . ' bln' : '<span class="muted">Tanpa DP</span>' ?></td>
-                        <td class="muted"><?= (int)(json_decode($t['fasilitas_json'] ?: '[]', true) ? count(json_decode($t['fasilitas_json'], true)) : 0) ?> / <?= (int)(json_decode($t['payment_json'] ?: '[]', true) ? count(json_decode($t['payment_json'], true)) : 0) ?> / <?= (int)(json_decode($t['terms_json'] ?: '[]', true) ? count(json_decode($t['terms_json'], true)) : 0) ?></td>
+                        <td class="muted"><?= $n($t['fasilitas_json']) ?> / <?= $n($t['payment_json']) ?> / <?= $n($t['terms_json']) ?> / <?= $n($t['notes_json'] ?? '[]') ?></td>
                         <td><?= $t['status'] === 'active' ? '<span style="color:#16a34a">Aktif</span>' : '<span class="muted">Nonaktif</span>' ?></td>
                         <td><a class="btn light" href="?r=offer_template_form&id=<?= (int)$t['id'] ?>">Edit</a></td>
                     </tr>
                 <?php endforeach; ?>
-                <?php if (!$tpls): ?><tr><td colspan="6" class="muted">Belum ada template.</td></tr><?php endif; ?>
+                <?php if (!$tpls): ?><tr><td colspan="6" class="muted">Belum ada template untuk modul ini.</td></tr><?php endif; ?>
                 </tbody>
             </table>
         </div>
@@ -1978,17 +2021,32 @@ function offer_template_form(PDO $pdo): void
         $t = $st->fetch();
         if (!$t) { flash('Template tidak ditemukan.'); redirect_to('offer_templates'); }
     }
+    $module    = _tpl_module((string) ($t['module'] ?? getv('module', 'cl')));
     $unitTypes = cl_unit_types($pdo, $pid);
-    $val = fn(string $k, $d = '') => h((string) ($t[$k] ?? $d));
+    $extra     = json_decode((string) ($t['extra_json'] ?? '{}'), true) ?: [];
+    $val   = fn(string $k, $d = '') => h((string) ($t[$k] ?? $d));
     $lines = fn(string $col) => h(implode("\n", json_decode((string) ($t[$col] ?? '[]'), true) ?: []));
-    layout(($t ? 'Edit' : 'Tambah') . ' Template Penawaran', function () use ($t, $id, $unitTypes, $val, $lines) {
+    $xl    = fn(string $k) => h(implode("\n", $extra[$k] ?? []));
+
+    layout(($t ? 'Edit' : 'Tambah') . ' Template Dokumen', function () use ($t, $id, $module, $unitTypes, $val, $lines, $xl) {
+        $isCl = $module === 'cl';
         ?>
-        <div class="toolbar"><a class="btn light" href="?r=offer_templates">← Daftar Template</a></div>
+        <div class="toolbar"><a class="btn light" href="?r=offer_templates&module=<?= h($module) ?>">← Daftar Template</a>
+            <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h(_tpl_modules()[$module]) ?></span></div>
         <form class="panel" method="post" action="?r=offer_template_save" style="margin-top:12px">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="id" value="<?= (int)$id ?>">
             <div class="form-grid">
-                <div><label>Nama Template</label><input name="name" required value="<?= $val('name') ?>" placeholder="mis. Fashion Booth"></div>
+                <div><label>Nama Template</label><input name="name" required value="<?= $val('name') ?>" placeholder="<?= $isCl ? 'mis. Fashion Booth' : 'mis. Sewa Gudang (default)' ?>"></div>
+                <div>
+                    <label>Modul</label>
+                    <select name="module" <?= $t ? 'disabled' : '' ?>>
+                        <?php foreach (_tpl_modules() as $mk => $ml): ?><option value="<?= h($mk) ?>" <?= $mk === $module ? 'selected' : '' ?>><?= h($ml) ?></option><?php endforeach; ?>
+                    </select>
+                    <?php if ($t): ?><input type="hidden" name="module" value="<?= h($module) ?>"><div class="help">Modul tidak bisa dipindah setelah template dibuat.</div>
+                    <?php else: ?><div class="help">Exhibition memakai tipe unit; Media &amp; Gudang satu template untuk semua unit.</div><?php endif; ?>
+                </div>
+                <?php if ($isCl): ?>
                 <div>
                     <label>Tipe Unit</label>
                     <select name="unit_type">
@@ -1998,7 +2056,10 @@ function offer_template_form(PDO $pdo): void
                     </select>
                     <div class="help">Satu template per tipe unit. "(default)" dipakai utk tipe tanpa template khusus.</div>
                 </div>
-                <div><label>Perihal</label><input name="perihal" value="<?= $val('perihal') ?>" placeholder="Surat Penawaran Sewa ..."></div>
+                <?php else: ?>
+                <input type="hidden" name="unit_type" value="<?= h((string)($t['unit_type'] ?? '')) ?>">
+                <?php endif; ?>
+                <div><label>Judul Dokumen / Perihal</label><input name="perihal" value="<?= $val('perihal') ?>" placeholder="<?= $isCl ? 'Surat Penawaran Sewa ...' : ($module === 'gudang' ? 'Surat Konfirmasi Sewa Gudang' : 'Form Utilities Casual Leasing') ?>"></div>
                 <div>
                     <label>Status</label>
                     <select name="status"><option value="active" <?= ($t['status'] ?? 'active') === 'active' ? 'selected' : '' ?>>Aktif</option><option value="inactive" <?= ($t['status'] ?? '') === 'inactive' ? 'selected' : '' ?>>Nonaktif</option></select>
@@ -2006,6 +2067,7 @@ function offer_template_form(PDO $pdo): void
             </div>
             <div style="margin-top:10px"><label>Paragraf Pembuka (intro)</label><textarea name="intro" rows="2" style="width:100%"><?= $val('intro') ?></textarea></div>
 
+            <?php if ($isCl): ?>
             <div style="display:flex;gap:10px;align-items:flex-start;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:11px 14px;margin-top:12px">
                 <input type="checkbox" name="dp_required" id="dp_required" value="1" style="width:18px;height:18px;margin-top:1px" <?= !$t || !empty($t['dp_required']) ? 'checked' : '' ?>>
                 <div>
@@ -2014,12 +2076,23 @@ function offer_template_form(PDO $pdo): void
                     <div style="margin-top:6px"><label style="font-size:12px">Default DP (bulan)</label> <input type="number" step="0.5" min="0" name="dp_months_default" value="<?= $val('dp_months_default', '2') ?>" style="width:90px"></div>
                 </div>
             </div>
-
             <div style="margin-top:12px"><label>Fasilitas <span class="muted" style="font-weight:400">(1 baris = 1 poin)</span></label><textarea name="fasilitas" rows="3" style="width:100%"><?= $lines('fasilitas_json') ?></textarea></div>
             <div style="margin-top:10px"><label>Cara Pembayaran <span class="muted" style="font-weight:400">(1 baris = 1 poin · placeholder: <code>{dp}</code> <code>{deposit}</code> <code>{total}</code> <code>{ppn}</code> <code>{grand}</code>)</span></label><textarea name="payment" rows="4" style="width:100%"><?= $lines('payment_json') ?></textarea></div>
-            <div style="margin-top:10px"><label>Ketentuan &amp; Persyaratan <span class="muted" style="font-weight:400">(1 baris = 1 poin)</span></label><textarea name="terms" rows="8" style="width:100%"><?= $lines('terms_json') ?></textarea></div>
+            <?php endif; ?>
 
-            <p class="form-actions" style="margin-top:16px"><button type="submit">💾 Simpan Template</button> <a class="btn secondary" href="?r=offer_templates">Batal</a></p>
+            <?php if ($module === 'gudang'): ?>
+            <div style="margin-top:12px"><label>Bullet Kolom "Keterangan" <span class="muted" style="font-weight:400">(1 baris = 1 bullet · placeholder: <code>{periode}</code> <code>{deposit}</code>)</span></label><textarea name="x_keterangan" rows="3" style="width:100%"><?= $xl('keterangan_default') ?></textarea>
+                <div class="help">Dipakai sebagai isi awal kolom Keterangan pada tabel harga sewa gudang — masih bisa diubah per dokumen.</div></div>
+            <?php elseif ($module === 'media'): ?>
+            <div style="margin-top:12px"><label>Daftar Utilities <span class="muted" style="font-weight:400">(1 baris = 1 item)</span></label><textarea name="x_utilities" rows="4" style="width:100%"><?= $xl('utilities') ?></textarea></div>
+            <div style="margin-top:10px"><label>Daftar Media Promo <span class="muted" style="font-weight:400">(1 baris = 1 item)</span></label><textarea name="x_media_promo" rows="5" style="width:100%"><?= $xl('media_promo') ?></textarea></div>
+            <div style="margin-top:10px"><label>Pilihan Parkir Kendaraan <span class="muted" style="font-weight:400">(1 baris = 1 item)</span></label><textarea name="x_parkir" rows="2" style="width:100%"><?= $xl('parkir') ?></textarea></div>
+            <?php endif; ?>
+
+            <div style="margin-top:10px"><label><?= $module === 'gudang' ? 'Peraturan Sewa' : ($module === 'media' ? 'Catatan Formulir' : 'Ketentuan &amp; Persyaratan') ?> <span class="muted" style="font-weight:400">(1 baris = 1 poin)</span></label><textarea name="terms" rows="8" style="width:100%"><?= $lines('terms_json') ?></textarea></div>
+            <div style="margin-top:10px"><label>Catatan Kaki <span class="muted" style="font-weight:400">(1 baris = 1 poin · mis. catatan PPN &amp; nomor rekening)</span></label><textarea name="notes" rows="3" style="width:100%"><?= $lines('notes_json') ?></textarea></div>
+
+            <p class="form-actions" style="margin-top:16px"><button type="submit">💾 Simpan Template</button> <a class="btn secondary" href="?r=offer_templates&module=<?= h($module) ?>">Batal</a></p>
         </form>
         <script>
         document.querySelectorAll('textarea').forEach(function(tx) {
@@ -2048,17 +2121,34 @@ function offer_template_save(PDO $pdo): void
     verify_csrf();
     $pid = current_property_id();
     $id  = (int) post('id');
-    $unitType = trim((string) post('unit_type', ''));
+    $module   = _tpl_module((string) post('module', 'cl'));
+    $unitType = $module === 'cl' ? trim((string) post('unit_type', '')) : '';
     $name = trim((string) post('name', ''));
-    if ($name === '') { flash('Nama template wajib diisi.'); redirect_to('offer_template_form', $id ? ['id' => $id] : []); }
-    // Cegah duplikat (property, unit_type)
-    $dup = $pdo->prepare("SELECT id FROM offer_templates WHERE property_id=? AND unit_type=? AND id<>? LIMIT 1");
-    $dup->execute([$pid, $unitType, $id]);
-    if ($dup->fetchColumn()) { flash('Sudah ada template untuk tipe unit tersebut. Edit yang ada atau pilih tipe lain.'); redirect_to('offer_template_form', $id ? ['id' => $id] : []); }
+    if ($name === '') { flash('Nama template wajib diisi.'); redirect_to('offer_template_form', $id ? ['id' => $id] : ['module' => $module]); }
+    // Cegah duplikat (property, modul, unit_type)
+    $dup = $pdo->prepare("SELECT id FROM offer_templates WHERE property_id=? AND module=? AND unit_type=? AND id<>? LIMIT 1");
+    $dup->execute([$pid, $module, $unitType, $id]);
+    if ($dup->fetchColumn()) {
+        flash($module === 'cl' ? 'Sudah ada template untuk tipe unit tersebut. Edit yang ada atau pilih tipe lain.' : 'Modul ini sudah punya template. Edit template yang ada.');
+        redirect_to('offer_template_form', $id ? ['id' => $id] : ['module' => $module]);
+    }
+
+    // Blok khusus modul — daftar yang bisa disusun sendiri oleh user.
+    $extra = [];
+    if ($module === 'media') {
+        $extra = [
+            'utilities'   => _tpl_lines((string) post('x_utilities', '')),
+            'media_promo' => _tpl_lines((string) post('x_media_promo', '')),
+            'parkir'      => _tpl_lines((string) post('x_parkir', '')),
+        ];
+    } elseif ($module === 'gudang') {
+        $extra = ['keterangan_default' => _tpl_lines((string) post('x_keterangan', ''))];
+    }
 
     $J = fn($a) => json_encode($a, JSON_UNESCAPED_UNICODE);
     $data = [
         'property_id'       => $pid,
+        'module'            => $module,
         'unit_type'         => $unitType,
         'name'              => $name,
         'perihal'           => trim((string) post('perihal', '')),
@@ -2066,8 +2156,10 @@ function offer_template_save(PDO $pdo): void
         'fasilitas_json'    => $J(_tpl_lines((string) post('fasilitas', ''))),
         'payment_json'      => $J(_tpl_lines((string) post('payment', ''))),
         'terms_json'        => $J(_tpl_lines((string) post('terms', ''))),
-        'dp_required'       => post('dp_required') ? 1 : 0,
-        'dp_months_default' => (float) post('dp_months_default', 2),
+        'notes_json'        => $J(_tpl_lines((string) post('notes', ''))),
+        'extra_json'        => $J($extra),
+        'dp_required'       => $module === 'cl' ? (post('dp_required') ? 1 : 0) : 0,
+        'dp_months_default' => $module === 'cl' ? (float) post('dp_months_default', 2) : 0,
         'status'            => post('status') === 'inactive' ? 'inactive' : 'active',
     ];
     if ($id) {
@@ -2083,8 +2175,8 @@ function offer_template_save(PDO $pdo): void
         $pdo->prepare("INSERT INTO offer_templates ($cols) VALUES ($ph)")->execute($data);
         audit($pdo, 'create', 'offer_templates', (string) $pdo->lastInsertId(), $data);
     }
-    flash('Template penawaran disimpan.');
-    redirect_to('offer_templates');
+    flash('Template dokumen disimpan.');
+    redirect_to('offer_templates', ['module' => $module]);
 }
 
 /** AJAX: aturan DP & nama template utk unit terpilih (dipakai form penawaran). */
@@ -2093,8 +2185,9 @@ function offer_template_rule(PDO $pdo): void
     require_permission('manage_offers');
     header('Content-Type: application/json');
     $pid = current_property_id();
-    $unitType = offer_unit_type($pdo, $pid, (string) getv('master_code', ''));
-    $tpl = offer_template_for($pdo, $pid, $unitType);
+    $module   = _tpl_module((string) getv('module', 'cl'));
+    $unitType = $module === 'cl' ? offer_unit_type($pdo, $pid, (string) getv('master_code', '')) : '';
+    $tpl = offer_template_for($pdo, $pid, $unitType, $module);
     echo json_encode([
         'unit_type'         => $unitType,
         'template'          => $tpl['name'],

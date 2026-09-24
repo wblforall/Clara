@@ -63,8 +63,20 @@ function clara_letterhead_mpdf(): \Mpdf\Mpdf
 {
     require_once dirname(__DIR__) . '/vendor/autoload.php';
     [$head, $foot] = _clara_pdf_strips();
+    // Carlito = pengganti Calibri (metrik sama persis, lisensi OFL). Dipakai
+    // cetakan Gudang/Media agar bentuknya sama dengan dokumen kertas yang
+    // selama ini dipakai. Font bawaan (DejaVu) tetap default utk dokumen lain.
+    $dv = (new \Mpdf\Config\ConfigVariables())->getDefaults()['fontDir'];
+    $fd = (new \Mpdf\Config\FontVariables())->getDefaults()['fontdata'];
     $mpdf = new \Mpdf\Mpdf([
         'tempDir'       => _clara_pdf_tempdir(),
+        'fontDir'       => array_merge($dv, [dirname(__DIR__) . '/app/fonts']),
+        'fontdata'      => $fd + ['carlito' => [
+            'R'  => 'Carlito-Regular.ttf',
+            'B'  => 'Carlito-Bold.ttf',
+            'I'  => 'Carlito-Italic.ttf',
+            'BI' => 'Carlito-BoldItalic.ttf',
+        ]],
         'format'        => 'A4',
         'margin_top'    => 34, 'margin_bottom' => 40,
         'margin_left'   => 16, 'margin_right'  => 16,

@@ -1,6 +1,7 @@
 <?php
 /** Halaman validasi dokumen (scan QR). Vars: $skp,$valid,$d,$a,$h,$rp,$salesReg,$mgrReg. */
-$docTitle = ($skp['doc_type'] ?? 'skp') === 'sks' ? 'Surat Konfirmasi Sewa' : 'Surat Konfirmasi Pameran';
+if (!function_exists('skp_doc_title')) require_once __DIR__ . '/skp_modules.php';
+$docTitle = skp_doc_title((string) ($skp['doc_type'] ?? 'skp'));
 ?>
 <!doctype html>
 <html lang="id">
