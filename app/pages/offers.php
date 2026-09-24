@@ -1052,33 +1052,28 @@ function offer_form(PDO $pdo): void
                 <div class="single-price"><label>Total Kontrak <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="total_calc" value="" readonly><input type="hidden" name="total_calculated" id="total_calc_h" value="<?= $v('total_calculated') ?>"></div>
                 <div class="single-price"><label>Harga / Bulan <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="monthly_disp" value="" readonly><input type="hidden" name="monthly_amount" id="monthly_amount" value="<?= $v('monthly_amount') ?>"></div>
                 <div class="wide single-price"><label>Harga Nego Final <span class="muted" style="font-weight:400">(opsional — override)</span></label><input type="text" inputmode="numeric" id="override_fmt" placeholder="Kosongkan = pakai hasil kalkulasi di atas"><input type="hidden" name="override_amount" id="override_amount" value="<?= (int)($offer['override_amount'] ?? 0) ?: '' ?>"><div class="help">Override: isi bila nilai final tidak sama dengan hasil kalkulasi.</div></div>
-            </div>
-
-            <?php /* Biaya listrik — hanya Exhibition. Tercentang otomatis; dibuka
-                     centangnya bila tenant memang tidak dikenakan listrik. */ ?>
-            <?php if ($module === 'cl'): ?>
-            <div class="form-grid" style="margin-top:4px">
-                <div class="wide single-price" style="background:#f8fafc;border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:10px 12px">
-                    <label style="display:flex;align-items:center;gap:9px;margin:0;cursor:pointer">
-                        <input type="checkbox" name="electricity_flag" id="listrik_on" value="1" <?= $listrikOn ? 'checked' : '' ?> <?= $disabled ?>>
-                        <span>Kenakan <strong>Biaya Listrik</strong> pada penawaran ini</span>
+                <?php /* Biaya listrik — kolom biasa seperti isian lain, bukan panel
+                         tersendiri. Lebar kotak centang dipatok karena CSS global
+                         membuat semua input selebar kolom. */ ?>
+                <?php if ($module === 'cl'): ?>
+                <div class="single-price">
+                    <label style="display:flex;align-items:center;gap:7px;cursor:pointer">
+                        <input type="checkbox" name="electricity_flag" id="listrik_on" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= $listrikOn ? 'checked' : '' ?> <?= $disabled ?>>
+                        Biaya Listrik / Bulan
                     </label>
-                    <div id="listrik_box" style="margin-top:9px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">
-                        <div style="min-width:220px">
-                            <label>Biaya Listrik / Bulan</label>
-                            <div style="display:flex;align-items:stretch">
-                                <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
-                                <input type="text" inputmode="numeric" id="listrik_fmt" class="rp-fmt"
-                                       value="<?= $listrikRp > 0 ? number_format($listrikRp, 0, ',', '.') : '' ?>"
-                                       style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= $disabled ?>>
-                                <input type="hidden" name="electricity_monthly" id="listrik_val" value="<?= (int) $listrikRp ?>">
-                            </div>
-                            <div class="help">Standar <?= h(number_format((float) ($tplBaru['electricity_default'] ?? 150000), 0, ',', '.')) ?> — boleh diubah untuk penawaran ini.</div>
-                        </div>
-                        <div class="help" id="listrik_info" style="flex:1;min-width:240px;color:#0f766e"></div>
+                    <div id="listrik_box" style="display:flex;align-items:stretch">
+                        <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
+                        <input type="text" inputmode="numeric" id="listrik_fmt"
+                               value="<?= $listrikRp > 0 ? number_format($listrikRp, 0, ',', '.') : '' ?>"
+                               style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= $disabled ?>>
+                        <input type="hidden" name="electricity_monthly" id="listrik_val" value="<?= (int) $listrikRp ?>">
                     </div>
+                    <div class="help" id="listrik_info">Standar <?= h(number_format((float) ($tplBaru['electricity_default'] ?? 150000), 0, ',', '.')) ?> — boleh diubah.</div>
                 </div>
+                <?php endif; ?>
             </div>
+            <?php if ($module === 'cl'): ?>
+
             <script>
             (function () {
                 var on = document.getElementById('listrik_on'),
@@ -1107,7 +1102,7 @@ function offer_form(PDO $pdo): void
                     if (!info) return;
                     if (!on.checked) { info.textContent = ''; return; }
                     var n = bulan(), t = angka(), rp = function (x) { return 'Rp ' + (x || 0).toLocaleString('id-ID'); };
-                    info.textContent = n + ' bulan × ' + rp(t) + ' = ' + rp(n * t) + ' (belum PPN 12%) — tercetak di Rincian Biaya surat penawaran.';
+                    info.textContent = n + ' bulan × ' + rp(t) + ' = ' + rp(n * t) + ' (belum PPN 12%)';
                 }
                 fmt.addEventListener('input', function () {
                     var raw = this.value.replace(/\D/g, '');
@@ -1128,6 +1123,7 @@ function offer_form(PDO $pdo): void
             })();
             </script>
             <?php endif; ?>
+
             <?php if ($editable): ?>
             <div class="single-price" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px">
                 <button type="button" class="btn light" id="btn-kalkulasi" style="background:#0ea5e9;color:#fff">Kalkulasi Total</button>
