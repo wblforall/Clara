@@ -156,9 +156,16 @@ $skpHasQr = !empty($skp['sign_token']);
     <table class="pay">
         <tr><td class="lbl">A. Biaya Sewa Area</td><td class="amt"></td></tr>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;a. Biaya Sewa / m² / hari</td><td class="amt"><?= $rp($a['rate_m_day'] ?? 0) ?></td></tr>
+        <?php if (($a['listrik'] ?? 0) > 0): ?>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;b. Nilai Sewa</td><td class="amt"><?= $rp($a['sewa'] ?? 0) ?></td></tr>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;c. Biaya Listrik <span class="muted">(sesuai penawaran)</span></td><td class="amt"><?= $rp($a['listrik']) ?></td></tr>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;d. Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
+        <?php else: ?>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;b. Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;c. PPN 12% <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn'] ?? 0) ?></td></tr>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;d. Total Biaya Sewa Setelah PPN</td><td class="amt"><?= $rp($a['after_ppn'] ?? 0) ?></td></tr>
+        <?php endif; ?>
+        <?php $_hrf = ($a['listrik'] ?? 0) > 0 ? ['e', 'f'] : ['c', 'd']; ?>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $_hrf[0] ?>. PPN 12% <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn'] ?? 0) ?></td></tr>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $_hrf[1] ?>. Total Biaya Sewa Setelah PPN</td><td class="amt"><?= $rp($a['after_ppn'] ?? 0) ?></td></tr>
         <tr><td class="lbl">B. Jaminan Area (Security Deposit)</td><td class="amt"><?= $rp($a['deposit'] ?? 0) ?></td></tr>
         <tr class="grand"><td class="lbl">C. Grand Total Biaya Area</td><td class="amt"><?= $rp($a['grand_total'] ?? 0) ?></td></tr>
     </table>

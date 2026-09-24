@@ -109,6 +109,10 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
 
         <div class="sec">Rincian Biaya</div>
         <table class="pay">
+            <?php if (($a['listrik'] ?? 0) > 0): ?>
+            <tr><td>Nilai Sewa</td><td class="amt"><?= $rp($a['sewa'] ?? 0) ?></td></tr>
+            <tr><td>Biaya Listrik</td><td class="amt"><?= $rp($a['listrik']) ?></td></tr>
+            <?php endif; ?>
             <tr><td>Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
             <tr><td>PPN 12% <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn'] ?? 0) ?></td></tr>
             <tr><td>DP <span class="muted">(<?= $h($a['dp_bln'] ?? '0') ?> bln)</span></td><td class="amt"><?= $rp($a['dp'] ?? 0) ?></td></tr>
