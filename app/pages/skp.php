@@ -75,16 +75,28 @@ function _skp_source_from_offer(PDO $pdo, int $offerId, int $pid): ?array
     if (!$o) return null;
     $o['renewal_status'] = null;
     $o['doc_type'] = $o['module'] === 'cl' ? 'skp' : 'sks';
+    // Biaya listrik yang dicentang di penawaran ikut terbawa: nilainya masuk ke
+    // total yang nanti jadi nilai transaksi & alokasi bulanan, dan rinciannya
+    // tetap ditampilkan terpisah di SKP.
+    if (!function_exists('offer_listrik')) require_once __DIR__ . '/offers.php';
+    $o['electricity'] = offer_listrik($o);
+    $o['final_amount'] = (float) $o['final_amount'] + $o['electricity'];
     return $o;
 }
 
-/** Hitung rincian biaya. PPN sesuai PMK 131/2024: nilai × 11/12 × 12%. */
-function _skp_amounts(float $total, float $ratePerM, float $deposit): array
+/**
+ * Hitung rincian biaya. PPN sesuai PMK 131/2024: nilai × 11/12 × 12%.
+ * $listrik = bagian biaya listrik yang SUDAH termasuk di dalam $total — dipakai
+ * hanya untuk menampilkannya sebagai baris terpisah.
+ */
+function _skp_amounts(float $total, float $ratePerM, float $deposit, float $listrik = 0.0): array
 {
     $ppn        = round($total * 11 / 12 * 0.12);
     $afterPpn   = $total + $ppn;
     return [
         'rate_m_day'  => $ratePerM,
+        'sewa'        => $total - $listrik,
+        'listrik'     => $listrik,
         'total'       => $total,
         'ppn'         => $ppn,
         'after_ppn'   => $afterPpn,
@@ -352,7 +364,7 @@ function skp_form(PDO $pdo): void
     $days     = _skp_days($src['start_date'], $src['end_date']);
     $total    = (float) ($src['final_amount'] ?: $src['total_calculated']);
     $defDeposit = (float) ($skp['deposit_amount'] ?? $src['deposit_amount'] ?? 0);
-    $amt      = _skp_amounts($total, (float) $src['unit_rate'], $defDeposit);
+    $amt      = _skp_amounts($total, (float) $src['unit_rate'], $defDeposit, (float) ($src['electricity'] ?? 0));
     $area     = (float) ($src['area_sqm'] ?: $src['unit_area']);
     // Isi khusus modul: tabel harga Gudang / daftar centang Form Utilities Media.
     // Teksnya (intro, peraturan, catatan kaki, daftar item) datang dari Template
@@ -498,6 +510,12 @@ function skp_form(PDO $pdo): void
             <h3>Rincian Pembayaran</h3>
             <div class="form-grid">
                 <div><label>Biaya Sewa / m² / hari</label><input value="<?= money($amt['rate_m_day']) ?>" disabled></div>
+                <?php /* Biaya listrik ikut dari Surat Penawaran — ditampilkan terpisah
+                         supaya jelas dari mana angka totalnya. */ ?>
+                <?php if (($amt['listrik'] ?? 0) > 0): ?>
+                <div><label>Nilai Sewa</label><input value="<?= money($amt['sewa']) ?>" disabled></div>
+                <div><label>Biaya Listrik <span class="muted" style="font-weight:400">(dari penawaran)</span></label><input value="<?= money($amt['listrik']) ?>" disabled></div>
+                <?php endif; ?>
                 <div><label>Total Biaya Sewa</label><input value="<?= money($amt['total']) ?>" disabled></div>
                 <div><label>PPN 12% (×11/12)</label><input value="<?= money($amt['ppn']) ?>" disabled></div>
                 <div><label>Total Setelah PPN</label><input value="<?= money($amt['after_ppn']) ?>" disabled></div>
@@ -948,7 +966,7 @@ function skp_approve(PDO $pdo): void
     // Snapshot nilai cetak
     $days  = _skp_days($src['start_date'], $src['end_date']);
     $total = (float) ($src['final_amount'] ?: $src['total_calculated']);
-    $amt   = _skp_amounts($total, (float) $src['unit_rate'], (float) $skp['deposit_amount']);
+    $amt   = _skp_amounts($total, (float) $src['unit_rate'], (float) $skp['deposit_amount'], (float) ($src['electricity'] ?? 0));
     // Paket: lokasi & komponen utk ditampilkan di dokumen SKP.
     $bundleLoc = $bundleRows ? ('Paket (' . count($bundleRows) . ' komponen)') : '';
     $bundleItemsSnap = array_map(fn($r) => [

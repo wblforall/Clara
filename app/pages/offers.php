@@ -89,6 +89,8 @@ function _offer_template_norm(array $t): array
         'extra'             => json_decode((string) ($t['extra_json'] ?? '{}'), true) ?: [],
         'dp_required'       => (int) ($t['dp_required'] ?? 1),
         'dp_months_default' => (float) ($t['dp_months_default'] ?? 2),
+        // Baseline biaya listrik per bulan — dipakai saat membuat penawaran baru.
+        'electricity_default' => (float) ($t['electricity_default'] ?? 150000),
     ];
 }
 
@@ -144,7 +146,7 @@ function offer_template_for(PDO $pdo, int $propertyId, ?string $unitType, string
             'Apabila tidak terjadi kerusakan setelah masa sewa berakhir, Security Deposit dikembalikan 100%.',
         ],
         'terms' => offer_terms(), 'notes' => [], 'extra' => [],
-        'dp_required' => 1, 'dp_months_default' => 2,
+        'dp_required' => 1, 'dp_months_default' => 2, 'electricity_default' => 150000,
     ];
 }
 
@@ -280,7 +282,21 @@ function _offer_fields(): array
             'pricing_type', 'unit_rate', 'area_sqm', 'quantity', 'slots',
             'start_date', 'end_date', 'contract_months', 'monthly_amount', 'total_calculated', 'override_amount',
             'billing_method', 'recurring_flag', 'cycle_recognition',
-            'dp_months', 'dp_amount', 'deposit_months', 'deposit_amount', 'perihal', 'offer_date', 'is_bundle'];
+            'dp_months', 'dp_amount', 'deposit_months', 'deposit_amount',
+            'electricity_flag', 'electricity_monthly', 'perihal', 'offer_date', 'is_bundle'];
+}
+
+/**
+ * Biaya listrik penawaran = tarif per bulan × jumlah bulan kontrak.
+ * Nol bila tidak dicentang (tenant tidak dikenakan listrik) — dan nol juga untuk
+ * penawaran lama yang terbit sebelum fitur ini ada, supaya cetakannya tidak
+ * berubah di belakang hari.
+ */
+function offer_listrik(array $o): float
+{
+    if (empty($o['electricity_flag'])) return 0.0;
+    $bulan = max(1, (int) ($o['contract_months'] ?? 1));
+    return round((float) ($o['electricity_monthly'] ?? 0) * $bulan, 2);
 }
 
 // ─── Paket Bundling (offer multi-komponen) ───────────────────────────────────
@@ -829,6 +845,14 @@ function offer_form(PDO $pdo): void
     $editable = !$existing || !in_array($offer['status'], ['deal', 'cancelled'], true);
 
     $masters  = masterOptions($pdo, $module);
+    // Biaya listrik: penawaran baru tercentang otomatis dengan baseline dari
+    // Template Penawaran; penawaran lama memakai apa yang tersimpan.
+    $tplBaru    = offer_template_for($pdo, $pid, null, $module);
+    $listrikOn  = $existing ? !empty($offer['electricity_flag']) : ($module === 'cl');
+    $listrikRp  = $existing
+        ? (float) ($offer['electricity_monthly'] ?? 0)
+        : (float) ($tplBaru['electricity_default'] ?? 150000);
+    if ($existing && $listrikRp <= 0) $listrikRp = (float) ($tplBaru['electricity_default'] ?? 150000);
     $clients  = $pdo->query("SELECT id, company_name, brand_name FROM master_clients WHERE status='active' ORDER BY company_name")->fetchAll();
     $contacts = $pdo->query("SELECT id, client_id, name FROM master_client_contacts WHERE status='active' ORDER BY name")->fetchAll();
     // Hanya PIC yang ditandai "tampil di penawaran" (toggle di Master PIC).
@@ -865,7 +889,7 @@ function offer_form(PDO $pdo): void
         }
     }
 
-    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows) {
+    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $tplBaru) {
         $picSel = $offer['pic_name'] ?? $linkedPic;
         $disabled = $editable ? '' : 'disabled';
         ?>
@@ -1029,6 +1053,81 @@ function offer_form(PDO $pdo): void
                 <div class="single-price"><label>Harga / Bulan <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="monthly_disp" value="" readonly><input type="hidden" name="monthly_amount" id="monthly_amount" value="<?= $v('monthly_amount') ?>"></div>
                 <div class="wide single-price"><label>Harga Nego Final <span class="muted" style="font-weight:400">(opsional — override)</span></label><input type="text" inputmode="numeric" id="override_fmt" placeholder="Kosongkan = pakai hasil kalkulasi di atas"><input type="hidden" name="override_amount" id="override_amount" value="<?= (int)($offer['override_amount'] ?? 0) ?: '' ?>"><div class="help">Override: isi bila nilai final tidak sama dengan hasil kalkulasi.</div></div>
             </div>
+
+            <?php /* Biaya listrik — hanya Exhibition. Tercentang otomatis; dibuka
+                     centangnya bila tenant memang tidak dikenakan listrik. */ ?>
+            <?php if ($module === 'cl'): ?>
+            <div class="form-grid" style="margin-top:4px">
+                <div class="wide single-price" style="background:#f8fafc;border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:10px 12px">
+                    <label style="display:flex;align-items:center;gap:9px;margin:0;cursor:pointer">
+                        <input type="checkbox" name="electricity_flag" id="listrik_on" value="1" <?= $listrikOn ? 'checked' : '' ?> <?= $disabled ?>>
+                        <span>Kenakan <strong>Biaya Listrik</strong> pada penawaran ini</span>
+                    </label>
+                    <div id="listrik_box" style="margin-top:9px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">
+                        <div style="min-width:220px">
+                            <label>Biaya Listrik / Bulan</label>
+                            <div style="display:flex;align-items:stretch">
+                                <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
+                                <input type="text" inputmode="numeric" id="listrik_fmt" class="rp-fmt"
+                                       value="<?= $listrikRp > 0 ? number_format($listrikRp, 0, ',', '.') : '' ?>"
+                                       style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= $disabled ?>>
+                                <input type="hidden" name="electricity_monthly" id="listrik_val" value="<?= (int) $listrikRp ?>">
+                            </div>
+                            <div class="help">Standar <?= h(number_format((float) ($tplBaru['electricity_default'] ?? 150000), 0, ',', '.')) ?> — boleh diubah untuk penawaran ini.</div>
+                        </div>
+                        <div class="help" id="listrik_info" style="flex:1;min-width:240px;color:#0f766e"></div>
+                    </div>
+                </div>
+            </div>
+            <script>
+            (function () {
+                var on = document.getElementById('listrik_on'),
+                    fmt = document.getElementById('listrik_fmt'),
+                    val = document.getElementById('listrik_val'),
+                    box = document.getElementById('listrik_box'),
+                    info = document.getElementById('listrik_info'),
+                    d1 = document.getElementById('start_date'),
+                    d2 = document.getElementById('end_date');
+                if (!on || !fmt) return;
+
+                // Jumlah bulan kontrak — rumusnya sama dengan _offer_months() di PHP
+                // supaya angka di layar dan di surat tidak pernah berbeda.
+                function bulan() {
+                    if (!d1 || !d2 || !d1.value || !d2.value) return 1;
+                    var a = new Date(d1.value), b = new Date(d2.value);
+                    if (isNaN(a) || isNaN(b) || b < a) return 1;
+                    var m = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+                    if (b.getDate() >= a.getDate()) m++;
+                    return Math.max(1, m);
+                }
+                function angka() { return parseInt((fmt.value || '').replace(/\D/g, ''), 10) || 0; }
+                function gambar() {
+                    box.style.display = on.checked ? 'flex' : 'none';
+                    val.value = on.checked ? angka() : 0;
+                    if (!info) return;
+                    if (!on.checked) { info.textContent = ''; return; }
+                    var n = bulan(), t = angka(), rp = function (x) { return 'Rp ' + (x || 0).toLocaleString('id-ID'); };
+                    info.textContent = n + ' bulan × ' + rp(t) + ' = ' + rp(n * t) + ' (belum PPN 12%) — tercetak di Rincian Biaya surat penawaran.';
+                }
+                fmt.addEventListener('input', function () {
+                    var raw = this.value.replace(/\D/g, '');
+                    this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                    fmt.dataset.manual = '1';
+                    gambar();
+                });
+                window.claraSetListrik = function (nilai) {
+                    nilai = parseInt(nilai, 10) || 0;
+                    if (!nilai || fmt.dataset.manual === '1') return;
+                    fmt.value = nilai.toLocaleString('id-ID');
+                    gambar();
+                };
+                on.addEventListener('change', gambar);
+                if (d1) d1.addEventListener('change', gambar);
+                if (d2) d2.addEventListener('change', gambar);
+                gambar();
+            })();
+            </script>
+            <?php endif; ?>
             <?php if ($editable): ?>
             <div class="single-price" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px">
                 <button type="button" class="btn light" id="btn-kalkulasi" style="background:#0ea5e9;color:#fff">Kalkulasi Total</button>
@@ -1185,6 +1284,9 @@ function offer_form(PDO $pdo): void
                         if (d.dp_required) {
                             note.innerHTML = '📄 Tipe <strong>' + esc(d.unit_type || '-') + '</strong> · template <strong>' + esc(d.template) + '</strong> · <strong>DP wajib</strong> (default ' + esc(d.dp_months_default) + ' bln).';
                             if (dpm) { dpm.min = '1'; if (!dpm.value || dpm.value === '0') dpm.value = d.dp_months_default || 1; }
+                            // Baseline listrik ikut tipe unit — hanya diperbarui
+                            // selama sales belum mengetik nominalnya sendiri.
+                            if (typeof claraSetListrik === 'function') claraSetListrik(d.electricity_default);
                         } else {
                             note.innerHTML = '📄 Tipe <strong>' + esc(d.unit_type || '-') + '</strong> · template <strong>' + esc(d.template) + '</strong> · <strong>tanpa DP</strong> (deposit-only). Kosongkan DP.';
                             if (dpm) { dpm.min = '0'; dpm.value = '0'; }
@@ -1478,6 +1580,10 @@ function offer_save(PDO $pdo): void
         'dp_amount'       => $dpAmount, // #5 — 0 utk template deposit-only
         'deposit_months'  => (float) post('deposit_months', 1),
         'deposit_amount'  => (float) post('deposit_amount', 0),
+        // Listrik: hanya berlaku untuk Exhibition. Nominalnya tarif PER BULAN —
+        // dikalikan jumlah bulan saat dicetak & saat nilainya diteruskan ke SKP.
+        'electricity_flag'    => ($module === 'cl' && post('electricity_flag')) ? 1 : 0,
+        'electricity_monthly' => $module === 'cl' ? parse_rupiah((string) post('electricity_monthly', '0')) : null,
         'perihal'         => $tpl['perihal'] ?: ('Surat Penawaran Sewa Area Pameran' . ($days > 0 ? ' ' . $days . ' Hari' : '')),
         'letter_json'     => $letterJson,
         'offer_date'      => date('Y-m-d'),
@@ -1502,6 +1608,10 @@ function offer_save(PDO $pdo): void
         $data['dp_months']        = 0;
         $data['deposit_months']   = 0;
         $data['perihal']          = 'Surat Penawaran Paket';
+        // Paket dihitung per komponen; biaya listrik tidak dipakai di sini supaya
+        // nilai surat, transaksi, dan alokasi tidak berbeda.
+        $data['electricity_flag']    = 0;
+        $data['electricity_monthly'] = null;
         $data['letter_json']      = json_encode([
             'template' => 'Paket', 'unit_type' => '', 'perihal' => 'Surat Penawaran Paket',
             'intro' => '', 'fasilitas' => [], 'payment' => [], 'terms' => [], 'dp_required' => 0, 'bundle' => true,
@@ -1755,7 +1865,11 @@ function _offer_by_token(PDO $pdo, string $token): ?array
 /** Bangun data tampilan + nominal dari baris penawaran (live atau snapshot). */
 function _offer_sign_view(array $o): array
 {
-    $total    = (float) $o['total_calculated'];
+    // Angka di halaman TTD customer harus sama persis dengan surat penawaran
+    // yang ia terima — termasuk biaya listrik bila penawarannya mencentangnya.
+    $sewa     = (float) $o['total_calculated'];
+    $listrik  = offer_listrik($o);
+    $total    = $sewa + $listrik;
     $ppn      = round($total * 11 / 12 * 0.12);
     $afterPpn = $total + $ppn;
     $deposit  = (float) $o['deposit_amount'];
@@ -1773,6 +1887,8 @@ function _offer_sign_view(array $o): array
         'periode'      => $o['start_date'] ? (date('d/m/Y', strtotime($o['start_date'])) . ' s/d ' . date('d/m/Y', strtotime($o['end_date']))) : '-',
         'berlaku'      => date('d/m/Y', $validTs),
         'amounts'      => [
+            'sewa'     => $sewa,
+            'listrik'  => $listrik,
             'total'    => $total,
             'ppn'      => $ppn,
             'after'    => $afterPpn,
@@ -2076,6 +2192,17 @@ function offer_template_form(PDO $pdo): void
                     <div style="margin-top:6px"><label style="font-size:12px">Default DP (bulan)</label> <input type="number" step="0.5" min="0" name="dp_months_default" value="<?= $val('dp_months_default', '2') ?>" style="width:90px"></div>
                 </div>
             </div>
+            <?php /* Baseline biaya listrik — dipakai sebagai isian awal penawaran baru. */ ?>
+            <div style="display:flex;gap:10px;align-items:flex-start;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:11px 14px;margin-top:12px">
+                <div>
+                    <label style="font-weight:700">Biaya Listrik / Bulan (default)</label>
+                    <div class="help" style="margin-top:2px">Nominal yang otomatis terisi saat sales membuat penawaran baru dengan tipe ini. Di penawarannya masih bisa diubah atau dilepas centangnya.</div>
+                    <div style="margin-top:6px;display:flex;align-items:stretch;max-width:220px">
+                        <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
+                        <input type="number" min="0" step="1000" name="electricity_default" value="<?= $val('electricity_default', '150000') ?>" style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right">
+                    </div>
+                </div>
+            </div>
             <div style="margin-top:12px"><label>Fasilitas <span class="muted" style="font-weight:400">(1 baris = 1 poin)</span></label><textarea name="fasilitas" rows="3" style="width:100%"><?= $lines('fasilitas_json') ?></textarea></div>
             <div style="margin-top:10px"><label>Cara Pembayaran <span class="muted" style="font-weight:400">(1 baris = 1 poin · placeholder: <code>{dp}</code> <code>{deposit}</code> <code>{total}</code> <code>{ppn}</code> <code>{grand}</code>)</span></label><textarea name="payment" rows="4" style="width:100%"><?= $lines('payment_json') ?></textarea></div>
             <?php endif; ?>
@@ -2160,6 +2287,7 @@ function offer_template_save(PDO $pdo): void
         'extra_json'        => $J($extra),
         'dp_required'       => $module === 'cl' ? (post('dp_required') ? 1 : 0) : 0,
         'dp_months_default' => $module === 'cl' ? (float) post('dp_months_default', 2) : 0,
+        'electricity_default' => $module === 'cl' ? max(0, (float) post('electricity_default', 150000)) : 0,
         'status'            => post('status') === 'inactive' ? 'inactive' : 'active',
     ];
     if ($id) {
@@ -2193,6 +2321,7 @@ function offer_template_rule(PDO $pdo): void
         'template'          => $tpl['name'],
         'dp_required'       => $tpl['dp_required'],
         'dp_months_default' => $tpl['dp_months_default'],
+        'electricity_default' => $tpl['electricity_default'],
     ]);
     exit;
 }

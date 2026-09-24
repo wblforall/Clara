@@ -16,8 +16,13 @@ $durasi = ($days > 0 && $days < 28) ? ($days . ' hari') : ($contractMonths . ' b
 $perihal = $letter['perihal'] ?: ('Surat Penawaran Sewa Area Pameran' . ($days > 0 ? ' ' . $days . ' Hari' : ''));
 // Rincian biaya
 $total    = (float) $o['total_calculated'];
-$ppn      = round($total * 11 / 12 * 0.12);
-$afterPpn = $total + $ppn;
+// Biaya listrik (Exhibition): tarif per bulan × jumlah bulan, kena PPN 12% juga.
+// Nol untuk penawaran yang tidak mencentangnya — barisnya pun tidak dicetak.
+$listrikBln = (float) ($o['electricity_monthly'] ?? 0);
+$listrik    = function_exists('offer_listrik') ? offer_listrik($o) : 0.0;
+$dasarPpn = $total + $listrik;
+$ppn      = round($dasarPpn * 11 / 12 * 0.12);
+$afterPpn = $dasarPpn + $ppn;
 $deposit  = (float) $o['deposit_amount'];
 $grand    = $afterPpn + $deposit;
 $dpBulan  = rtrim(rtrim(number_format((float) $o['dp_months'], 1, ',', ''), '0'), ',');
@@ -184,6 +189,13 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             <tr><td class="lbl">Masa sewa</td><td class="amt"><?= $h($durasi) ?></td></tr>
             <tr class="sub"><td class="lbl">Subtotal sewa</td><td class="amt"><?= $rp($total) ?></td></tr>
         <?php endif; ?>
+        <?php if ($listrik > 0): ?>
+        <tr><td class="lbl">Biaya Listrik / Bulan</td><td class="amt"><?= $rp($listrikBln) ?></td></tr>
+        <?php if ($contractMonths > 1): ?>
+        <tr><td class="lbl">Biaya Listrik <?= (int) $contractMonths ?> bulan</td><td class="amt"><?= $rp($listrik) ?></td></tr>
+        <?php endif; ?>
+        <tr class="sub"><td class="lbl">Subtotal sewa + listrik</td><td class="amt"><?= $rp($dasarPpn) ?></td></tr>
+        <?php endif; ?>
         <tr><td class="lbl">PPN 12% <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppn) ?></td></tr>
         <tr class="tot"><td class="lbl">Total setelah PPN</td><td class="amt"><?= $rp($afterPpn) ?></td></tr>
         <?php if ($isBundle && $sumDp > 0): ?>
@@ -196,7 +208,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     <?php
     $facil = $letter['fasilitas'] ?: offer_facilities();
     $payList = $letter['payment'] ?: [];
-    $amts = ['dp' => $o['dp_amount'] ?: 0, 'deposit' => $deposit, 'total' => $total, 'ppn' => $ppn, 'grand' => $grand];
+    $amts = ['dp' => $o['dp_amount'] ?: 0, 'deposit' => $deposit, 'total' => $dasarPpn, 'ppn' => $ppn, 'grand' => $grand];
     ?>
     <div class="sec">Fasilitas</div>
     <ul><?php foreach ($facil as $f): ?><li><?= clara_format_bold($f) ?></li><?php endforeach; ?></ul>
