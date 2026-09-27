@@ -1074,7 +1074,7 @@ function offer_form(PDO $pdo): void
                 <div class="single-price">
                     <label style="display:flex;align-items:center;gap:7px;cursor:pointer">
                         <input type="checkbox" name="electricity_flag" id="listrik_on" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= $listrikOn ? 'checked' : '' ?> <?= $disabled ?>>
-                        Biaya Listrik / Bulan
+                        Biaya Listrik / 30 Hari
                     </label>
                     <div id="listrik_box" style="display:flex;align-items:stretch">
                         <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
@@ -1083,7 +1083,15 @@ function offer_form(PDO $pdo): void
                                style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= $disabled ?>>
                         <input type="hidden" name="electricity_monthly" id="listrik_val" value="<?= (int) $listrikRp ?>">
                     </div>
-                    <div class="help" id="listrik_info">Standar <?= h(number_format((float) ($tplBaru['electricity_default'] ?? 150000), 0, ',', '.')) ?> — boleh diubah.</div>
+                    <div class="help" id="listrik_info">Standar <?= h(number_format((float) ($tplBaru['electricity_default'] ?? 150000), 0, ',', '.')) ?> per 30 hari — boleh diubah.</div>
+                </div>
+                <?php /* Angka yang BENAR-BENAR tercetak di surat, ditampilkan sendiri
+                         supaya sales tidak lagi mengira yang diketik = yang ditagih. */ ?>
+                <div class="single-price" id="listrik_total_wrap">
+                    <label>Total Biaya Listrik <span class="muted" style="font-weight:400">(tercetak di surat)</span></label>
+                    <input type="text" id="listrik_total" value="" readonly
+                           style="background:#f0fdf4;border-color:#bbf7d0;font-weight:700;text-align:right">
+                    <div class="help" id="listrik_total_info"></div>
                 </div>
                 <?php endif; ?>
             </div>
@@ -1115,14 +1123,24 @@ function offer_form(PDO $pdo): void
                     return h > 0 ? Math.max(1, Math.round(h / 30)) : 1;
                 }
                 function angka() { return parseInt((fmt.value || '').replace(/\D/g, ''), 10) || 0; }
+                var totWrap = document.getElementById('listrik_total_wrap'),
+                    totBox  = document.getElementById('listrik_total'),
+                    totInfo = document.getElementById('listrik_total_info');
                 function gambar() {
                     box.style.display = on.checked ? 'flex' : 'none';
+                    if (totWrap) totWrap.style.display = on.checked ? '' : 'none';
                     val.value = on.checked ? angka() : 0;
-                    if (!info) return;
-                    if (!on.checked) { info.textContent = ''; return; }
-                    var n = bulan(), t = angka(), rp = function (x) { return 'Rp ' + (x || 0).toLocaleString('id-ID'); };
-                    var h = hari();
-                    info.textContent = (h ? h + ' hari · ' : '') + rp(n * t) + ' (belum PPN 12%)';
+                    if (!on.checked) { if (info) info.textContent = ''; return; }
+                    var n = bulan(), t = angka(), h = hari();
+                    var rp = function (x) { return 'Rp ' + (x || 0).toLocaleString('id-ID'); };
+                    var ppn = Math.round(n * t * 11 / 12 * 0.12);
+                    if (info) info.textContent = 'Standar per 30 hari — boleh diubah.';
+                    if (totBox) totBox.value = rp(n * t);
+                    if (totInfo) {
+                        totInfo.textContent = h
+                            ? h + ' hari → ' + n + ' × ' + rp(t) + ' · PPN 12% ' + rp(ppn) + ' · jadi ' + rp(n * t + ppn)
+                            : 'Isi tanggal mulai & selesai dulu.';
+                    }
                 }
                 fmt.addEventListener('input', function () {
                     var raw = this.value.replace(/\D/g, '');
@@ -2218,7 +2236,7 @@ function offer_template_form(PDO $pdo): void
             <?php /* Baseline biaya listrik — dipakai sebagai isian awal penawaran baru. */ ?>
             <div style="display:flex;gap:10px;align-items:flex-start;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:11px 14px;margin-top:12px">
                 <div>
-                    <label style="font-weight:700">Biaya Listrik / Bulan (default)</label>
+                    <label style="font-weight:700">Biaya Listrik / 30 Hari (default)</label>
                     <div class="help" style="margin-top:2px">Nominal yang otomatis terisi saat sales membuat penawaran baru dengan tipe ini. Di penawarannya masih bisa diubah atau dilepas centangnya.</div>
                     <div style="margin-top:6px;display:flex;align-items:stretch;max-width:220px">
                         <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
