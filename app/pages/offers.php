@@ -868,6 +868,9 @@ function offer_form(PDO $pdo): void
         ? (float) ($offer['electricity_monthly'] ?? 0)
         : (float) ($tplBaru['electricity_default'] ?? 150000);
     if ($existing && $listrikRp <= 0) $listrikRp = (float) ($tplBaru['electricity_default'] ?? 150000);
+    // Jaring pengaman: template yang baseline-nya belum diisi jangan sampai
+    // membuat kotak tarif kosong — sales bisa lupa mengisinya.
+    if ($listrikRp <= 0) $listrikRp = 150000;
     $clients  = $pdo->query("SELECT id, company_name, brand_name FROM master_clients WHERE status='active' ORDER BY company_name")->fetchAll();
     $contacts = $pdo->query("SELECT id, client_id, name FROM master_client_contacts WHERE status='active' ORDER BY name")->fetchAll();
     // Hanya PIC yang ditandai "tampil di penawaran" (toggle di Master PIC).
@@ -1130,11 +1133,12 @@ function offer_form(PDO $pdo): void
                     box.style.display = on.checked ? 'flex' : 'none';
                     if (totWrap) totWrap.style.display = on.checked ? '' : 'none';
                     val.value = on.checked ? angka() : 0;
-                    if (!on.checked) { if (info) info.textContent = ''; return; }
+                    if (info) info.style.display = on.checked ? '' : 'none';
+                    if (!on.checked) return;
                     var n = bulan(), t = angka(), h = hari();
                     var rp = function (x) { return 'Rp ' + (x || 0).toLocaleString('id-ID'); };
                     var ppn = Math.round(n * t * 11 / 12 * 0.12);
-                    if (info) info.textContent = 'Standar per 30 hari — boleh diubah.';
+
                     if (totBox) totBox.value = rp(n * t);
                     if (totInfo) {
                         totInfo.textContent = h
