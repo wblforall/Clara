@@ -202,7 +202,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                      PPN-nya sendiri, supaya customer tahu asal tiap angka. */ ?>
             <tr><td class="lbl">PPN 12% Sewa <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppnSewa) ?></td></tr>
             <tr class="sub"><td class="lbl">Subtotal Sewa + PPN</td><td class="amt"><?= $rp($total + $ppnSewa) ?></td></tr>
-            <tr><td class="lbl">Biaya Listrik / Bulan</td><td class="amt"><?= $rp($listrikBln) ?></td></tr>
+            <tr><td class="lbl">Biaya Listrik / 30 hari</td><td class="amt"><?= $rp($listrikBln) ?></td></tr>
             <tr><td class="lbl">Masa listrik</td><td class="amt"><?= (int) $days ?> hari</td></tr>
             <?php if ($listrik != $listrikBln): ?>
             <tr><td class="lbl">Total Biaya Listrik</td><td class="amt"><?= $rp($listrik) ?></td></tr>
