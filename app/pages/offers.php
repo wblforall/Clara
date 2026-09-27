@@ -283,7 +283,7 @@ function _offer_fields(): array
             'start_date', 'end_date', 'contract_months', 'monthly_amount', 'total_calculated', 'override_amount',
             'billing_method', 'recurring_flag', 'cycle_recognition',
             'dp_months', 'dp_amount', 'deposit_months', 'deposit_amount',
-            'electricity_flag', 'electricity_monthly', 'perihal', 'offer_date', 'is_bundle'];
+            'electricity_flag', 'electricity_monthly', 'electricity_amount', 'perihal', 'offer_date', 'is_bundle'];
 }
 
 /**
@@ -295,6 +295,9 @@ function _offer_fields(): array
 function offer_listrik(array $o): float
 {
     if (empty($o['electricity_flag'])) return 0.0;
+    // Nilai yang diketik sendiri menang atas hitungan otomatis.
+    $manual = (float) ($o['electricity_amount'] ?? 0);
+    if ($manual > 0) return round($manual, 2);
     return round((float) ($o['electricity_monthly'] ?? 0) * offer_listrik_bulan($o), 2);
 }
 
@@ -871,6 +874,8 @@ function offer_form(PDO $pdo): void
     // Jaring pengaman: template yang baseline-nya belum diisi jangan sampai
     // membuat kotak tarif kosong — sales bisa lupa mengisinya.
     if ($listrikRp <= 0) $listrikRp = 150000;
+    // Total yang pernah diketik sendiri (kosong = ikut hitungan otomatis).
+    $listrikTotal = $existing ? (float) ($offer['electricity_amount'] ?? 0) : 0.0;
     $clients  = $pdo->query("SELECT id, company_name, brand_name FROM master_clients WHERE status='active' ORDER BY company_name")->fetchAll();
     $contacts = $pdo->query("SELECT id, client_id, name FROM master_client_contacts WHERE status='active' ORDER BY name")->fetchAll();
     // Hanya PIC yang ditandai "tampil di penawaran" (toggle di Master PIC).
@@ -907,7 +912,7 @@ function offer_form(PDO $pdo): void
         }
     }
 
-    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $tplBaru) {
+    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $listrikTotal, $tplBaru) {
         $picSel = $offer['pic_name'] ?? $linkedPic;
         $disabled = $editable ? '' : 'disabled';
         ?>
@@ -1092,8 +1097,13 @@ function offer_form(PDO $pdo): void
                          supaya sales tidak lagi mengira yang diketik = yang ditagih. */ ?>
                 <div class="single-price" id="listrik_total_wrap">
                     <label>Total Biaya Listrik <span class="muted" style="font-weight:400">(tercetak di surat)</span></label>
-                    <input type="text" id="listrik_total" value="" readonly
-                           style="background:#f0fdf4;border-color:#bbf7d0;font-weight:700;text-align:right">
+                    <div style="display:flex;align-items:stretch">
+                        <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
+                        <input type="text" inputmode="numeric" id="listrik_total"
+                               value="<?= $listrikTotal > 0 ? number_format($listrikTotal, 0, ',', '.') : '' ?>"
+                               style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right;background:#f0fdf4;border-color:#bbf7d0;font-weight:700" <?= $disabled ?>>
+                        <input type="hidden" name="electricity_amount" id="listrik_total_val" value="<?= (int) $listrikTotal ?>">
+                    </div>
                     <div class="help" id="listrik_total_info"></div>
                 </div>
                 <?php endif; ?>
@@ -1128,7 +1138,11 @@ function offer_form(PDO $pdo): void
                 function angka() { return parseInt((fmt.value || '').replace(/\D/g, ''), 10) || 0; }
                 var totWrap = document.getElementById('listrik_total_wrap'),
                     totBox  = document.getElementById('listrik_total'),
+                    totVal  = document.getElementById('listrik_total_val'),
                     totInfo = document.getElementById('listrik_total_info');
+                // Sudah ada isinya saat halaman dibuka = pernah diketik sendiri.
+                if (totBox && totBox.value.replace(/\D/g, '') !== '') totBox.dataset.manual = '1';
+                function angkaTot() { return parseInt((totBox.value || '').replace(/\D/g, ''), 10) || 0; }
                 function gambar() {
                     box.style.display = on.checked ? 'flex' : 'none';
                     if (totWrap) totWrap.style.display = on.checked ? '' : 'none';
@@ -1139,11 +1153,24 @@ function offer_form(PDO $pdo): void
                     var rp = function (x) { return 'Rp ' + (x || 0).toLocaleString('id-ID'); };
                     var ppn = Math.round(n * t * 11 / 12 * 0.12);
 
-                    if (totBox) totBox.value = rp(n * t);
+                    // "Sedang/pernah diketik sendiri" — kotaknya tidak ditimpa,
+                    // termasuk saat isinya baru dikosongkan untuk diganti.
+                    var manual = totBox && totBox.dataset.manual === '1';
+                    if (totBox && !manual) totBox.value = (n * t).toLocaleString('id-ID');
+                    var isiManual = manual ? angkaTot() : 0;
+                    var dipakai = isiManual > 0 ? isiManual : n * t;
+                    var ppnPakai = Math.round(dipakai * 11 / 12 * 0.12);
+                    if (totVal) totVal.value = isiManual > 0 ? isiManual : 0;
                     if (totInfo) {
-                        totInfo.textContent = h
-                            ? h + ' hari → ' + n + ' × ' + rp(t) + ' · PPN 12% ' + rp(ppn) + ' · jadi ' + rp(n * t + ppn)
-                            : 'Isi tanggal mulai & selesai dulu.';
+                        if (!h) { totInfo.textContent = 'Isi tanggal mulai & selesai dulu.'; return; }
+                        totInfo.innerHTML = isiManual > 0
+                            ? 'Diisi manual. Hitungan otomatis: ' + h + ' hari → ' + n + ' × ' + rp(t) + ' = ' + rp(n * t)
+                              + ' — <a href="#" id="listrik_auto">pakai hitungan otomatis</a>'
+                            : h + ' hari → ' + n + ' × ' + rp(t) + ' · PPN 12% ' + rp(ppnPakai) + ' · jadi ' + rp(dipakai + ppnPakai);
+                        var lk = document.getElementById('listrik_auto');
+                        if (lk) lk.addEventListener('click', function (e) {
+                            e.preventDefault(); totBox.dataset.manual = ''; gambar();
+                        });
                     }
                 }
                 fmt.addEventListener('input', function () {
@@ -1159,6 +1186,18 @@ function offer_form(PDO $pdo): void
                     gambar();
                 };
                 on.addEventListener('change', gambar);
+                if (totBox) {
+                    totBox.addEventListener('input', function () {
+                        var raw = this.value.replace(/\D/g, '');
+                        this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                        this.dataset.manual = '1';   // dikosongkan pun jangan diisi ulang
+                        gambar();
+                    });
+                    // Ditinggal dalam keadaan kosong = minta hitungan otomatis lagi.
+                    totBox.addEventListener('blur', function () {
+                        if (this.value.replace(/\D/g, '') === '') { this.dataset.manual = ''; gambar(); }
+                    });
+                }
                 if (d1) d1.addEventListener('change', gambar);
                 if (d2) d2.addEventListener('change', gambar);
                 gambar();
@@ -1622,6 +1661,9 @@ function offer_save(PDO $pdo): void
         // dikalikan jumlah bulan saat dicetak & saat nilainya diteruskan ke SKP.
         'electricity_flag'    => ($module === 'cl' && post('electricity_flag')) ? 1 : 0,
         'electricity_monthly' => $module === 'cl' ? parse_rupiah((string) post('electricity_monthly', '0')) : null,
+        // Kosong = ikut hitungan otomatis; terisi = dipakai apa adanya.
+        'electricity_amount'  => ($module === 'cl' && parse_rupiah((string) post('electricity_amount', '0')) > 0)
+            ? parse_rupiah((string) post('electricity_amount', '0')) : null,
         'perihal'         => $tpl['perihal'] ?: ('Surat Penawaran Sewa Area Pameran' . ($days > 0 ? ' ' . $days . ' Hari' : '')),
         'letter_json'     => $letterJson,
         'offer_date'      => date('Y-m-d'),
@@ -1650,6 +1692,7 @@ function offer_save(PDO $pdo): void
         // nilai surat, transaksi, dan alokasi tidak berbeda.
         $data['electricity_flag']    = 0;
         $data['electricity_monthly'] = null;
+        $data['electricity_amount']  = null;
         $data['letter_json']      = json_encode([
             'template' => 'Paket', 'unit_type' => '', 'perihal' => 'Surat Penawaran Paket',
             'intro' => '', 'fasilitas' => [], 'payment' => [], 'terms' => [], 'dp_required' => 0, 'bundle' => true,

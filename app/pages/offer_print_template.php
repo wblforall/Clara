@@ -202,10 +202,16 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                      PPN-nya sendiri, supaya customer tahu asal tiap angka. */ ?>
             <tr><td class="lbl">PPN 12% Sewa <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppnSewa) ?></td></tr>
             <tr class="sub"><td class="lbl">Subtotal Sewa + PPN</td><td class="amt"><?= $rp($total + $ppnSewa) ?></td></tr>
-            <tr><td class="lbl">Biaya Listrik / 30 hari</td><td class="amt"><?= $rp($listrikBln) ?></td></tr>
-            <tr><td class="lbl">Masa listrik</td><td class="amt"><?= (int) $days ?> hari</td></tr>
-            <?php if ($listrik != $listrikBln): ?>
-            <tr><td class="lbl">Total Biaya Listrik</td><td class="amt"><?= $rp($listrik) ?></td></tr>
+            <?php if ((float) ($o['electricity_amount'] ?? 0) > 0): ?>
+                <?php /* Nominal ditetapkan sendiri oleh sales — tarif per 30 hari
+                         tidak ditampilkan supaya tidak rancu. */ ?>
+                <tr><td class="lbl">Biaya Listrik <span class="muted" style="font-weight:400">(<?= (int) $days ?> hari)</span></td><td class="amt"><?= $rp($listrik) ?></td></tr>
+            <?php else: ?>
+                <tr><td class="lbl">Biaya Listrik / 30 hari</td><td class="amt"><?= $rp($listrikBln) ?></td></tr>
+                <tr><td class="lbl">Masa listrik</td><td class="amt"><?= (int) $days ?> hari</td></tr>
+                <?php if ($listrik != $listrikBln): ?>
+                <tr><td class="lbl">Total Biaya Listrik</td><td class="amt"><?= $rp($listrik) ?></td></tr>
+                <?php endif; ?>
             <?php endif; ?>
             <tr><td class="lbl">PPN 12% Listrik <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppnListrik) ?></td></tr>
             <tr class="sub"><td class="lbl">Subtotal Listrik + PPN</td><td class="amt"><?= $rp($listrik + $ppnListrik) ?></td></tr>
