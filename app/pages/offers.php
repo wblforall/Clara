@@ -1122,7 +1122,7 @@ function offer_form(PDO $pdo): void
                     if (!on.checked) { info.textContent = ''; return; }
                     var n = bulan(), t = angka(), rp = function (x) { return 'Rp ' + (x || 0).toLocaleString('id-ID'); };
                     var h = hari();
-                    info.textContent = (h ? h + ' hari → ' : '') + n + ' bulan × ' + rp(t) + ' = ' + rp(n * t) + ' (belum PPN 12%)';
+                    info.textContent = (h ? h + ' hari · ' : '') + rp(n * t) + ' (belum PPN 12%)';
                 }
                 fmt.addEventListener('input', function () {
                     var raw = this.value.replace(/\D/g, '');
@@ -1909,7 +1909,7 @@ function _offer_sign_view(array $o): array
         'amounts'      => [
             'sewa'        => $sewa,
             'listrik'     => $listrik,
-            'listrik_bln' => offer_listrik_bulan($o),
+            'listrik_hari' => _offer_days($o['start_date'] ?? null, $o['end_date'] ?? null),
             'ppn_sewa'    => $ppnSewa,
             'ppn_listrik' => $ppnListrik,
             'total'    => $total,

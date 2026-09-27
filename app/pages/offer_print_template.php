@@ -11,7 +11,9 @@ $periode = $o['start_date'] ? (date('d/m/Y', strtotime($o['start_date'])) . ' s/
 // Durasi nyata: pakai "hari" bila < 28 hari, selain itu "bulan" (+ hari).
 $contractMonths = (int) ($o['contract_months'] ?: 1);
 $days = ($o['start_date'] && $o['end_date']) ? ((int) floor((strtotime($o['end_date']) - strtotime($o['start_date'])) / 86400) + 1) : 0;
-$durasi = ($days > 0 && $days < 28) ? ($days . ' hari') : ($contractMonths . ' bulan' . ($days ? ' · ' . $days . ' hari' : ''));
+// Masa sewa ditulis dalam HARI saja — hitungan bulan sengaja tidak ditampilkan
+// supaya tidak rancu (mis. 36 hari sempat terbaca "2 bulan").
+$durasi = $days > 0 ? ($days . ' hari') : ($contractMonths . ' bulan');
 // Perihal dari template per jenis booth (fallback general bila kosong).
 $perihal = $letter['perihal'] ?: ('Surat Penawaran Sewa Area Pameran' . ($days > 0 ? ' ' . $days . ' Hari' : ''));
 // Rincian biaya
@@ -201,9 +203,9 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             <tr><td class="lbl">PPN 12% Sewa <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppnSewa) ?></td></tr>
             <tr class="sub"><td class="lbl">Subtotal Sewa + PPN</td><td class="amt"><?= $rp($total + $ppnSewa) ?></td></tr>
             <tr><td class="lbl">Biaya Listrik / Bulan</td><td class="amt"><?= $rp($listrikBln) ?></td></tr>
-            <tr><td class="lbl">Masa listrik</td><td class="amt"><?= (int) $listrikN ?> bulan<?= $days ? ' · ' . (int) $days . ' hari' : '' ?></td></tr>
-            <?php if ($listrikN > 1): ?>
-            <tr><td class="lbl">Biaya Listrik <?= (int) $listrikN ?> bulan</td><td class="amt"><?= $rp($listrik) ?></td></tr>
+            <tr><td class="lbl">Masa listrik</td><td class="amt"><?= (int) $days ?> hari</td></tr>
+            <?php if ($listrik != $listrikBln): ?>
+            <tr><td class="lbl">Total Biaya Listrik</td><td class="amt"><?= $rp($listrik) ?></td></tr>
             <?php endif; ?>
             <tr><td class="lbl">PPN 12% Listrik <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppnListrik) ?></td></tr>
             <tr class="sub"><td class="lbl">Subtotal Listrik + PPN</td><td class="amt"><?= $rp($listrik + $ppnListrik) ?></td></tr>
