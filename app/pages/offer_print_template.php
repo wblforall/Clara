@@ -20,9 +20,15 @@ $total    = (float) $o['total_calculated'];
 // Nol untuk penawaran yang tidak mencentangnya — barisnya pun tidak dicetak.
 $listrikBln = (float) ($o['electricity_monthly'] ?? 0);
 $listrik    = function_exists('offer_listrik') ? offer_listrik($o) : 0.0;
+// Bulan listrik dihitung dari lama hari sewa, bukan dari contract_months.
+$listrikN   = function_exists('offer_listrik_bulan') ? offer_listrik_bulan($o) : 1;
 $dasarPpn = $total + $listrik;
-$ppn      = round($dasarPpn * 11 / 12 * 0.12);
-$afterPpn = $dasarPpn + $ppn;
+// PPN dihitung per komponen supaya bisa dirinci di surat; jumlahnya dipakai
+// sebagai PPN total agar penjumlahan di kertas selalu pas.
+$ppnSewa    = round($total * 11 / 12 * 0.12);
+$ppnListrik = round($listrik * 11 / 12 * 0.12);
+$ppn        = $ppnSewa + $ppnListrik;
+$afterPpn   = $dasarPpn + $ppn;
 $deposit  = (float) $o['deposit_amount'];
 $grand    = $afterPpn + $deposit;
 $dpBulan  = rtrim(rtrim(number_format((float) $o['dp_months'], 1, ',', ''), '0'), ',');
@@ -190,13 +196,20 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             <tr class="sub"><td class="lbl">Subtotal sewa</td><td class="amt"><?= $rp($total) ?></td></tr>
         <?php endif; ?>
         <?php if ($listrik > 0): ?>
-        <tr><td class="lbl">Biaya Listrik / Bulan</td><td class="amt"><?= $rp($listrikBln) ?></td></tr>
-        <?php if ($contractMonths > 1): ?>
-        <tr><td class="lbl">Biaya Listrik <?= (int) $contractMonths ?> bulan</td><td class="amt"><?= $rp($listrik) ?></td></tr>
+            <?php /* Dirinci per komponen: sewa dan listrik masing-masing dengan
+                     PPN-nya sendiri, supaya customer tahu asal tiap angka. */ ?>
+            <tr><td class="lbl">PPN 12% Sewa <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppnSewa) ?></td></tr>
+            <tr class="sub"><td class="lbl">Subtotal Sewa + PPN</td><td class="amt"><?= $rp($total + $ppnSewa) ?></td></tr>
+            <tr><td class="lbl">Biaya Listrik / Bulan</td><td class="amt"><?= $rp($listrikBln) ?></td></tr>
+            <tr><td class="lbl">Masa listrik</td><td class="amt"><?= (int) $listrikN ?> bulan<?= $days ? ' · ' . (int) $days . ' hari' : '' ?></td></tr>
+            <?php if ($listrikN > 1): ?>
+            <tr><td class="lbl">Biaya Listrik <?= (int) $listrikN ?> bulan</td><td class="amt"><?= $rp($listrik) ?></td></tr>
+            <?php endif; ?>
+            <tr><td class="lbl">PPN 12% Listrik <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppnListrik) ?></td></tr>
+            <tr class="sub"><td class="lbl">Subtotal Listrik + PPN</td><td class="amt"><?= $rp($listrik + $ppnListrik) ?></td></tr>
+        <?php else: ?>
+            <tr><td class="lbl">PPN 12% <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppn) ?></td></tr>
         <?php endif; ?>
-        <tr class="sub"><td class="lbl">Subtotal sewa + listrik</td><td class="amt"><?= $rp($dasarPpn) ?></td></tr>
-        <?php endif; ?>
-        <tr><td class="lbl">PPN 12% <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppn) ?></td></tr>
         <tr class="tot"><td class="lbl">Total setelah PPN</td><td class="amt"><?= $rp($afterPpn) ?></td></tr>
         <?php if ($isBundle && $sumDp > 0): ?>
         <tr><td class="lbl">DP / Uang Muka (bagian dari total)</td><td class="amt"><?= $rp($sumDp) ?></td></tr>

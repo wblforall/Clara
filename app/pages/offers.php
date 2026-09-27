@@ -295,8 +295,23 @@ function _offer_fields(): array
 function offer_listrik(array $o): float
 {
     if (empty($o['electricity_flag'])) return 0.0;
-    $bulan = max(1, (int) ($o['contract_months'] ?? 1));
-    return round((float) ($o['electricity_monthly'] ?? 0) * $bulan, 2);
+    return round((float) ($o['electricity_monthly'] ?? 0) * offer_listrik_bulan($o), 2);
+}
+
+/**
+ * Jumlah bulan yang dipakai menghitung biaya listrik — dihitung dari LAMA HARI
+ * sewa (30 hari = 1 bulan, dibulatkan ke bulan terdekat, minimal 1).
+ *
+ * Sengaja TIDAK memakai contract_months. Rumus itu dipakai untuk sewa/DP dan
+ * menghitung 7 Okt–11 Nov (36 hari) sebagai 2 bulan karena tanggal akhirnya
+ * melewati tanggal mulai — untuk listrik hasilnya janggal: sewa sebulan lewat
+ * lima hari jadi ditagih listrik dua bulan.
+ */
+function offer_listrik_bulan(array $o): int
+{
+    $hari = _offer_days($o['start_date'] ?? null, $o['end_date'] ?? null);
+    if ($hari <= 0) return max(1, (int) ($o['contract_months'] ?? 1));
+    return max(1, (int) round($hari / 30));
 }
 
 // ─── Paket Bundling (offer multi-komponen) ───────────────────────────────────
@@ -1085,15 +1100,19 @@ function offer_form(PDO $pdo): void
                     d2 = document.getElementById('end_date');
                 if (!on || !fmt) return;
 
-                // Jumlah bulan kontrak — rumusnya sama dengan _offer_months() di PHP
-                // supaya angka di layar dan di surat tidak pernah berbeda.
-                function bulan() {
-                    if (!d1 || !d2 || !d1.value || !d2.value) return 1;
+                // Bulan listrik dihitung dari LAMA HARI sewa (30 hari = 1 bulan,
+                // dibulatkan, minimal 1) — rumusnya sama persis dengan
+                // offer_listrik_bulan() di PHP supaya angka di layar dan di surat
+                // tidak pernah berbeda.
+                function hari() {
+                    if (!d1 || !d2 || !d1.value || !d2.value) return 0;
                     var a = new Date(d1.value), b = new Date(d2.value);
-                    if (isNaN(a) || isNaN(b) || b < a) return 1;
-                    var m = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
-                    if (b.getDate() >= a.getDate()) m++;
-                    return Math.max(1, m);
+                    if (isNaN(a) || isNaN(b) || b < a) return 0;
+                    return Math.floor((b - a) / 86400000) + 1;
+                }
+                function bulan() {
+                    var h = hari();
+                    return h > 0 ? Math.max(1, Math.round(h / 30)) : 1;
                 }
                 function angka() { return parseInt((fmt.value || '').replace(/\D/g, ''), 10) || 0; }
                 function gambar() {
@@ -1102,7 +1121,8 @@ function offer_form(PDO $pdo): void
                     if (!info) return;
                     if (!on.checked) { info.textContent = ''; return; }
                     var n = bulan(), t = angka(), rp = function (x) { return 'Rp ' + (x || 0).toLocaleString('id-ID'); };
-                    info.textContent = n + ' bulan × ' + rp(t) + ' = ' + rp(n * t) + ' (belum PPN 12%)';
+                    var h = hari();
+                    info.textContent = (h ? h + ' hari → ' : '') + n + ' bulan × ' + rp(t) + ' = ' + rp(n * t) + ' (belum PPN 12%)';
                 }
                 fmt.addEventListener('input', function () {
                     var raw = this.value.replace(/\D/g, '');
@@ -1866,8 +1886,12 @@ function _offer_sign_view(array $o): array
     $sewa     = (float) $o['total_calculated'];
     $listrik  = offer_listrik($o);
     $total    = $sewa + $listrik;
-    $ppn      = round($total * 11 / 12 * 0.12);
-    $afterPpn = $total + $ppn;
+    // PPN per komponen — jumlahnya jadi PPN total, supaya rinciannya bisa
+    // ditampilkan dan penjumlahannya tetap pas.
+    $ppnSewa    = round($sewa * 11 / 12 * 0.12);
+    $ppnListrik = round($listrik * 11 / 12 * 0.12);
+    $ppn        = $ppnSewa + $ppnListrik;
+    $afterPpn   = $total + $ppn;
     $deposit  = (float) $o['deposit_amount'];
     $days = ($o['start_date'] && $o['end_date'])
         ? ((int) floor((strtotime($o['end_date']) - strtotime($o['start_date'])) / 86400) + 1) : 0;
@@ -1883,8 +1907,11 @@ function _offer_sign_view(array $o): array
         'periode'      => $o['start_date'] ? (date('d/m/Y', strtotime($o['start_date'])) . ' s/d ' . date('d/m/Y', strtotime($o['end_date']))) : '-',
         'berlaku'      => date('d/m/Y', $validTs),
         'amounts'      => [
-            'sewa'     => $sewa,
-            'listrik'  => $listrik,
+            'sewa'        => $sewa,
+            'listrik'     => $listrik,
+            'listrik_bln' => offer_listrik_bulan($o),
+            'ppn_sewa'    => $ppnSewa,
+            'ppn_listrik' => $ppnListrik,
             'total'    => $total,
             'ppn'      => $ppn,
             'after'    => $afterPpn,
