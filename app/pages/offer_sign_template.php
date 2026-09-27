@@ -112,7 +112,7 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
             <?php if (($a['listrik'] ?? 0) > 0): ?>
             <tr><td>Nilai Sewa</td><td class="amt"><?= $rp($a['sewa'] ?? 0) ?></td></tr>
             <tr><td>PPN 12% Sewa <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn_sewa'] ?? 0) ?></td></tr>
-            <tr><td>Biaya Listrik <span class="muted" style="font-weight:400">(<?= (int) ($a['listrik_bln'] ?? 1) ?> bulan)</span></td><td class="amt"><?= $rp($a['listrik']) ?></td></tr>
+            <tr><td>Biaya Listrik<?= !empty($a['listrik_hari']) ? ' <span class="muted" style="font-weight:400">(' . (int) $a['listrik_hari'] . ' hari)</span>' : '' ?></td><td class="amt"><?= $rp($a['listrik']) ?></td></tr>
             <tr><td>PPN 12% Listrik <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn_listrik'] ?? 0) ?></td></tr>
             <tr><td>Total Biaya Sewa + PPN</td><td class="amt"><?= $rp(($a['total'] ?? 0) + ($a['ppn'] ?? 0)) ?></td></tr>
             <?php else: ?>
