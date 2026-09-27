@@ -91,12 +91,19 @@ function _skp_source_from_offer(PDO $pdo, int $offerId, int $pid): ?array
  */
 function _skp_amounts(float $total, float $ratePerM, float $deposit, float $listrik = 0.0): array
 {
-    $ppn        = round($total * 11 / 12 * 0.12);
+    // PPN dihitung per komponen (sewa & listrik) supaya bisa dirinci; jumlahnya
+    // dipakai sebagai PPN total agar penjumlahan di dokumen selalu pas.
+    $sewa       = $total - $listrik;
+    $ppnSewa    = round($sewa * 11 / 12 * 0.12);
+    $ppnListrik = round($listrik * 11 / 12 * 0.12);
+    $ppn        = $ppnSewa + $ppnListrik;
     $afterPpn   = $total + $ppn;
     return [
         'rate_m_day'  => $ratePerM,
-        'sewa'        => $total - $listrik,
+        'sewa'        => $sewa,
         'listrik'     => $listrik,
+        'ppn_sewa'    => $ppnSewa,
+        'ppn_listrik' => $ppnListrik,
         'total'       => $total,
         'ppn'         => $ppn,
         'after_ppn'   => $afterPpn,
@@ -514,7 +521,9 @@ function skp_form(PDO $pdo): void
                          supaya jelas dari mana angka totalnya. */ ?>
                 <?php if (($amt['listrik'] ?? 0) > 0): ?>
                 <div><label>Nilai Sewa</label><input value="<?= money($amt['sewa']) ?>" disabled></div>
+                <div><label>PPN 12% Sewa</label><input value="<?= money($amt['ppn_sewa'] ?? 0) ?>" disabled></div>
                 <div><label>Biaya Listrik <span class="muted" style="font-weight:400">(dari penawaran)</span></label><input value="<?= money($amt['listrik']) ?>" disabled></div>
+                <div><label>PPN 12% Listrik</label><input value="<?= money($amt['ppn_listrik'] ?? 0) ?>" disabled></div>
                 <?php endif; ?>
                 <div><label>Total Biaya Sewa</label><input value="<?= money($amt['total']) ?>" disabled></div>
                 <div><label>PPN 12% (×11/12)</label><input value="<?= money($amt['ppn']) ?>" disabled></div>

@@ -111,10 +111,14 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
         <table class="pay">
             <?php if (($a['listrik'] ?? 0) > 0): ?>
             <tr><td>Nilai Sewa</td><td class="amt"><?= $rp($a['sewa'] ?? 0) ?></td></tr>
-            <tr><td>Biaya Listrik</td><td class="amt"><?= $rp($a['listrik']) ?></td></tr>
-            <?php endif; ?>
+            <tr><td>PPN 12% Sewa <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn_sewa'] ?? 0) ?></td></tr>
+            <tr><td>Biaya Listrik <span class="muted" style="font-weight:400">(<?= (int) ($a['listrik_bln'] ?? 1) ?> bulan)</span></td><td class="amt"><?= $rp($a['listrik']) ?></td></tr>
+            <tr><td>PPN 12% Listrik <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn_listrik'] ?? 0) ?></td></tr>
+            <tr><td>Total Biaya Sewa + PPN</td><td class="amt"><?= $rp(($a['total'] ?? 0) + ($a['ppn'] ?? 0)) ?></td></tr>
+            <?php else: ?>
             <tr><td>Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
             <tr><td>PPN 12% <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn'] ?? 0) ?></td></tr>
+            <?php endif; ?>
             <tr><td>DP <span class="muted">(<?= $h($a['dp_bln'] ?? '0') ?> bln)</span></td><td class="amt"><?= $rp($a['dp'] ?? 0) ?></td></tr>
             <tr><td>Deposit / Jaminan <span class="muted">(<?= $h($a['dep_bln'] ?? '0') ?> bln)</span></td><td class="amt"><?= $rp($a['deposit'] ?? 0) ?></td></tr>
             <tr class="grand"><td>Grand Total</td><td class="amt"><?= $rp($a['grand'] ?? 0) ?></td></tr>
