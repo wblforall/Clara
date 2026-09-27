@@ -20,6 +20,14 @@ $pdo  = Database::connect();
 $prop = isset($argv[1]) && is_numeric($argv[1]) ? (int) $argv[1] : null;
 $pic  = $argv[2] ?? '';
 
+// Baseline per template — kalau 0, kotak tarif di formulir ikut kosong.
+echo "\nBASELINE DI TEMPLATE PENAWARAN\n";
+foreach ($pdo->query("SELECT property_id, name, unit_type, electricity_default FROM offer_templates WHERE module='cl' ORDER BY property_id, unit_type")->fetchAll(PDO::FETCH_ASSOC) as $t) {
+    printf("  properti %-3s %-28s %-12s Rp %s%s\n", $t['property_id'], mb_substr((string) $t['name'], 0, 28),
+        ($t['unit_type'] ?: '(default)'), number_format((float) $t['electricity_default'], 0, ',', '.'),
+        ((float) $t['electricity_default'] <= 0 ? '   ← kosong, perbaiki di Template Penawaran' : ''));
+}
+
 $sql = "SELECT id, offer_no, property_id, pic_name, status, start_date, end_date,
                contract_months, electricity_flag, electricity_monthly
           FROM offers
