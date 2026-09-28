@@ -823,10 +823,12 @@ function mobile_skp_page(PDO $pdo): void
     $module = getv('module', '');
     if (!in_array($module, ['cl', 'media', 'gudang'], true)) $module = '';
     if ($module) { $where[] = 'COALESCE(t.module, o.module) = ?'; $params[] = $module; }
-    // Pembatasan per-sales: hanya SKP dari penawaran miliknya / yang ia buat (#14).
-    // Helper memakai PIC dari offer (o.pic_name) & pembuat SKP (s.created_by);
-    // saat PIC tertaut kosong, fragmen hanya membatasi ke s.created_by.
-    [$scopeSkpSql, $scopeSkpP] = current_sales_scope_sql($pdo, $pid, 'o.pic_name', 's.created_by');
+    // Pembatasan per-sales: SKP miliknya (PIC dokumen / penawaran / transaksi)
+    // atau yang ia buat (#14) — sama dengan daftar SKP versi desktop. Saat PIC
+    // tertaut kosong, fragmen hanya membatasi ke s.created_by.
+    [$scopeSkpSql, $scopeSkpP] = current_sales_scope_sql(
+        $pdo, $pid, ['s.pic_name', 'o.pic_name', 't.pic_name'], 's.created_by'
+    );
     if ($scopeSkpSql !== '') {
         $where[] = substr($scopeSkpSql, 5); // buang prefiks ' AND ' (di-join ulang oleh implode)
         $params  = array_merge($params, $scopeSkpP);

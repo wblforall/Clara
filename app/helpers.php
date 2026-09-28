@@ -272,17 +272,23 @@ function current_sales_scope(PDO $pdo, int $pid): ?array
  * mencocokkan pic_name='' — itu membocorkan semua baris ber-PIC kosong milik
  * sales lain. Saat kosong, batasi HANYA ke created_by.
  *
- * @param string $picCol nama kolom pic (mis. 'o.pic_name')
+ * @param string|string[] $picCol kolom pic (mis. 'o.pic_name' / beberapa kolom)
  * @param string $byCol  nama kolom pembuat (mis. 'o.created_by')
  */
-function current_sales_scope_sql(PDO $pdo, int $pid, string $picCol = 'pic_name', string $byCol = 'created_by'): array
+function current_sales_scope_sql(PDO $pdo, int $pid, string|array $picCol = 'pic_name', string $byCol = 'created_by'): array
 {
     $scope = current_sales_scope($pdo, $pid);
     if (!$scope) return ['', []];                       // bukan sales → tanpa batas
     if ($scope['pic'] === '') {
         return [" AND $byCol = ?", [$scope['uname']]]; // pic kosong → created_by saja
     }
-    return [" AND ($picCol = ? OR $byCol = ?)", [$scope['pic'], $scope['uname']]];
+    // Boleh beberapa kolom PIC sekaligus (mis. PIC dokumen, PIC penawaran, PIC
+    // transaksi) supaya dokumen milik sales tetap terlihat walau yang membuatkan
+    // orang lain (admin/manager).
+    $or = []; $params = [];
+    foreach ((array) $picCol as $kol) { $or[] = "$kol = ?"; $params[] = $scope['pic']; }
+    $or[] = "$byCol = ?"; $params[] = $scope['uname'];
+    return [' AND (' . implode(' OR ', $or) . ')', $params];
 }
 
 function permission_matrix(?array $set = null): array
