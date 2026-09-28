@@ -233,7 +233,11 @@ function skp_list_page(PDO $pdo): void
                     <?php if (!$rows): ?><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">Belum ada SKP/SKS.</td></tr><?php endif; ?>
                     <?php foreach ($rows as $r): $b = $badge[$r['status']] ?? $badge['draft']; $mb = $modBadge[$r['module']] ?? ['—', '#374151', '#f1f5f9']; ?>
                         <tr>
-                            <td style="white-space:nowrap;font-weight:600"><?= h($r['skp_no'] ?? '—') ?></td>
+                            <?php /* Nomor baru terbit saat manager menyetujui — sebelum itu
+                                     memang kosong, bukan kelewat. */ ?>
+                            <td style="white-space:nowrap;font-weight:600"><?= $r['skp_no']
+                                ? h($r['skp_no'])
+                                : '<span class="muted" style="font-weight:400;font-size:12px">belum terbit<br>(nomor keluar saat disetujui)</span>' ?></td>
                             <td><span class="badge" style="color:<?= $mb[1] ?>;background:<?= $mb[2] ?>"><?= h($mb[0]) ?></span></td>
                             <td><?= h($r['master_code']) ?></td>
                             <td><?= h($r['company_name'] ?? '-') ?></td>
