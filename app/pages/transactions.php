@@ -169,15 +169,15 @@ function transactions_page(PDO $pdo): void
                         <td style="white-space:nowrap">
                             <?php if (can('manage_transactions')): ?><a class="btn light" href="?r=transaction_edit&id=<?= h((string) $row['id']) ?>">Edit</a> <?php endif; ?>
                             <a class="btn light" href="?r=allocation_detail&id=<?= h((string) $row['id']) ?>">Alokasi</a>
-                            <?php /* Tombol "Perpanjang" dinonaktifkan sementara — alurnya belum siap
-                                     dipakai. Rute & prefill-nya (transaction_form?renew_from=…&to_skp=1)
-                                     sengaja dibiarkan utuh supaya tinggal dibuka lagi kalau sudah matang.
+                            <?php /* Perpanjangan TIDAK lewat Surat Penawaran: kontraknya sudah
+                                     berjalan, jadi langsung periode baru lalu dokumen konfirmasi.
+                                     Semua data tersalin dari kontrak ini — sales tinggal
+                                     memeriksa tanggalnya. */ ?>
                             <?php if (can('manage_transactions') && can('manage_skp')): ?>
                             <a class="btn light" style="border-color:#99f6e4;color:#0f766e"
-                               title="Buat periode lanjutan dari kontrak ini, lalu langsung ke SKP"
+                               title="Perpanjang kontrak ini — data tersalin, tinggal sesuaikan tanggal, lalu langsung ke dokumen konfirmasi (tanpa Surat Penawaran)"
                                href="?r=transaction_form&module=<?= h($module) ?>&renew_from=<?= (int) $row['id'] ?>&to_skp=1">Perpanjang</a>
                             <?php endif; ?>
-                            */ ?>
                             <?php /* Gudang & Media tidak lewat Surat Penawaran — dokumen konfirmasinya
                                      dibuat langsung dari transaksi ini. */ ?>
                             <?php if (in_array($module, ['gudang', 'media'], true) && can('manage_skp')): ?>
@@ -400,9 +400,17 @@ function transaction_form(PDO $pdo): void
             $clientLabel = (string)($src['company_name'] ?? '');
             if (!empty($src['brand_name'])) $clientLabel .= ' (' . $src['brand_name'] . ')';
             $masterLabels = array_column($masters, 'label', 'code');
-            // Tanggal mulai baru = sehari setelah kontrak lama berakhir
+            // Tanggal mulai baru = sehari setelah kontrak lama berakhir, dan
+            // tanggal selesainya mengikuti lama kontrak sebelumnya — supaya
+            // sales tinggal memeriksa/menggeser tanggalnya saja.
             $nextStart = !empty($src['end_date'])
                 ? date('Y-m-d', strtotime($src['end_date'] . ' +1 day'))
+                : '';
+            $lamaHari = (!empty($src['start_date']) && !empty($src['end_date']))
+                ? (int) floor((strtotime($src['end_date']) - strtotime($src['start_date'])) / 86400)
+                : 0;
+            $nextEnd = $nextStart !== ''
+                ? date('Y-m-d', strtotime($nextStart . ' +' . max(0, $lamaHari) . ' day'))
                 : '';
             $prefill = [
                 'master_code'   => (string)$src['master_code'],
@@ -417,6 +425,7 @@ function transaction_form(PDO $pdo): void
                 'slots'         => (string)($src['slots'] ?? ''),
                 'content_note'  => (string)($src['content_note'] ?? ''),
                 'start_date'    => $nextStart,
+                'end_date'      => $nextEnd,
             ];
         }
     }
@@ -428,7 +437,7 @@ function transaction_form(PDO $pdo): void
         ?>
         <?php if ($prefill): ?>
         <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:#065f46">
-            <strong>🔄 Perpanjangan kontrak</strong> — data unit, client, PIC, dan rate sudah diisi dari kontrak sebelumnya. Periksa &amp; sesuaikan <strong>Tanggal Mulai/Selesai</strong> lalu simpan.
+            <strong>🔄 Perpanjangan kontrak</strong> — tanpa Surat Penawaran baru. Unit, client, PIC, rate, dan tanggal sudah terisi dari kontrak sebelumnya (periode baru dengan lama yang sama). <strong>Tinggal periksa Tanggal Mulai/Selesai</strong>, sesuaikan bila perlu, lalu simpan.
             <?php if ($toSkp): ?><br>Setelah disimpan Anda langsung diarahkan ke <strong>form SKP</strong> untuk periode baru ini.<?php endif; ?>
         </div>
         <?php endif; ?>
@@ -462,7 +471,7 @@ function transaction_form(PDO $pdo): void
                 </div>
                 <div><label>Luas m2</label><input type="number" step="0.01" name="area_sqm" id="area_sqm" value="<?= h($prefill['area_sqm'] ?? '0') ?>"></div>
                 <div><label>Tanggal Mulai</label><input type="date" name="start_date" required value="<?= h($prefill['start_date'] ?? '') ?>"></div>
-                <div><label>Tanggal Selesai</label><input type="date" name="end_date" <?= $module === 'cl' ? 'required' : '' ?>></div>
+                <div><label>Tanggal Selesai</label><input type="date" name="end_date" value="<?= h($prefill['end_date'] ?? '') ?>" <?= $module === 'cl' ? 'required' : '' ?>></div>
                 <?php if ($module === 'media'): ?>
                 <div id="slots_wrap" style="display:none">
                     <label>Jumlah Slot</label>
@@ -789,7 +798,12 @@ function transaction_form(PDO $pdo): void
             var spreadOverrides = {};
             var spreadBaseTotal = 0, spreadBaseStart = '', spreadBaseEnd = '', spreadBasePricing = '', spreadBaseCycle = 'cycle_start';
 
-            document.querySelector('form').addEventListener('submit', syncOvrInputs);
+            // Dicari saat submit, bukan saat baris ini dijalankan: assets/spread-table.js
+            // dimuat di footer sehingga fungsinya belum ada di sini (ReferenceError,
+            // dan akibatnya override alokasi bulanan tidak ikut terkirim).
+            document.querySelector('form').addEventListener('submit', function (e) {
+                if (typeof syncOvrInputs === 'function') syncOvrInputs(e);
+            });
             // ─────────────────────────────────────────────────────────────────
 
             function kalkulasiTotal() {
@@ -1455,7 +1469,12 @@ function transaction_edit(PDO $pdo): void
             var spreadOverrides = <?= json_encode($existingAllocations) ?>;
             var spreadBaseTotal = 0, spreadBaseStart = '', spreadBaseEnd = '', spreadBasePricing = '', spreadBaseCycle = 'cycle_start';
 
-            document.querySelector('form').addEventListener('submit', syncOvrInputs);
+            // Dicari saat submit, bukan saat baris ini dijalankan: assets/spread-table.js
+            // dimuat di footer sehingga fungsinya belum ada di sini (ReferenceError,
+            // dan akibatnya override alokasi bulanan tidak ikut terkirim).
+            document.querySelector('form').addEventListener('submit', function (e) {
+                if (typeof syncOvrInputs === 'function') syncOvrInputs(e);
+            });
             // ─────────────────────────────────────────────────────────────────
 
             function kalkulasiTotal() {
