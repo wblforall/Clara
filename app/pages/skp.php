@@ -426,7 +426,7 @@ function skp_form(PDO $pdo): void
                 <div><label>Nomor Telepon</label><input name="phone_pj" value="<?= $val('phone_pj', $src['cp_phone'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></div>
             </div>
 
-            <h3>Lampiran <span style="font-weight:400;font-size:12px;color:var(--muted)">(<span style="color:#dc2626">*</span> wajib sebelum submit approval; Pengajuan opsional)</span></h3>
+            <h3>Lampiran <span style="font-weight:400;font-size:12px;color:var(--muted)">(<span style="color:#dc2626">*</span> wajib sebelum submit; scan lama client ini dipakai ulang otomatis)</span></h3>
             <div class="form-grid">
                 <?php
                 // Bukti Transfer SENGAJA tidak ada di sini. Urutan nyata di lapangan:
@@ -537,7 +537,7 @@ function skp_form(PDO $pdo): void
             <textarea name="note" rows="2" <?= $editable ? '' : 'disabled' ?>><?= h($skp['note'] ?? '') ?></textarea>
 
             <?php if ($editable): ?>
-            <p class="help" style="margin-top:16px;color:#92400e">Submit untuk approval hanya bisa setelah <strong>Scan KTP</strong> dan <strong>Scan NPWP</strong> terunggah.<br>
+            <p class="help" style="margin-top:16px;color:#92400e">Submit untuk approval hanya bisa setelah <strong>Scan KTP</strong> dan <strong>Scan NPWP</strong> ada. Untuk client yang pernah dibuatkan dokumen, scan lamanya otomatis dipakai ulang (centang <strong>Pakai ulang</strong> sudah aktif) &mdash; tidak perlu unggah lagi.<br>
                 <strong>Bukti Transfer</strong> tidak diunggah di sini &mdash; tempatnya di <strong>Permintaan Kontrak</strong>, sebelum berkas dikirim ke Legal.</p>
             <p class="form-actions" style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">
                 <button type="submit" onclick="document.getElementById('skp-action').value='save'" class="btn secondary">Simpan Draft</button>
@@ -679,7 +679,7 @@ function _skp_reusable_attachments(PDO $pdo, int $clientId, int $excludeSkpId = 
          LEFT JOIN offers o       ON o.id = d.offer_id
          LEFT JOIN transactions t ON t.id = d.transaction_id
          WHERE a.kind IN ('ktp','npwp','siup')
-           AND COALESCE(o.client_id, t.client_id) = ?
+           AND COALESCE(o.client_id, t.client_id, d.client_id) = ?
            AND d.id <> ?
          ORDER BY a.id DESC"
     );

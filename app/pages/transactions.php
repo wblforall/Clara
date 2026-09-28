@@ -400,18 +400,34 @@ function transaction_form(PDO $pdo): void
             $clientLabel = (string)($src['company_name'] ?? '');
             if (!empty($src['brand_name'])) $clientLabel .= ' (' . $src['brand_name'] . ')';
             $masterLabels = array_column($masters, 'label', 'code');
-            // Tanggal mulai baru = sehari setelah kontrak lama berakhir, dan
-            // tanggal selesainya mengikuti lama kontrak sebelumnya — supaya
-            // sales tinggal memeriksa/menggeser tanggalnya saja.
-            $nextStart = !empty($src['end_date'])
-                ? date('Y-m-d', strtotime($src['end_date'] . ' +1 day'))
-                : '';
-            $lamaHari = (!empty($src['start_date']) && !empty($src['end_date']))
-                ? (int) floor((strtotime($src['end_date']) - strtotime($src['start_date'])) / 86400)
-                : 0;
-            $nextEnd = $nextStart !== ''
-                ? date('Y-m-d', strtotime($nextStart . ' +' . max(0, $lamaHari) . ' day'))
-                : '';
+            // Periode baru: mulai sehari setelah kontrak lama berakhir. Panjangnya
+            // mengikuti pola kontrak lama —
+            //   1–31 Jan (bulan kalender penuh) → 1–28 Feb
+            //   15 Jan–14 Feb (pas sebulan)     → 15 Feb–14 Mar
+            //   25 Sep–4 Okt (tidak bulanan)    → 5–14 Okt (jumlah hari sama)
+            $nextStart = $nextEnd = '';
+            if (!empty($src['start_date']) && !empty($src['end_date'])) {
+                $s0 = new DateTimeImmutable($src['start_date']);
+                $e0 = new DateTimeImmutable($src['end_date']);
+                $ns = $e0->modify('+1 day');
+                $penuh = $s0->format('j') === '1'
+                    && $e0->format('Y-m-d') === $e0->modify('last day of this month')->format('Y-m-d');
+                $bulanPas = 0;
+                for ($i = 1; $i <= 24; $i++) {
+                    if ($s0->modify('+' . $i . ' month')->format('Y-m-d') === $ns->format('Y-m-d')) { $bulanPas = $i; break; }
+                }
+                if ($penuh) {
+                    $bulan = max(1, ((int) $e0->format('Y') - (int) $s0->format('Y')) * 12
+                        + ((int) $e0->format('n') - (int) $s0->format('n')) + 1);
+                    $ne = $ns->modify('+' . ($bulan - 1) . ' month')->modify('last day of this month');
+                } elseif ($bulanPas > 0) {
+                    $ne = $ns->modify('+' . $bulanPas . ' month')->modify('-1 day');
+                } else {
+                    $ne = $ns->modify('+' . max(0, (int) $s0->diff($e0)->days) . ' day');
+                }
+                $nextStart = $ns->format('Y-m-d');
+                $nextEnd   = $ne->format('Y-m-d');
+            }
             $prefill = [
                 'master_code'   => (string)$src['master_code'],
                 'master_label'  => (string)($masterLabels[$src['master_code']] ?? $src['master_code']),
