@@ -85,6 +85,28 @@ function _skp_source_from_offer(PDO $pdo, int $offerId, int $pid): ?array
 }
 
 /**
+ * Biaya listrik yang dicatat pada dokumen ini sendiri (dipakai SKP perpanjangan
+ * & dokumen mandiri yang tidak lewat Surat Penawaran).
+ * Kosong = tidak menagih listrik.
+ */
+function skp_listrik(array $skp, string $start = '', string $end = ''): float
+{
+    if (empty($skp['electricity_flag'])) return 0.0;
+    $manual = (float) ($skp['electricity_amount'] ?? 0);
+    if ($manual > 0) return round($manual, 2);
+    return round((float) ($skp['electricity_monthly'] ?? 0) * skp_listrik_satuan($skp, $start, $end), 2);
+}
+
+/** Jumlah satuan listrik: pilihan sendiri, atau 30 hari = 1 satuan (dibulatkan). */
+function skp_listrik_satuan(array $skp, string $start = '', string $end = ''): int
+{
+    $pilih = (int) ($skp['electricity_units'] ?? 0);
+    if ($pilih > 0) return $pilih;
+    $hari = _skp_days($start ?: null, $end ?: null);
+    return $hari > 0 ? max(1, (int) round($hari / 30)) : 1;
+}
+
+/**
  * Hitung rincian biaya. PPN sesuai PMK 131/2024: nilai × 11/12 × 12%.
  * $listrik = bagian biaya listrik yang SUDAH termasuk di dalam $total — dipakai
  * hanya untuk menampilkannya sebagai baris terpisah.
@@ -371,7 +393,10 @@ function skp_form(PDO $pdo): void
     $days     = _skp_days($src['start_date'], $src['end_date']);
     $total    = (float) ($src['final_amount'] ?: $src['total_calculated']);
     $defDeposit = (float) ($skp['deposit_amount'] ?? $src['deposit_amount'] ?? 0);
-    $amt      = _skp_amounts($total, (float) $src['unit_rate'], $defDeposit, (float) ($src['electricity'] ?? 0));
+    // Listrik: dari penawaran (bila ada) atau yang dicatat di dokumen ini.
+    $listrikSkp = $skp ? skp_listrik($skp, (string) $src['start_date'], (string) $src['end_date']) : 0.0;
+    $listrikAll = (float) ($src['electricity'] ?? 0) + $listrikSkp;
+    $amt      = _skp_amounts($total + $listrikSkp, (float) $src['unit_rate'], $defDeposit, $listrikAll);
     $area     = (float) ($src['area_sqm'] ?: $src['unit_area']);
     // Isi khusus modul: tabel harga Gudang / daftar centang Form Utilities Media.
     // Teksnya (intro, peraturan, catatan kaki, daftar item) datang dari Template
@@ -420,8 +445,16 @@ function skp_form(PDO $pdo): void
                 <div><label>Nama Perusahaan</label><input id="idn-company" value="<?= h($src['company_name'] ?? '-') ?>" disabled></div>
                 <div><label>Nama Penanggung Jawab</label><input name="cp_name" value="<?= $val('cp_name', $src['cp_name'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></div>
                 <div class="wide"><label>Alamat</label><input id="idn-address" value="<?= h($src['address'] ?? '-') ?>" disabled></div>
-                <div><label>Nomor KTP Penanggung Jawab <span style="color:#dc2626">*</span></label><input name="ktp_pj" value="<?= $val('ktp_pj', $src['client_ktp'] ?? '') ?>" inputmode="numeric" <?= $editable ? '' : 'disabled' ?>><span class="help" style="font-size:11px">Tersimpan ke Master Client (auto next)</span></div>
-                <div><label>Nomor NPWP <span style="color:#dc2626">*</span></label><input name="npwp_no" value="<?= $val('npwp_no', $src['npwp'] ?? '') ?>" inputmode="numeric" <?= $editable ? '' : 'disabled' ?>><span class="help" style="font-size:11px">Tersimpan ke Master Client (auto next)</span></div>
+                <?php
+                // Sudah ada di Master Client atau belum — supaya tidak perlu mengetik ulang.
+                $adaKtp  = trim((string) ($src['client_ktp'] ?? '')) !== '';
+                $adaNpwp = trim((string) ($src['npwp'] ?? '')) !== '';
+                $nota = fn(bool $ada) => $ada
+                    ? '<span class="help" style="font-size:11px;color:#166534">✓ Sudah tersimpan di Master Client — tidak perlu diketik ulang</span>'
+                    : '<span class="help" style="font-size:11px;color:#92400e">Belum ada di Master Client — isi sekali, otomatis tersimpan</span>';
+                ?>
+                <div><label>Nomor KTP Penanggung Jawab <span style="color:#dc2626">*</span></label><input name="ktp_pj" value="<?= $val('ktp_pj', $src['client_ktp'] ?? '') ?>" inputmode="numeric" <?= $editable ? '' : 'disabled' ?>><?= $nota($adaKtp) ?></div>
+                <div><label>Nomor NPWP <span style="color:#dc2626">*</span></label><input name="npwp_no" value="<?= $val('npwp_no', $src['npwp'] ?? '') ?>" inputmode="numeric" <?= $editable ? '' : 'disabled' ?>><?= $nota($adaNpwp) ?></div>
                 <div><label>Nomor SIUP <span class="muted" style="font-weight:400;font-size:11px">(opsional)</span></label><input name="siup_no" value="<?= $val('siup_no', $src['siup'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>><span class="help" style="font-size:11px">Tersimpan ke Master Client (auto next)</span></div>
                 <div><label>Nomor Telepon</label><input name="phone_pj" value="<?= $val('phone_pj', $src['cp_phone'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></div>
             </div>
@@ -437,14 +470,22 @@ function skp_form(PDO $pdo): void
                 foreach ($reqLbl as $kind => $lbl):
                     $has = $atts[$kind] ?? null;
                 ?>
+                <?php
+                $prev = (!$has && $editable) ? ($reuse[$kind] ?? null) : null;
+                // Status ringkas per berkas — supaya jelas mana yang sudah ada dan
+                // mana yang benar-benar harus diunggah.
+                if ($has)        $st = ['✓ Sudah ada di dokumen ini', '#166534', '#f0fdf4', '#bbf7d0'];
+                elseif ($prev)   $st = ['✓ Sudah ada — dipakai ulang, tidak perlu unggah', '#166534', '#f0fdf4', '#bbf7d0'];
+                elseif (in_array($kind, $wajib, true)) $st = ['⚠ Belum ada — wajib diunggah', '#92400e', '#fffbeb', '#fde68a'];
+                else             $st = ['Belum ada (opsional)', '#64748b', '#f8fafc', '#e2e8f0'];
+                ?>
                 <div>
                     <label><?= $lbl ?><?= in_array($kind, $wajib, true) ? ' <span style="color:#dc2626">*</span>' : '' ?></label>
+                    <div style="font-size:11.5px;font-weight:700;color:<?= $st[1] ?>;background:<?= $st[2] ?>;border:1px solid <?= $st[3] ?>;border-radius:7px;padding:4px 8px;margin-bottom:5px"><?= $st[0] ?></div>
                     <?php if ($has): ?>
                         <div style="font-size:12px"><a href="<?= h(upload_url($has['file_path'])) ?>" target="_blank">📎 <?= h($has['original_name'] ?: 'lihat') ?></a></div>
                     <?php endif; ?>
-                    <?php
-                    $prev = (!$has && $editable) ? ($reuse[$kind] ?? null) : null;
-                    if ($prev): ?>
+                    <?php if ($prev): ?>
                         <label style="font-size:12px;display:flex;align-items:center;gap:6px;background:#f0fdfa;border:1px solid #99f6e4;border-radius:7px;padding:5px 8px;margin-bottom:5px">
                             <input type="checkbox" name="reuse_<?= $kind ?>" value="1" checked>
                             Pakai ulang: 📎 <?= h($prev['original_name'] ?: 'scan sebelumnya') ?>
@@ -522,13 +563,63 @@ function skp_form(PDO $pdo): void
                 <?php if (($amt['listrik'] ?? 0) > 0): ?>
                 <div><label>Nilai Sewa</label><input value="<?= money($amt['sewa']) ?>" disabled></div>
                 <div><label>PPN 12% Sewa</label><input value="<?= money($amt['ppn_sewa'] ?? 0) ?>" disabled></div>
-                <div><label>Biaya Listrik <span class="muted" style="font-weight:400">(dari penawaran)</span></label><input value="<?= money($amt['listrik']) ?>" disabled></div>
+                <div><label>Biaya Listrik <span class="muted" style="font-weight:400">(<?= (float) ($src['electricity'] ?? 0) > 0 ? 'dari penawaran' : 'dicatat di dokumen ini' ?>)</span></label><input value="<?= money($amt['listrik']) ?>" disabled></div>
                 <div><label>PPN 12% Listrik</label><input value="<?= money($amt['ppn_listrik'] ?? 0) ?>" disabled></div>
                 <?php endif; ?>
                 <div><label>Total Biaya Sewa</label><input value="<?= money($amt['total']) ?>" disabled></div>
                 <div><label>PPN 12% (×11/12)</label><input value="<?= money($amt['ppn']) ?>" disabled></div>
                 <div><label>Total Setelah PPN</label><input value="<?= money($amt['after_ppn']) ?>" disabled></div>
                 <div><label>Jaminan Area / Security Deposit</label><input name="deposit_amount" class="skp-dep-fmt" value="<?= $defDeposit > 0 ? number_format($defDeposit, 0, ',', '.') : '' ?>" inputmode="numeric" placeholder="0" <?= $editable ? '' : 'disabled' ?>><input type="hidden" name="deposit_raw" class="skp-dep-val" value="<?= (int)$defDeposit ?>"></div>
+                <?php
+                /* Biaya listrik milik dokumen ini. Untuk SKP dari Surat Penawaran
+                   listriknya sudah ikut dari sana (ditampilkan di atas, read-only);
+                   blok ini untuk SKP perpanjangan yang tidak lewat penawaran. */
+                $lDari  = (float) ($src['electricity'] ?? 0);
+                $lOn    = $skp ? !empty($skp['electricity_flag']) : false;
+                $lTarif = (float) ($skp['electricity_monthly'] ?? 0) ?: 150000;
+                $lUnit  = (int) ($skp['electricity_units'] ?? 0);
+                $lTotal = (float) ($skp['electricity_amount'] ?? 0);
+                ?>
+                <?php if ($lDari <= 0): ?>
+                <div class="wide" style="border-top:1px dashed var(--border,#e2e8f0);padding-top:10px;margin-top:2px">
+                    <label style="display:flex;align-items:center;gap:7px;cursor:pointer">
+                        <input type="checkbox" name="electricity_flag" id="skp_listrik_on" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= $lOn ? 'checked' : '' ?> <?= $editable ? '' : 'disabled' ?>>
+                        Kenakan <strong>Biaya Listrik</strong> pada dokumen ini
+                    </label>
+                    <div id="skp_listrik_box" class="form-grid" style="margin-top:8px">
+                        <div>
+                            <label>Biaya Listrik / 30 Hari</label>
+                            <div style="display:flex;align-items:stretch">
+                                <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
+                                <input type="text" inputmode="numeric" id="skp_listrik_tarif" value="<?= number_format($lTarif, 0, ',', '.') ?>"
+                                       style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= $editable ? '' : 'disabled' ?>>
+                                <input type="hidden" name="electricity_monthly" id="skp_listrik_tarif_val" value="<?= (int) $lTarif ?>">
+                            </div>
+                        </div>
+                        <div>
+                            <label>Jumlah Satuan <span class="muted" style="font-weight:400">(1 satuan = 30 hari)</span></label>
+                            <select name="electricity_units" id="skp_listrik_unit" <?= $editable ? '' : 'disabled' ?>>
+                                <option value="0" <?= $lUnit <= 0 ? 'selected' : '' ?>>Otomatis — ikut lama sewa</option>
+                                <?php for ($u = 1; $u <= 12; $u++): ?>
+                                <option value="<?= $u ?>" <?= $lUnit === $u ? 'selected' : '' ?>><?= $u ?> ×</option>
+                                <?php endfor; ?>
+                            </select>
+                            <div class="help" id="skp_listrik_unit_info"></div>
+                        </div>
+                        <div>
+                            <label>Total Biaya Listrik <span class="muted" style="font-weight:400">(sebelum PPN)</span></label>
+                            <div style="display:flex;align-items:stretch">
+                                <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
+                                <input type="text" inputmode="numeric" id="skp_listrik_total" value="<?= $lTotal > 0 ? number_format($lTotal, 0, ',', '.') : '' ?>" placeholder="otomatis"
+                                       style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right;font-weight:700" <?= $editable ? '' : 'disabled' ?>>
+                                <input type="hidden" name="electricity_amount" id="skp_listrik_total_val" value="<?= (int) $lTotal ?>">
+                            </div>
+                            <div class="help" id="skp_listrik_info"></div>
+                        </div>
+                    </div>
+                    <p class="help" style="margin-top:4px">Simpan dulu untuk melihat angkanya masuk ke Total Biaya Sewa &amp; PPN di atas.</p>
+                </div>
+                <?php endif; ?>
                 <div><label>Grand Total (estimasi)</label><input id="skp-grand" value="<?= money($amt['grand_total']) ?>" disabled></div>
             </div>
             <?php endif; ?>
@@ -616,6 +707,61 @@ function skp_form(PDO $pdo): void
         <?php endif; ?>
 
         <script>
+        // ── Biaya listrik pada dokumen ini ──────────────────────────────────
+        // Pola sama dengan Surat Penawaran: tarif × satuan, boleh dipilih
+        // satuannya, dan Total yang diketik sendiri menang atas hitungan.
+        (function () {
+            var on = document.getElementById('skp_listrik_on');
+            if (!on) return;
+            var box = document.getElementById('skp_listrik_box'),
+                tarif = document.getElementById('skp_listrik_tarif'), tarifVal = document.getElementById('skp_listrik_tarif_val'),
+                unit = document.getElementById('skp_listrik_unit'), unitInfo = document.getElementById('skp_listrik_unit_info'),
+                tot = document.getElementById('skp_listrik_total'), totVal = document.getElementById('skp_listrik_total_val'),
+                info = document.getElementById('skp_listrik_info'),
+                HARI = <?= (int) $days ?>;
+            if (tot && tot.value.replace(/\D/g, '') !== '') tot.dataset.manual = '1';
+            function ang(el) { return el ? parseInt((el.value || '').replace(/\D/g, ''), 10) || 0 : 0; }
+            function rp(x) { return 'Rp ' + (x || 0).toLocaleString('id-ID'); }
+            function satuanOtomatis() { return HARI > 0 ? Math.max(1, Math.round(HARI / 30)) : 1; }
+            function gambar() {
+                box.style.display = on.checked ? '' : 'none';
+                if (!on.checked) { tarifVal.value = 0; totVal.value = 0; return; }
+                var pilih = parseInt(unit.value, 10) || 0;
+                var n = pilih > 0 ? pilih : satuanOtomatis();
+                var t = ang(tarif);
+                tarifVal.value = t;
+                var manual = tot.dataset.manual === '1', isiManual = manual ? ang(tot) : 0;
+                if (!manual) tot.value = (n * t).toLocaleString('id-ID');
+                var dipakai = isiManual > 0 ? isiManual : n * t;
+                totVal.value = isiManual > 0 ? isiManual : 0;
+                unit.disabled = isiManual > 0;
+                var ppn = Math.round(dipakai * 11 / 12 * 0.12);
+                if (unitInfo) unitInfo.textContent = isiManual > 0 ? 'Diabaikan — Total diisi sendiri.'
+                    : (pilih > 0 ? 'Dipilih sendiri. Otomatisnya ' + satuanOtomatis() + ' ×.' : HARI + ' hari → ' + n + ' ×');
+                if (info) {
+                    info.innerHTML = (isiManual > 0 ? 'Diisi sendiri, ' : n + ' × ' + rp(t) + ' · ')
+                        + '<b>belum termasuk PPN</b> · PPN 12% ' + rp(ppn) + ' · dibayar ' + rp(dipakai + ppn)
+                        + (isiManual > 0 ? ' — <a href="#" id="skp_listrik_auto">pakai hitungan otomatis</a>' : '');
+                    var lk = document.getElementById('skp_listrik_auto');
+                    if (lk) lk.addEventListener('click', function (e) { e.preventDefault(); tot.dataset.manual = ''; gambar(); });
+                }
+            }
+            [tarif, tot].forEach(function (el) {
+                if (!el) return;
+                el.addEventListener('input', function () {
+                    var raw = this.value.replace(/\D/g, '');
+                    this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                    if (this === tot) this.dataset.manual = '1';
+                    gambar();
+                });
+            });
+            if (tot) tot.addEventListener('blur', function () {
+                if (this.value.replace(/\D/g, '') === '') { this.dataset.manual = ''; gambar(); }
+            });
+            on.addEventListener('change', gambar);
+            unit.addEventListener('change', gambar);
+            gambar();
+        })();
         (function () {
             var dep = document.querySelector('.skp-dep-fmt'), hid = document.querySelector('.skp-dep-val');
             if (dep) {
@@ -773,6 +919,11 @@ function skp_save(PDO $pdo): void
         'produk'        => trim((string) post('produk')) ?: null,
         'status_sewa'   => post('status_sewa') ?: 'Baru',
         'deposit_amount'=> (float) post('deposit_raw', 0),
+        // Listrik yang dicatat di dokumen ini (kosong = tidak menagih listrik).
+        'electricity_flag'    => post('electricity_flag') ? 1 : 0,
+        'electricity_monthly' => parse_rupiah((string) post('electricity_monthly', '0')) ?: null,
+        'electricity_units'   => (int) post('electricity_units', 0) > 0 ? min(12, (int) post('electricity_units')) : null,
+        'electricity_amount'  => parse_rupiah((string) post('electricity_amount', '0')) ?: null,
         'admin_siup'    => $siup ? 1 : 0,
         'admin_npwp'    => $npwp ? 1 : 0,
         'admin_ktp'     => $ktp ? 1 : 0,
@@ -976,7 +1127,9 @@ function skp_approve(PDO $pdo): void
     // Snapshot nilai cetak
     $days  = _skp_days($src['start_date'], $src['end_date']);
     $total = (float) ($src['final_amount'] ?: $src['total_calculated']);
-    $amt   = _skp_amounts($total, (float) $src['unit_rate'], (float) $skp['deposit_amount'], (float) ($src['electricity'] ?? 0));
+    $listrikSkp = skp_listrik($skp, (string) $src['start_date'], (string) $src['end_date']);
+    $amt   = _skp_amounts($total + $listrikSkp, (float) $src['unit_rate'], (float) $skp['deposit_amount'],
+        (float) ($src['electricity'] ?? 0) + $listrikSkp);
     // Paket: lokasi & komponen utk ditampilkan di dokumen SKP.
     $bundleLoc = $bundleRows ? ('Paket (' . count($bundleRows) . ' komponen)') : '';
     $bundleItemsSnap = array_map(fn($r) => [

@@ -46,7 +46,13 @@ function transactions_page(PDO $pdo): void
     $page = min($page, $totalPages);
     $offset = ($page - 1) * $perPage;
 
-    $sql  = 'SELECT t.*, c.company_name, c.brand_name, (' . recurring_match_sql('t') . ') AS is_recurring
+    $skpSub = fn(string $kol) => "(SELECT s2.$kol FROM skp_documents s2
+                     WHERE s2.transaction_id = t.id AND s2.property_id = t.property_id
+                     ORDER BY s2.id DESC LIMIT 1)";
+    $sql  = 'SELECT t.*, c.company_name, c.brand_name, (' . recurring_match_sql('t') . ') AS is_recurring,
+                    ' . $skpSub('id') . ' AS skp_id,
+                    ' . $skpSub('skp_no') . ' AS skp_no,
+                    ' . $skpSub('status') . ' AS skp_status
              FROM transactions t
              LEFT JOIN master_clients c ON c.id = t.client_id
              WHERE ' . $whereStr . '
@@ -178,12 +184,23 @@ function transactions_page(PDO $pdo): void
                                title="Perpanjang kontrak ini — data tersalin, tinggal sesuaikan tanggal, lalu langsung ke dokumen konfirmasi (tanpa Surat Penawaran)"
                                href="?r=transaction_form&module=<?= h($module) ?>&renew_from=<?= (int) $row['id'] ?>&to_skp=1">Perpanjang</a>
                             <?php endif; ?>
-                            <?php /* Gudang & Media tidak lewat Surat Penawaran — dokumen konfirmasinya
-                                     dibuat langsung dari transaksi ini. */ ?>
-                            <?php if (in_array($module, ['gudang', 'media'], true) && can('manage_skp')): ?>
-                            <a class="btn light" style="border-color:#bae6fd;color:#0369a1"
-                               title="Buat dokumen konfirmasi untuk transaksi ini"
-                               href="?r=skp_form&transaction_id=<?= (int) $row['id'] ?>"><?= $module === 'gudang' ? 'Buat SKS' : 'Buat Form Utilities' ?></a>
+                            <?php
+                            /* Dokumen konfirmasi transaksi ini. Kalau belum ada → tombol Buat,
+                               kalau sudah → tombol membuka dokumennya. Penting untuk
+                               perpanjangan yang ditinggal sebelum SKP-nya dilengkapi:
+                               transaksinya sudah terbit, jadi harus ada jalan kembali. */
+                            $docBtn = ['cl' => 'SKP', 'gudang' => 'SKS', 'media' => 'Form Utilities'][$module] ?? 'SKP';
+                            ?>
+                            <?php if (can('manage_skp')): ?>
+                                <?php if (!empty($row['skp_id'])): ?>
+                                <a class="btn light" style="border-color:#bbf7d0;color:#166534"
+                                   title="<?= h((string) ($row['skp_no'] ?: 'draft')) ?> · <?= h((string) $row['skp_status']) ?>"
+                                   href="?r=skp_form&id=<?= (int) $row['skp_id'] ?>"><?= h($docBtn) ?> ✓</a>
+                                <?php else: ?>
+                                <a class="btn light" style="border-color:#bae6fd;color:#0369a1"
+                                   title="Transaksi ini belum punya dokumen konfirmasi — buat sekarang"
+                                   href="?r=skp_form&transaction_id=<?= (int) $row['id'] ?>">Buat <?= h($docBtn) ?></a>
+                                <?php endif; ?>
                             <?php endif; ?>
                             <?php if (current_role() === 'superadmin'): ?>
                             <form method="post" action="?r=transaction_delete" style="display:inline" onsubmit="return confirm('Hapus transaksi #<?= (int)$row['id'] ?>? Data tidak akan muncul di daftar, tapi tetap tersimpan.')">
