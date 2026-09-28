@@ -155,10 +155,16 @@ function skp_list_page(PDO $pdo): void
     $module = getv('module', '');
     if (!in_array($module, ['cl', 'media', 'gudang'], true)) $module = '';
     if ($module) { $where[] = 'COALESCE(t.module, o.module) = ?'; $params[] = $module; }
-    // Pembatasan per-sales: hanya SKP dari penawaran miliknya atau yang ia buat.
-    if ($scope = current_sales_scope($pdo, $pid)) {
-        $where[] = '(o.pic_name = ? OR s.created_by = ?)';
-        $params[] = $scope['pic']; $params[] = $scope['uname'];
+    // Pembatasan per-sales: SKP miliknya, yaitu yang PIC-nya dia (di dokumen,
+    // di penawaran, atau di transaksi) ATAU yang ia buat sendiri. PIC transaksi
+    // & PIC dokumen ikut dicek supaya dokumen tetap terlihat walau dibuatkan
+    // admin/manager, dan supaya SKS/Form Utilities (tanpa penawaran) muncul.
+    [$scopeSql, $scopeP] = current_sales_scope_sql(
+        $pdo, $pid, ['s.pic_name', 'o.pic_name', 't.pic_name'], 's.created_by'
+    );
+    if ($scopeSql !== '') {
+        $where[] = substr($scopeSql, 5);            // buang prefiks ' AND '
+        $params  = array_merge($params, $scopeP);
     }
     // SKP bisa berasal dari penawaran (offer-first, transaksi belum terbit) ATAU
     // dari transaksi lama. LEFT JOIN keduanya + fallback datanya.
@@ -384,9 +390,12 @@ function skp_form(PDO $pdo): void
         ? skp_standalone_src($pdo, $pid, $modKind, $skp)
         : ($offerId ? _skp_source_from_offer($pdo, $offerId, $pid) : _skp_source($pdo, $trxId, $pid));
     if (!$src) { flash('Sumber (penawaran/transaksi) tidak ditemukan / belum DEAL.'); redirect_to($offerId ? 'offers' : 'transactions'); }
-    // Pembatasan per-sales: hanya boleh akses SKP dari penawaran miliknya / yang ia buat.
+    // Pembatasan per-sales: hanya boleh akses SKP miliknya (PIC sumber / PIC
+    // yang tercatat di dokumen) atau yang ia buat sendiri.
     if ($sc = current_sales_scope($pdo, $pid)) {
-        $ownPic = ($src['pic_name'] ?? '') === $sc['pic'];
+        $ownPic = $sc['pic'] !== '' && in_array($sc['pic'], [
+            (string) ($src['pic_name'] ?? ''), (string) ($skp['pic_name'] ?? ''),
+        ], true);
         $ownBy  = ($skp['created_by'] ?? '') === $sc['uname'];
         if (!$ownPic && !$ownBy) { flash('SKP ini bukan milik Anda.'); redirect_to('skp'); }
     }
