@@ -50,6 +50,20 @@ function skp_doc_title(string $docType): string
 }
 
 /**
+ * Judul yang tercetak di kepala dokumen.
+ *
+ * Gudang & Media memakai perihal dari templatenya (memang sudah berbunyi
+ * "Surat Konfirmasi Sewa Gudang" / "Form Utilities"). SKP TIDAK boleh ikut
+ * template Surat Penawaran — perihal di sana berbunyi "Surat Penawaran Sewa
+ * Area Pameran", padahal dokumen ini surat konfirmasi, bukan penawaran.
+ */
+function skp_doc_heading(string $docType, array $tpl = []): string
+{
+    if ($docType === 'skp') return 'Surat Konfirmasi Sewa Area Pameran';
+    return ((string) ($tpl['perihal'] ?? '')) ?: skp_doc_title($docType);
+}
+
+/**
  * Template dokumen milik sebuah modul (default properti). Query langsung supaya
  * halaman SKP tidak perlu memuat seluruh offers.php.
  */

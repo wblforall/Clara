@@ -86,7 +86,7 @@ $skpHasQr = !empty($skp['sign_token']);
 .skpdoc.kertas .sign .name .muted { color: #000; font-style: italic; font-weight: bold; font-size: 10pt; }
 </style>
 <div class="skpdoc<?= $skpDocType === 'sks' ? ' kertas' : '' ?>">
-    <div class="doc-title"<?= $skpDocType === 'sks' ? ' style="font-weight:bold;text-decoration:underline"' : '' ?>><?= $h($skpTpl['perihal'] ?? '') ?: skp_doc_title($skpDocType) ?></div>
+    <div class="doc-title"<?= $skpDocType === 'sks' ? ' style="font-weight:bold;text-decoration:underline"' : '' ?>><?= $h(skp_doc_heading($skpDocType, $skpTpl)) ?></div>
     <?php if ($skpDocType === 'sks'): ?>
     <div class="doc-sub" style="font-weight:bold"><?= $h($d['property_name'] ?? '') ?></div>
     <div class="doc-no" style="text-align:right;margin-top:-6px">No. <?= $h($skp['skp_no']) ?></div>
@@ -98,7 +98,7 @@ $skpHasQr = !empty($skp['sign_token']);
     <?php /* Form Utilities langsung masuk ke Data Permohonan — tanggalnya sudah
              jadi baris pertama di sana, seperti formulir kertasnya. */ ?>
     <?php if ($skpDocType === 'sks'): ?>
-    <p>Pada hari ini, <?= $h(skp_hari($d['doc_date'] ?? date('Y-m-d'))) ?> <?= $h(skp_tgl($d['doc_date'] ?? date('Y-m-d'))) ?> dibuat dan ditandatangani <strong><?= $h($skpTpl['perihal'] ?? '') ?: skp_doc_title($skpDocType) ?></strong> oleh dan antara:</p>
+    <p>Pada hari ini, <?= $h(skp_hari($d['doc_date'] ?? date('Y-m-d'))) ?> <?= $h(skp_tgl($d['doc_date'] ?? date('Y-m-d'))) ?> dibuat dan ditandatangani <strong><?= $h(skp_doc_heading($skpDocType, $skpTpl)) ?></strong> oleh dan antara:</p>
     <p>Kami yang bertanda tangan dibawah ini :</p>
     <?php endif; ?>
     <?= skp_detail_print($skpDocType, $d, $skpTpl) ?>
