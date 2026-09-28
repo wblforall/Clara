@@ -1111,7 +1111,7 @@ function offer_form(PDO $pdo): void
                 <?php /* Angka yang BENAR-BENAR tercetak di surat, ditampilkan sendiri
                          supaya sales tidak lagi mengira yang diketik = yang ditagih. */ ?>
                 <div class="single-price" id="listrik_total_wrap">
-                    <label>Total Biaya Listrik <span class="muted" style="font-weight:400">(tercetak di surat)</span></label>
+                    <label>Total Biaya Listrik <span class="muted" style="font-weight:400">(sebelum PPN)</span></label>
                     <div style="display:flex;align-items:stretch">
                         <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
                         <input type="text" inputmode="numeric" id="listrik_total"
@@ -1197,11 +1197,18 @@ function offer_form(PDO $pdo): void
                     var ppnPakai = Math.round(dipakai * 11 / 12 * 0.12);
                     if (totVal) totVal.value = isiManual > 0 ? isiManual : 0;
                     if (totInfo) {
-                        if (!h) { totInfo.textContent = 'Isi tanggal mulai & selesai dulu.'; return; }
-                        totInfo.innerHTML = isiManual > 0
-                            ? 'Diisi sendiri. Kalau dikosongkan: ' + n + ' × ' + rp(t) + ' = ' + rp(n * t)
-                              + ' — <a href="#" id="listrik_auto">pakai hitungan otomatis</a>'
-                            : n + ' × ' + rp(t) + ' · PPN 12% ' + rp(ppnPakai) + ' · jadi ' + rp(dipakai + ppnPakai);
+                        // PPN selalu disebut — pertanyaan "ini sudah sama PPN belum?"
+                        // tidak boleh perlu ditebak.
+                        var ppnTeks = '<b>belum termasuk PPN</b> · PPN 12% ' + rp(ppnPakai)
+                            + ' · dibayar ' + rp(dipakai + ppnPakai);
+                        if (isiManual > 0) {
+                            totInfo.innerHTML = 'Diisi sendiri, ' + ppnTeks
+                                + '<br>Kalau dikosongkan: ' + n + ' × ' + rp(t) + ' = ' + rp(n * t)
+                                + ' — <a href="#" id="listrik_auto">pakai hitungan otomatis</a>';
+                        } else {
+                            totInfo.innerHTML = (h ? h + ' hari → ' : 'Tanggal belum diisi · ')
+                                + n + ' × ' + rp(t) + ' · ' + ppnTeks;
+                        }
                         var lk = document.getElementById('listrik_auto');
                         if (lk) lk.addEventListener('click', function (e) {
                             e.preventDefault(); totBox.dataset.manual = ''; gambar();
