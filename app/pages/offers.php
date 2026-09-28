@@ -1103,7 +1103,7 @@ function offer_form(PDO $pdo): void
                     <select name="electricity_units" id="listrik_unit" <?= $disabled ?>>
                         <option value="0" <?= $listrikUnit <= 0 ? 'selected' : '' ?>>Otomatis — ikut lama sewa</option>
                         <?php for ($u = 1; $u <= 12; $u++): ?>
-                        <option value="<?= $u ?>" <?= $listrikUnit === $u ? 'selected' : '' ?>><?= $u ?> × <span>(<?= $u * 30 ?> hari)</span></option>
+                        <option value="<?= $u ?>" <?= $listrikUnit === $u ? 'selected' : '' ?>><?= $u ?> ×</option>
                         <?php endfor; ?>
                     </select>
                     <div class="help" id="listrik_unit_info"></div>
@@ -1116,7 +1116,8 @@ function offer_form(PDO $pdo): void
                         <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
                         <input type="text" inputmode="numeric" id="listrik_total"
                                value="<?= $listrikTotal > 0 ? number_format($listrikTotal, 0, ',', '.') : '' ?>"
-                               style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right;background:#f0fdf4;border-color:#bbf7d0;font-weight:700" <?= $disabled ?>>
+                               placeholder="otomatis"
+                               style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right;font-weight:700" <?= $disabled ?>>
                         <input type="hidden" name="electricity_amount" id="listrik_total_val" value="<?= (int) $listrikTotal ?>">
                     </div>
                     <div class="help" id="listrik_total_info"></div>
@@ -1179,13 +1180,17 @@ function offer_form(PDO $pdo): void
                     // "Sedang/pernah diketik sendiri" — kotaknya tidak ditimpa,
                     // termasuk saat isinya baru dikosongkan untuk diganti.
                     if (unitWrap) unitWrap.style.display = on.checked ? '' : 'none';
+                    var manual = totBox && totBox.dataset.manual === '1';
+                    var adaTotal = manual && angkaTot() > 0;
+                    if (unitSel) unitSel.disabled = adaTotal;
                     if (unitInfo) {
                         var pilih = unitSel ? parseInt(unitSel.value, 10) || 0 : 0;
-                        unitInfo.textContent = pilih > 0
-                            ? 'Dipilih sendiri. Otomatisnya ' + satuanOtomatis() + ' × (' + (h || 0) + ' hari).'
-                            : (h ? h + ' hari → ' + satuanOtomatis() + ' ×' : 'Ikut lama sewa.');
+                        unitInfo.textContent = adaTotal
+                            ? 'Diabaikan — Total diisi sendiri.'
+                            : (pilih > 0
+                                ? 'Dipilih sendiri. Otomatisnya ' + satuanOtomatis() + ' ×.'
+                                : (h ? h + ' hari → ' + satuanOtomatis() + ' ×' : 'Ikut lama sewa.'));
                     }
-                    var manual = totBox && totBox.dataset.manual === '1';
                     if (totBox && !manual) totBox.value = (n * t).toLocaleString('id-ID');
                     var isiManual = manual ? angkaTot() : 0;
                     var dipakai = isiManual > 0 ? isiManual : n * t;
@@ -1194,9 +1199,9 @@ function offer_form(PDO $pdo): void
                     if (totInfo) {
                         if (!h) { totInfo.textContent = 'Isi tanggal mulai & selesai dulu.'; return; }
                         totInfo.innerHTML = isiManual > 0
-                            ? 'Diisi manual. Hitungan otomatis: ' + h + ' hari → ' + n + ' × ' + rp(t) + ' = ' + rp(n * t)
+                            ? 'Diisi sendiri. Kalau dikosongkan: ' + n + ' × ' + rp(t) + ' = ' + rp(n * t)
                               + ' — <a href="#" id="listrik_auto">pakai hitungan otomatis</a>'
-                            : h + ' hari → ' + n + ' × ' + rp(t) + ' · PPN 12% ' + rp(ppnPakai) + ' · jadi ' + rp(dipakai + ppnPakai);
+                            : n + ' × ' + rp(t) + ' · PPN 12% ' + rp(ppnPakai) + ' · jadi ' + rp(dipakai + ppnPakai);
                         var lk = document.getElementById('listrik_auto');
                         if (lk) lk.addEventListener('click', function (e) {
                             e.preventDefault(); totBox.dataset.manual = ''; gambar();
@@ -1217,10 +1222,7 @@ function offer_form(PDO $pdo): void
                 };
                 on.addEventListener('change', gambar);
                 // Ganti jumlah satuan = minta dihitung ulang, bukan pakai angka lama.
-                if (unitSel) unitSel.addEventListener('change', function () {
-                    if (totBox) totBox.dataset.manual = '';
-                    gambar();
-                });
+                if (unitSel) unitSel.addEventListener('change', gambar);
                 if (totBox) {
                     totBox.addEventListener('input', function () {
                         var raw = this.value.replace(/\D/g, '');
