@@ -59,7 +59,7 @@ function skp_doc_title(string $docType): string
  */
 function skp_doc_heading(string $docType, array $tpl = []): string
 {
-    if ($docType === 'skp') return 'Surat Konfirmasi Sewa Area Pameran';
+    if ($docType === 'skp') return skp_doc_title($docType);   // Surat Konfirmasi Pameran
     return ((string) ($tpl['perihal'] ?? '')) ?: skp_doc_title($docType);
 }
 
