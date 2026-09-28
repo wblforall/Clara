@@ -487,7 +487,16 @@ function transaction_form(PDO $pdo): void
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div><label>Rate</label><input type="number" step="0.01" name="unit_rate" id="unit_rate" value="<?= h($prefill['unit_rate'] ?? '0') ?>"></div>
+                <div><label>Rate <span class="muted" style="font-weight:400">(Rp)</span></label>
+                    <?php /* Bukan type=number: kotak angka ikut berubah kalau di-scroll,
+                             dan nilai uang sempat berubah diam-diam karenanya. */ ?>
+                    <div style="display:flex;align-items:stretch">
+                        <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
+                        <input type="text" inputmode="numeric" class="override-fmt" data-init="<?= (float) ($prefill['unit_rate'] ?? 0) > 0 ? h($prefill['unit_rate']) : '' ?>"
+                               style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right">
+                        <input type="hidden" name="unit_rate" id="unit_rate" class="override-val" value="<?= h($prefill['unit_rate'] ?? '0') ?>">
+                    </div>
+                </div>
                 <div><label>Override Aktual</label><input type="text" inputmode="numeric" class="override-fmt" placeholder="Opsional"><input type="hidden" name="override_amount" class="override-val"></div>
                 <div>
                     <label>PIC Dealing <?php if ($linkedPic): ?><span style="font-size:11px;font-weight:400;color:var(--primary)">● auto</span><?php endif; ?></label>
@@ -709,7 +718,7 @@ function transaction_form(PDO $pdo): void
             function fillMaster() {
                 const m = byCode[document.getElementById('master_code').value];
                 if (!m) return;
-                document.getElementById('unit_rate').value = m.rate || 0;
+                claraSetRate(m.rate);
                 document.getElementById('pricing_type').value = m.pricing_type || 'daily_point';
                 document.getElementById('area_sqm').value = m.area_sqm || 0;
                 <?php if ($module === 'media'): ?>
@@ -736,7 +745,7 @@ function transaction_form(PDO $pdo): void
             (function(){
                 var p = <?= json_encode($prefill) ?>;
                 if (p.pricing_type) document.getElementById('pricing_type').value = p.pricing_type;
-                if (p.unit_rate !== '') document.getElementById('unit_rate').value = p.unit_rate;
+                if (p.unit_rate !== '') claraSetRate(p.unit_rate);
                 if (p.area_sqm !== '')  document.getElementById('area_sqm').value  = p.area_sqm;
                 // Populate & pilih contact person dari client lama
                 if (p.client_id) filterContacts(p.contact_id);
@@ -806,6 +815,15 @@ function transaction_form(PDO $pdo): void
             });
             // ─────────────────────────────────────────────────────────────────
 
+            // Rate disimpan di field tersembunyi (angka murni) sementara kotak yang
+            // terlihat menampilkan format ribuan — keduanya harus selalu seiring.
+            function claraSetRate(v) {
+                var h = document.getElementById('unit_rate');
+                if (!h) return;
+                h.value = v || 0;
+                var f = h.parentNode.querySelector('.override-fmt');
+                if (f) f.value = v ? parseFloat(v).toLocaleString('id-ID') : '';
+            }
             function kalkulasiTotal() {
                 const startVal = document.querySelector('[name=start_date]').value;
                 const endVal   = document.querySelector('[name=end_date]').value;
@@ -1161,7 +1179,16 @@ function transaction_edit(PDO $pdo): void
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div><label>Rate</label><input type="number" step="0.01" name="unit_rate" id="unit_rate" value="<?= h((string) $trx['unit_rate']) ?>"></div>
+                <div><label>Rate <span class="muted" style="font-weight:400">(Rp)</span></label>
+                    <?php /* Bukan type=number: kotak angka ikut berubah kalau di-scroll,
+                             dan nilai uang sempat berubah diam-diam karenanya. */ ?>
+                    <div style="display:flex;align-items:stretch">
+                        <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
+                        <input type="text" inputmode="numeric" class="override-fmt" data-init="<?= (float) $trx['unit_rate'] > 0 ? h((string) $trx['unit_rate']) : '' ?>"
+                               style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right">
+                        <input type="hidden" name="unit_rate" id="unit_rate" class="override-val" value="<?= h((string) $trx['unit_rate']) ?>">
+                    </div>
+                </div>
                 <div><label>Override Aktual</label><input type="text" inputmode="numeric" class="override-fmt" placeholder="Opsional" data-init="<?= h((string) ($trx['override_amount'] ?? '')) ?>"><input type="hidden" name="override_amount" class="override-val" value="<?= h((string) ($trx['override_amount'] ?? '')) ?>"></div>
                 <div>
                     <label>PIC Dealing</label>
@@ -1391,7 +1418,7 @@ function transaction_edit(PDO $pdo): void
             function fillMaster() {
                 const m = byCode[document.getElementById('master_code').value];
                 if (!m) return;
-                document.getElementById('unit_rate').value = m.rate || 0;
+                claraSetRate(m.rate);
                 document.getElementById('pricing_type').value = m.pricing_type || 'daily_point';
                 document.getElementById('area_sqm').value = m.area_sqm || 0;
                 <?php if ($trx['module'] === 'media'): ?>
@@ -1477,6 +1504,15 @@ function transaction_edit(PDO $pdo): void
             });
             // ─────────────────────────────────────────────────────────────────
 
+            // Rate disimpan di field tersembunyi (angka murni) sementara kotak yang
+            // terlihat menampilkan format ribuan — keduanya harus selalu seiring.
+            function claraSetRate(v) {
+                var h = document.getElementById('unit_rate');
+                if (!h) return;
+                h.value = v || 0;
+                var f = h.parentNode.querySelector('.override-fmt');
+                if (f) f.value = v ? parseFloat(v).toLocaleString('id-ID') : '';
+            }
             function kalkulasiTotal() {
                 const startVal = document.getElementById('start_date').value;
                 const endVal   = document.getElementById('end_date').value;
