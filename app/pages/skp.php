@@ -539,6 +539,7 @@ function skp_form(PDO $pdo): void
             <?php if ($editable): ?>
             <p class="help" style="margin-top:16px;color:#92400e">Submit untuk approval hanya bisa setelah <strong>Scan KTP</strong> dan <strong>Scan NPWP</strong> ada. Untuk client yang pernah dibuatkan dokumen, scan lamanya otomatis dipakai ulang (centang <strong>Pakai ulang</strong> sudah aktif) &mdash; tidak perlu unggah lagi.<br>
                 <strong>Bukti Transfer</strong> tidak diunggah di sini &mdash; tempatnya di <strong>Permintaan Kontrak</strong>, sebelum berkas dikirim ke Legal.</p>
+            <p class="help" style="margin-top:6px">Tombol <strong>Cetak / Simpan PDF</strong> baru muncul setelah manager menyetujui &mdash; saat itulah nomor dokumen terbit dan isinya dikunci. Sebelum disetujui, isian di halaman ini yang jadi acuannya.</p>
             <p class="form-actions" style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">
                 <button type="submit" onclick="document.getElementById('skp-action').value='save'" class="btn secondary">Simpan Draft</button>
                 <button type="submit" onclick="document.getElementById('skp-action').value='submit'" style="background:#0369a1">Simpan & Submit untuk Approval</button>
