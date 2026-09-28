@@ -566,9 +566,9 @@ function skp_form(PDO $pdo): void
                 <div><label>Biaya Listrik <span class="muted" style="font-weight:400">(<?= (float) ($src['electricity'] ?? 0) > 0 ? 'dari penawaran' : 'dicatat di dokumen ini' ?>)</span></label><input value="<?= money($amt['listrik']) ?>" disabled></div>
                 <div><label>PPN 12% Listrik</label><input value="<?= money($amt['ppn_listrik'] ?? 0) ?>" disabled></div>
                 <?php endif; ?>
-                <div><label>Total Biaya Sewa</label><input value="<?= money($amt['total']) ?>" disabled></div>
-                <div><label>PPN 12% (×11/12)</label><input value="<?= money($amt['ppn']) ?>" disabled></div>
-                <div><label>Total Setelah PPN</label><input value="<?= money($amt['after_ppn']) ?>" disabled></div>
+                <div><label>Total Biaya Sewa</label><input id="skp-total" value="<?= money($amt['total']) ?>" disabled></div>
+                <div><label>PPN 12% (×11/12)</label><input id="skp-ppn" value="<?= money($amt['ppn']) ?>" disabled></div>
+                <div><label>Total Setelah PPN</label><input id="skp-after" value="<?= money($amt['after_ppn']) ?>" disabled></div>
                 <div><label>Jaminan Area / Security Deposit</label><input name="deposit_amount" class="skp-dep-fmt" value="<?= $defDeposit > 0 ? number_format($defDeposit, 0, ',', '.') : '' ?>" inputmode="numeric" placeholder="0" <?= $editable ? '' : 'disabled' ?>><input type="hidden" name="deposit_raw" class="skp-dep-val" value="<?= (int)$defDeposit ?>"></div>
                 <?php
                 /* Biaya listrik milik dokumen ini. Untuk SKP dari Surat Penawaran
@@ -617,7 +617,7 @@ function skp_form(PDO $pdo): void
                             <div class="help" id="skp_listrik_info"></div>
                         </div>
                     </div>
-                    <p class="help" style="margin-top:4px">Simpan dulu untuk melihat angkanya masuk ke Total Biaya Sewa &amp; PPN di atas.</p>
+                    <p class="help" style="margin-top:4px">Angka di Rincian Pembayaran di atas langsung ikut berubah.</p>
                 </div>
                 <?php endif; ?>
                 <div><label>Grand Total (estimasi)</label><input id="skp-grand" value="<?= money($amt['grand_total']) ?>" disabled></div>
@@ -761,6 +761,33 @@ function skp_form(PDO $pdo): void
             on.addEventListener('change', gambar);
             unit.addEventListener('change', gambar);
             gambar();
+
+            // ── Rincian Pembayaran ikut berubah tanpa perlu simpan dulu ──────
+            // DASAR sudah termasuk listrik dari Surat Penawaran (bila ada);
+            // yang ditambahkan di sini hanya listrik milik dokumen ini.
+            var DASAR = <?= (int) round((float) $total) ?>,
+                L_OFFER = <?= (int) round((float) ($src['electricity'] ?? 0)) ?>;
+            function rupiah(x) { return 'Rp ' + Math.round(x || 0).toLocaleString('id-ID'); }
+            function hitungRincian() {
+                var elTot = document.getElementById('skp-total'), elPpn = document.getElementById('skp-ppn'),
+                    elAft = document.getElementById('skp-after'), elGr = document.getElementById('skp-grand');
+                if (!elTot) return;
+                var lSkp = on.checked ? (parseInt(totVal.value, 10) || (parseInt(tot.value.replace(/\D/g, ''), 10) || 0)) : 0;
+                var total = DASAR + lSkp, lAll = L_OFFER + lSkp, sewa = total - lAll;
+                var ppn = Math.round(sewa * 11 / 12 * 0.12) + Math.round(lAll * 11 / 12 * 0.12);
+                var dep = parseInt((document.querySelector('.skp-dep-val') || {}).value || 0, 10) || 0;
+                elTot.value = rupiah(total);
+                if (elPpn) elPpn.value = rupiah(ppn);
+                if (elAft) elAft.value = rupiah(total + ppn);
+                if (elGr)  elGr.value  = rupiah(total + ppn + dep);
+            }
+            window.claraHitungRincian = hitungRincian;
+            var _gambar = gambar;
+            gambar = function () { _gambar(); hitungRincian(); };
+            [on, unit, tarif, tot].forEach(function (el) {
+                if (el) { el.addEventListener('change', hitungRincian); el.addEventListener('input', hitungRincian); }
+            });
+            hitungRincian();
         })();
         (function () {
             var dep = document.querySelector('.skp-dep-fmt'), hid = document.querySelector('.skp-dep-val');
@@ -769,6 +796,7 @@ function skp_form(PDO $pdo): void
                     var raw = this.value.replace(/\D/g, '');
                     this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
                     if (hid) hid.value = raw;
+                    if (typeof claraHitungRincian === 'function') claraHitungRincian();
                 });
             }
             var f = dep ? dep.closest('form') : null;
