@@ -43,6 +43,14 @@ public/uploads/.mpdf/*
 !public/uploads/.mpdf/.gitkeep
 public/report_recurring.pdf
 
+# Scan dokumen klien yang kebetulan ditaruh di akar repo (mis. saat dikirim
+# lewat chat). Gambar aplikasi tempatnya di public/assets, bukan di sini.
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
+/*.heic
+
 # Laporan jadi + aset screenshot: memuat nama & dokumen klien nyata.
 # Sumber pembangunnya (scripts/build_*.php) boleh di-commit, hasilnya tidak.
 docs/*.pdf
