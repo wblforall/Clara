@@ -208,7 +208,9 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                 <tr><td class="lbl">Biaya Listrik <span class="muted" style="font-weight:400">(<?= (int) $days ?> hari)</span></td><td class="amt"><?= $rp($listrik) ?></td></tr>
             <?php else: ?>
                 <tr><td class="lbl">Biaya Listrik / 30 hari</td><td class="amt"><?= $rp($listrikBln) ?></td></tr>
-                <tr><td class="lbl">Masa listrik</td><td class="amt"><?= (int) $days ?> hari</td></tr>
+                <?php /* Kalau jumlah satuannya dipilih sendiri (tidak mengikuti lama
+                         sewa), sebutkan — supaya tidak terbaca sebagai salah hitung. */ ?>
+                <tr><td class="lbl">Masa listrik</td><td class="amt"><?= (int) $days ?> hari<?= (int) ($o['electricity_units'] ?? 0) > 0 ? ' · dihitung ' . (int) $listrikN . ' ×' : '' ?></td></tr>
                 <?php if ($listrik != $listrikBln): ?>
                 <tr><td class="lbl">Total Biaya Listrik</td><td class="amt"><?= $rp($listrik) ?></td></tr>
                 <?php endif; ?>
