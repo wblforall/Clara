@@ -128,6 +128,10 @@ a { color: inherit; text-decoration: none; }
 }
 h1 { font-size: 22px; font-weight: 800; margin: 0 0 3px; color: var(--ink); }
 h2 { font-size: 16px; font-weight: 700; margin: 0 0 14px; color: var(--ink); }
+/* h3 sempat terlewat: reset `* { margin: 0 }` membuatnya menempel ke kotak isian
+   di atasnya. Banyak halaman sudah menulis style="margin-top:0" untuk judul
+   pertama dalam panel, jadi jarak atas memang diharapkan ada di sini. */
+h3 { font-size: 14.5px; font-weight: 700; margin: 20px 0 10px; color: var(--ink); }
 .muted { color: var(--muted); font-size: 13px; }
 
 /* user badge in topbar */
