@@ -168,8 +168,12 @@ $skpHasQr = !empty($skp['sign_token']);
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;c. PPN 12% <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn'] ?? 0) ?></td></tr>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;d. Total Biaya Sewa Setelah PPN</td><td class="amt"><?= $rp($a['after_ppn'] ?? 0) ?></td></tr>
         <?php endif; ?>
-        <tr><td class="lbl">B. Jaminan Area (Security Deposit)</td><td class="amt"><?= $rp($a['deposit'] ?? 0) ?></td></tr>
-        <tr class="grand"><td class="lbl">C. Grand Total Biaya Area</td><td class="amt"><?= $rp($a['grand_total'] ?? 0) ?></td></tr>
+        <?php /* Deposit yang sudah disetor di kontrak sebelumnya tetap dicantumkan
+                 sebagai catatan (hijau), tapi tidak ditagih ulang di Grand Total. */ ?>
+        <?php $depLunas = !empty($a['deposit_paid']); ?>
+        <tr><td class="lbl"<?= $depLunas ? ' style="color:#166534"' : '' ?>>B. Jaminan Area (Security Deposit)</td>
+            <td class="amt"<?= $depLunas ? ' style="color:#166534;font-weight:bold"' : '' ?>><?= $rp($a['deposit'] ?? 0) ?><?= $depLunas ? ' (Sudah Dibayarkan)' : '' ?></td></tr>
+        <tr class="grand"><td class="lbl">C. Grand Total Biaya Area<?= $depLunas ? ' <span class="muted">(di luar Security Deposit)</span>' : '' ?></td><td class="amt"><?= $rp($a['grand_total'] ?? 0) ?></td></tr>
     </table>
     <div class="muted" style="font-size:9px;margin-top:3px">*PPN 12% sesuai PMK Nomor 131 Tahun 2024.</div>
 

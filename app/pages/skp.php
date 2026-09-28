@@ -111,7 +111,7 @@ function skp_listrik_satuan(array $skp, string $start = '', string $end = ''): i
  * $listrik = bagian biaya listrik yang SUDAH termasuk di dalam $total — dipakai
  * hanya untuk menampilkannya sebagai baris terpisah.
  */
-function _skp_amounts(float $total, float $ratePerM, float $deposit, float $listrik = 0.0): array
+function _skp_amounts(float $total, float $ratePerM, float $deposit, float $listrik = 0.0, bool $depositLunas = false): array
 {
     // PPN dihitung per komponen (sewa & listrik) supaya bisa dirinci; jumlahnya
     // dipakai sebagai PPN total agar penjumlahan di dokumen selalu pas.
@@ -129,9 +129,33 @@ function _skp_amounts(float $total, float $ratePerM, float $deposit, float $list
         'total'       => $total,
         'ppn'         => $ppn,
         'after_ppn'   => $afterPpn,
-        'deposit'     => $deposit,
-        'grand_total' => $afterPpn + $deposit,
+        'deposit'      => $deposit,
+        // Deposit yang sudah disetor di kontrak sebelumnya tetap dicetak sebagai
+        // catatan, tapi tidak ditagih ulang → tidak masuk Grand Total.
+        'deposit_paid' => $depositLunas ? 1 : 0,
+        'grand_total'  => $afterPpn + ($depositLunas ? 0 : $deposit),
     ];
+}
+
+/**
+ * Apakah client ini pernah menyetor deposit di dokumen SKP sebelumnya?
+ * Dipakai untuk mencentang otomatis "sudah dibayarkan" pada perpanjangan.
+ */
+function _skp_deposit_pernah(PDO $pdo, int $clientId, int $kecuali = 0): bool
+{
+    if ($clientId <= 0) return false;
+    // client_id di skp_documents hanya terisi untuk dokumen Gudang/Media,
+    // jadi client-nya ditelusuri lewat transaksi / penawaran juga.
+    $st = $pdo->prepare(
+        "SELECT 1 FROM skp_documents s
+           LEFT JOIN transactions t ON t.id = s.transaction_id
+           LEFT JOIN offers o ON o.id = s.offer_id
+          WHERE COALESCE(s.client_id, t.client_id, o.client_id) = ?
+            AND s.id <> ? AND s.deposit_amount > 0
+            AND s.status IN ('approved','signed') LIMIT 1"
+    );
+    $st->execute([$clientId, $kecuali]);
+    return (bool) $st->fetchColumn();
 }
 
 /** Selisih hari inklusif. */
@@ -406,10 +430,16 @@ function skp_form(PDO $pdo): void
     $days     = _skp_days($src['start_date'], $src['end_date']);
     $total    = (float) ($src['final_amount'] ?: $src['total_calculated']);
     $defDeposit = (float) ($skp['deposit_amount'] ?? $src['deposit_amount'] ?? 0);
+    // Deposit sudah dibayar? Dokumen lama pakai nilainya sendiri; dokumen baru
+    // dicentang otomatis bila client ini pernah menyetor deposit sebelumnya
+    // (kasus perpanjangan) — tetap bisa dibatalkan manual.
+    $defDepPaid = $skp
+        ? !empty($skp['deposit_paid'])
+        : ($defDeposit > 0 && _skp_deposit_pernah($pdo, (int) ($src['client_id'] ?? 0)));
     // Listrik: dari penawaran (bila ada) atau yang dicatat di dokumen ini.
     $listrikSkp = $skp ? skp_listrik($skp, (string) $src['start_date'], (string) $src['end_date']) : 0.0;
     $listrikAll = (float) ($src['electricity'] ?? 0) + $listrikSkp;
-    $amt      = _skp_amounts($total + $listrikSkp, (float) $src['unit_rate'], $defDeposit, $listrikAll);
+    $amt      = _skp_amounts($total + $listrikSkp, (float) $src['unit_rate'], $defDeposit, $listrikAll, $defDepPaid);
     $area     = (float) ($src['area_sqm'] ?: $src['unit_area']);
     // Isi khusus modul: tabel harga Gudang / daftar centang Form Utilities Media.
     // Teksnya (intro, peraturan, catatan kaki, daftar item) datang dari Template
@@ -429,7 +459,7 @@ function skp_form(PDO $pdo): void
     $reuse = $editable ? _skp_reusable_attachments($pdo, (int) ($src['client_id'] ?? 0), (int) ($skp['id'] ?? 0)) : [];
     $val = fn(string $k, $def = '') => h((string) ($skp[$k] ?? $def));
 
-    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind) {
+    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind) {
         $statusSewaDefault = ($isRenew || (!empty($src['renewal_status']) && $src['renewal_status'] !== 'none')) ? 'Perpanjangan' : 'Baru';
         ?>
         <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=<?= $standalone ? 'skp' : ($offerId ? 'offer_form&id=' . (int)$offerId : 'allocation_detail&id=' . (int)$trxId) ?>">← <?= $standalone ? 'Daftar Dokumen' : ($offerId ? 'Penawaran' : 'Detail Alokasi') ?></a><a class="btn light" href="?r=skp">Daftar Dokumen</a> <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h($docLabel) ?></span></div>
@@ -582,7 +612,18 @@ function skp_form(PDO $pdo): void
                 <div><label>Total Biaya Sewa</label><input id="skp-total" value="<?= money($amt['total']) ?>" disabled></div>
                 <div><label>PPN 12% (×11/12)</label><input id="skp-ppn" value="<?= money($amt['ppn']) ?>" disabled></div>
                 <div><label>Total Setelah PPN</label><input id="skp-after" value="<?= money($amt['after_ppn']) ?>" disabled></div>
-                <div><label>Jaminan Area / Security Deposit</label><input name="deposit_amount" class="skp-dep-fmt" value="<?= $defDeposit > 0 ? number_format($defDeposit, 0, ',', '.') : '' ?>" inputmode="numeric" placeholder="0" <?= $editable ? '' : 'disabled' ?>><input type="hidden" name="deposit_raw" class="skp-dep-val" value="<?= (int)$defDeposit ?>"></div>
+                <div>
+                    <label>Jaminan Area / Security Deposit</label>
+                    <input name="deposit_amount" class="skp-dep-fmt" value="<?= $defDeposit > 0 ? number_format($defDeposit, 0, ',', '.') : '' ?>" inputmode="numeric" placeholder="0" <?= $editable ? '' : 'disabled' ?>>
+                    <input type="hidden" name="deposit_raw" class="skp-dep-val" value="<?= (int)$defDeposit ?>">
+                    <?php /* Perpanjangan: deposit sudah disetor di kontrak sebelumnya, jadi
+                             tetap tercetak di surat tapi tidak ditagih ulang. */ ?>
+                    <label style="display:flex;align-items:center;gap:7px;margin-top:7px;cursor:pointer;font-weight:400">
+                        <input type="checkbox" name="deposit_paid" id="skp_dep_paid" value="1" style="width:15px;height:15px;flex:none;margin:0" <?= $defDepPaid ? 'checked' : '' ?> <?= $editable ? '' : 'disabled' ?>>
+                        <span style="color:#166534;font-weight:600">Sudah dibayarkan</span>
+                    </label>
+                    <div class="help" id="skp_dep_help"></div>
+                </div>
                 <?php
                 /* Biaya listrik milik dokumen ini. Untuk SKP dari Surat Penawaran
                    listriknya sudah ikut dari sana (ditampilkan di atas, read-only);
@@ -775,31 +816,58 @@ function skp_form(PDO $pdo): void
             unit.addEventListener('change', gambar);
             gambar();
 
-            // ── Rincian Pembayaran ikut berubah tanpa perlu simpan dulu ──────
-            // DASAR sudah termasuk listrik dari Surat Penawaran (bila ada);
-            // yang ditambahkan di sini hanya listrik milik dokumen ini.
+            var _gambar = gambar;
+            gambar = function () { _gambar(); if (window.claraHitungRincian) window.claraHitungRincian(); };
+            [on, unit, tarif, tot].forEach(function (el) {
+                if (!el) return;
+                function ulang() { if (window.claraHitungRincian) window.claraHitungRincian(); }
+                el.addEventListener('change', ulang); el.addEventListener('input', ulang);
+            });
+        })();
+
+        // ── Rincian Pembayaran ikut berubah tanpa perlu simpan dulu ─────────
+        // Blok ini berdiri sendiri (tidak menempel ke blok listrik) supaya
+        // Grand Total tetap hidup walau listriknya ikut dari Surat Penawaran.
+        // DASAR sudah termasuk listrik dari penawaran (bila ada); yang
+        // ditambahkan di sini hanya listrik milik dokumen ini.
+        (function () {
+            var elTot = document.getElementById('skp-total');
+            if (!elTot) return;
             var DASAR = <?= (int) round((float) $total) ?>,
                 L_OFFER = <?= (int) round((float) ($src['electricity'] ?? 0)) ?>;
             function rupiah(x) { return 'Rp ' + Math.round(x || 0).toLocaleString('id-ID'); }
+            function listrikDokumen() {
+                var on = document.getElementById('skp_listrik_on');
+                if (!on || !on.checked) return 0;
+                var hid = document.getElementById('skp_listrik_total_val'),
+                    tx = document.getElementById('skp_listrik_total');
+                return (hid && parseInt(hid.value, 10)) ||
+                       (tx ? parseInt((tx.value || '').replace(/\D/g, ''), 10) || 0 : 0);
+            }
             function hitungRincian() {
-                var elTot = document.getElementById('skp-total'), elPpn = document.getElementById('skp-ppn'),
-                    elAft = document.getElementById('skp-after'), elGr = document.getElementById('skp-grand');
-                if (!elTot) return;
-                var lSkp = on.checked ? (parseInt(totVal.value, 10) || (parseInt(tot.value.replace(/\D/g, ''), 10) || 0)) : 0;
-                var total = DASAR + lSkp, lAll = L_OFFER + lSkp, sewa = total - lAll;
+                var elPpn = document.getElementById('skp-ppn'),
+                    elAft = document.getElementById('skp-after'),
+                    elGr = document.getElementById('skp-grand'),
+                    lunas = document.getElementById('skp_dep_paid'),
+                    bantu = document.getElementById('skp_dep_help');
+                var lSkp = listrikDokumen(), total = DASAR + lSkp, lAll = L_OFFER + lSkp, sewa = total - lAll;
                 var ppn = Math.round(sewa * 11 / 12 * 0.12) + Math.round(lAll * 11 / 12 * 0.12);
                 var dep = parseInt((document.querySelector('.skp-dep-val') || {}).value || 0, 10) || 0;
+                var sudah = !!(lunas && lunas.checked);
                 elTot.value = rupiah(total);
                 if (elPpn) elPpn.value = rupiah(ppn);
                 if (elAft) elAft.value = rupiah(total + ppn);
-                if (elGr)  elGr.value  = rupiah(total + ppn + dep);
+                if (elGr) elGr.value = rupiah(total + ppn + (sudah ? 0 : dep));
+                if (bantu) {
+                    bantu.innerHTML = dep <= 0 ? ''
+                        : (sudah
+                            ? '<span style="color:#166534">Tercetak di SKP sebagai <b>' + rupiah(dep) + ' (Sudah Dibayarkan)</b> — tidak menambah Grand Total.</span>'
+                            : 'Ditagih pada kontrak ini — ikut menambah Grand Total.');
+                }
             }
             window.claraHitungRincian = hitungRincian;
-            var _gambar = gambar;
-            gambar = function () { _gambar(); hitungRincian(); };
-            [on, unit, tarif, tot].forEach(function (el) {
-                if (el) { el.addEventListener('change', hitungRincian); el.addEventListener('input', hitungRincian); }
-            });
+            var cb = document.getElementById('skp_dep_paid');
+            if (cb) cb.addEventListener('change', hitungRincian);
             hitungRincian();
         })();
         (function () {
@@ -960,6 +1028,8 @@ function skp_save(PDO $pdo): void
         'produk'        => trim((string) post('produk')) ?: null,
         'status_sewa'   => post('status_sewa') ?: 'Baru',
         'deposit_amount'=> (float) post('deposit_raw', 0),
+        // Sudah disetor di kontrak sebelumnya → dicetak di surat, tapi di luar Grand Total.
+        'deposit_paid'  => post('deposit_paid') ? 1 : 0,
         // Listrik yang dicatat di dokumen ini (kosong = tidak menagih listrik).
         'electricity_flag'    => post('electricity_flag') ? 1 : 0,
         'electricity_monthly' => parse_rupiah((string) post('electricity_monthly', '0')) ?: null,
@@ -1170,7 +1240,7 @@ function skp_approve(PDO $pdo): void
     $total = (float) ($src['final_amount'] ?: $src['total_calculated']);
     $listrikSkp = skp_listrik($skp, (string) $src['start_date'], (string) $src['end_date']);
     $amt   = _skp_amounts($total + $listrikSkp, (float) $src['unit_rate'], (float) $skp['deposit_amount'],
-        (float) ($src['electricity'] ?? 0) + $listrikSkp);
+        (float) ($src['electricity'] ?? 0) + $listrikSkp, !empty($skp['deposit_paid']));
     // Paket: lokasi & komponen utk ditampilkan di dokumen SKP.
     $bundleLoc = $bundleRows ? ('Paket (' . count($bundleRows) . ' komponen)') : '';
     $bundleItemsSnap = array_map(fn($r) => [
