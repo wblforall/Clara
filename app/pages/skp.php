@@ -659,7 +659,7 @@ function skp_form(PDO $pdo): void
                     </label>
                     <div id="skp_listrik_box" class="form-grid" style="margin-top:8px">
                         <div>
-                            <label>Biaya Listrik / 30 Hari</label>
+                            <label>Biaya Listrik Per Bulan</label>
                             <div style="display:flex;align-items:stretch">
                                 <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
                                 <input type="text" inputmode="numeric" id="skp_listrik_tarif" value="<?= number_format($lTarif, 0, ',', '.') ?>"
