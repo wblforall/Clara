@@ -9,6 +9,8 @@
  *   php scripts/perbaiki_periode_transaksi.php 1917 2026-11-18 --nilai=7000000 --apply
  *
  *   --nilai=RP   nilai kontrak baru (kosong = nilai lama dipertahankan)
+ *   --rate=RP    harga per bulan / per hari (dipakai kalau transaksinya diedit lagi
+ *                lewat formulir — kosongkan kalau tidak perlu diubah)
  *   --apply      simpan; tanpa ini hanya simulasi
  *
  * Alokasi bulanan lama dihapus lalu dihitung ulang dari periode & nilai baru.
@@ -30,8 +32,11 @@ if (!isset($argv[1])) {
 $id    = (int) $argv[1];
 $akhir = isset($argv[2]) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $argv[2]) ? (string) $argv[2] : null;
 $apply = in_array('--apply', $argv, true);
-$nilai = null;
-foreach ($argv as $a) if (preg_match('/^--nilai=(\d+)$/', $a, $m)) $nilai = (float) $m[1];
+$nilai = null; $rate = null;
+foreach ($argv as $a) {
+    if (preg_match('/^--nilai=(\d+)$/', $a, $m)) $nilai = (float) $m[1];
+    if (preg_match('/^--rate=(\d+)$/', $a, $m))  $rate  = (float) $m[1];
+}
 
 $st = $pdo->prepare('SELECT t.*, c.company_name FROM transactions t LEFT JOIN master_clients c ON c.id = t.client_id WHERE t.id = ?');
 $st->execute([$id]);
@@ -70,6 +75,7 @@ if ($nilai !== null) {
 $pdo->beginTransaction();
 $sql = 'UPDATE transactions SET end_date = ?';
 $par = [$akhir];
+if ($rate !== null) { $sql .= ', unit_rate = ?'; $par[] = $rate; }
 if ($nilai !== null) {
     $sql .= ', final_amount = ?, override_amount = ?, total_calculated = ?';
     array_push($par, $nilai, $nilai, $nilai);
@@ -85,6 +91,7 @@ $hasil = $al->fetchAll();
 
 echo "Periode baru : {$trx['start_date']} s/d {$akhir}\n";
 echo "Nilai baru   : " . $rp($nilai !== null ? $nilai : ($trx['final_amount'] ?: $trx['total_calculated'])) . "\n";
+if ($rate !== null) echo "Harga/bulan  : " . $rp($rate) . "\n";
 echo "Alokasi baru (" . count($hasil) . " bulan):\n";
 foreach ($hasil as $r) printf("   %-9s %s\n", $r['period_key'], $rp($r['amt']));
 echo "   TOTAL     " . $rp(array_sum(array_column($hasil, 'amt'))) . "\n\n";
