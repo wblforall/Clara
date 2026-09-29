@@ -1090,7 +1090,7 @@ function offer_form(PDO $pdo): void
                 <div class="listrik-kolom">
                     <label style="display:flex;align-items:center;gap:7px;cursor:pointer">
                         <input type="checkbox" name="electricity_flag" id="listrik_on" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= $listrikOn ? 'checked' : '' ?> <?= $disabled ?>>
-                        Biaya Listrik / 30 Hari
+                        Biaya Listrik Per Bulan
                     </label>
                     <div id="listrik_box" style="display:flex;align-items:stretch">
                         <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
@@ -2344,7 +2344,7 @@ function offer_template_form(PDO $pdo): void
             <?php /* Baseline biaya listrik — dipakai sebagai isian awal penawaran baru. */ ?>
             <div style="display:flex;gap:10px;align-items:flex-start;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:11px 14px;margin-top:12px">
                 <div>
-                    <label style="font-weight:700">Biaya Listrik / 30 Hari (default)</label>
+                    <label style="font-weight:700">Biaya Listrik Per Bulan (default)</label>
                     <div class="help" style="margin-top:2px">Nominal yang otomatis terisi saat sales membuat penawaran baru dengan tipe ini. Di penawarannya masih bisa diubah atau dilepas centangnya.</div>
                     <div style="margin-top:6px;display:flex;align-items:stretch;max-width:220px">
                         <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
