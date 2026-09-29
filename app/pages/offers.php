@@ -1048,6 +1048,9 @@ function offer_form(PDO $pdo): void
                         <input type="hidden" name="master_code" id="master_code" required value="<?= h($offer['master_code'] ?? '') ?>">
                         <div id="masterDrop"></div>
                     </div>
+                    <?php /* Daftarnya dari Master Exhibition saja. Unit Gudang & Media
+                             tidak lewat Surat Penawaran, jadi sengaja tidak muncul. */ ?>
+                    <div class="help">Hanya unit dari <strong>Master Exhibition</strong>. Unit <strong>Gudang</strong> &amp; <strong>Media</strong> tidak lewat Surat Penawaran &mdash; dokumennya dibuat di <strong>SKP Pameran &rarr; + Buat Dokumen</strong>.</div>
                     <?php else: ?>
                     <input type="text" value="<?= h($unitLabel) ?>" disabled>
                     <input type="hidden" name="master_code" id="master_code" value="<?= h($offer['master_code'] ?? '') ?>">
