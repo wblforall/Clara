@@ -282,7 +282,7 @@ function _offer_fields(): array
             'pricing_type', 'unit_rate', 'area_sqm', 'quantity', 'slots',
             'start_date', 'end_date', 'contract_months', 'monthly_amount', 'total_calculated', 'override_amount',
             'billing_method', 'recurring_flag', 'cycle_recognition',
-            'dp_months', 'dp_amount', 'deposit_months', 'deposit_amount',
+            'dp_months', 'dp_amount', 'deposit_months', 'deposit_amount', 'deposit_paid',
             'electricity_flag', 'electricity_monthly', 'electricity_units', 'electricity_amount',
             'perihal', 'offer_date', 'is_bundle'];
 }
@@ -1087,7 +1087,7 @@ function offer_form(PDO $pdo): void
                          tersendiri. Lebar kotak centang dipatok karena CSS global
                          membuat semua input selebar kolom. */ ?>
                 <?php if ($module === 'cl'): ?>
-                <div class="single-price">
+                <div class="listrik-kolom">
                     <label style="display:flex;align-items:center;gap:7px;cursor:pointer">
                         <input type="checkbox" name="electricity_flag" id="listrik_on" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= $listrikOn ? 'checked' : '' ?> <?= $disabled ?>>
                         Biaya Listrik / 30 Hari
@@ -1101,7 +1101,7 @@ function offer_form(PDO $pdo): void
                     </div>
                     <div class="help" id="listrik_info">Standar <?= h(number_format((float) ($tplBaru['electricity_default'] ?? 150000), 0, ',', '.')) ?> per 30 hari — boleh diubah.</div>
                 </div>
-                <div class="single-price" id="listrik_unit_wrap">
+                <div class="listrik-kolom" id="listrik_unit_wrap">
                     <label>Jumlah Satuan <span class="muted" style="font-weight:400">(1 satuan = 30 hari)</span></label>
                     <select name="electricity_units" id="listrik_unit" <?= $disabled ?>>
                         <option value="0" <?= $listrikUnit <= 0 ? 'selected' : '' ?>>Otomatis — ikut lama sewa</option>
@@ -1113,7 +1113,7 @@ function offer_form(PDO $pdo): void
                 </div>
                 <?php /* Angka yang BENAR-BENAR tercetak di surat, ditampilkan sendiri
                          supaya sales tidak lagi mengira yang diketik = yang ditagih. */ ?>
-                <div class="single-price" id="listrik_total_wrap">
+                <div class="listrik-kolom" id="listrik_total_wrap">
                     <label>Total Biaya Listrik <span class="muted" style="font-weight:400">(sebelum PPN)</span></label>
                     <div style="display:flex;align-items:stretch">
                         <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
@@ -1299,6 +1299,15 @@ function offer_form(PDO $pdo): void
                 <div><label>Nominal Deposit <span class="muted" style="font-weight:400">(otomatis, bisa diubah)</span></label><input type="text" inputmode="numeric" id="dep_fmt" placeholder="0" <?= $disabled ?>><input type="hidden" name="deposit_amount" id="deposit_amount" value="<?= $existing ? (int)($offer['deposit_amount'] ?? 0) : '' ?>"></div>
             </div>
             </div><!-- /#single-pay -->
+
+            <?php /* Berlaku untuk penawaran satuan maupun paket: pada perpanjangan,
+                     deposit sudah disetor di kontrak sebelumnya. */ ?>
+            <div style="margin-top:10px">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400">
+                    <input type="checkbox" name="deposit_paid" id="deposit_paid" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= !empty($offer['deposit_paid']) ? 'checked' : '' ?> <?= $disabled ?>>
+                    <span><strong style="color:#166534">Security Deposit sudah dibayarkan</strong> <span class="muted">&mdash; tetap tercantum di surat, tapi tidak ditambahkan ke Grand Total</span></span>
+                </label>
+            </div>
 
             <?php if ($offer && $editable): ?>
             <h3>Catatan Revisi / Nego</h3>
@@ -1704,6 +1713,8 @@ function offer_save(PDO $pdo): void
         'dp_amount'       => $dpAmount, // #5 — 0 utk template deposit-only
         'deposit_months'  => (float) post('deposit_months', 1),
         'deposit_amount'  => (float) post('deposit_amount', 0),
+        // Sudah disetor di kontrak sebelumnya → tetap dicetak, tapi di luar Grand Total.
+        'deposit_paid'    => post('deposit_paid') ? 1 : 0,
         // Listrik: hanya berlaku untuk Exhibition. Nominalnya tarif PER BULAN —
         // dikalikan jumlah bulan saat dicetak & saat nilainya diteruskan ke SKP.
         'electricity_flag'    => ($module === 'cl' && post('electricity_flag')) ? 1 : 0,
@@ -1738,12 +1749,11 @@ function offer_save(PDO $pdo): void
         $data['dp_months']        = 0;
         $data['deposit_months']   = 0;
         $data['perihal']          = 'Surat Penawaran Paket';
-        // Paket dihitung per komponen; biaya listrik tidak dipakai di sini supaya
-        // nilai surat, transaksi, dan alokasi tidak berbeda.
-        $data['electricity_flag']    = 0;
-        $data['electricity_monthly'] = null;
-        $data['electricity_units']   = null;
-        $data['electricity_amount']  = null;
+        // Biaya listrik paket memakai isian yang sama dengan penawaran satuan
+        // (tarif × satuan, atau total yang diketik sendiri). Untuk paket, satu
+        // satuan biasanya = satu booth — jadi paket 3 booth diisi 3 ×.
+        // Seperti penawaran satuan, listrik adalah beban di surat & dokumen
+        // konfirmasi; nilai transaksi tetap sebesar sewa per komponen.
         $data['letter_json']      = json_encode([
             'template' => 'Paket', 'unit_type' => '', 'perihal' => 'Surat Penawaran Paket',
             'intro' => '', 'fasilitas' => [], 'payment' => [], 'terms' => [], 'dp_required' => 0, 'bundle' => true,

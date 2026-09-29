@@ -451,7 +451,8 @@ function skp_form(PDO $pdo): void
     // (kasus perpanjangan) — tetap bisa dibatalkan manual.
     $defDepPaid = $skp
         ? !empty($skp['deposit_paid'])
-        : ($defDeposit > 0 && _skp_deposit_pernah($pdo, (int) ($src['client_id'] ?? 0)));
+        : (!empty($src['deposit_paid'])                      // ikut dari Surat Penawaran
+            || ($defDeposit > 0 && _skp_deposit_pernah($pdo, (int) ($src['client_id'] ?? 0))));
     // Listrik: dari penawaran (bila ada) atau yang dicatat di dokumen ini.
     $listrikSkp = $skp ? skp_listrik($skp, (string) $src['start_date'], (string) $src['end_date']) : 0.0;
     $listrikAll = (float) ($src['electricity'] ?? 0) + $listrikSkp;
@@ -709,6 +710,37 @@ function skp_form(PDO $pdo): void
             <?php endif; ?>
         </form>
 
+        <?php /* Ganti berkas tanpa menolak dokumen. Formulir di atas terkunci
+                 begitu disubmit, padahal scan yang salah cukup diganti — tidak
+                 perlu menolak yang membatalkan transaksinya. Form terpisah
+                 supaya tidak tersarang di dalam form utama. */ ?>
+        <?php if ($skp && !$editable && can('manage_skp')): ?>
+        <div class="panel" style="margin-top:12px;border:1px solid #fde68a;background:#fffbeb">
+            <h3 style="margin-top:0;color:#92400e">Ganti Berkas Lampiran</h3>
+            <p class="help" style="margin-top:0">Dokumen sudah terkunci, tapi <strong>scan</strong>-nya masih boleh diperbaiki &mdash; misalnya KTP yang salah unggah. Nilai, periode dan nomor dokumen tidak ikut berubah.</p>
+            <div class="form-grid">
+                <?php foreach (['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP', 'siup' => 'Scan SIUP', 'pengajuan' => 'Pengajuan'] as $gk => $gl):
+                    $gAda = $atts[$gk] ?? null; ?>
+                <div>
+                    <label><?= $gl ?></label>
+                    <div style="font-size:12px;margin-bottom:5px">
+                        <?= $gAda
+                            ? '📎 <a href="' . h(upload_url($gAda['file_path'])) . '" target="_blank">' . h($gAda['original_name'] ?: 'lihat') . '</a>'
+                            : '<span class="muted">belum ada</span>' ?>
+                    </div>
+                    <form method="post" action="?r=skp_attachment_replace" enctype="multipart/form-data" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                        <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                        <input type="hidden" name="id" value="<?= (int) $skp['id'] ?>">
+                        <input type="hidden" name="kind" value="<?= h($gk) ?>">
+                        <input type="file" name="berkas" accept="image/*,application/pdf" required style="flex:1;min-width:0">
+                        <button type="submit" class="btn secondary" style="flex:none">Ganti</button>
+                    </form>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <?php if ($skp && $skp['status'] === 'submitted' && can('approve_skp')): ?>
         <div class="panel" style="margin-top:12px;border:1px solid #bae6fd;background:#f0f9ff">
             <h3 style="margin-top:0;color:#0369a1">Approval Manager</h3>
@@ -718,8 +750,8 @@ function skp_form(PDO $pdo): void
             </form>
             <form method="post" action="?r=skp_reject" style="display:inline-flex;gap:8px;align-items:center;margin-left:10px;flex-wrap:wrap">
                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$skp['id'] ?>">
-                <input name="reject_note" placeholder="Alasan penolakan" style="width:240px;max-width:100%">
-                <button type="submit" class="btn warn">✗ Tolak</button>
+                <input name="reject_note" placeholder="Alasan penolakan" style="width:240px;max-width:100%" required>
+                <button type="submit" class="btn warn" onclick="return confirm('Tolak dokumen ini?\n\nTransaksinya ikut DIBATALKAN dan alokasi bulanannya dihapus dari laporan.\n\nKalau hanya salah scan KTP/NPWP, jangan ditolak — pakai Ganti Berkas Lampiran.')">✗ Tolak</button>
             </form>
         </div>
         <?php elseif ($skp && $skp['status'] === 'submitted'): ?>
@@ -1366,16 +1398,148 @@ function skp_reject(PDO $pdo): void
     $pid = current_property_id();
     $id  = (int) post('id');
     $note = trim((string) post('reject_note')) ?: 'Tidak ada catatan.';
-    $st = $pdo->prepare('SELECT status FROM skp_documents WHERE id = ? AND property_id = ?');
+    $st = $pdo->prepare('SELECT status, transaction_id FROM skp_documents WHERE id = ? AND property_id = ?');
     $st->execute([$id, $pid]);
-    if ($st->fetchColumn() !== 'submitted') { flash('SKP tidak dalam status menunggu approval.'); redirect_to('skp_form', ['id' => $id]); }
-    $pdo->prepare('UPDATE skp_documents SET status=\'rejected\', reject_note=? WHERE id=? AND property_id=?')
-        ->execute([$note, $id, $pid]);
-    audit($pdo, 'reject', 'skp_documents', (string) $id, ['note' => $note]);
-    flash('SKP ditolak & dikembalikan ke sales.');
+    $cur = $st->fetch();
+    if (!$cur || $cur['status'] !== 'submitted') { flash('SKP tidak dalam status menunggu approval.'); redirect_to('skp_form', ['id' => $id]); }
+
+    // Penolakan = kesepakatannya batal, bukan sekadar dokumen dikembalikan.
+    // Transaksi yang sudah terbit (Exhibition: lahir saat penawaran DEAL) ikut
+    // dibatalkan berikut alokasi bulanannya, supaya tidak terus masuk laporan.
+    // Salah scan TIDAK perlu ditolak — pakai "Ganti Berkas Lampiran".
+    $trxId = (int) ($cur['transaction_id'] ?? 0);
+    $trx   = null;
+    if ($trxId) {
+        $q = $pdo->prepare('SELECT * FROM transactions WHERE id = ? AND property_id = ? AND deleted_at IS NULL');
+        $q->execute([$trxId, $pid]);
+        $trx = $q->fetch() ?: null;
+    }
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('UPDATE skp_documents SET status=\'rejected\', reject_note=? WHERE id=? AND property_id=?')
+            ->execute([$note, $id, $pid]);
+        if ($trx) {
+            $pdo->prepare('UPDATE transactions SET deleted_at = ?, deleted_by = ?, cancel_reason = ? WHERE id = ? AND property_id = ?')
+                ->execute([date('Y-m-d H:i:s'), $_SESSION['user']['email'] ?? 'system',
+                           'Dokumen ditolak: ' . $note, $trxId, $pid]);
+            $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ? AND property_id = ?')
+                ->execute([$trxId, $pid]);
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    audit($pdo, 'reject', 'skp_documents', (string) $id, ['note' => $note, 'transaksi_dibatalkan' => $trx ? $trxId : null], (array) ($trx ?: []));
+    flash($trx
+        ? 'SKP ditolak. Transaksi #' . $trxId . ' ikut dibatalkan & alokasi bulanannya dihapus.'
+        : 'SKP ditolak & dikembalikan ke sales.');
     redirect_to('skp_form', ['id' => $id]);
 }
 
+/**
+ * Ganti satu berkas lampiran pada dokumen yang sudah terkunci (submitted /
+ * approved / signed). Hanya berkasnya yang berubah — nilai, periode dan nomor
+ * dokumen tetap. Snapshot ikut disegarkan supaya PDF menunjuk berkas yang baru.
+ */
+function skp_attachment_replace(PDO $pdo): void
+{
+    require_permission('manage_skp');
+    verify_csrf();
+    $pid  = current_property_id();
+    $id   = (int) post('id');
+    $kind = strtolower(trim((string) post('kind')));
+    $kembali = ['skp_form', ['id' => $id]];
+
+    if (!in_array($kind, ['ktp', 'npwp', 'siup', 'pengajuan'], true)) {
+        flash('Jenis lampiran tidak dikenal.');
+        redirect_to(...$kembali);
+    }
+    $st = $pdo->prepare('SELECT * FROM skp_documents WHERE id = ? AND property_id = ?');
+    $st->execute([$id, $pid]);
+    $skp = $st->fetch();
+    if (!$skp) { flash('Dokumen tidak ditemukan.'); redirect_to('skp'); }
+
+    // Pembatasan per-sales sama seperti halaman dokumennya.
+    if ($sc = current_sales_scope($pdo, $pid)) {
+        $milik = ($sc['pic'] !== '' && (string) ($skp['pic_name'] ?? '') === $sc['pic'])
+            || ($skp['created_by'] ?? '') === $sc['uname'];
+        if (!$milik && $skp['transaction_id']) {
+            $q = $pdo->prepare('SELECT pic_name FROM transactions WHERE id = ?');
+            $q->execute([(int) $skp['transaction_id']]);
+            $milik = $sc['pic'] !== '' && (string) $q->fetchColumn() === $sc['pic'];
+        }
+        if (!$milik && $skp['offer_id']) {
+            $q = $pdo->prepare('SELECT pic_name FROM offers WHERE id = ?');
+            $q->execute([(int) $skp['offer_id']]);
+            $milik = $sc['pic'] !== '' && (string) $q->fetchColumn() === $sc['pic'];
+        }
+        if (!$milik) { flash('SKP ini bukan milik Anda.'); redirect_to('skp'); }
+    }
+
+    $f = $_FILES['berkas'] ?? null;
+    if (!$f || empty($f['tmp_name']) || !is_uploaded_file($f['tmp_name'])) {
+        flash('Berkas belum dipilih.');
+        redirect_to(...$kembali);
+    }
+    if ($f['size'] <= 0 || $f['size'] > 5 * 1024 * 1024) {
+        flash('Ukuran berkas maksimal 5 MB.');
+        redirect_to(...$kembali);
+    }
+    $ext = strtolower(pathinfo((string) $f['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'], true)) {
+        flash('Format berkas harus JPG, PNG, WEBP atau PDF.');
+        redirect_to(...$kembali);
+    }
+
+    $dir = dirname(__DIR__, 2) . '/public/uploads/skp';
+    if (!is_dir($dir)) @mkdir($dir, 0777, true);
+    $nama = 'skp' . $id . '_' . $kind . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+    if (!@move_uploaded_file($f['tmp_name'], $dir . '/' . $nama)) {
+        flash('Gagal menyimpan berkas.');
+        redirect_to(...$kembali);
+    }
+
+    $lamaQ = $pdo->prepare('SELECT file_path FROM skp_attachments WHERE skp_id = ? AND kind = ?');
+    $lamaQ->execute([$id, $kind]);
+    $lama = (string) ($lamaQ->fetchColumn() ?: '');
+
+    $uname = $_SESSION['user']['name'] ?? 'system';
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('DELETE FROM skp_attachments WHERE skp_id = ? AND kind = ?')->execute([$id, $kind]);
+        $pdo->prepare('INSERT INTO skp_attachments (skp_id, kind, file_path, original_name, uploaded_by) VALUES (?,?,?,?,?)')
+            ->execute([$id, $kind, 'uploads/skp/' . $nama, substr((string) $f['name'], 0, 190), $uname . ' (ganti)']);
+        // Snapshot dokumen menyimpan daftar lampiran — ikut disegarkan agar PDF
+        // & halaman TTD menunjuk berkas yang benar. Angka di dalamnya tak disentuh.
+        if (!empty($skp['snapshot_json'])) {
+            $snap = json_decode((string) $skp['snapshot_json'], true);
+            if (is_array($snap)) {
+                $snap['attachments'] = _skp_attachment_list($pdo, $id);
+                $pdo->prepare('UPDATE skp_documents SET snapshot_json = ? WHERE id = ? AND property_id = ?')
+                    ->execute([json_encode($snap, JSON_UNESCAPED_UNICODE), $id, $pid]);
+            }
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        @unlink($dir . '/' . $nama);
+        throw $e;
+    }
+
+    // Berkas lama dibuang hanya bila tidak dipakai dokumen lain (scan bisa dipakai ulang).
+    if ($lama !== '') {
+        $pakai = $pdo->prepare('SELECT COUNT(*) FROM skp_attachments WHERE file_path = ?');
+        $pakai->execute([$lama]);
+        if ((int) $pakai->fetchColumn() === 0) {
+            $abs = dirname(__DIR__, 2) . '/public/' . ltrim($lama, '/');
+            if (is_file($abs)) @unlink($abs);
+        }
+    }
+    audit($pdo, 'ganti_lampiran', 'skp_documents', (string) $id, ['kind' => $kind, 'file' => 'uploads/skp/' . $nama]);
+    flash('Berkas ' . strtoupper($kind) . ' diganti. Nilai & nomor dokumen tidak berubah.');
+    redirect_to(...$kembali);
+}
 // ─── Opsi B: unggah dokumen ber-TTD — setara TTD online lewat tautan ─────────
 function skp_sign_upload(PDO $pdo): void
 {
