@@ -178,7 +178,13 @@ function skp_list_page(PDO $pdo): void
     }
     $module = getv('module', '');
     if (!in_array($module, ['cl', 'media', 'gudang'], true)) $module = '';
-    if ($module) { $where[] = 'COALESCE(t.module, o.module) = ?'; $params[] = $module; }
+    if ($module) {
+        // s.module (utf8mb4_bin) beda collation dengan t/o.module (utf8_general_ci),
+        // jadi jangan di-COALESCE lalu dibandingkan — MySQL menolaknya
+        // ("illegal mix of collations") dan daftarnya jadi kosong.
+        $where[] = '(s.module = ? OR (s.module IS NULL AND COALESCE(t.module, o.module) = ?))';
+        $params[] = $module; $params[] = $module;
+    }
     // Pembatasan per-sales: SKP miliknya, yaitu yang PIC-nya dia (di dokumen,
     // di penawaran, atau di transaksi) ATAU yang ia buat sendiri. PIC transaksi
     // & PIC dokumen ikut dicek supaya dokumen tetap terlihat walau dibuatkan
@@ -194,16 +200,20 @@ function skp_list_page(PDO $pdo): void
     // dari transaksi lama. LEFT JOIN keduanya + fallback datanya.
     $stmt = $pdo->prepare(
         'SELECT s.*,
-                COALESCE(t.master_code, o.master_code) master_code,
-                COALESCE(t.start_date, o.start_date)   start_date,
-                COALESCE(t.end_date, o.end_date)       end_date,
-                COALESCE(t.module, o.module)           module,
-                COALESCE(tc.company_name, oc.company_name) company_name
+                -- Dokumen Gudang/Media berdiri sendiri: kode unit, periode &
+                -- client-nya tersimpan di dokumen itu sendiri, bukan di
+                -- transaksi/penawaran (yang memang belum terbit).
+                COALESCE(s.master_code, t.master_code, o.master_code) master_code,
+                COALESCE(s.start_date, t.start_date, o.start_date)    start_date,
+                COALESCE(s.end_date, t.end_date, o.end_date)          end_date,
+                COALESCE(s.module, t.module, o.module)                module,
+                COALESCE(sc.company_name, tc.company_name, oc.company_name) company_name
          FROM skp_documents s
          LEFT JOIN transactions t ON t.id = s.transaction_id
          LEFT JOIN master_clients tc ON tc.id = t.client_id
          LEFT JOIN offers o ON o.id = s.offer_id
          LEFT JOIN master_clients oc ON oc.id = o.client_id
+         LEFT JOIN master_clients sc ON sc.id = s.client_id
          WHERE ' . implode(' AND ', $where) . '
          ORDER BY s.id DESC'
     );
@@ -416,7 +426,13 @@ function skp_form(PDO $pdo): void
     if (!$src) { flash('Sumber (penawaran/transaksi) tidak ditemukan / belum DEAL.'); redirect_to($offerId ? 'offers' : 'transactions'); }
     // Pembatasan per-sales: hanya boleh akses SKP miliknya (PIC sumber / PIC
     // yang tercatat di dokumen) atau yang ia buat sendiri.
-    if ($sc = current_sales_scope($pdo, $pid)) {
+    //
+    // Dokumen Gudang/Media yang BARU belum punya pemilik sama sekali — sales
+    // justru sedang membuatnya, jadi jangan dihadang. Yang tetap dijaga:
+    // membuka dokumen yang sudah ada, dan membuatkan SKP di atas transaksi /
+    // penawaran milik sales lain.
+    $dokumenBaruMandiri = !$skp && $standalone;
+    if (!$dokumenBaruMandiri && ($sc = current_sales_scope($pdo, $pid))) {
         $ownPic = $sc['pic'] !== '' && in_array($sc['pic'], [
             (string) ($src['pic_name'] ?? ''), (string) ($skp['pic_name'] ?? ''),
         ], true);
