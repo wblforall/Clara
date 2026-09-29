@@ -11,6 +11,15 @@ $h = $h ?? fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 if (!function_exists('skp_terms')) require_once __DIR__ . '/skp.php';
 if (!function_exists('skp_doc_title')) require_once __DIR__ . '/skp_modules.php';
 $skpNotes = skp_terms();
+// Nama di blok "Mengetahui": manajer yang tercatat di pengaturan
+// (doc_manager_name). Tanpa itu, dipakai nama yang menekan tombol Setujui —
+// yang bisa saja superadmin yang menyetujui atas nama manajer.
+$skpManager = '';
+if (function_exists('get_setting') && class_exists('Database')) {
+    try { $skpManager = trim((string) get_setting(Database::connect(), 'doc_manager_name', '')); }
+    catch (Throwable $e) { $skpManager = ''; }
+}
+if ($skpManager === '') $skpManager = (string) ($skp['approved_by'] ?? '-');
 // Gudang (sks) & Media (fu) memakai badan dokumen sendiri; teksnya dari snapshot
 // template yang terkunci saat approve.
 $skpDocType = (string) ($skp['doc_type'] ?? 'skp');
@@ -192,7 +201,7 @@ $skpHasQr = !empty($skp['sign_token']);
         </td>
         <td class="col"><div class="role"><?= $skpDocType === 'sks' ? 'Menyetujui,' : 'Mengetahui,' ?></div>
             <div class="sigarea"><?php if ($skpHasQr): ?><?php if (!empty($PDF_MODE)): ?><div class="qrbox"><?= clara_qr_img($skpVerifyUrl, 18) ?></div><?php else: ?><div class="qrbox" data-qr="<?= $h($skpVerifyUrl) ?>"></div><?php endif; ?><div class="qrhint">Scan untuk validasi</div><?php endif; ?></div>
-            <div class="name"<?= $skpHasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($skp['approved_by'] ?? '-') ?><br><span <?= $skpJab ?>>Casual Leasing Manager</span></div>
+            <div class="name"<?= $skpHasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($skpManager) ?><br><span <?= $skpJab ?>>Casual Leasing Manager</span></div>
         </td>
         <td class="col"><div class="role"><?= $skpDocType === 'sks' ? 'Pihak Penyewa,' : ($skpDocType === 'fu' ? 'Pemohon,' : 'Menyetujui,') ?></div>
             <?php if (($skp['status'] ?? '') === 'signed' && !empty($skp['signature_data'])): ?>

@@ -32,7 +32,10 @@ $ppnListrik = round($listrik * 11 / 12 * 0.12);
 $ppn        = $ppnSewa + $ppnListrik;
 $afterPpn   = $dasarPpn + $ppn;
 $deposit  = (float) $o['deposit_amount'];
-$grand    = $afterPpn + $deposit;
+// Deposit yang sudah disetor di kontrak sebelumnya tetap dicantumkan sebagai
+// catatan, tapi tidak ditagih ulang sehingga di luar Grand Total.
+$depLunas = !empty($o['deposit_paid']);
+$grand    = $afterPpn + ($depLunas ? 0 : $deposit);
 $dpBulan  = rtrim(rtrim(number_format((float) $o['dp_months'], 1, ',', ''), '0'), ',');
 $depBulan = rtrim(rtrim(number_format((float) $o['deposit_months'], 1, ',', ''), '0'), ',');
 // Masa berlaku penawaran: 7 hari sejak tanggal penawaran
@@ -224,8 +227,9 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
         <?php if ($isBundle && $sumDp > 0): ?>
         <tr><td class="lbl">DP / Uang Muka (bagian dari total)</td><td class="amt"><?= $rp($sumDp) ?></td></tr>
         <?php endif; ?>
-        <tr><td class="lbl">Security Deposit (dikembalikan 100%)</td><td class="amt"><?= $rp($deposit) ?></td></tr>
-        <tr class="grand"><td class="lbl">Grand Total (pembayaran awal + deposit)</td><td class="amt"><?= $rp($grand) ?></td></tr>
+        <tr><td class="lbl"<?= $depLunas ? ' style="color:#166534"' : '' ?>>Security Deposit (dikembalikan 100%)</td>
+            <td class="amt"<?= $depLunas ? ' style="color:#166534;font-weight:bold"' : '' ?>><?= $rp($deposit) ?><?= $depLunas ? ' (Sudah Dibayarkan)' : '' ?></td></tr>
+        <tr class="grand"><td class="lbl">Grand Total <?= $depLunas ? '(di luar Security Deposit)' : '(pembayaran awal + deposit)' ?></td><td class="amt"><?= $rp($grand) ?></td></tr>
     </table>
 
     <?php
