@@ -192,7 +192,19 @@ $skpHasQr = !empty($skp['sign_token']);
         <?php $depLunas = !empty($a['deposit_paid']); ?>
         <tr><td class="lbl"<?= $depLunas ? ' style="color:#166534"' : '' ?>>B. Jaminan Area (Security Deposit)</td>
             <td class="amt"<?= $depLunas ? ' style="color:#166534;font-weight:bold"' : '' ?>><?= $rp($a['deposit'] ?? 0) ?><?= $depLunas ? ' (Sudah Dibayarkan)' : '' ?></td></tr>
-        <tr class="grand"><td class="lbl">C. Grand Total Biaya Area<?= $depLunas ? ' <span class="muted">(di luar Security Deposit)</span>' : '' ?></td><td class="amt"><?= $rp($a['grand_total'] ?? 0) ?></td></tr>
+        <?php /* Service Charge ditagih per bulan — tercetak sebagai blok sendiri
+                 (poin C) mengikuti format surat yang dipakai selama ini. */ ?>
+        <?php $adaSc = (float) ($a['sc_bulanan'] ?? 0) > 0; ?>
+        <?php if ($adaSc): $abjad = 0; ?>
+        <tr><td class="lbl">C. Service Charge</td><td class="amt"></td></tr>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Biaya SC / bulan</td><td class="amt"><?= $rp($a['sc_bulanan']) ?></td></tr>
+        <?php if ($kenaPpn): ?>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>PPN 12% <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['sc_ppn_bulan'] ?? 0) ?></td></tr>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total SC + PPN / bulan</td><td class="amt"><?= $rp($a['sc_total_bulan'] ?? 0) ?></td></tr>
+        <?php endif; ?>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Biaya SC <?= (int) ($a['sc_bulan'] ?? 1) ?> bulan<?= $kenaPpn ? ' + PPN' : '' ?></td><td class="amt"><?= $rp($a['sc_total'] ?? 0) ?></td></tr>
+        <?php endif; ?>
+        <tr class="grand"><td class="lbl"><?= $adaSc ? 'D. Total Biaya Sewa + SC' . ($kenaPpn ? ' Inc. PPN' : '') : 'C. Grand Total Biaya Area' ?><?= $depLunas ? ' <span class="muted">(di luar Security Deposit)</span>' : '' ?></td><td class="amt"><?= $rp($a['grand_total'] ?? 0) ?></td></tr>
     </table>
     <?php if ($kenaPpn): ?><div class="muted" style="font-size:9px;margin-top:3px">*PPN 12% sesuai PMK Nomor 131 Tahun 2024.</div><?php endif; ?>
 

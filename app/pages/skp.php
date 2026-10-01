@@ -111,7 +111,7 @@ function skp_listrik_satuan(array $skp, string $start = '', string $end = ''): i
  * $listrik = bagian biaya listrik yang SUDAH termasuk di dalam $total — dipakai
  * hanya untuk menampilkannya sebagai baris terpisah.
  */
-function _skp_amounts(float $total, float $ratePerM, float $deposit, float $listrik = 0.0, bool $depositLunas = false, bool $kenaPpn = true): array
+function _skp_amounts(float $total, float $ratePerM, float $deposit, float $listrik = 0.0, bool $depositLunas = false, bool $kenaPpn = true, float $scPerBulan = 0.0, int $scBulan = 1): array
 {
     // PPN dihitung per komponen (sewa & listrik) supaya bisa dirinci; jumlahnya
     // dipakai sebagai PPN total agar penjumlahan di dokumen selalu pas.
@@ -121,6 +121,12 @@ function _skp_amounts(float $total, float $ratePerM, float $deposit, float $list
     $ppnListrik = $kenaPpn ? round($listrik * 11 / 12 * 0.12) : 0.0;
     $ppn        = $ppnSewa + $ppnListrik;
     $afterPpn   = $total + $ppn;
+    // Service Charge ditagih per bulan: PPN-nya dihitung per bulan lalu
+    // dikalikan jumlah bulan, supaya angka di kertas persis bisa dijumlah ulang.
+    $scBulan    = max(1, $scBulan);
+    $scPpnBulan = $kenaPpn ? round($scPerBulan * 11 / 12 * 0.12) : 0.0;
+    $scPerBulanPpn = $scPerBulan + $scPpnBulan;
+    $scTotal    = $scPerBulan > 0 ? $scPerBulanPpn * $scBulan : 0.0;
     return [
         'rate_m_day'  => $ratePerM,
         'kena_ppn'    => $kenaPpn ? 1 : 0,
@@ -131,11 +137,16 @@ function _skp_amounts(float $total, float $ratePerM, float $deposit, float $list
         'total'       => $total,
         'ppn'         => $ppn,
         'after_ppn'   => $afterPpn,
+        'sc_bulanan'    => $scPerBulan,
+        'sc_ppn_bulan'  => $scPpnBulan,
+        'sc_total_bulan'=> $scPerBulanPpn,
+        'sc_bulan'      => $scBulan,
+        'sc_total'      => $scTotal,
         'deposit'      => $deposit,
         // Deposit yang sudah disetor di kontrak sebelumnya tetap dicetak sebagai
         // catatan, tapi tidak ditagih ulang → tidak masuk Grand Total.
         'deposit_paid' => $depositLunas ? 1 : 0,
-        'grand_total'  => $afterPpn + ($depositLunas ? 0 : $deposit),
+        'grand_total'  => $afterPpn + $scTotal + ($depositLunas ? 0 : $deposit),
     ];
 }
 
@@ -158,6 +169,21 @@ function _skp_deposit_pernah(PDO $pdo, int $clientId, int $kecuali = 0): bool
     );
     $st->execute([$clientId, $kecuali]);
     return (bool) $st->fetchColumn();
+}
+
+/**
+ * Jumlah bulan sewa (siklus bulanan), minimal 1 — dasar perhitungan Service
+ * Charge yang ditagih per bulan.
+ */
+function _skp_bulan(?string $a, ?string $b): int
+{
+    if (!$a || !$b) return 1;
+    require_once dirname(__DIR__) . '/AllocationService.php';
+    $n = (int) AllocationService::totalCalculated([
+        'pricing_type' => 'monthly', 'unit_rate' => 1, 'quantity' => 1, 'slots' => 1,
+        'area_sqm' => 0, 'start_date' => $a, 'end_date' => $b, 'contract_months' => null,
+    ]);
+    return max(1, $n);
 }
 
 /** Selisih hari inklusif. */
@@ -456,6 +482,11 @@ function skp_form(PDO $pdo): void
     $defPpn = $skp
         ? !empty($skp['ppn_flag'])
         : (!isset($src['ppn_flag']) || !empty($src['ppn_flag']));
+    // Service Charge: dokumen lama pakai nilainya sendiri, dokumen baru ikut
+    // penawarannya (bila ada). Bawaannya TIDAK dikenakan.
+    $defSc    = $skp ? !empty($skp['sc_flag']) : !empty($src['sc_flag']);
+    $defScRp  = (float) ($skp['sc_monthly'] ?? $src['sc_monthly'] ?? 0);
+    $scBulan  = _skp_bulan($src['start_date'] ?? null, $src['end_date'] ?? null);
     $defDepPaid = $skp
         ? !empty($skp['deposit_paid'])
         : (!empty($src['deposit_paid'])                      // ikut dari Surat Penawaran
@@ -463,7 +494,8 @@ function skp_form(PDO $pdo): void
     // Listrik: dari penawaran (bila ada) atau yang dicatat di dokumen ini.
     $listrikSkp = $skp ? skp_listrik($skp, (string) $src['start_date'], (string) $src['end_date']) : 0.0;
     $listrikAll = (float) ($src['electricity'] ?? 0) + $listrikSkp;
-    $amt      = _skp_amounts($total + $listrikSkp, (float) $src['unit_rate'], $defDeposit, $listrikAll, $defDepPaid, $defPpn);
+    $amt      = _skp_amounts($total + $listrikSkp, (float) $src['unit_rate'], $defDeposit, $listrikAll, $defDepPaid, $defPpn,
+        $defSc ? $defScRp : 0.0, $scBulan);
     $area     = (float) ($src['area_sqm'] ?: $src['unit_area']);
     // Isi khusus modul: tabel harga Gudang / daftar centang Form Utilities Media.
     // Teksnya (intro, peraturan, catatan kaki, daftar item) datang dari Template
@@ -483,7 +515,7 @@ function skp_form(PDO $pdo): void
     $reuse = $editable ? _skp_reusable_attachments($pdo, (int) ($src['client_id'] ?? 0), (int) ($skp['id'] ?? 0)) : [];
     $val = fn(string $k, $def = '') => h((string) ($skp[$k] ?? $def));
 
-    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind) {
+    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind) {
         $statusSewaDefault = ($isRenew || (!empty($src['renewal_status']) && $src['renewal_status'] !== 'none')) ? 'Perpanjangan' : 'Baru';
         ?>
         <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=<?= $standalone ? 'skp' : ($offerId ? 'offer_form&id=' . (int)$offerId : 'allocation_detail&id=' . (int)$trxId) ?>">← <?= $standalone ? 'Daftar Dokumen' : ($offerId ? 'Penawaran' : 'Detail Alokasi') ?></a><a class="btn light" href="?r=skp">Daftar Dokumen</a> <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h($docLabel) ?></span></div>
@@ -643,6 +675,29 @@ function skp_form(PDO $pdo): void
                         <input type="checkbox" name="ppn_flag" id="skp_ppn" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= $defPpn ? 'checked' : '' ?> <?= $editable ? '' : 'disabled' ?>>
                         <span><strong>Kenakan PPN 12%</strong> <span class="muted">&mdash; lepas centang bila harganya bersih; baris PPN tidak dicetak di dokumen</span></span>
                     </label>
+                    <?php /* Service Charge: ditagih per bulan, tercetak sebagai blok
+                             tersendiri di dokumen. Bawaannya tidak dikenakan. */ ?>
+                    <label style="display:flex;align-items:center;gap:8px;margin-top:9px;cursor:pointer;font-weight:400">
+                        <input type="checkbox" name="sc_flag" id="skp_sc" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= $defSc ? 'checked' : '' ?> <?= $editable ? '' : 'disabled' ?>>
+                        <span><strong>Kenakan Service Charge</strong> <span class="muted">&mdash; ditagih per bulan, tercetak sebagai blok C di dokumen</span></span>
+                    </label>
+                    <div id="skp_sc_box" class="form-grid" style="margin-top:8px">
+                        <div>
+                            <label>Biaya Service Charge / Bulan</label>
+                            <div style="display:flex;align-items:stretch">
+                                <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
+                                <input type="text" inputmode="numeric" id="skp_sc_rp" value="<?= $defScRp > 0 ? number_format($defScRp, 0, ',', '.') : '' ?>" placeholder="0"
+                                       style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= $editable ? '' : 'disabled' ?>>
+                                <input type="hidden" name="sc_monthly" id="skp_sc_val" value="<?= (int) $defScRp ?>">
+                            </div>
+                            <div class="help" id="skp_sc_info"></div>
+                        </div>
+                        <div>
+                            <label>Masa Sewa</label>
+                            <input value="<?= (int) $scBulan ?> bulan" disabled>
+                            <div class="help">Dihitung dari periode sewa &mdash; dipakai sebagai pengali Service Charge.</div>
+                        </div>
+                    </div>
                 </div>
                 <div>
                     <label>Jaminan Area / Security Deposit</label>
@@ -918,11 +973,26 @@ function skp_form(PDO $pdo): void
                 var kenaPpn = !elPpnOn || elPpnOn.checked;
                 var ppn = kenaPpn ? (Math.round(sewa * 11 / 12 * 0.12) + Math.round(lAll * 11 / 12 * 0.12)) : 0;
                 var dep = parseInt((document.querySelector('.skp-dep-val') || {}).value || 0, 10) || 0;
+                var scOn = document.getElementById('skp_sc'), scTx = document.getElementById('skp_sc_rp'),
+                    scVal = document.getElementById('skp_sc_val'), scBox = document.getElementById('skp_sc_box'),
+                    scInfo = document.getElementById('skp_sc_info'), SC_BULAN = <?= (int) $scBulan ?>;
+                var scPakai = 0, scPpn = 0, scTotal = 0;
+                if (scOn) {
+                    if (scBox) scBox.style.display = scOn.checked ? '' : 'none';
+                    scPakai = scOn.checked ? (parseInt((scTx.value || '').replace(/\D/g, ''), 10) || 0) : 0;
+                    if (scVal) scVal.value = scPakai;
+                    scPpn = kenaPpn ? Math.round(scPakai * 11 / 12 * 0.12) : 0;
+                    scTotal = (scPakai + scPpn) * SC_BULAN;
+                    if (scInfo) scInfo.innerHTML = scPakai <= 0 ? ''
+                        : (kenaPpn ? ('PPN ' + rupiah(scPpn) + ' · ' + rupiah(scPakai + scPpn) + ' per bulan · ')
+                                   : (rupiah(scPakai) + ' per bulan · '))
+                          + '<b>' + SC_BULAN + ' bulan = ' + rupiah(scTotal) + '</b>';
+                }
                 var sudah = !!(lunas && lunas.checked);
                 elTot.value = rupiah(total);
                 if (elPpn) elPpn.value = rupiah(ppn);
                 if (elAft) elAft.value = rupiah(total + ppn);
-                if (elGr) elGr.value = rupiah(total + ppn + (sudah ? 0 : dep));
+                if (elGr) elGr.value = rupiah(total + ppn + scTotal + (sudah ? 0 : dep));
                 if (bantu) {
                     bantu.innerHTML = dep <= 0 ? ''
                         : (sudah
@@ -935,6 +1005,13 @@ function skp_form(PDO $pdo): void
             if (cb) cb.addEventListener('change', hitungRincian);
             var cbPpn = document.getElementById('skp_ppn');
             if (cbPpn) cbPpn.addEventListener('change', hitungRincian);
+            var cbSc = document.getElementById('skp_sc'), txSc = document.getElementById('skp_sc_rp');
+            if (cbSc) cbSc.addEventListener('change', hitungRincian);
+            if (txSc) txSc.addEventListener('input', function () {
+                var raw = this.value.replace(/\D/g, '');
+                this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                hitungRincian();
+            });
             hitungRincian();
         })();
         (function () {
@@ -1099,6 +1176,9 @@ function skp_save(PDO $pdo): void
         'deposit_paid'  => post('deposit_paid') ? 1 : 0,
         // Harga bersih tanpa PPN untuk penyewa yang pajaknya di luar sistem.
         'ppn_flag'      => post('ppn_flag') ? 1 : 0,
+        // Service Charge bulanan (kosong = tidak dikenakan).
+        'sc_flag'       => post('sc_flag') ? 1 : 0,
+        'sc_monthly'    => parse_rupiah((string) post('sc_monthly', '0')) ?: null,
         // Listrik yang dicatat di dokumen ini (kosong = tidak menagih listrik).
         'electricity_flag'    => post('electricity_flag') ? 1 : 0,
         'electricity_monthly' => parse_rupiah((string) post('electricity_monthly', '0')) ?: null,
@@ -1309,7 +1389,9 @@ function skp_approve(PDO $pdo): void
     $total = (float) ($src['final_amount'] ?: $src['total_calculated']);
     $listrikSkp = skp_listrik($skp, (string) $src['start_date'], (string) $src['end_date']);
     $amt   = _skp_amounts($total + $listrikSkp, (float) $src['unit_rate'], (float) $skp['deposit_amount'],
-        (float) ($src['electricity'] ?? 0) + $listrikSkp, !empty($skp['deposit_paid']), !empty($skp['ppn_flag']));
+        (float) ($src['electricity'] ?? 0) + $listrikSkp, !empty($skp['deposit_paid']), !empty($skp['ppn_flag']),
+        !empty($skp['sc_flag']) ? (float) $skp['sc_monthly'] : 0.0,
+        _skp_bulan($src['start_date'] ?? null, $src['end_date'] ?? null));
     // Paket: lokasi & komponen utk ditampilkan di dokumen SKP.
     $bundleLoc = $bundleRows ? ('Paket (' . count($bundleRows) . ' komponen)') : '';
     $bundleItemsSnap = array_map(fn($r) => [

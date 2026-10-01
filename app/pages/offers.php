@@ -282,7 +282,7 @@ function _offer_fields(): array
             'pricing_type', 'unit_rate', 'area_sqm', 'quantity', 'slots',
             'start_date', 'end_date', 'contract_months', 'monthly_amount', 'total_calculated', 'override_amount',
             'billing_method', 'recurring_flag', 'cycle_recognition',
-            'dp_months', 'dp_amount', 'deposit_months', 'deposit_amount', 'deposit_paid', 'ppn_flag',
+            'dp_months', 'dp_amount', 'deposit_months', 'deposit_amount', 'deposit_paid', 'ppn_flag', 'sc_flag', 'sc_monthly',
             'electricity_flag', 'electricity_monthly', 'electricity_units', 'electricity_amount',
             'perihal', 'offer_date', 'is_bundle'];
 }
@@ -1309,6 +1309,22 @@ function offer_form(PDO $pdo): void
                     <input type="checkbox" name="ppn_flag" id="ppn_flag" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= (!$existing || !empty($offer['ppn_flag'])) ? 'checked' : '' ?> <?= $disabled ?>>
                     <span><strong>Kenakan PPN 12%</strong> <span class="muted">&mdash; lepas centang bila harganya bersih; baris PPN tidak akan dicetak di surat</span></span>
                 </label>
+                <?php /* Service Charge: ditagih per bulan, tercetak sebagai blok C
+                         di surat. Bawaannya tidak dikenakan. */ ?>
+                <label style="display:flex;align-items:center;gap:8px;margin-top:9px;cursor:pointer;font-weight:400">
+                    <input type="checkbox" name="sc_flag" id="sc_flag" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= !empty($offer['sc_flag']) ? 'checked' : '' ?> <?= $disabled ?>>
+                    <span><strong>Kenakan Service Charge</strong> <span class="muted">&mdash; ditagih per bulan, tercetak sebagai blok tersendiri</span></span>
+                </label>
+                <div id="sc_box" style="margin-top:8px;max-width:320px">
+                    <label>Biaya Service Charge / Bulan</label>
+                    <div style="display:flex;align-items:stretch">
+                        <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
+                        <input type="text" inputmode="numeric" id="sc_fmt" value="<?= (float) ($offer['sc_monthly'] ?? 0) > 0 ? number_format((float) $offer['sc_monthly'], 0, ',', '.') : '' ?>" placeholder="0"
+                               style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= $disabled ?>>
+                        <input type="hidden" name="sc_monthly" id="sc_monthly" value="<?= (int) ($offer['sc_monthly'] ?? 0) ?>">
+                    </div>
+                    <div class="help" id="sc_info"></div>
+                </div>
             </div>
             <div style="margin-top:10px">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400">
@@ -1541,6 +1557,38 @@ function offer_form(PDO $pdo): void
             bindMoney('override_fmt', 'override_amount', function () { kalkulasi(); });
             bindMoney('dp_fmt', 'dp_amount');
             bindMoney('dep_fmt', 'deposit_amount');
+            bindMoney('sc_fmt', 'sc_monthly', function () { gambarSc(); });
+            // Ringkasan Service Charge: PPN per bulan & total untuk seluruh masa sewa.
+            function gambarSc() {
+                var on = document.getElementById('sc_flag'), box = document.getElementById('sc_box'),
+                    info = document.getElementById('sc_info'), val = document.getElementById('sc_monthly'),
+                    ppnOn = document.getElementById('ppn_flag');
+                if (!on || !box) return;
+                box.style.display = on.checked ? '' : 'none';
+                var rpSc = on.checked ? (parseInt((val || {}).value, 10) || 0) : 0;
+                var kena = !ppnOn || ppnOn.checked;
+                var ppn = kena ? Math.round(rpSc * 11 / 12 * 0.12) : 0;
+                var bulan = bulanSewa();
+                if (info) info.innerHTML = rpSc <= 0 ? ''
+                    : (kena ? ('PPN Rp ' + ppn.toLocaleString('id-ID') + ' · Rp ' + (rpSc + ppn).toLocaleString('id-ID') + ' per bulan · ')
+                            : ('Rp ' + rpSc.toLocaleString('id-ID') + ' per bulan · '))
+                      + '<b>' + bulan + ' bulan = Rp ' + ((rpSc + ppn) * bulan).toLocaleString('id-ID') + '</b>';
+            }
+            // Jumlah bulan sewa — dasar pengali Service Charge.
+            function bulanSewa() {
+                var s = (document.getElementById('start_date') || {}).value,
+                    e = (document.getElementById('end_date') || {}).value;
+                if (!s || !e) return 1;
+                var a = new Date(s), b = new Date(e);
+                var n = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+                if (b.getDate() >= a.getDate()) n += 1;
+                return Math.max(1, n);
+            }
+            ['sc_flag', 'ppn_flag', 'start_date', 'end_date'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) el.addEventListener('change', gambarSc);
+            });
+            gambarSc();
             // ── Mesin pricing (sama dgn input transaksi) ──
             function kalkulasi() {
                 var s = (document.getElementById('start_date') || {}).value, e = (document.getElementById('end_date') || {}).value;
@@ -1725,6 +1773,9 @@ function offer_save(PDO $pdo): void
         'deposit_paid'    => post('deposit_paid') ? 1 : 0,
         // Harga bersih tanpa PPN untuk penyewa yang pajaknya diselesaikan di luar sistem.
         'ppn_flag'        => post('ppn_flag') ? 1 : 0,
+        // Service Charge bulanan (kosong = tidak dikenakan).
+        'sc_flag'         => post('sc_flag') ? 1 : 0,
+        'sc_monthly'      => parse_rupiah((string) post('sc_monthly', '0')) ?: null,
         // Listrik: hanya berlaku untuk Exhibition. Nominalnya tarif PER BULAN —
         // dikalikan jumlah bulan saat dicetak & saat nilainya diteruskan ke SKP.
         'electricity_flag'    => ($module === 'cl' && post('electricity_flag')) ? 1 : 0,
