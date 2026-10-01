@@ -33,11 +33,26 @@ $ppnSewa    = $kenaPpn ? round($total * 11 / 12 * 0.12) : 0.0;
 $ppnListrik = $kenaPpn ? round($listrik * 11 / 12 * 0.12) : 0.0;
 $ppn        = $ppnSewa + $ppnListrik;
 $afterPpn   = $dasarPpn + $ppn;
+// Service Charge ditagih per bulan; PPN-nya dihitung per bulan lalu dikalikan
+// jumlah bulan sewa, supaya angka di surat bisa dijumlah ulang persis.
+$scBulanan = !empty($o['sc_flag']) ? (float) ($o['sc_monthly'] ?? 0) : 0.0;
+$scBulan   = 1;
+if ($o['start_date'] && $o['end_date']) {
+    $ma = new DateTimeImmutable($o['start_date']);
+    $mb = new DateTimeImmutable($o['end_date']);
+    $scBulan = (((int) $mb->format('Y') - (int) $ma->format('Y')) * 12)
+             + ((int) $mb->format('n') - (int) $ma->format('n'))
+             + ((int) $mb->format('j') >= (int) $ma->format('j') ? 1 : 0);
+    $scBulan = max(1, $scBulan);
+}
+$scPpnBulan = $kenaPpn ? round($scBulanan * 11 / 12 * 0.12) : 0.0;
+$scPerBulan = $scBulanan + $scPpnBulan;
+$scTotal    = $scBulanan > 0 ? $scPerBulan * $scBulan : 0.0;
 $deposit  = (float) $o['deposit_amount'];
 // Deposit yang sudah disetor di kontrak sebelumnya tetap dicantumkan sebagai
 // catatan, tapi tidak ditagih ulang sehingga di luar Grand Total.
 $depLunas = !empty($o['deposit_paid']);
-$grand    = $afterPpn + ($depLunas ? 0 : $deposit);
+$grand    = $afterPpn + $scTotal + ($depLunas ? 0 : $deposit);
 $dpBulan  = rtrim(rtrim(number_format((float) $o['dp_months'], 1, ',', ''), '0'), ',');
 $depBulan = rtrim(rtrim(number_format((float) $o['deposit_months'], 1, ',', ''), '0'), ',');
 // Masa berlaku penawaran: 7 hari sejak tanggal penawaran
@@ -233,9 +248,18 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
         <?php if ($isBundle && $sumDp > 0): ?>
         <tr><td class="lbl">DP / Uang Muka (bagian dari total)</td><td class="amt"><?= $rp($sumDp) ?></td></tr>
         <?php endif; ?>
+        <?php if ($scBulanan > 0): ?>
+        <tr><td class="lbl"><strong>Service Charge</strong></td><td class="amt"></td></tr>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;Biaya SC / bulan</td><td class="amt"><?= $rp($scBulanan) ?></td></tr>
+        <?php if ($kenaPpn): ?>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;PPN 12% <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($scPpnBulan) ?></td></tr>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;Total SC + PPN / bulan</td><td class="amt"><?= $rp($scPerBulan) ?></td></tr>
+        <?php endif; ?>
+        <tr class="sub"><td class="lbl">&nbsp;&nbsp;&nbsp;Total Biaya SC <?= (int) $scBulan ?> bulan<?= $kenaPpn ? ' + PPN' : '' ?></td><td class="amt"><?= $rp($scTotal) ?></td></tr>
+        <?php endif; ?>
         <tr><td class="lbl"<?= $depLunas ? ' style="color:#166534"' : '' ?>>Security Deposit (dikembalikan 100%)</td>
             <td class="amt"<?= $depLunas ? ' style="color:#166534;font-weight:bold"' : '' ?>><?= $rp($deposit) ?><?= $depLunas ? ' (Sudah Dibayarkan)' : '' ?></td></tr>
-        <tr class="grand"><td class="lbl">Grand Total <?= $depLunas ? '(di luar Security Deposit)' : '(pembayaran awal + deposit)' ?></td><td class="amt"><?= $rp($grand) ?></td></tr>
+        <tr class="grand"><td class="lbl">Grand Total<?= $scBulanan > 0 ? ' (Sewa + Service Charge)' : '' ?> <?= $depLunas ? '(di luar Security Deposit)' : '(pembayaran awal + deposit)' ?></td><td class="amt"><?= $rp($grand) ?></td></tr>
     </table>
 
     <?php
