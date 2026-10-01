@@ -242,9 +242,12 @@ function skp_detail_from_post(string $docType): array
 
 // ─── Blok formulir (dipanggil dari skp_form) ─────────────────────────────────
 
-function skp_detail_form(string $docType, array $d, bool $editable): void
+function skp_detail_form(string $docType, array $d, bool $editable, array $srcHarga = []): void
 {
     $dis = $editable ? '' : 'disabled';
+    // Blok harga disisipkan setelah data client/kegiatan modulnya, sehingga
+    // semua angka uang berkumpul di bagian bawah formulir.
+    $harga = fn(string $modul) => $srcHarga ? skp_blok_harga($modul, $srcHarga, $editable) : null;
     if ($docType === 'sks') {
         $rows = $d['rows'] ?: [['lokasi' => '', 'luas' => '', 'harga_m2' => '', 'harga_bulan' => '', 'total' => '', 'keterangan' => '']];
         ?>
@@ -256,6 +259,8 @@ function skp_detail_form(string $docType, array $d, bool $editable): void
             <div><label>Jenis Usaha</label><input name="d_jenis_usaha" value="<?= h($d['jenis_usaha'] ?? '') ?>" <?= $dis ?>></div>
             <div><label>Lokasi Gudang Yang Akan Disewa</label><input name="d_lokasi_gudang" value="<?= h($d['lokasi_gudang'] ?? '') ?>" placeholder="mis. P5 B13" <?= $dis ?>></div>
         </div>
+
+        <?php $harga('gudang'); ?>
 
         <h3>Rincian Harga Sewa Gudang <span style="font-weight:400;font-size:12px;color:var(--muted)">(bisa lebih dari satu unit)</span></h3>
         <div style="overflow-x:auto">
@@ -315,6 +320,8 @@ function skp_detail_form(string $docType, array $d, bool $editable): void
             <div><label>Lokasi Kegiatan</label><input name="d_lokasi_kegiatan" value="<?= h($d['lokasi_kegiatan'] ?? '') ?>" <?= $dis ?>><div class="help">Otomatis mengikuti Titik Media.</div></div>
             <div><label>Tanggal Pemakaian</label><input name="d_tanggal_pemakaian" value="<?= h($d['tanggal_pemakaian'] ?? '') ?>" <?= $dis ?>><div class="help">Otomatis mengikuti tanggal sewa.</div></div>
         </div>
+
+        <?php $harga('media'); ?>
 
         <h3>Utilities <span style="font-weight:400;font-size:12px;color:var(--muted)">(centang yang dipakai, isi biayanya — biaya yang dicentang ikut menambah Total Nilai Sewa)</span></h3>
         <?php skp_fu_group('util', $d['utilities'] ?? [], false, $editable); ?>
@@ -635,6 +642,34 @@ function skp_input_rp(string $name, $value, string $dis, bool $wajib = false, bo
     <?php
 }
 /** Blok "Data Sewa" untuk dokumen berdiri sendiri. */
+/**
+ * Blok harga untuk dokumen Gudang/Media yang berdiri sendiri: tarif & total
+ * nilai sewa. Dipisah dari blok Data Sewa supaya semua angka uang berkumpul di
+ * bagian bawah formulir, sejajar dengan Security Deposit & Rincian Biaya.
+ */
+function skp_blok_harga(string $module, array $src, bool $editable): void
+{
+    $dis = $editable ? '' : 'disabled';
+    ?>
+    <h3>Harga Sewa</h3>
+    <div class="form-grid">
+        <div>
+            <label>Tarif <span class="muted" style="font-weight:400">(<?= $module === 'gudang' ? 'per bulan' : 'per hari/titik' ?>)</span></label>
+            <?php skp_input_rp('s_unit_rate', $src['unit_rate'], $dis); ?>
+        </div>
+        <?php /* Media: nilai sewanya diisi di blok "Rincian Biaya" — satu tempat
+                 saja, persis seperti formulir kertasnya. */ ?>
+        <?php if ($module !== 'media'): ?>
+        <div>
+            <label>Total Nilai Sewa <span style="color:#dc2626">*</span></label>
+            <?php skp_input_rp('s_total_amount', $src['final_amount'], $dis, true); ?>
+            <div class="help" id="s-total-info" style="margin-top:3px">Dihitung otomatis dari tarif × periode — boleh diubah manual.</div>
+        </div>
+        <?php endif; ?>
+    </div>
+    <?php
+}
+
 function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, bool $editable): void
 {
     $dis = $editable ? '' : 'disabled';
@@ -705,19 +740,8 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
                  terbaca sekali lihat. */ ?>
         <div><label>Tanggal Mulai <span style="color:#dc2626">*</span></label><input type="date" name="s_start_date" value="<?= h($src['start_date']) ?>" required <?= $dis ?>></div>
         <div><label>Tanggal Selesai <span style="color:#dc2626">*</span></label><input type="date" name="s_end_date" value="<?= h($src['end_date']) ?>" required <?= $dis ?>></div>
-        <div>
-            <label>Tarif <span class="muted" style="font-weight:400">(<?= $module === 'gudang' ? 'per bulan' : 'per hari/titik' ?>)</span></label>
-            <?php skp_input_rp('s_unit_rate', $src['unit_rate'], $dis); ?>
-        </div>
-        <?php /* Media: nilai sewanya diisi di blok "Rincian Biaya" — satu tempat
-                 saja, persis seperti formulir kertasnya. */ ?>
-        <?php if ($module !== 'media'): ?>
-        <div>
-            <label>Total Nilai Sewa <span style="color:#dc2626">*</span></label>
-            <?php skp_input_rp('s_total_amount', $src['final_amount'], $dis, true); ?>
-            <div class="help" id="s-total-info" style="margin-top:3px">Dihitung otomatis dari tarif × periode — boleh diubah manual.</div>
-        </div>
-        <?php endif; ?>
+        <?php /* Tarif & Total Nilai Sewa TIDAK di sini — semua yang menyangkut
+                 uang dikumpulkan di bagian bawah formulir (skp_blok_harga). */ ?>
     </div>
     <p class="help" style="margin-top:6px">Transaksi &amp; alokasi bulanannya terbit otomatis saat manager menyetujui dokumen ini.</p>
     <?php if ($editable): ?>
@@ -853,8 +877,10 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
         // (pelajaran dari kasus DP Rp 0 yang dulu ketimpa hitungan otomatis).
         // Mengosongkan kotaknya = minta dihitung otomatis lagi.
         var MODE  = '<?= h($module) ?>';
-        var tarif = document.querySelector('input[name="s_unit_rate"]');
-        var total = null, info = null;
+        // Kotak tarif & total dirender SETELAH skrip ini (blok harga ada di
+        // bagian bawah formulir), jadi pencariannya ditunda sampai siap.
+        var tarif = null, total = null, info = null;
+        function pasangTarif() { if (!tarif) tarif = document.querySelector('input[name="s_unit_rate"]'); return !!tarif; }
         // Pada Form Utilities kotak totalnya dirender setelah skrip ini, jadi
         // pencariannya diulang saat halaman siap.
         function pasangTotal() {
@@ -1044,7 +1070,9 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
 
         var lgEl = document.querySelector('input[name="d_lokasi_gudang"]');
         if (lgEl) lgEl.addEventListener('input', isiBaris);
-        if (tarif) tarif.addEventListener('input', hitungTotal);
+        // Tarif dipasang saat halaman siap (kotaknya dirender di bagian bawah).
+        function pasangPemicuTarif() { if (pasangTarif() && !tarif.dataset.terikat) { tarif.dataset.terikat = '1'; tarif.addEventListener('input', hitungTotal); } }
+        pasangPemicuTarif();
         if (d1) d1.addEventListener('change', hitungTotal);
         if (d2) d2.addEventListener('change', hitungTotal);
 
@@ -1095,6 +1123,7 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
             else total.dataset.manual = '1';
         }
         siap(function () {
+            pasangPemicuTarif();
             pasangTotal();
             tandaiManual();
             var u = document.getElementById('s-unit');
