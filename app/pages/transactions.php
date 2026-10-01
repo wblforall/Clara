@@ -515,8 +515,10 @@ function transaction_form(PDO $pdo): void
                 <div>
                     <label>Pricing Type</label>
                     <select name="pricing_type" id="pricing_type">
-                        <?php foreach (['daily_point', 'daily_slot', 'daily_area', 'monthly', 'fixed'] as $opt): ?>
-                            <option value="<?= h($opt) ?>" <?= ($prefill['pricing_type'] ?? '') === $opt ? 'selected' : '' ?>><?= h($opt) ?></option>
+                        <?php
+                        $defaultPricing = $prefill['pricing_type'] ?? ($module === 'gudang' ? 'monthly' : 'daily_point');
+                        foreach (['daily_point', 'daily_slot', 'daily_area', 'monthly', 'fixed'] as $opt): ?>
+                            <option value="<?= h($opt) ?>" <?= $defaultPricing === $opt ? 'selected' : '' ?>><?= h($opt) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -884,26 +886,25 @@ function transaction_form(PDO $pdo): void
                 document.getElementById('kalkulasi-result').style.display = 'block';
                 document.getElementById('kalkulasi-nilai').textContent = 'Rp ' + Math.round(total).toLocaleString('id-ID');
                 document.getElementById('kalkulasi-hari').textContent = days + ' hari';
-                var _orFmt = document.querySelector('.override-fmt');
-                var _orVal = _orFmt ? (parseFloat((_orFmt.value || '').replace(/\D/g, '')) || 0) : 0;
+                const overrideRaw = document.querySelector('input[name=override_amount]');
+                var _orVal = overrideRaw && overrideRaw.value ? (parseFloat(overrideRaw.value) || 0) : 0;
                 var _orEl  = document.getElementById('kalkulasi-override');
                 if (_orEl) {
                     _orEl.innerHTML = _orVal > 0
-                        ? ' &nbsp;|&nbsp; <strong style="color:#b45309">Override Aktual: Rp ' + _orVal.toLocaleString('id-ID') + '</strong> <span style="color:#64748b">(nilai final yang dipakai — bukan kalkulasi)</span>'
+                        ? ' &nbsp;|&nbsp; <strong style="color:#b45309">Override Aktual: Rp ' + Math.round(_orVal).toLocaleString('id-ID') + '</strong> <span style="color:#64748b">(nilai final yang dipakai — bukan kalkulasi)</span>'
                         : '';
                 }
 
                 const recogEl   = document.getElementById('recognition_month');
                 const spreadDiv = document.getElementById('kalkulasi-spread');
                 if (spreadDiv && recogEl && recogEl.value === 'spread' && startVal && endVal) {
-                    const overrideRaw = document.querySelector('.override-val');
-                    var finalAmount = (overrideRaw && overrideRaw.value) ? parseFloat(overrideRaw.value) : total;
+                    var finalAmount = _orVal > 0 ? _orVal : total;
                     spreadBaseStart   = startVal;
                     spreadBaseEnd     = endVal;
                     spreadBasePricing = pricing;
                     spreadBaseCycle   = (document.getElementById('cycle_recognition') || {value:'cycle_start'}).value;
-                    // Monthly: total = rate × jumlah siklus (bukan hanya rate 1 bulan)
-                    if (pricing === 'monthly' && !(overrideRaw && overrideRaw.value)) {
+                    // Monthly: total = rate × jumlah siklus jika tidak ada override
+                    if (pricing === 'monthly' && _orVal <= 0) {
                         var _cycles = spreadMonths(startVal, endVal, pricing, spreadBaseCycle);
                         finalAmount = rate * _cycles.length;
                     }
@@ -912,6 +913,21 @@ function transaction_form(PDO $pdo): void
                 } else if (spreadDiv) {
                     spreadDiv.style.display = 'none';
                 }
+            }
+
+            document.getElementById('pricing_type').addEventListener('change', kalkulasiTotal);
+            var cycleEl = document.getElementById('cycle_recognition');
+            if (cycleEl) cycleEl.addEventListener('change', kalkulasiTotal);
+            var orInp = document.querySelector('input[name=override_amount]');
+            if (orInp && orInp.previousElementSibling) {
+                orInp.previousElementSibling.addEventListener('input', function () {
+                    var rVal = this.value.replace(/\D/g, '');
+                    orInp.value = rVal;
+                    var rEl = document.getElementById('recognition_month');
+                    if (rEl && rEl.value === 'spread') {
+                        kalkulasiTotal();
+                    }
+                });
             }
 
         </script>
@@ -1570,26 +1586,25 @@ function transaction_edit(PDO $pdo): void
                 document.getElementById('kalkulasi-result').style.display = 'block';
                 document.getElementById('kalkulasi-nilai').textContent = 'Rp ' + Math.round(total).toLocaleString('id-ID');
                 document.getElementById('kalkulasi-hari').textContent = days + ' hari';
-                var _orFmt = document.querySelector('.override-fmt');
-                var _orVal = _orFmt ? (parseFloat((_orFmt.value || '').replace(/\D/g, '')) || 0) : 0;
+                const overrideRaw = document.querySelector('input[name=override_amount]');
+                var _orVal = overrideRaw && overrideRaw.value ? (parseFloat(overrideRaw.value) || 0) : 0;
                 var _orEl  = document.getElementById('kalkulasi-override');
                 if (_orEl) {
                     _orEl.innerHTML = _orVal > 0
-                        ? ' &nbsp;|&nbsp; <strong style="color:#b45309">Override Aktual: Rp ' + _orVal.toLocaleString('id-ID') + '</strong> <span style="color:#64748b">(nilai final yang dipakai — bukan kalkulasi)</span>'
+                        ? ' &nbsp;|&nbsp; <strong style="color:#b45309">Override Aktual: Rp ' + Math.round(_orVal).toLocaleString('id-ID') + '</strong> <span style="color:#64748b">(nilai final yang dipakai — bukan kalkulasi)</span>'
                         : '';
                 }
 
                 const recogEl   = document.getElementById('recognition_month');
                 const spreadDiv = document.getElementById('kalkulasi-spread');
                 if (spreadDiv && recogEl && recogEl.value === 'spread' && startVal && endVal) {
-                    const overrideRaw = document.querySelector('.override-val');
-                    var finalAmount = (overrideRaw && overrideRaw.value) ? parseFloat(overrideRaw.value) : total;
+                    var finalAmount = _orVal > 0 ? _orVal : total;
                     spreadBaseStart   = startVal;
                     spreadBaseEnd     = endVal;
                     spreadBasePricing = pricing;
                     spreadBaseCycle   = (document.getElementById('cycle_recognition') || {value:'cycle_start'}).value;
-                    // Monthly: total = rate × jumlah siklus (bukan hanya rate 1 bulan)
-                    if (pricing === 'monthly' && !(overrideRaw && overrideRaw.value)) {
+                    // Monthly: total = rate × jumlah siklus jika tidak ada override
+                    if (pricing === 'monthly' && _orVal <= 0) {
                         var _cycles = spreadMonths(startVal, endVal, pricing, spreadBaseCycle);
                         finalAmount = rate * _cycles.length;
                     }
@@ -1598,6 +1613,21 @@ function transaction_edit(PDO $pdo): void
                 } else if (spreadDiv) {
                     spreadDiv.style.display = 'none';
                 }
+            }
+
+            document.getElementById('pricing_type').addEventListener('change', kalkulasiTotal);
+            var cycleEl = document.getElementById('cycle_recognition');
+            if (cycleEl) cycleEl.addEventListener('change', kalkulasiTotal);
+            var orInp = document.querySelector('input[name=override_amount]');
+            if (orInp && orInp.previousElementSibling) {
+                orInp.previousElementSibling.addEventListener('input', function () {
+                    var rVal = this.value.replace(/\D/g, '');
+                    orInp.value = rVal;
+                    var rEl = document.getElementById('recognition_month');
+                    if (rEl && rEl.value === 'spread') {
+                        kalkulasiTotal();
+                    }
+                });
             }
 
 
