@@ -32,6 +32,177 @@ function cl_unit_types(?PDO $pdo = null, ?int $propertyId = null): array
     }
 }
 
+/**
+ * Daftar lantai baku per properti — dipakai Lantai Exhibition dan Lokasi Gudang.
+ * Sumbernya master_lookup_options kategori 'floor' (bisa diubah admin di Kelola
+ * Opsi Dropdown), urut dari lantai terbawah. Fallback hanya bila tabel belum diisi.
+ */
+function floor_options(?PDO $pdo = null, ?int $propertyId = null): array
+{
+    $fallback = ['LG', 'GF', 'UG', 'FF', 'SF'];
+    if (!$pdo) return $fallback;
+    try {
+        $pid = $propertyId ?? (function_exists('current_property_id') ? current_property_id() : 0);
+        $st = $pdo->prepare("SELECT value FROM master_lookup_options WHERE property_id = ? AND category = 'floor' AND status = 'active' ORDER BY sort_order ASC, value ASC");
+        $st->execute([(int) $pid]);
+        $rows = $st->fetchAll(PDO::FETCH_COLUMN);
+        return $rows ?: $fallback;
+    } catch (Throwable $e) {
+        return $fallback;
+    }
+}
+
+/**
+ * Potensi bulanan satu unit master — SATU-SATUNYA rumus proyeksi. Master adalah angka
+ * proyeksi (realisasi datang dari transaksi), jadi potensi tidak diketik melainkan
+ * diturunkan dari tarif. Rumus Media mengikuti AllocationService (qty × slot).
+ *
+ *   Exhibition : tarif/hari/m² × luas × 30
+ *   Gudang     : tarif/m²/bulan × luas
+ *   Media      : daily_point tarif × qty × 30 · daily_slot tarif × qty × slot × 30
+ *                monthly tarif × qty · fixed tarif
+ */
+function master_projection(string $type, array $r): float
+{
+    $num = fn(string $k, float $d = 0.0) => (float) ($r[$k] ?? $d);
+    $v = match ($type) {
+        'cl'     => $num('rate') * max(1.0, $num('area_sqm')) * 30,
+        'gudang' => $num('monthly_rate') * $num('area_sqm'),
+        'media'  => match ((string) ($r['pricing_type'] ?? '')) {
+            'daily_slot' => $num('rate') * $num('quantity', 1) * $num('slots', 1) * 30,
+            'monthly'    => $num('rate') * $num('quantity', 1),
+            'fixed'      => $num('rate'),
+            default      => $num('rate') * $num('quantity', 1) * 30,
+        },
+        default  => 0.0,
+    };
+    return round($v);
+}
+
+/**
+ * Batas wajar tarif per m² di master. Di atas angka ini hampir pasti yang diketik adalah
+ * total sewa, bukan tarif per m² (Gudang nyata Rp70–220 ribu/m²/bulan, Exhibition
+ * Rp150–165 ribu/m²/hari). Tidak menolak simpan — hanya peringatan + notifikasi.
+ */
+function master_rate_limit(string $type): ?array
+{
+    return [
+        'gudang' => ['kolom' => 'monthly_rate', 'maks' => 500000,  'label' => 'Tarif per m² / bulan', 'saran' => 'isi total sewa sebulan ÷ luas.'],
+        'cl'     => ['kolom' => 'rate',         'maks' => 1000000, 'label' => 'Tarif per hari / m²',  'saran' => 'isi tarif per hari per m².'],
+    ][$type] ?? null;
+}
+
+/**
+ * Tarif acuan per properti = tarif yang paling banyak dipakai unit aktif (modus).
+ * Unit yang tarifnya berbeda ditandai di notifikasi — bisa salah ketik, bisa juga
+ * harga khusus yang perlu disamakan atau dikonfirmasi tim.
+ */
+function master_rate_reference(array $rows, string $rateCol): ?float
+{
+    $hitung = [];
+    foreach ($rows as $r) {
+        $t = round((float) $r[$rateCol], 2);
+        if ($t > 0) $hitung[(string) $t] = ($hitung[(string) $t] ?? 0) + 1;
+    }
+    if (!$hitung) return null;
+    arsort($hitung);
+    return (float) array_key_first($hitung);
+}
+
+/**
+ * Data master aktif yang salah isi — untuk notifikasi dashboard. Semuanya berpengaruh
+ * ke proyeksi: tarif/luas kosong atau menyimpang, slot/qty keliru, potensi tak sesuai
+ * rumus, dan lantai/tipe di luar daftar baku (laporan per lantai/tipe jadi terpecah).
+ * Dicocokkan di PHP, bukan JOIN, karena kolom-kolomnya beda collation di produksi.
+ *
+ * @return list<array{judul:string, type:string, rows:list<array{id:int, code:string, nilai:string}>}>
+ */
+function master_data_issues(PDO $pdo, int $pid): array
+{
+    $ambil = function (string $tabel) use ($pdo, $pid): array {
+        $st = $pdo->prepare("SELECT * FROM `$tabel` WHERE property_id = ? AND status = 'active' ORDER BY sort_order, code");
+        $st->execute([$pid]);
+        return $st->fetchAll();
+    };
+    $rp = fn($v) => 'Rp' . number_format((float) $v, 0, ',', '.');
+    $floors = floor_options($pdo, $pid);
+    $units  = cl_unit_types($pdo, $pid);
+
+    $data = [
+        'cl'     => $ambil('master_cl_units'),
+        'gudang' => $ambil('master_gudang'),
+        'media'  => $ambil('master_media'),
+    ];
+    $acuan = [
+        'cl'     => master_rate_reference($data['cl'], 'rate'),
+        'gudang' => master_rate_reference($data['gudang'], 'monthly_rate'),
+    ];
+    $rateCol = ['cl' => 'rate', 'gudang' => 'monthly_rate', 'media' => 'rate'];
+    $nama    = ['cl' => 'Exhibition', 'gudang' => 'Gudang', 'media' => 'Media'];
+
+    // [judul => [type, rows]] — urutan judul = urutan tampil
+    $hasil = [];
+    $catat = function (string $judul, string $type, array $r, string $nilai) use (&$hasil) {
+        $hasil[$judul]['type'] = $type;
+        $hasil[$judul]['rows'][] = ['id' => (int) $r['id'], 'code' => (string) $r['code'], 'nilai' => $nilai];
+    };
+
+    foreach ($data as $type => $rows) {
+        $n = $nama[$type];
+        foreach ($rows as $r) {
+            $tarif = (float) $r[$rateCol[$type]];
+            $batas = master_rate_limit($type);
+            if ($tarif <= 0) {
+                $catat("Tarif $n kosong", $type, $r, 'Rp0');
+            } elseif ($batas && $tarif > $batas['maks']) {
+                $catat("Tarif $n tidak wajar (di atas " . $rp($batas['maks']) . ' — kemungkinan total sewa)', $type, $r, $rp($tarif));
+            } elseif (isset($acuan[$type]) && abs($tarif - $acuan[$type]) >= 0.01) {
+                $catat("Tarif $n berbeda dari acuan " . $rp($acuan[$type]) . ($type === 'cl' ? '/hari/m²' : '/m²'), $type, $r, $rp($tarif));
+            }
+            if ($type !== 'media' && (float) $r['area_sqm'] <= 0) {
+                $catat("Luas $n kosong", $type, $r, '0 m²');
+            }
+            if ($type === 'media' && $r['pricing_type'] === 'daily_slot' && (float) $r['slots'] <= 1) {
+                $catat('Slot per hari Media belum diisi (tarif per slot)', $type, $r, (float) $r['slots'] . ' slot');
+            }
+            if ($type === 'media' && $r['pricing_type'] !== 'fixed' && (float) $r['quantity'] <= 0) {
+                $catat('Qty Media kosong', $type, $r, '0');
+            }
+            $rumus = master_projection($type, $r);
+            if (abs((float) $r['projection_monthly'] - $rumus) >= 1) {
+                $catat("Potensi $n tidak sesuai rumus (terhitung ulang saat disimpan)", $type, $r,
+                    $rp($r['projection_monthly']) . ' → ' . $rp($rumus));
+            }
+        }
+    }
+    foreach ($data['cl'] as $r) {
+        if (!in_array((string) $r['floor'], $floors, true)) $catat('Lantai Exhibition di luar daftar baku', 'cl', $r, (string) $r['floor']);
+        if (!in_array((string) $r['unit_type'], $units, true)) $catat('Tipe Unit Exhibition di luar daftar baku', 'cl', $r, (string) ($r['unit_type'] ?? ''));
+    }
+    foreach ($data['gudang'] as $r) {
+        if (!in_array((string) $r['location'], $floors, true)) $catat('Lokasi Gudang di luar daftar baku', 'gudang', $r, (string) $r['location']);
+    }
+
+    // Porsi target PIC: target per PIC = porsi × target bulanan, jadi jumlah porsi PIC
+    // yang tampil di Achievement harus 100% — kalau tidak, target terbagi kurang/lebih.
+    $st = $pdo->prepare("SELECT id, name AS code, target_share FROM master_pic WHERE property_id = ? AND status = 'active' AND show_achievement = 1 AND target_share > 0 ORDER BY target_share DESC, name");
+    $st->execute([$pid]);
+    $pics = $st->fetchAll();
+    $jumlah = array_sum(array_map(fn($r) => (float) $r['target_share'], $pics));
+    if ($pics && abs($jumlah - 1) >= 0.0001) {
+        $persen = fn($v) => rtrim(rtrim(number_format((float) $v * 100, 2, ',', '.'), '0'), ',') . '%';
+        foreach ($pics as $r) {
+            $catat('Porsi target PIC berjumlah ' . $persen($jumlah) . ' (seharusnya 100%)', 'pic', $r, $persen($r['target_share']));
+        }
+    }
+
+    $keluar = [];
+    foreach ($hasil as $judul => $isi) {
+        $keluar[] = ['judul' => $judul, 'type' => $isi['type'], 'rows' => $isi['rows']];
+    }
+    return $keluar;
+}
+
 function money($value): string
 {
     return 'Rp ' . number_format((float) $value, 0, ',', '.');
@@ -453,6 +624,30 @@ function period_label(string $periodKey): string
     ];
     if (!$dt) return $periodKey;
     return ($months[$dt->format('m')] ?? $dt->format('m')) . ' ' . $dt->format('Y');
+}
+
+/**
+ * Pilihan periode untuk dropdown laporan: terbaru di atas, paling jauh 3 bulan ke depan.
+ *
+ * Batas depan wajib ada. Kontrak panjang punya alokasi sampai bertahun-tahun ke depan
+ * (ada yang sampai 2030), sehingga "36 bulan terbaru" tanpa batas hanya berisi bulan
+ * masa depan yang hampir kosong — dan bulan yang sudah lewat, yang justru dicari untuk
+ * laporan dan komisi, tak bisa dipilih.
+ */
+function report_period_options(PDO $pdo, string $selected, int $limit = 36): array
+{
+    $batas = (new DateTimeImmutable('first day of this month'))->modify('+3 months')->format('Y-m');
+    $s = $pdo->prepare(
+        'SELECT DISTINCT period_key FROM transaction_allocations
+         WHERE period_key <= ? ORDER BY period_key DESC LIMIT ' . (int) $limit
+    );
+    $s->execute([$batas]);
+    $keys = $s->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array($selected, $keys, true)) {
+        $keys[] = $selected;
+        rsort($keys);
+    }
+    return $keys;
 }
 
 function audit(PDO $pdo, string $action, string $table, ?string $id, array $after = [], array $before = [], ?string $module = null): void

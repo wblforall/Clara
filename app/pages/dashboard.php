@@ -5,6 +5,8 @@ function dashboard(PDO $pdo): void
 {
     $period = getv('period', date('Y-m'));
     $pid = current_property_id();
+    // Hanya yang berhak mengubah master yang perlu tahu — dan yang bisa memperbaikinya.
+    $masterIssues = can('manage_master') ? master_data_issues($pdo, $pid) : [];
     $tgtStmt = $pdo->prepare("SELECT target_amount FROM targets_monthly WHERE period_key = ? AND property_id = ?");
     $tgtStmt->execute([$period, $pid]);
     $target = (float) ($tgtStmt->fetchColumn() ?: 0);
@@ -154,7 +156,7 @@ function dashboard(PDO $pdo): void
         $monthsByYear[$y][] = $m;
     }
 
-    layout('Dashboard Bulanan', function () use ($pdo, $period, $target, $projection, $actual, $capacity, $occupancy, $totalProjection, $totalActual, $totalRecurring, $detail, $detailCl, $detailGudang, $pic, $periodDays, $years, $monthsByYear, $periodYear, $periodMonth, $monthNames, $mediaRates, $totalNewClients) {
+    layout('Dashboard Bulanan', function () use ($pdo, $period, $target, $projection, $actual, $capacity, $occupancy, $totalProjection, $totalActual, $totalRecurring, $detail, $detailCl, $detailGudang, $pic, $periodDays, $years, $monthsByYear, $periodYear, $periodMonth, $monthNames, $mediaRates, $totalNewClients, $masterIssues) {
         $achPct   = $totalProjection > 0 ? $totalActual / $totalProjection : 0;
         $achClass = $achPct >= 1.0 ? 'kpi-good' : ($achPct >= 0.8 ? 'kpi-warn' : 'kpi-bad');
         $gi       = 0;
@@ -225,6 +227,26 @@ function dashboard(PDO $pdo): void
                 </div>
             </div>
         </form>
+        <?php if ($masterIssues): $totalIssues = array_sum(array_map(fn($i) => count($i['rows']), $masterIssues)); ?>
+        <details class="panel" style="margin:12px 0;border:1px solid #fcd34d;background:#fffbeb">
+            <summary style="cursor:pointer;font-weight:700;color:#92400e">
+                ⚠ <?= $totalIssues ?> data master perlu diperbaiki
+                <span style="font-weight:400;color:#a16207">— nilainya di luar daftar baku, sehingga laporan per lantai/tipe terpecah. Klik untuk rincian.</span>
+            </summary>
+            <?php foreach ($masterIssues as $issue): ?>
+            <div style="margin-top:12px">
+                <div style="font-weight:700;font-size:13px;margin-bottom:6px"><?= h($issue['judul']) ?> (<?= count($issue['rows']) ?>)</div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px">
+                    <?php foreach ($issue['rows'] as $r): ?>
+                    <a href="?r=master_form&type=<?= h($issue['type']) ?>&id=<?= $r['id'] ?>" class="btn light" style="font-size:12px;padding:3px 10px">
+                        <?= h($r['code']) ?> · <span style="color:#b91c1c"><?= h($r['nilai'] !== '' ? $r['nilai'] : '(kosong)') ?></span>
+                    </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </details>
+        <?php endif; ?>
         <script>
         (function() {
             function tick() {

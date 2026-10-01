@@ -53,7 +53,7 @@ function master_page(PDO $pdo, array $masterConfig): void
             <table id="master-table">
                 <thead><tr>
                     <?php if (!empty($cfg['sortable']) && can('manage_master')): ?><th style="width:32px"></th><?php endif; ?>
-                    <?php foreach ($cfg['columns'] as $col): ?><th><?= h($cfg['column_labels'][$col] ?? $col) ?></th><?php endforeach; ?>
+                    <?php foreach ($cfg['columns'] as $col): ?><th><?= h($cfg['column_labels'][$col] ?? $cfg['fields'][$col] ?? $col) ?></th><?php endforeach; ?>
                     <th>Aksi</th>
                 </tr></thead>
                 <tbody id="master-tbody">
@@ -233,8 +233,10 @@ function master_form(PDO $pdo, array $masterConfig): void
 
     // Daftar baku Tipe Unit (dropdown) — per properti, dari master_cl_unit_types.
     $unitTypes = $type === 'cl' ? cl_unit_types($pdo, $pid) : [];
+    // Daftar baku lantai — Lantai Exhibition dan Lokasi Gudang, per properti.
+    $floors = in_array($type, ['cl', 'gudang'], true) ? floor_options($pdo, $pid) : [];
 
-    layout(($id ? 'Edit ' : 'Tambah ') . $cfg['title'], function () use ($type, $cfg, $row, $id, $periodYears, $periodMonthNames, $users, $existingCodes, $unitTypes) {
+    layout(($id ? 'Edit ' : 'Tambah ') . $cfg['title'], function () use ($type, $cfg, $row, $id, $periodYears, $periodMonthNames, $users, $existingCodes, $unitTypes, $floors) {
         ?>
         <?php if (!$id && !empty($existingCodes)): ?>
         <script>
@@ -393,6 +395,11 @@ function master_form(PDO $pdo, array $masterConfig): void
                                 document.getElementById('target_amount_hidden').value = raw;
                             });
                             </script>
+                        <?php elseif ($name === 'projection_monthly' && in_array($type, ['cl', 'gudang', 'media'], true)): ?>
+                            <input type="text" id="projection_monthly_fmt" readonly tabindex="-1"
+                                   value="<?= number_format(master_projection($type, $row), 0, ',', '.') ?>"
+                                   style="background:var(--bg2,#f1f5f9);color:var(--ink2,#475569)">
+                            <div class="help">Dihitung otomatis: <?= h(['cl' => 'tarif/hari/m² × luas × 30', 'gudang' => 'tarif/m² × luas', 'media' => 'tarif × qty (× slot × 30 hari, menurut pricing)'][$type]) ?>. Angka proyeksi — realisasi dari transaksi.</div>
                         <?php elseif (in_array($name, ['rate', 'monthly_rate', 'projection_monthly'], true)): ?>
                             <?php $rawVal = (string) ($row[$name] ?? ''); $rawInt = $rawVal !== '' ? (string)(int)(float)$rawVal : ''; ?>
                             <input type="text" inputmode="numeric" id="<?= h($name) ?>_fmt" autocomplete="off"
@@ -416,12 +423,18 @@ function master_form(PDO $pdo, array $masterConfig): void
                                 <input name="code" id="field-code" value="<?= field($row, 'code') ?>" style="flex:1">
                                 <button type="button" onclick="generateCode()" class="btn light" style="white-space:nowrap;flex-shrink:0">⚡ Generate</button>
                             </div>
-                            <?php elseif ($name === 'floor'): ?>
-                            <select name="floor" id="floor">
-                                <?php foreach (['LG','GF','UG','FF','SF'] as $fl): ?>
-                                    <option value="<?= $fl ?>" <?= ($row['floor'] ?? '') === $fl ? 'selected' : '' ?>><?= $fl ?></option>
+                            <?php elseif (($name === 'floor' && $type === 'cl') || ($name === 'location' && $type === 'gudang')): ?>
+                            <?php $flCur = (string)($row[$name] ?? ''); ?>
+                            <select name="<?= h($name) ?>" id="floor" required>
+                                <option value="">— pilih lantai —</option>
+                                <?php foreach ($floors as $fl): ?>
+                                    <option value="<?= h($fl) ?>" <?= $flCur === $fl ? 'selected' : '' ?>><?= h($fl) ?></option>
                                 <?php endforeach; ?>
+                                <?php if ($flCur !== '' && !in_array($flCur, $floors, true)): ?>
+                                    <option value="<?= h($flCur) ?>" selected><?= h($flCur) ?> (lama — perbaiki)</option>
+                                <?php endif; ?>
                             </select>
+                            <div class="help">Pilih dari daftar baku lantai. Keterangan posisi (mis. "samping tenant …") tulis di kolom nama.</div>
                             <?php elseif ($name === 'unit_type'): ?>
                             <?php $utCur = (string)($row['unit_type'] ?? ''); $utBaku = $unitTypes; ?>
                             <select name="unit_type" id="unit_type">
@@ -442,55 +455,41 @@ function master_form(PDO $pdo, array $masterConfig): void
                 <?php endforeach; ?>
             </div>
             <p>
-                <?php if (array_key_exists('projection_monthly', $cfg['fields'])): ?>
-                <button type="button" onclick="hitungPotensi()" class="btn light" style="background:#0ea5e9;color:#fff">Hitung Potensi</button>
-                <?php endif; ?>
                 <button type="submit">Simpan</button>
                 <a class="btn secondary" href="?r=master&type=<?= h($type) ?>">Kembali</a>
             </p>
         </form>
-        <?php if (array_key_exists('projection_monthly', $cfg['fields'])): ?>
+        <?php if (in_array($type, ['cl', 'gudang', 'media'], true)): ?>
         <script>
-        function hitungPotensi() {
-            const rate        = parseFloat(document.querySelector('[name=rate]')?.value) || 0;
-            const monthlyRate = parseFloat(document.querySelector('[name=monthly_rate]')?.value) || 0;
-            const pricing     = document.querySelector('[name=pricing_type]')?.value || '';
-            const slots       = parseFloat(document.querySelector('[name=slots]')?.value) || 1;
-            const areaSqm     = parseFloat(document.querySelector('[name=area_sqm]')?.value) || 0;
-            const sizeVal     = document.querySelector('[name=size]')?.value || '';
-
-            let area = areaSqm;
-            if (!area && sizeVal) {
-                const m = sizeVal.replace(/[mM²]/g, '').match(/(\d+\.?\d*)\s*[×xX×]\s*(\d+\.?\d*)/);
-                if (m) area = parseFloat(m[1]) * parseFloat(m[2]);
-            }
-
-            let projection = 0;
-            if (monthlyRate > 0) {
-                projection = monthlyRate; // gudang: monthly_rate sudah per bulan
-            } else if (pricing) {
-                switch (pricing) {
-                    case 'daily_slot': projection = rate * slots * 30; break;
-                    case 'daily_area': projection = rate * Math.max(1, area) * 30; break;
-                    case 'monthly':    projection = rate; break;
-                    case 'fixed':      projection = rate; break;
-                    default:           projection = rate * 30; break;
+        // Cermin master_projection() di helpers.php — server tetap menghitung ulang saat simpan.
+        (function () {
+            var type = <?= json_encode($type) ?>;
+            function n(name, d) { var el = document.querySelector('[name=' + name + ']'); var v = el ? parseFloat(el.value) : NaN; return isNaN(v) ? (d || 0) : v; }
+            function hitung() {
+                var v = 0;
+                if (type === 'cl') v = n('rate') * Math.max(1, n('area_sqm')) * 30;
+                else if (type === 'gudang') v = n('monthly_rate') * n('area_sqm');
+                else {
+                    var p = (document.querySelector('[name=pricing_type]') || {}).value || '';
+                    if (p === 'daily_slot') v = n('rate') * n('quantity', 1) * n('slots', 1) * 30;
+                    else if (p === 'monthly') v = n('rate') * n('quantity', 1);
+                    else if (p === 'fixed') v = n('rate');
+                    else v = n('rate') * n('quantity', 1) * 30;
                 }
-            } else {
-                // cl: rate harian/m² × area × 30
-                projection = rate * Math.max(1, area) * 30;
+                var out = document.getElementById('projection_monthly_fmt');
+                if (out) out.value = Math.round(v).toLocaleString('id-ID');
+                // Peringatan tarif tak wajar (cermin master_rate_limit) — tidak menghalangi simpan.
+                if (batas) {
+                    var t = n(batas.kolom), fmt = document.getElementById(batas.kolom + '_fmt'), w = document.getElementById('tarif-warning');
+                    if (fmt && !w) { w = document.createElement('div'); w.id = 'tarif-warning'; w.className = 'help'; w.style.cssText = 'color:#b45309;font-weight:600'; fmt.parentNode.appendChild(w); }
+                    if (w) w.textContent = t > batas.maks ? '⚠ Rp' + t.toLocaleString('id-ID') + ' tidak wajar untuk ' + batas.label.toLowerCase() + ' — kemungkinan ini total sewa. ' + batas.saran : '';
+                }
             }
-
-            const rounded   = Math.round(projection);
-            const hiddenFld = document.getElementById('projection_monthly_hidden');
-            const fmtFld    = document.getElementById('projection_monthly_fmt');
-            if (hiddenFld) {
-                hiddenFld.value = rounded || '';
-                fmtFld.value    = rounded ? rounded.toLocaleString('id-ID') : '';
-                fmtFld.style.background = '#fef9c3';
-                setTimeout(() => fmtFld.style.background = '', 900);
-            }
-        }
+            var batas = <?= json_encode(master_rate_limit($type)) ?>;
+            document.getElementById('master-form').addEventListener('input', hitung);
+            document.getElementById('master-form').addEventListener('change', hitung);
+            hitung();
+        })();
         </script>
         <?php endif; ?>
         <?php
@@ -541,6 +540,24 @@ function master_save(PDO $pdo, array $masterConfig): void
     $data['updated_at'] = date('Y-m-d H:i:s');
     $pid = current_property_id();
 
+    // Potensi adalah angka proyeksi turunan tarif — dihitung server, nilai kiriman form diabaikan.
+    if (in_array($type, ['cl', 'gudang', 'media'], true) && array_key_exists('projection_monthly', $data)) {
+        $data['projection_monthly'] = master_projection($type, $data);
+    }
+
+    // Lantai wajib dari daftar baku — ditegakkan di server juga, bukan hanya
+    // lewat dropdown, supaya nilai seperti "UG (samping tenant …)" tak bisa masuk.
+    $floorField = ['cl' => 'floor', 'gudang' => 'location'][$type] ?? null;
+    if ($floorField && array_key_exists($floorField, $data)) {
+        $floors = floor_options($pdo, $pid);
+        if (!in_array((string) $data[$floorField], $floors, true)) {
+            flash('Data tidak disimpan: ' . ($floorField === 'floor' ? 'Lantai' : 'Lokasi')
+                . ' harus salah satu dari ' . implode(', ', $floors)
+                . '. Keterangan posisi tulis di kolom nama.');
+            redirect_to('master_form', array_filter(['type' => $type, 'id' => $id ?: null]));
+        }
+    }
+
     $savedId = 0;
     $priorMasterValue = null;
     $segmentMap = ['cl' => 'exhibition', 'media' => 'media', 'gudang' => 'gudang'];
@@ -586,7 +603,16 @@ function master_save(PDO $pdo, array $masterConfig): void
         )->execute([$pid, $pk, $lbl, $first, $last]);
     }
 
-    flash('Data master tersimpan.');
+    // Tarif di atas batas wajar tetap disimpan (keputusan 2 Okt: cukup diberi peringatan),
+    // tapi pengguna langsung diberi tahu dan unitnya muncul di notifikasi dashboard.
+    $batas = master_rate_limit($type);
+    if ($batas && (float) ($data[$batas['kolom']] ?? 0) > $batas['maks']) {
+        flash('Data tersimpan, TAPI ' . $batas['label'] . ' Rp' . number_format((float) $data[$batas['kolom']], 0, ',', '.')
+            . ' tidak wajar (di atas Rp' . number_format($batas['maks'], 0, ',', '.') . ') — kemungkinan ini total sewa. '
+            . 'Mohon betulkan: ' . $batas['saran']);
+    } else {
+        flash('Data master tersimpan.');
+    }
     redirect_to('master', ['type' => $type]);
 }
 

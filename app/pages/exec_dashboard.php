@@ -33,10 +33,7 @@ function exec_dashboard(PDO $pdo): void
     $combined = _exec_combine($propData);
 
     // Period list for selector
-    $allPeriods = $pdo->query(
-        "SELECT DISTINCT period_key FROM transaction_allocations ORDER BY period_key DESC LIMIT 36"
-    )->fetchAll(PDO::FETCH_COLUMN);
-    if (!in_array($period, $allPeriods, true)) array_unshift($allPeriods, $period);
+    $allPeriods = report_period_options($pdo, $period);
 
     audit($pdo, 'view', 'exec_dashboard', $period, ['period' => $period], [], 'reporting');
 

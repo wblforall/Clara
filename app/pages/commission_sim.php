@@ -145,10 +145,7 @@ function commission_sim(PDO $pdo): void
     $d = _csim_build_data($pdo, $period, $pid);
     extract($d);
 
-    $allPeriods = $pdo->query(
-        "SELECT DISTINCT period_key FROM transaction_allocations ORDER BY period_key DESC LIMIT 36"
-    )->fetchAll(PDO::FETCH_COLUMN);
-    if (!in_array($period, $allPeriods, true)) array_unshift($allPeriods, $period);
+    $allPeriods = report_period_options($pdo, $period);
 
     layout('Simulasi Komisi PIC', function () use (
         $pics, $period, $target, $totalRevenue, $achieved, $rateKey, $rateTable,
