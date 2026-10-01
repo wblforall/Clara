@@ -161,21 +161,31 @@ $skpHasQr = !empty($skp['sign_token']);
     </table>
     <?php endif; ?>
 
+    <?php /* Dokumen berharga bersih: seluruh baris PPN tidak dicetak. */ ?>
+    <?php
+    $kenaPpn = !isset($a['kena_ppn']) || !empty($a['kena_ppn']);
+    // Huruf urut dibuat berjalan supaya tidak meloncat (a, b, d) saat baris PPN
+    // tidak dicetak.
+    $abjad = 0;
+    $ab = function () use (&$abjad) { return chr(97 + $abjad++) . '. '; };
+    ?>
     <div class="sec">Rincian Pembayaran Sewa</div>
     <table class="pay">
         <tr><td class="lbl">A. Biaya Sewa Area</td><td class="amt"></td></tr>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;a. Biaya Sewa / m² / hari</td><td class="amt"><?= $rp($a['rate_m_day'] ?? 0) ?></td></tr>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Biaya Sewa / m² / hari</td><td class="amt"><?= $rp($a['rate_m_day'] ?? 0) ?></td></tr>
         <?php if (($a['listrik'] ?? 0) > 0): ?>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;b. Nilai Sewa</td><td class="amt"><?= $rp($a['sewa'] ?? 0) ?></td></tr>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;c. PPN 12% Sewa <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn_sewa'] ?? 0) ?></td></tr>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;d. Biaya Listrik <span class="muted">(sesuai penawaran)</span></td><td class="amt"><?= $rp($a['listrik']) ?></td></tr>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;e. PPN 12% Listrik <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn_listrik'] ?? 0) ?></td></tr>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;f. Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;g. Total Biaya Sewa Setelah PPN</td><td class="amt"><?= $rp($a['after_ppn'] ?? 0) ?></td></tr>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Nilai Sewa</td><td class="amt"><?= $rp($a['sewa'] ?? 0) ?></td></tr>
+        <?php if ($kenaPpn): ?><tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>PPN 12% Sewa <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn_sewa'] ?? 0) ?></td></tr><?php endif; ?>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Biaya Listrik <span class="muted">(sesuai penawaran)</span></td><td class="amt"><?= $rp($a['listrik']) ?></td></tr>
+        <?php if ($kenaPpn): ?><tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>PPN 12% Listrik <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn_listrik'] ?? 0) ?></td></tr><?php endif; ?>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
+        <?php if ($kenaPpn): ?><tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Biaya Sewa Setelah PPN</td><td class="amt"><?= $rp($a['after_ppn'] ?? 0) ?></td></tr><?php endif; ?>
         <?php else: ?>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;b. Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;c. PPN 12% <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn'] ?? 0) ?></td></tr>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;d. Total Biaya Sewa Setelah PPN</td><td class="amt"><?= $rp($a['after_ppn'] ?? 0) ?></td></tr>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
+        <?php if ($kenaPpn): ?>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>PPN 12% <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn'] ?? 0) ?></td></tr>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Biaya Sewa Setelah PPN</td><td class="amt"><?= $rp($a['after_ppn'] ?? 0) ?></td></tr>
+        <?php endif; ?>
         <?php endif; ?>
         <?php /* Deposit yang sudah disetor di kontrak sebelumnya tetap dicantumkan
                  sebagai catatan (hijau), tapi tidak ditagih ulang di Grand Total. */ ?>
@@ -184,7 +194,7 @@ $skpHasQr = !empty($skp['sign_token']);
             <td class="amt"<?= $depLunas ? ' style="color:#166534;font-weight:bold"' : '' ?>><?= $rp($a['deposit'] ?? 0) ?><?= $depLunas ? ' (Sudah Dibayarkan)' : '' ?></td></tr>
         <tr class="grand"><td class="lbl">C. Grand Total Biaya Area<?= $depLunas ? ' <span class="muted">(di luar Security Deposit)</span>' : '' ?></td><td class="amt"><?= $rp($a['grand_total'] ?? 0) ?></td></tr>
     </table>
-    <div class="muted" style="font-size:9px;margin-top:3px">*PPN 12% sesuai PMK Nomor 131 Tahun 2024.</div>
+    <?php if ($kenaPpn): ?><div class="muted" style="font-size:9px;margin-top:3px">*PPN 12% sesuai PMK Nomor 131 Tahun 2024.</div><?php endif; ?>
 
     <div class="sec">Note</div>
     <table class="notes">
