@@ -92,7 +92,7 @@ $masterConfig = [
         'columns'   => ['code', 'media_type', 'location', 'point', 'size', 'quantity', 'slots', 'rate', 'pricing_type', 'projection_monthly', 'status'],
         'fields'    => [
             'code' => 'Kode', 'media_type' => 'Jenis Media', 'location' => 'Lokasi', 'point' => 'Titik',
-            'size' => 'Ukuran', 'quantity' => 'Qty', 'slots' => 'Slot', 'rate' => 'Rate',
+            'size' => 'Ukuran', 'quantity' => 'Qty', 'slots' => 'Slot per Hari', 'rate' => 'Tarif',
             'pricing_type' => 'Pricing Type', 'package_note' => 'Paket/Keterangan',
             'projection_monthly' => 'Potensi Bulanan', 'status' => 'Status',
         ],
@@ -106,7 +106,7 @@ $masterConfig = [
         'columns'   => ['code', 'floor', 'location_name', 'unit_type', 'area_sqm', 'rate', 'projection_monthly', 'status'],
         'fields'    => [
             'code' => 'Kode', 'floor' => 'Lantai', 'location_name' => 'Nama Lokasi', 'unit_type' => 'Tipe Unit',
-            'area_sqm' => 'Luas m2', 'rate' => 'Rate Harian/m2', 'projection_monthly' => 'Potensi Bulanan',
+            'area_sqm' => 'Luas m²', 'rate' => 'Tarif per Hari / m²', 'projection_monthly' => 'Potensi Bulanan',
             'status' => 'Status',
         ],
         'order'     => "sort_order ASC, CASE floor WHEN 'LG' THEN 1 WHEN 'GF' THEN 2 WHEN 'UG' THEN 3 WHEN 'FF' THEN 4 WHEN 'SF' THEN 5 ELSE 6 END, code",
@@ -127,8 +127,8 @@ $masterConfig = [
         'sortable'  => true,
         'columns'   => ['code', 'location', 'name', 'area_sqm', 'monthly_rate', 'projection_monthly', 'status'],
         'fields'    => [
-            'code' => 'Kode', 'location' => 'Lokasi', 'name' => 'Nama Gudang/Tenant', 'area_sqm' => 'Luas m2',
-            'monthly_rate' => 'Rate Bulanan', 'projection_monthly' => 'Potensi Bulanan', 'status' => 'Status',
+            'code' => 'Kode', 'location' => 'Lokasi', 'name' => 'Nama Gudang/Tenant', 'area_sqm' => 'Luas m²',
+            'monthly_rate' => 'Tarif per m² / Bulan', 'projection_monthly' => 'Potensi Bulanan', 'status' => 'Status',
         ],
         'order'     => 'sort_order ASC, code ASC',
     ],

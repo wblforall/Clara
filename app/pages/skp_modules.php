@@ -589,7 +589,7 @@ function skp_standalone_src(PDO $pdo, int $pid, string $module, ?array $skp): ar
     }
     if ($src['master_code'] !== '') {
         if ($module === 'gudang') {
-            $st = $pdo->prepare('SELECT name AS location_name, location AS floor, area_sqm, monthly_rate FROM master_gudang WHERE code=? AND property_id=? LIMIT 1');
+            $st = $pdo->prepare('SELECT name AS location_name, location AS floor, area_sqm, ROUND(monthly_rate * area_sqm) AS monthly_rate FROM master_gudang WHERE code=? AND property_id=? LIMIT 1');
             $st->execute([$src['master_code'], $pid]);
             if ($u = $st->fetch()) {
                 $src['location_name'] = $u['location_name'];
@@ -679,7 +679,7 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
     $pics->execute([$pid]);
     $pics = $pics->fetchAll(PDO::FETCH_COLUMN);
     if ($module === 'gudang') {
-        $units = $pdo->prepare("SELECT code, CONCAT(code, ' — ', name) lbl, name nm, location lantai, area_sqm luas, monthly_rate tarif FROM master_gudang WHERE property_id=? AND status='active' ORDER BY sort_order, code");
+        $units = $pdo->prepare("SELECT code, CONCAT(code, ' — ', name) lbl, name nm, location lantai, area_sqm luas, ROUND(monthly_rate * area_sqm) tarif FROM master_gudang WHERE property_id=? AND status='active' ORDER BY sort_order, code");
     } else {
         $units = $pdo->prepare("SELECT code, CONCAT(code, ' — ', CONCAT_WS(' ', media_type, location)) lbl, CONCAT_WS(' - ', media_type, location, NULLIF(point,'')) nm, location lantai, 0 luas, rate tarif FROM master_media WHERE property_id=? AND status='active' ORDER BY sort_order, code");
     }

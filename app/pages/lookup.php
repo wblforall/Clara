@@ -11,6 +11,7 @@ function lookup_manage_page(PDO $pdo): void
         'brand_origin'   => 'Asal Brand',
         'target_segment' => 'Target Segmen',
         'channel'        => 'Channel',
+        'floor'          => 'Lantai',
     ];
     $selectedCat = getv('cat', 'business_type');
     if (!isset($categories[$selectedCat])) $selectedCat = 'business_type';
@@ -99,7 +100,7 @@ function lookup_save(PDO $pdo): void
     verify_csrf();
 
     $cat = post('cat');
-    $allowed = ['business_type','business_scale','brand_origin','target_segment','channel'];
+    $allowed = ['business_type','business_scale','brand_origin','target_segment','channel','floor'];
     if (!in_array($cat, $allowed, true)) { flash('Kategori tidak valid.'); redirect_to('lookup_manage'); return; }
 
     $value      = trim((string) post('value'));
@@ -128,7 +129,7 @@ function lookup_delete(PDO $pdo): void
     verify_csrf();
 
     $cat = post('cat');
-    $allowed = ['business_type','business_scale','brand_origin','target_segment','channel'];
+    $allowed = ['business_type','business_scale','brand_origin','target_segment','channel','floor'];
     if (!in_array($cat, $allowed, true)) { flash('Kategori tidak valid.'); redirect_to('lookup_manage'); return; }
 
     $pid = current_property_id();

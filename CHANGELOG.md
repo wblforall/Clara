@@ -11,6 +11,27 @@
 
 ---
 
+## Fitur & Perbaikan — 2 Oktober 2026
+
+### Master data sebagai acuan proyeksi
+
+- **Potensi Bulanan dihitung otomatis** dan tidak bisa diketik lagi: Exhibition = tarif/hari/m² × luas × 30, Gudang = tarif/m² × luas, Media = tarif × qty (× slot × 30 hari, menurut jenis harga). Master adalah angka proyeksi; realisasi tetap dari transaksi dan harga negosiasi sales tidak tersentuh.
+- **Tarif Gudang kini selalu per m² per bulan** ("Tarif per m² / Bulan"). Sebelumnya kolom "Rate Bulanan" diisi dua arti — sebagian per m², sebagian total sebulan. 33 unit yang berisi total dikonversi sekali (total ÷ luas); potensinya tetap, kecuali Guda-UG dan P402B yang sebelumnya 0. *(migrasi 056)*
+- Isian otomatis transaksi & SKP Gudang memakai luas × tarif/m² (tetap boleh diubah).
+- **Lantai baku per properti** — Lantai Exhibition dan Lokasi Gudang dipilih dari daftar (E-Walk LG–SF, Pentacity sampai P5), dikelola di Kelola Opsi Dropdown → Lantai. Keterangan posisi ditulis di kolom nama. *(migrasi 055)*
+- Tarif per m² yang tak wajar (Gudang > Rp500 ribu/bulan, Exhibition > Rp1 juta/hari) diberi peringatan — kemungkinan yang diketik adalah total sewa.
+- Daftar master menampilkan label yang mudah dibaca, bukan nama kolom basis data.
+
+### Notifikasi "data master perlu diperbaiki" di Dashboard
+
+- Untuk pengelola master: daftar unit yang salah isi dan berpengaruh ke proyeksi — tarif kosong / tak wajar / berbeda dari acuan, luas kosong, slot atau qty Media keliru, potensi tak sesuai rumus, lantai/tipe unit di luar daftar baku, dan porsi target PIC yang jumlahnya bukan 100%. Tiap unit langsung tertaut ke form edit-nya.
+
+### Pilihan periode Executive Summary & Simulasi Komisi
+
+- Bulan-bulan 2026 kembali bisa dipilih. Sebelumnya daftar hanya berisi 36 bulan terjauh ke depan (sampai 2030, akibat kontrak panjang), sehingga bulan lalu — yang dicari untuk laporan dan komisi — tak tersedia.
+
+---
+
 ## Fitur & Perbaikan — 22 September 2026
 
 ### Surat Penawaran: dua cara persetujuan customer

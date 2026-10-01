@@ -734,7 +734,7 @@ function masterOptions(PDO $pdo, string $module): array
     if ($module === 'cl') {
         $s = $pdo->prepare("SELECT code, location_name label, rate, 'daily_area' pricing_type, area_sqm, 1 quantity, 1 slots FROM master_cl_units WHERE status='active' AND property_id=? ORDER BY sort_order ASC, CASE floor WHEN 'LG' THEN 1 WHEN 'GF' THEN 2 WHEN 'UG' THEN 3 WHEN 'FF' THEN 4 WHEN 'SF' THEN 5 ELSE 6 END, code");
     } elseif ($module === 'gudang') {
-        $s = $pdo->prepare("SELECT code, name label, monthly_rate rate, 'monthly' pricing_type, area_sqm, 1 quantity, 1 slots FROM master_gudang WHERE status='active' AND property_id=? ORDER BY sort_order ASC, code");
+        $s = $pdo->prepare("SELECT code, name label, ROUND(monthly_rate * area_sqm) rate, 'monthly' pricing_type, area_sqm, 1 quantity, 1 slots FROM master_gudang WHERE status='active' AND property_id=? ORDER BY sort_order ASC, code");
     } else {
         $concat = "CONCAT(media_type, ' - ', location, ' - ', COALESCE(point,''))";
         $s = $pdo->prepare("SELECT code, $concat label, rate, pricing_type, 0 area_sqm, quantity, slots, COALESCE(size,'') size, media_type FROM master_media WHERE status='active' AND property_id=? ORDER BY sort_order ASC, code");
