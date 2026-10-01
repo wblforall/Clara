@@ -1076,10 +1076,44 @@ function offer_form(PDO $pdo): void
             </div>
             </div><!-- /#single-fields (Objek Sewa) -->
 
-            <h3>Periode<span id="ph-price-hd"> &amp; Harga</span></h3>
+            <h3>Periode</h3>
             <div class="form-grid">
                 <div><label>Tanggal Mulai</label><input type="date" name="start_date" id="start_date" value="<?= $v('start_date') ?>" required <?= $disabled ?>></div>
                 <div><label>Tanggal Selesai</label><input type="date" name="end_date" id="end_date" value="<?= $v('end_date') ?>" required <?= $disabled ?>></div>
+            </div>
+
+            <h3>Pengakuan & Recurring</h3>
+            <div class="form-grid">
+                <div>
+                    <label>Metode Pengakuan</label>
+                    <select name="billing_method" id="billing_method" <?= $disabled ?>>
+                        <?php $bm = $offer['billing_method'] ?? ''; ?>
+                        <option value="" <?= $bm === '' ? 'selected' : '' ?>>Otomatis (ikut periode)</option>
+                        <option value="anchor_cycle" <?= $bm === 'anchor_cycle' ? 'selected' : '' ?>>Sekaligus (anchor) — diakui 1 bulan</option>
+                        <option value="spread" <?= $bm === 'spread' ? 'selected' : '' ?>>Spread per Bulan (recurring)</option>
+                    </select>
+                    <div class="help" id="billing_help">Otomatis: multi-bulan/lintas bulan → Spread (recurring); selainnya → Sekaligus.</div>
+                </div>
+                <div id="cycle_wrap">
+                    <label>Pengakuan per Siklus</label>
+                    <select name="cycle_recognition" id="cycle_recognition" <?= $disabled ?>>
+                        <option value="cycle_start" <?= ($offer['cycle_recognition'] ?? 'cycle_start') === 'cycle_start' ? 'selected' : '' ?>>Bulan Awal siklus</option>
+                        <option value="cycle_end" <?= ($offer['cycle_recognition'] ?? '') === 'cycle_end' ? 'selected' : '' ?>>Bulan Akhir siklus</option>
+                    </select>
+                </div>
+                <div class="wide" style="display:flex;align-items:flex-start;gap:10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:11px 14px">
+                    <input type="checkbox" name="recurring_flag" id="recurring_flag" value="1" style="width:18px;height:18px;flex-shrink:0;margin-top:1px" <?= !empty($offer['recurring_flag']) ? 'checked' : '' ?> <?= $disabled ?>>
+                    <label for="recurring_flag" style="margin:0;cursor:pointer">
+                        <span style="font-weight:700;color:#0369a1">Diakui Recurring</span>
+                        <span class="help" style="display:block;margin-top:2px;font-weight:400">Centang bila kontrak ini berulang. Diteruskan ke transaksi saat konfirmasi disetujui.</span>
+                    </label>
+                </div>
+            </div>
+
+            <?php /* Semua yang menyangkut uang dikumpulkan di bagian bawah:
+                     harga, biaya listrik, PPN, service charge, DP & deposit. */ ?>
+            <h3>Harga</h3>
+            <div class="form-grid">
                 <div class="single-price"><label>Total Kontrak <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="total_calc" value="" readonly><input type="hidden" name="total_calculated" id="total_calc_h" value="<?= $v('total_calculated') ?>"></div>
                 <div class="single-price"><label>Harga / Bulan <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="monthly_disp" value="" readonly><input type="hidden" name="monthly_amount" id="monthly_amount" value="<?= $v('monthly_amount') ?>"></div>
                 <div class="wide single-price"><label>Harga Nego Final <span class="muted" style="font-weight:400">(opsional — override)</span></label><input type="text" inputmode="numeric" id="override_fmt" placeholder="Kosongkan = pakai hasil kalkulasi di atas"><input type="hidden" name="override_amount" id="override_amount" value="<?= (int)($offer['override_amount'] ?? 0) ?: '' ?>"><div class="help">Override: isi bila nilai final tidak sama dengan hasil kalkulasi.</div></div>
@@ -1261,33 +1295,6 @@ function offer_form(PDO $pdo): void
             <div id="overlap-warn" class="single-price" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-top:10px;font-size:12.5px;color:#92400e"></div>
             <?php endif; ?>
 
-            <h3>Pengakuan & Recurring</h3>
-            <div class="form-grid">
-                <div>
-                    <label>Metode Pengakuan</label>
-                    <select name="billing_method" id="billing_method" <?= $disabled ?>>
-                        <?php $bm = $offer['billing_method'] ?? ''; ?>
-                        <option value="" <?= $bm === '' ? 'selected' : '' ?>>Otomatis (ikut periode)</option>
-                        <option value="anchor_cycle" <?= $bm === 'anchor_cycle' ? 'selected' : '' ?>>Sekaligus (anchor) — diakui 1 bulan</option>
-                        <option value="spread" <?= $bm === 'spread' ? 'selected' : '' ?>>Spread per Bulan (recurring)</option>
-                    </select>
-                    <div class="help" id="billing_help">Otomatis: multi-bulan/lintas bulan → Spread (recurring); selainnya → Sekaligus.</div>
-                </div>
-                <div id="cycle_wrap">
-                    <label>Pengakuan per Siklus</label>
-                    <select name="cycle_recognition" id="cycle_recognition" <?= $disabled ?>>
-                        <option value="cycle_start" <?= ($offer['cycle_recognition'] ?? 'cycle_start') === 'cycle_start' ? 'selected' : '' ?>>Bulan Awal siklus</option>
-                        <option value="cycle_end" <?= ($offer['cycle_recognition'] ?? '') === 'cycle_end' ? 'selected' : '' ?>>Bulan Akhir siklus</option>
-                    </select>
-                </div>
-                <div class="wide" style="display:flex;align-items:flex-start;gap:10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:11px 14px">
-                    <input type="checkbox" name="recurring_flag" id="recurring_flag" value="1" style="width:18px;height:18px;flex-shrink:0;margin-top:1px" <?= !empty($offer['recurring_flag']) ? 'checked' : '' ?> <?= $disabled ?>>
-                    <label for="recurring_flag" style="margin:0;cursor:pointer">
-                        <span style="font-weight:700;color:#0369a1">Diakui Recurring</span>
-                        <span class="help" style="display:block;margin-top:2px;font-weight:400">Centang bila kontrak ini berulang. Diteruskan ke transaksi saat konfirmasi disetujui.</span>
-                    </label>
-                </div>
-            </div>
 
             <div id="single-pay" style="<?= $isBundle ? 'display:none' : '' ?>">
             <h3>Pembayaran <span style="font-weight:400;font-size:12px;color:var(--muted)">(DP & deposit dihitung dari harga/bulan; bisa di-override)</span></h3>

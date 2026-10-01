@@ -620,7 +620,9 @@ function skp_form(PDO $pdo): void
                 <div><label>Produk <span class="muted" style="font-weight:400">(nama brand client)</span></label><input name="produk" value="<?= $val('produk', $src['brand_name'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></div>
             </div>
 
-            <?php if ($docType !== 'skp') skp_detail_form($docType, $detail, $editable); ?>
+            <?php /* Harga sewa disisipkan di dalam rincian modul, tepat setelah
+                     data client/kegiatan — supaya angka uang berkumpul di bawah. */ ?>
+            <?php if ($docType !== 'skp') skp_detail_form($docType, $detail, $editable, $standalone ? $src : []); ?>
 
             <?php /* Gudang punya tabel harganya sendiri (per m²/bulan), jadi rincian
                      gaya pameran tidak dipakai — cukup Security Deposit yang memang
