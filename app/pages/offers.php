@@ -282,7 +282,7 @@ function _offer_fields(): array
             'pricing_type', 'unit_rate', 'area_sqm', 'quantity', 'slots',
             'start_date', 'end_date', 'contract_months', 'monthly_amount', 'total_calculated', 'override_amount',
             'billing_method', 'recurring_flag', 'cycle_recognition',
-            'dp_months', 'dp_amount', 'deposit_months', 'deposit_amount', 'deposit_paid',
+            'dp_months', 'dp_amount', 'deposit_months', 'deposit_amount', 'deposit_paid', 'ppn_flag',
             'electricity_flag', 'electricity_monthly', 'electricity_units', 'electricity_amount',
             'perihal', 'offer_date', 'is_bundle'];
 }
@@ -1302,6 +1302,14 @@ function offer_form(PDO $pdo): void
 
             <?php /* Berlaku untuk penawaran satuan maupun paket: pada perpanjangan,
                      deposit sudah disetor di kontrak sebelumnya. */ ?>
+            <?php /* Bawaannya tercentang: hampir semua penyewa dikenakan PPN.
+                     Dilepas hanya untuk penyewa yang harganya memang bersih. */ ?>
+            <div style="margin-top:10px">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400">
+                    <input type="checkbox" name="ppn_flag" id="ppn_flag" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= (!$existing || !empty($offer['ppn_flag'])) ? 'checked' : '' ?> <?= $disabled ?>>
+                    <span><strong>Kenakan PPN 12%</strong> <span class="muted">&mdash; lepas centang bila harganya bersih; baris PPN tidak akan dicetak di surat</span></span>
+                </label>
+            </div>
             <div style="margin-top:10px">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400">
                     <input type="checkbox" name="deposit_paid" id="deposit_paid" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= !empty($offer['deposit_paid']) ? 'checked' : '' ?> <?= $disabled ?>>
@@ -1715,6 +1723,8 @@ function offer_save(PDO $pdo): void
         'deposit_amount'  => (float) post('deposit_amount', 0),
         // Sudah disetor di kontrak sebelumnya → tetap dicetak, tapi di luar Grand Total.
         'deposit_paid'    => post('deposit_paid') ? 1 : 0,
+        // Harga bersih tanpa PPN untuk penyewa yang pajaknya diselesaikan di luar sistem.
+        'ppn_flag'        => post('ppn_flag') ? 1 : 0,
         // Listrik: hanya berlaku untuk Exhibition. Nominalnya tarif PER BULAN —
         // dikalikan jumlah bulan saat dicetak & saat nilainya diteruskan ke SKP.
         'electricity_flag'    => ($module === 'cl' && post('electricity_flag')) ? 1 : 0,
@@ -2014,8 +2024,9 @@ function _offer_sign_view(array $o): array
     $total    = $sewa + $listrik;
     // PPN per komponen — jumlahnya jadi PPN total, supaya rinciannya bisa
     // ditampilkan dan penjumlahannya tetap pas.
-    $ppnSewa    = round($sewa * 11 / 12 * 0.12);
-    $ppnListrik = round($listrik * 11 / 12 * 0.12);
+    $kenaPpn    = !isset($o['ppn_flag']) || !empty($o['ppn_flag']);
+    $ppnSewa    = $kenaPpn ? round($sewa * 11 / 12 * 0.12) : 0.0;
+    $ppnListrik = $kenaPpn ? round($listrik * 11 / 12 * 0.12) : 0.0;
     $ppn        = $ppnSewa + $ppnListrik;
     $afterPpn   = $total + $ppn;
     $deposit  = (float) $o['deposit_amount'];
