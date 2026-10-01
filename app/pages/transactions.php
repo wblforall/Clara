@@ -562,6 +562,9 @@ function transaction_form(PDO $pdo): void
                     </select>
                     <div class="help" id="recognition_help">Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.</div>
                 </div>
+                <div id="peringatan_pricing" class="wide" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;font-size:12.5px;color:#92400e">
+                    <strong>Perhatikan Pricing Type.</strong> Kontrak ini lintas bulan tapi pricing-nya harian, jadi nilainya dibagi menurut <strong>jumlah hari tiap bulan kalender</strong> &mdash; bukan satu nilai utuh per siklus bulanan. Untuk kontrak bulanan, pilih <strong>monthly</strong> lalu isi <strong>Rate</strong> dengan harga per bulan.
+                </div>
                 <div id="cycle_recognition_wrap" style="display:none">
                     <label>Pengakuan per Siklus</label>
                     <select name="cycle_recognition" id="cycle_recognition">
@@ -805,10 +808,27 @@ function transaction_form(PDO $pdo): void
                     ? 'Revenue dibagi rata ke setiap bulan yang dicakup kontrak.'
                     : 'Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.';
                 if (cycleWrap) cycleWrap.style.display = val === 'spread' ? '' : 'none';
+                peringatanPricing();
+            }
+            // Kontrak bulanan yang pricing-nya harian: "Spread per Bulan" membagi
+            // nilai menurut jumlah HARI tiap bulan kalender, bukan satu nilai utuh
+            // per siklus. Diingatkan sebelum tersimpan.
+            function peringatanPricing() {
+                var wrap = document.getElementById('peringatan_pricing');
+                if (!wrap) return;
+                var recog = document.getElementById('recognition_month');
+                var pricing = document.getElementById('pricing_type');
+                var s = (document.querySelector('[name=start_date]') || {}).value || '';
+                var e = (document.querySelector('[name=end_date]') || {}).value || '';
+                var lintas = s && e && s.substring(0, 7) !== e.substring(0, 7);
+                var harian = pricing && pricing.value.indexOf('daily') === 0;
+                wrap.style.display = (recog && recog.value === 'spread' && harian && lintas) ? '' : 'none';
             }
             document.getElementById('recognition_month').addEventListener('change', updateRecognitionHelp);
+            document.getElementById('pricing_type').addEventListener('change', peringatanPricing);
             document.querySelector('[name=start_date]').addEventListener('change', checkRecognitionMonth);
             document.querySelector('[name=end_date]').addEventListener('change', checkRecognitionMonth);
+            document.querySelector('[name=end_date]').addEventListener('change', peringatanPricing);
 
             const overlapWarn = document.getElementById('overlap-warn');
             let overlapTimer = null;
@@ -1257,6 +1277,9 @@ function transaction_edit(PDO $pdo): void
                     </select>
                     <div class="help" id="recognition_help">Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.</div>
                 </div>
+                <div id="peringatan_pricing" class="wide" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;font-size:12.5px;color:#92400e">
+                    <strong>Perhatikan Pricing Type.</strong> Kontrak ini lintas bulan tapi pricing-nya harian, jadi nilainya dibagi menurut <strong>jumlah hari tiap bulan kalender</strong> &mdash; bukan satu nilai utuh per siklus bulanan. Untuk kontrak bulanan, pilih <strong>monthly</strong> lalu isi <strong>Rate</strong> dengan harga per bulan.
+                </div>
                 <div id="cycle_recognition_wrap" style="<?= $recognitionMonth === 'spread' ? '' : 'display:none' ?>">
                     <label>Pengakuan per Siklus</label>
                     <select name="cycle_recognition" id="cycle_recognition">
@@ -1505,11 +1528,28 @@ function transaction_edit(PDO $pdo): void
                     ? 'Revenue dibagi rata ke setiap bulan yang dicakup kontrak.'
                     : 'Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.';
                 if (cycleWrap) cycleWrap.style.display = val === 'spread' ? '' : 'none';
+                peringatanPricing();
+            }
+            // Kontrak bulanan yang pricing-nya harian: "Spread per Bulan" membagi
+            // nilai menurut jumlah HARI tiap bulan kalender, bukan satu nilai utuh
+            // per siklus. Diingatkan sebelum tersimpan.
+            function peringatanPricing() {
+                var wrap = document.getElementById('peringatan_pricing');
+                if (!wrap) return;
+                var recog = document.getElementById('recognition_month');
+                var pricing = document.getElementById('pricing_type');
+                var s = (document.querySelector('[name=start_date]') || {}).value || '';
+                var e = (document.querySelector('[name=end_date]') || {}).value || '';
+                var lintas = s && e && s.substring(0, 7) !== e.substring(0, 7);
+                var harian = pricing && pricing.value.indexOf('daily') === 0;
+                wrap.style.display = (recog && recog.value === 'spread' && harian && lintas) ? '' : 'none';
             }
             document.getElementById('recognition_month').addEventListener('change', updateRecognitionHelp);
+            document.getElementById('pricing_type').addEventListener('change', peringatanPricing);
             updateRecognitionHelp();
             document.getElementById('start_date').addEventListener('change', checkRecognitionMonth);
             document.getElementById('end_date').addEventListener('change', checkRecognitionMonth);
+            document.getElementById('end_date').addEventListener('change', peringatanPricing);
 
             const overlapWarn = document.getElementById('overlap-warn');
             let overlapTimer = null;
