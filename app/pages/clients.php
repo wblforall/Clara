@@ -54,6 +54,17 @@ function clients_page(PDO $pdo): void
     $params = [];
     if ($filterType) { $where .= ' AND c.business_type = ?'; $params[] = $filterType; }
     if ($filterScale) { $where .= ' AND c.business_scale = ?'; $params[] = $filterScale; }
+    // Pencarian bebas: nama perusahaan, brand, kota, NPWP, sampai nama & nomor
+    // kontaknya — supaya client bisa ditemukan dari potongan apa pun yang diingat.
+    $q = trim((string) getv('q', ''));
+    if ($q !== '') {
+        $where .= ' AND (c.company_name LIKE ? OR c.brand_name LIKE ? OR c.city LIKE ? OR c.province LIKE ?
+                    OR c.npwp LIKE ? OR c.business_type LIKE ?
+                    OR EXISTS (SELECT 1 FROM master_client_contacts k
+                               WHERE k.client_id = c.id AND (k.name LIKE ? OR k.phone LIKE ?)))';
+        $cari = '%' . addcslashes($q, '%_\\') . '%';
+        for ($i = 0; $i < 8; $i++) $params[] = $cari;
+    }
     $stmt = $pdo->prepare(
         "SELECT c.*,
                 (SELECT cc.name  FROM master_client_contacts cc WHERE cc.client_id = c.id AND cc.status='active' ORDER BY cc.is_primary DESC, cc.id ASC LIMIT 1) primary_contact_name,
@@ -63,7 +74,7 @@ function clients_page(PDO $pdo): void
     $stmt->execute($params);
     $clients = $stmt->fetchAll();
     $opts = client_options($pdo);
-    layout('Master Client', function () use ($clients, $opts, $filterType, $filterScale) {
+    layout('Master Client', function () use ($clients, $opts, $filterType, $filterScale, $q) {
         ?>
         <div class="toolbar" style="flex-wrap:wrap;gap:8px">
             <?php if (can('manage_master')): ?><a class="btn" href="?r=client_form">Tambah Client</a><?php endif; ?>
@@ -81,9 +92,15 @@ function clients_page(PDO $pdo): void
                         <option value="<?= h($o) ?>" <?= $filterScale === $o ? 'selected' : '' ?>><?= h($o) ?></option>
                     <?php endforeach; ?>
                 </select>
-                <?php if ($filterType || $filterScale): ?><a href="?r=clients" class="btn light" style="font-size:12px">Reset</a><?php endif; ?>
+                <input type="search" name="q" value="<?= h($q) ?>" placeholder="Cari nama, brand, kota, NPWP, kontak…"
+                       style="width:280px;max-width:52vw;font-size:12px">
+                <button type="submit" class="btn light" style="font-size:12px">Cari</button>
+                <?php if ($filterType || $filterScale || $q !== ''): ?><a href="?r=clients" class="btn light" style="font-size:12px">Reset</a><?php endif; ?>
             </form>
         </div>
+        <?php if ($q !== ''): ?>
+        <div style="margin-bottom:10px;font-size:12.5px;color:var(--muted)"><?= count($clients) ?> client cocok dengan &ldquo;<strong><?= h($q) ?></strong>&rdquo;.</div>
+        <?php endif; ?>
         <div class="table-wrap">
             <table>
                 <thead><tr><th>Nama Perusahaan</th><th>Nama Brand</th><th>Kota / Provinsi</th><th>Jenis Usaha</th><th>Skala</th><th>Asal Brand</th><th>Segmen</th><th>Channel</th><th>PIC Client</th><th>Status</th><th>Aksi</th></tr></thead>

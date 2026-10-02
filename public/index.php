@@ -97,6 +97,7 @@ $masterConfig = [
             'projection_monthly' => 'Potensi Bulanan', 'status' => 'Status',
         ],
         'order'     => 'sort_order ASC, code ASC',
+        'search'    => ['code', 'media_type', 'location', 'point', 'size', 'package_note'],
     ],
     'cl' => [
         'title'     => 'Master Exhibition',
@@ -110,6 +111,7 @@ $masterConfig = [
             'status' => 'Status',
         ],
         'order'     => "sort_order ASC, CASE floor WHEN 'LG' THEN 1 WHEN 'GF' THEN 2 WHEN 'UG' THEN 3 WHEN 'FF' THEN 4 WHEN 'SF' THEN 5 ELSE 6 END, code",
+        'search'    => ['code', 'floor', 'location_name', 'unit_type'],
     ],
     'cl_unit_type' => [
         'title'     => 'Master Tipe Unit',
@@ -119,6 +121,7 @@ $masterConfig = [
         'columns'   => ['name', 'status'],
         'fields'    => ['name' => 'Nama Tipe', 'status' => 'Status'],
         'order'     => 'sort_order ASC, name ASC',
+        'search'    => ['name'],
     ],
     'gudang' => [
         'title'     => 'Master Gudang',
@@ -131,6 +134,7 @@ $masterConfig = [
             'monthly_rate' => 'Tarif per m² / Bulan', 'projection_monthly' => 'Potensi Bulanan', 'status' => 'Status',
         ],
         'order'     => 'sort_order ASC, code ASC',
+        'search'    => ['code', 'location', 'name'],
     ],
     'pic' => [
         'title'         => 'Master PIC',
@@ -145,6 +149,7 @@ $masterConfig = [
             'show_in_offer' => 'Tampil di pilihan Penawaran',
             'target_share' => 'Porsi Target', 'user_id' => 'User Akun', 'status' => 'Status',
         ],
+        'search'        => ['name', 'role_name', 'email', 'phone'],
     ],
     'target' => [
         'title'   => 'Target Bulanan',

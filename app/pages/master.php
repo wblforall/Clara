@@ -8,21 +8,40 @@ function master_page(PDO $pdo, array $masterConfig): void
     $orderBy = isset($cfg['order']) ? $cfg['order'] : 'id DESC';
     $pid = current_property_id();
     $picStatus = ($type === 'pic') ? getv('pic_status', 'active') : '';
+    // Pencarian: data master sudah menumpuk, mencari manual jadi sulit. Kolom
+    // yang boleh dicari ditetapkan per jenis di $masterConfig['search'] — bukan
+    // dari input user — supaya tidak ada nama kolom liar yang masuk query.
+    $q = trim((string) getv('q', ''));
+    $cariKol = $cfg['search'] ?? [];
+    // Dua bentuk: tanpa alias (tabel master biasa) dan ber-alias p. (query PIC
+    // yang mengandung JOIN), masing-masing dibangun utuh — jangan menambal
+    // alias dengan str_replace, backtick penutupnya ikut tergantikan.
+    $cariSql = ''; $cariSqlPic = ''; $cariPar = [];
+    if ($q !== '' && $cariKol) {
+        $polos = []; $beralias = [];
+        foreach ($cariKol as $kol) {
+            $polos[]    = "`$kol` LIKE ?";
+            $beralias[] = "p.`$kol` LIKE ?";
+            $cariPar[]  = '%' . addcslashes($q, '%_\\') . '%';
+        }
+        $cariSql    = ' AND (' . implode(' OR ', $polos) . ')';
+        $cariSqlPic = ' AND (' . implode(' OR ', $beralias) . ')';
+    }
     if ($type === 'pic' && in_array($picStatus, ['active', 'inactive', 'archived', ''], true)) {
         $statusWhere = $picStatus !== '' ? ' AND p.status = ' . $pdo->quote($picStatus) : '';
         $stmt = $pdo->prepare(
             "SELECT p.*, u.name AS user_name FROM master_pic p
              LEFT JOIN users u ON u.id = p.user_id
-             WHERE p.property_id = ? $statusWhere ORDER BY p.$orderBy LIMIT 300"
+             WHERE p.property_id = ? $statusWhere $cariSqlPic ORDER BY p.$orderBy LIMIT 300"
         );
-        $stmt->execute([$pid]);
+        $stmt->execute(array_merge([$pid], $cariPar));
         $rows = $stmt->fetchAll();
     } else {
-        $stmt = $pdo->prepare('SELECT * FROM ' . $cfg['table'] . ' WHERE property_id = ? ORDER BY ' . $orderBy . ' LIMIT 300');
-        $stmt->execute([$pid]);
+        $stmt = $pdo->prepare('SELECT * FROM ' . $cfg['table'] . ' WHERE property_id = ?' . $cariSql . ' ORDER BY ' . $orderBy . ' LIMIT 300');
+        $stmt->execute(array_merge([$pid], $cariPar));
         $rows = $stmt->fetchAll();
     }
-    layout($cfg['title'], function () use ($type, $cfg, $rows, $picStatus, $pdo, $pid) {
+    layout($cfg['title'], function () use ($type, $cfg, $rows, $picStatus, $pdo, $pid, $q) {
         ?>
         <div class="toolbar">
             <?php if (can('manage_master')): ?><a class="btn" href="?r=master_form&type=<?= h($type) ?>">Tambah Data</a><?php endif; ?>
@@ -41,7 +60,26 @@ function master_page(PDO $pdo, array $masterConfig): void
                 <a class="btn light" href="?r=import_media">Import CSV Media</a>
                 <a class="btn" style="background:#28a745" href="?r=import_template">Import Master Template (Excel)</a>
             <?php endif; ?>
+            <?php /* Pencarian: data master sudah banyak, mencari dengan mata jadi
+                     lambat. Kolom yang dicari ditentukan per jenis master. */ ?>
+            <?php if (!empty($cfg['search'])): ?>
+            <form method="get" style="display:flex;gap:6px;align-items:center;margin-left:auto">
+                <input type="hidden" name="r" value="master">
+                <input type="hidden" name="type" value="<?= h($type) ?>">
+                <?php if ($type === 'pic'): ?><input type="hidden" name="pic_status" value="<?= h($picStatus) ?>"><?php endif; ?>
+                <input type="search" name="q" value="<?= h($q) ?>" placeholder="Cari <?= h(strtolower(implode(', ', array_map(fn($k) => $cfg['fields'][$k] ?? $k, array_slice($cfg['search'], 0, 3))))) ?>…"
+                       style="width:260px;max-width:48vw;font-size:13px">
+                <button type="submit" class="btn light" style="font-size:12px">Cari</button>
+                <?php if ($q !== ''): ?><a class="btn light" style="font-size:12px" href="?r=master&type=<?= h($type) ?>">Reset</a><?php endif; ?>
+            </form>
+            <?php endif; ?>
         </div>
+        <?php if ($q !== ''): ?>
+        <div style="margin-bottom:10px;font-size:12.5px;color:var(--muted)">
+            <?= count($rows) ?> hasil untuk &ldquo;<strong><?= h($q) ?></strong>&rdquo;<?= count($rows) >= 300 ? ' (ditampilkan 300 teratas — persempit kata kuncinya)' : '' ?>.
+            <?php if (!empty($cfg['sortable'])): ?> Urutan seret-geser dimatikan selama pencarian aktif.<?php endif; ?>
+        </div>
+        <?php endif; ?>
         <?php if ($type === 'pic'): ?>
         <div style="display:flex;gap:6px;margin-bottom:12px">
             <?php foreach (['active' => 'Aktif', 'inactive' => 'Tidak Aktif', 'archived' => 'Arsip', '' => 'Semua'] as $sv => $sl): ?>
@@ -52,14 +90,15 @@ function master_page(PDO $pdo, array $masterConfig): void
         <div class="table-wrap">
             <table id="master-table">
                 <thead><tr>
-                    <?php if (!empty($cfg['sortable']) && can('manage_master')): ?><th style="width:32px"></th><?php endif; ?>
+                    <?php $bolehUrut = !empty($cfg['sortable']) && can('manage_master') && $q === ''; ?>
+                    <?php if ($bolehUrut): ?><th style="width:32px"></th><?php endif; ?>
                     <?php foreach ($cfg['columns'] as $col): ?><th><?= h($cfg['column_labels'][$col] ?? $cfg['fields'][$col] ?? $col) ?></th><?php endforeach; ?>
                     <th>Aksi</th>
                 </tr></thead>
                 <tbody id="master-tbody">
                 <?php foreach ($rows as $row): ?>
                     <tr data-id="<?= (int)$row['id'] ?>">
-                        <?php if (!empty($cfg['sortable']) && can('manage_master')): ?>
+                        <?php if ($bolehUrut): ?>
                         <td class="drag-handle" title="Drag untuk atur urutan" style="cursor:grab;text-align:center;color:#cbd5e1;font-size:16px;user-select:none">⠿</td>
                         <?php endif; ?>
                         <?php foreach ($cfg['columns'] as $col): ?>
@@ -84,7 +123,8 @@ function master_page(PDO $pdo, array $masterConfig): void
                 </tbody>
             </table>
         </div>
-        <?php if (!empty($cfg['sortable']) && can('manage_master')): ?>
+        <?php /* Skrip urut-seret hanya dimuat bila tidak sedang menyaring. */ ?>
+        <?php if ($bolehUrut): ?>
         <script src="assets/sortable.min.js"></script>
         <script>
         (function() {
