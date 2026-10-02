@@ -1805,6 +1805,11 @@ function offer_form(PDO $pdo): void
  */
 function _offer_write_steps(PDO $pdo, int $pid, int $offerId, string $uname): void
 {
+    // Paket: nilainya dijumlah dari komponen, jadwal tidak dipakai sama sekali.
+    if (!empty($_POST['is_bundle'])) {
+        $pdo->prepare('DELETE FROM price_steps WHERE offer_id = ? AND transaction_id IS NULL')->execute([$offerId]);
+        return;
+    }
     $mulai = (array) ($_POST['tahap_mulai'] ?? []);
     $nilai = (array) ($_POST['tahap_nilai'] ?? []);
     $label = (array) ($_POST['tahap_label'] ?? []);
@@ -1817,6 +1822,16 @@ function _offer_write_steps(PDO $pdo, int $pid, int $offerId, string $uname): vo
     }
     $pdo->prepare('DELETE FROM price_steps WHERE offer_id = ? AND transaction_id IS NULL')->execute([$offerId]);
     if (!$baris) return;
+    // Mesin alokasi hanya mengikuti jadwal pada kontrak bulanan + Spread per
+    // Bulan. Nilainya dibaca dari baris yang SUDAH tersimpan supaya sama dengan
+    // yang nanti dipakai saat kontrak terbit.
+    $cek = $pdo->prepare('SELECT pricing_type, billing_method FROM offers WHERE id = ?');
+    $cek->execute([$offerId]);
+    $o = $cek->fetch();
+    if (!$o || ($o['pricing_type'] ?? '') !== 'monthly' || ($o['billing_method'] ?? '') !== 'spread') {
+        flash('Jadwal Harga diabaikan: hanya berlaku untuk Pricing Type "monthly" dengan pengakuan Spread per Bulan.');
+        return;
+    }
     ksort($baris);
     $ins = $pdo->prepare('INSERT INTO price_steps (property_id, offer_id, effective_from, monthly_amount, label, created_by) VALUES (?,?,?,?,?,?)');
     foreach ($baris as $tgl => $b) $ins->execute([$pid, $offerId, $tgl, $b['amount'], $b['label'], $uname]);

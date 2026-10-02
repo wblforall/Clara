@@ -784,6 +784,11 @@ function skp_form(PDO $pdo): void
                      Jumlah pembagian WAJIB pas dengan nilai kontrak — kurang atau
                      lebih sedikit pun membuat laporan per PIC tidak lagi berjumlah
                      sama dengan pendapatan properti. */ ?>
+            <?php $paketSrc = !empty($src['is_bundle']); ?>
+            <?php if ($paketSrc): ?>
+            <h3>Pembagian Income per PIC</h3>
+            <p class="help">Dokumen ini berasal dari <strong>Penawaran Paket</strong> — nilainya terpecah ke beberapa transaksi komponen, sehingga pembagian per PIC diisi di halaman <strong>Alokasi</strong> masing-masing komponen setelah dokumen disetujui.</p>
+            <?php else: ?>
             <h3>Pembagian Income per PIC <span style="font-weight:400;font-size:12px;color:var(--muted)">(opsional — kosongkan bila seluruhnya milik <?= h($src['pic_name'] ?: 'PIC dokumen') ?>)</span></h3>
             <div id="bagi-box" data-acuan="<?= (int) round($nilaiAcuan) ?>">
                 <table class="data" id="bagi-tabel" style="width:100%;max-width:720px">
@@ -822,6 +827,7 @@ function skp_form(PDO $pdo): void
                 <?php endif; ?>
                 <div id="bagi-ringkas" style="margin-top:9px;font-size:13px"></div>
             </div>
+            <?php endif; ?>
 
             <h3>Catatan Internal</h3>
             <textarea name="note" rows="2" <?= $editable ? '' : 'disabled' ?>><?= h($skp['note'] ?? '') ?></textarea>
@@ -1264,7 +1270,7 @@ function _skp_update_master(PDO $pdo, int $clientId, ?string $ktp, ?string $npwp
  * Pembagian income dari formulir: [['pic' => ..., 'amount' => ...], ...].
  * Baris tanpa PIC atau bernilai 0 dibuang; PIC ganda digabung jadi satu.
  */
-function _skp_bagi_dari_post(): array
+function _skp_bagi_dari_post(PDO $pdo = null, int $pid = 0): array
 {
     $pic = (array) ($_POST['bagi_pic'] ?? []);
     $rp  = (array) ($_POST['bagi_nominal'] ?? []);
@@ -1277,6 +1283,13 @@ function _skp_bagi_dari_post(): array
     }
     $hasil = [];
     foreach ($out as $nama => $n) $hasil[] = ['pic' => $nama, 'amount' => $n];
+    if ($pdo && $pid && $hasil) {
+        $st = $pdo->prepare("SELECT name FROM master_pic WHERE property_id = ? AND status = 'active'");
+        $st->execute([$pid]);
+        $sah = $st->fetchAll(PDO::FETCH_COLUMN) ?: [];
+        foreach ($hasil as &$b) $b['valid'] = in_array($b['pic'], $sah, true);
+        unset($b);
+    }
     return $hasil;
 }
 
@@ -1385,7 +1398,17 @@ function skp_save(PDO $pdo): void
     // Pembagian income harus PAS dengan nilai kontrak — kurang atau lebih
     // sedikit pun membuat laporan per PIC tidak lagi berjumlah sama dengan
     // pendapatan properti. Acuannya nilai sumber, bukan angka yang diketik.
-    $bagi = _skp_bagi_dari_post();
+    $bagi = _skp_bagi_dari_post($pdo, $pid);
+    // Nama di luar master_pic aktif tidak akan muncul di laporan per PIC —
+    // ditolak terang-terangan, bukan diam-diam hilang.
+    $picSalah = array_column(array_filter($bagi, fn($b) => isset($b['valid']) && !$b['valid']), 'pic');
+    if ($picSalah) $missNum[] = 'PIC tidak dikenal / tidak aktif: ' . implode(', ', $picSalah);
+    // Paket: satu dokumen melahirkan beberapa transaksi, pembagian tunggal tidak
+    // punya arti — dibuang supaya tidak tersimpan lalu terabaikan diam-diam.
+    if ($bagi && !empty($src['is_bundle'])) {
+        $bagi = [];
+        flash('Pembagian income tidak dipakai pada dokumen Paket — isi di halaman Alokasi tiap komponen.');
+    }
     if ($bagi) {
         $acuanBagi = round((float) ($src['final_amount'] ?: $src['total_calculated']));
         $jumlahBagi = round(array_sum(array_column($bagi, 'amount')));

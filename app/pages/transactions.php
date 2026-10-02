@@ -1853,6 +1853,13 @@ function price_step_save(PDO $pdo): void
         flash('Jadwal harga hanya untuk kontrak bulanan dengan pengakuan Spread per Bulan.');
         redirect_to(...$kembali);
     }
+    // Bulan yang sudah lewat laporannya sudah terbit; menaikkan harga ke belakang
+    // akan menulis ulang angka yang sudah dipakai & diaudit.
+    $awalBulanIni = date('Y-m-01');
+    if ($mulai < $awalBulanIni) {
+        flash('Tanggal berlaku tidak boleh di bulan yang sudah lewat (paling awal ' . date('d/m/Y', strtotime($awalBulanIni)) . ').');
+        redirect_to(...$kembali);
+    }
     if ($mulai < (string) $trx['start_date'] || $mulai > (string) $trx['end_date']) {
         flash('Tanggal berlaku harus berada di dalam masa kontrak (' . $trx['start_date'] . ' s/d ' . $trx['end_date'] . ').');
         redirect_to(...$kembali);
@@ -1865,7 +1872,10 @@ function price_step_save(PDO $pdo): void
         // Tahap pertama = harga yang berlaku sekarang, supaya bulan sebelum
         // tanggal berlaku tetap punya acuan bila alokasinya dihitung ulang.
         if (!AllocationService::priceSteps($pdo, $id)) {
-            $awal = $pdo->prepare('SELECT amount FROM transaction_allocations WHERE transaction_id = ? ORDER BY allocation_start LIMIT 1');
+            // Dijumlah per siklus: satu siklus bisa punya beberapa baris bila
+            // income-nya dibagi ke beberapa PIC.
+            $awal = $pdo->prepare('SELECT SUM(amount) FROM transaction_allocations WHERE transaction_id = ?
+                                   GROUP BY allocation_start ORDER BY allocation_start LIMIT 1');
             $awal->execute([$id]);
             $lama = (float) ($awal->fetchColumn() ?: 0);
             if ($lama > 0) {
@@ -1912,7 +1922,11 @@ function allocation_detail(PDO $pdo): void
     require_once dirname(__DIR__) . '/AllocationService.php';
     $tahap = AllocationService::priceSteps($pdo, $id);
     $bisaUbahHarga = can('approve_skp') && ($trx['billing_method'] ?? '') === 'spread' && ($trx['pricing_type'] ?? '') === 'monthly';
-    layout('Detail Alokasi Transaksi #' . $id, function () use ($trx, $alloc, $lockSkp, $tahap, $bisaUbahHarga) {
+    // Transaksi yang terbit dari dokumen bertanda tangan tetap boleh dinaikkan —
+    // itu memang kebutuhannya — tapi harus terbaca jelas bahwa nilainya lalu
+    // berbeda dari surat yang dipegang client.
+    $bedaDariSurat = $lockSkp && $tahap;
+    layout('Detail Alokasi Transaksi #' . $id, function () use ($trx, $alloc, $lockSkp, $tahap, $bisaUbahHarga, $bedaDariSurat) {
         ?>
         <div class="panel">
             <?php $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang']; ?>
@@ -1944,6 +1958,12 @@ function allocation_detail(PDO $pdo): void
         <?php if ($tahap || $bisaUbahHarga): ?>
         <div class="panel" style="margin-top:14px">
             <h2>Jadwal Harga</h2>
+            <?php if ($bedaDariSurat): ?>
+            <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12.5px;color:#92400e">
+                <strong>Nilai transaksi berbeda dari dokumen yang sudah ditandatangani</strong> (<?= h((string) ($lockSkp['skp_no'] ?? '')) ?>).
+                Surat yang dipegang client masih memuat harga lama &mdash; untuk dasar penagihan, terbitkan dokumen penyesuaian harga.
+            </div>
+            <?php endif; ?>
             <?php if ($tahap): ?>
             <div class="table-wrap">
                 <table style="max-width:640px">
