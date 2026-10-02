@@ -172,7 +172,21 @@ $skpHasQr = !empty($skp['sign_token']);
     <div class="sec">Rincian Pembayaran Sewa</div>
     <table class="pay">
         <tr><td class="lbl">A. Biaya Sewa Area</td><td class="amt"></td></tr>
+        <?php /* Tarif bertingkat per m²: dirinci apa adanya seperti di kertas —
+                 tiap tingkatan dengan luas, tarif, dan lama harinya sendiri.
+                 Menggantikan baris "Biaya Sewa / m² / hari" yang hanya muat satu tarif. */ ?>
+        <?php $tierSkp = $d['tier_harga'] ?? []; $hariSkp = (int) ($d['days'] ?? 0); ?>
+        <?php if ($tierSkp && $hariSkp > 0): $luasSkp = 0; ?>
+            <?php foreach ($tierSkp as $t): $luasSkp += (float) $t['area_sqm'];
+                  $subT = (float) $t['area_sqm'] * (float) $t['rate_per_sqm'] * $hariSkp; ?>
+            <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?><?= $h($t['label'] ?: 'Harga Sewa') ?>
+                <span class="muted">(<?= $h(rtrim(rtrim(number_format((float) $t['area_sqm'], 2, ',', '.'), '0'), ',')) ?> m² × <?= $rp($t['rate_per_sqm']) ?> × <?= $hariSkp ?> Hari)</span></td>
+                <td class="amt"><?= $rp($subT) ?></td></tr>
+            <?php endforeach; ?>
+            <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Luas Area</td><td class="amt"><?= $h(rtrim(rtrim(number_format($luasSkp, 2, ',', '.'), '0'), ',')) ?> m²</td></tr>
+        <?php else: ?>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Biaya Sewa / m² / hari</td><td class="amt"><?= $rp($a['rate_m_day'] ?? 0) ?></td></tr>
+        <?php endif; ?>
         <?php if (($a['listrik'] ?? 0) > 0): ?>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Nilai Sewa</td><td class="amt"><?= $rp($a['sewa'] ?? 0) ?></td></tr>
         <?php if ($kenaPpn): ?><tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>PPN 12% Sewa <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn_sewa'] ?? 0) ?></td></tr><?php endif; ?>
