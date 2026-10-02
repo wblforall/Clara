@@ -98,7 +98,14 @@ final class AllocationService
                 );
                 // Jadwal harga bertahap menggantikan pembagian rata bila ada.
                 $tahap = self::priceSteps($pdo, $transactionId);
-                if ($tahap) $allocations = self::terapkanTahap($allocations, $tahap);
+                if ($tahap) {
+                    $allocations = self::terapkanTahap($allocations, $tahap);
+                    // Jadwal harga hanya mengatur SEWA per bulan. Biaya lain yang
+                    // ikut masuk nilai kontrak (mis. listrik) tidak ada di jadwal,
+                    // jadi selisihnya dibagi rata ke tiap bulan — kalau tidak,
+                    // biaya itu hilang dari income bulanan.
+                    $allocations = self::sebarSisaKontrak($allocations, $finalAmount);
+                }
                 if ($monthOverrides) {
                     $allocations = self::applyMonthOverrides($allocations, $monthOverrides);
                 }
@@ -346,6 +353,29 @@ final class AllocationService
         foreach ($allocations as &$a) {
             $n = self::nilaiTahap($steps, (string) $a['allocation_start']);
             if ($n !== null) $a['amount'] = round($n);
+        }
+        unset($a);
+        return $allocations;
+    }
+
+    /**
+     * Ratakan selisih antara nilai kontrak dan jumlah jadwal harga ke tiap
+     * siklus. Dipakai untuk biaya yang ditagih bulanan tapi tidak ikut jadwal
+     * (biaya listrik), supaya jumlah alokasi selalu sama dengan nilai kontrak.
+     * Selisih nol / nilai kontrak kosong → daftar alokasi dikembalikan apa adanya.
+     */
+    private static function sebarSisaKontrak(array $allocations, float $finalAmount): array
+    {
+        $n = count($allocations);
+        if ($n === 0 || $finalAmount <= 0) return $allocations;
+        $sisa = round($finalAmount) - round(array_sum(array_column($allocations, 'amount')));
+        if (abs($sisa) < 1) return $allocations;
+        $perBulan = floor(abs($sisa) / $n) * ($sisa < 0 ? -1 : 1);
+        $terpakai = 0.0;
+        foreach ($allocations as $i => &$a) {
+            $tambah = $i === $n - 1 ? $sisa - $terpakai : $perBulan;
+            $terpakai += $tambah;
+            $a['amount'] = round((float) $a['amount'] + $tambah);
         }
         unset($a);
         return $allocations;

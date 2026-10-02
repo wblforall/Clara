@@ -1750,6 +1750,10 @@ function skp_approve(PDO $pdo): void
                     $trxBaru = $tq->fetch();
                     $totalTahap = AllocationService::totalDariTahap($trxBaru, AllocationService::priceSteps($pdo, $newTrxId));
                     if ($totalTahap > 0) {
+                        // Jadwal harga mengatur SEWA saja. Biaya listrik dari
+                        // penawaran tetap bagian nilai kontrak, jadi ikut
+                        // ditambahkan — kalau tidak, nilainya hilang dari income.
+                        $totalTahap += (float) ($src['electricity'] ?? 0);
                         $pdo->prepare('UPDATE transactions SET final_amount = ?, override_amount = ? WHERE id = ?')
                             ->execute([$totalTahap, $totalTahap, $newTrxId]);
                         $trxBaru['final_amount'] = $totalTahap;
