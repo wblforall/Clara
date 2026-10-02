@@ -149,7 +149,7 @@ final class ApprovalLine
      * kalau jalan pintas itu ikut dipakai menyusun daftar "giliran saya",
      * daftarnya berisi seluruh dokumen dan kehilangan gunanya.
      */
-    public static function cocokJabatan(PDO $pdo, int $pid, array $skp, array $steps): bool
+    public static function cocokJabatan(PDO $pdo, int $pid, array $skp, array $steps, bool $persis = false): bool
     {
         if (!$steps) return false;
         $tahap = self::currentStep($skp, $steps);
@@ -161,6 +161,11 @@ final class ApprovalLine
         $jab = self::jabatan($pdo, $pid);
         if ($jab === '') return false;
         if (strcasecmp($jab, $tahap['role_name']) === 0) return true;
+        // $persis = daftar antrean. Atasan MASIH boleh memaraf bawahannya
+        // (tombolnya tetap muncul lewat canAct), tetapi dokumen itu bukan
+        // gilirannya — kalau ikut diantre, Manager melihat tumpukan dokumen
+        // yang sebenarnya menunggu Asst. Manager dan angkanya kehilangan arti.
+        if ($persis) return false;
 
         // Atasan (tahap SETELAH tahap ini) boleh mewakili. Indeksnya diambil
         // dari approval_level, bukan dicari ulang — dua tahap boleh saja
@@ -267,7 +272,12 @@ final class ApprovalLine
         foreach ($rows as $r) {
             $dt = (string) ($r['doc_type'] ?? 'skp');
             if (!array_key_exists($dt, $cacheAlur)) $cacheAlur[$dt] = self::steps($pdo, $pid, $dt);
-            if (self::cocokJabatan($pdo, $pid, $r, $cacheAlur[$dt])) $ids[] = (int) $r['id'];
+            // Tanpa rantai, aturannya seperti sebelum fitur ini ada: siapa pun
+            // pemegang izin approval memang menunggu dokumen itu. Kalau tidak,
+            // panel "menunggu tindakan Anda" selalu 0 di properti yang belum
+            // diatur — justru di situlah dokumen paling sering terlewat.
+            if (!$cacheAlur[$dt]) { $ids[] = (int) $r['id']; continue; }
+            if (self::cocokJabatan($pdo, $pid, $r, $cacheAlur[$dt], true)) $ids[] = (int) $r['id'];
         }
         return $ids;
     }
@@ -284,12 +294,17 @@ final class ApprovalLine
         // diperbaiki menempuh alur dari awal lagi — paraf sebelum penolakan itu
         // menilai dokumen versi lama, jadi tidak boleh ikut tercetak di surat
         // yang diserahkan ke client seolah-olah memeriksa versi yang sekarang.
+        // Pemotong putaran: penolakan ATAU perubahan alur ('ulang') sama-sama
+        // membatalkan pemeriksaan sebelumnya.
         for ($i = count($jejak) - 1; $i >= 0; $i--) {
-            if (($jejak[$i]['action'] ?? '') === 'tolak') { $jejak = array_slice($jejak, $i + 1); break; }
+            if (in_array($jejak[$i]['action'] ?? '', ['tolak', 'ulang'], true)) {
+                $jejak = array_slice($jejak, $i + 1);
+                break;
+            }
         }
         $out = [];
         foreach ($jejak as $j) {
-            if (($j['action'] ?? '') === 'tolak') continue;   // yang batal tidak dicetak
+            if (in_array($j['action'] ?? '', ['tolak', 'ulang'], true)) continue;
             $out[] = [
                 'step_no'   => (int) $j['step_no'],
                 'role_name' => (string) ($j['role_name'] ?? ''),
