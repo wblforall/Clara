@@ -334,6 +334,7 @@ function _offer_parse_bundle_items(int $months): array
     $mon  = (array) post('item_monthly', []);
     $dps  = (array) post('item_dp', []);
     $deps = (array) post('item_deposit', []);
+    $ars  = (array) ($_POST['item_area'] ?? []);
     $out = [];
     foreach ($segs as $i => $seg) {
         $seg = in_array($seg, ['cl', 'media', 'gudang'], true) ? $seg : 'cl';
@@ -341,13 +342,17 @@ function _offer_parse_bundle_items(int $months): array
         $nm  = trim((string) ($nms[$i] ?? ''));
         if ($mc === null && $nm === '') continue;            // lewati baris kosong
         $mAmt = parse_rupiah($mon[$i] ?? '0');
+        // Luas komponen: dipakai sebagai dasar pembagian nilai paket saat
+        // harganya bertingkat per m², dan diteruskan ke transaksinya supaya
+        // laporan luas/occupancy per unit tidak lagi nol.
+        $area = (float) str_replace(',', '.', preg_replace('/[^0-9,.]/', '', (string) ($ars[$i] ?? '0')));
         $out[] = [
             'segment'        => $seg,
             'master_code'    => $mc,
             'name_snapshot'  => $nm ?: $mc,
             'pricing_type'   => null,
             'unit_rate'      => 0.0,
-            'area_sqm'       => 0.0,
+            'area_sqm'       => round(max(0, $area), 2),
             'slots'          => 1.0,
             'monthly_amount' => $mAmt,
             'dp_amount'      => parse_rupiah($dps[$i] ?? '0'),
@@ -356,6 +361,104 @@ function _offer_parse_bundle_items(int $months): array
         ];
     }
     return $out;
+}
+
+/**
+ * Tarif bertingkat per m² untuk SATU penawaran (kasus Efata/Mitsubishi).
+ *
+ * Ada kesepakatan yang mengunci beberapa lokasi sekaligus, tetapi harganya
+ * ditetapkan atas LUAS GABUNGAN dengan tarif bertingkat — mis. 48 m² dengan
+ * tarif Rp 130.000/m²/hari dan 32 m² sisanya Rp 100.000/m²/hari. Pembagian itu
+ * tidak jatuh di batas lokasi, jadi tingkatan harga memang milik PAKET.
+ *
+ * Nilai paket = Σ(luas × tarif × lama hari). Angka itu lalu dibagi ke tiap
+ * komponen lokasi menurut luasnya masing-masing, supaya transaksinya tetap
+ * terbit per lokasi dan occupancy tiap unit tetap benar.
+ */
+function _offer_parse_area_tiers(): array
+{
+    $luas  = (array) ($_POST['tier_luas'] ?? []);
+    $tarif = (array) ($_POST['tier_tarif'] ?? []);
+    $label = (array) ($_POST['tier_label'] ?? []);
+    $out = [];
+    foreach ($luas as $i => $m) {
+        $m = (float) str_replace(',', '.', preg_replace('/[^0-9,.]/', '', (string) $m));
+        $r = parse_rupiah((string) ($tarif[$i] ?? '0'));
+        if ($m <= 0 || $r <= 0) continue;
+        $out[] = [
+            'area_sqm'     => round($m, 2),
+            'rate_per_sqm' => round($r, 2),
+            'label'        => trim((string) ($label[$i] ?? '')) ?: null,
+        ];
+    }
+    return $out;
+}
+
+/** Tingkatan tarif milik satu penawaran (kosong = tidak memakai cara ini). */
+function offer_area_tiers(PDO $pdo, int $offerId): array
+{
+    if ($offerId <= 0) return [];
+    try {
+        $st = $pdo->prepare('SELECT area_sqm, rate_per_sqm, label FROM offer_area_tiers
+                              WHERE offer_id = ? ORDER BY sort_order ASC, id ASC');
+        $st->execute([$offerId]);
+        return $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (Throwable $e) {
+        return [];                            // tabel belum ada → perilaku lama
+    }
+}
+
+/** Nilai kontrak menurut tingkatan tarif: Σ(luas × tarif × lama hari). */
+function offer_tier_total(array $tiers, int $days): float
+{
+    if (!$tiers || $days <= 0) return 0.0;
+    $t = 0.0;
+    foreach ($tiers as $r) $t += (float) $r['area_sqm'] * (float) $r['rate_per_sqm'] * $days;
+    return round($t);
+}
+
+/** Tulis ulang tingkatan tarif sebuah penawaran (replace-all). */
+function _offer_write_tiers(PDO $pdo, int $pid, int $offerId, array $tiers, string $uname): void
+{
+    try {
+        $pdo->prepare('DELETE FROM offer_area_tiers WHERE offer_id = ?')->execute([$offerId]);
+        if (!$tiers) return;
+        $ins = $pdo->prepare('INSERT INTO offer_area_tiers
+                              (property_id, offer_id, area_sqm, rate_per_sqm, label, sort_order, created_by)
+                              VALUES (?,?,?,?,?,?,?)');
+        foreach ($tiers as $i => $t) {
+            $ins->execute([$pid, $offerId, $t['area_sqm'], $t['rate_per_sqm'], $t['label'], $i, $uname]);
+        }
+    } catch (Throwable $e) {
+        error_log('offer_area_tiers gagal disimpan (offer=' . $offerId . '): ' . $e->getMessage());
+    }
+}
+
+/**
+ * Bagi nilai paket ke tiap komponen menurut LUAS masing-masing.
+ * Sisa pembulatan jatuh ke komponen terakhir supaya jumlahnya selalu pas.
+ * Komponen tanpa luas dibagi rata, agar tidak ada yang bernilai nol diam-diam.
+ */
+function _offer_bagi_paket(array $items, float $total): array
+{
+    $n = count($items);
+    if ($n === 0 || $total <= 0) return $items;
+    $luas = array_sum(array_map(fn($i) => (float) ($i['area_sqm'] ?? 0), $items));
+    $pakai = 0.0;
+    foreach ($items as $i => &$it) {
+        if ($i === $n - 1) {
+            $bagian = round($total - $pakai);
+        } else {
+            $bagian = $luas > 0
+                ? round($total * ((float) ($it['area_sqm'] ?? 0) / $luas))
+                : round($total / $n);
+        }
+        $pakai += $bagian;
+        $it['total_amount']   = $bagian;
+        $it['monthly_amount'] = $bagian;
+    }
+    unset($it);
+    return $items;
 }
 
 /** Tulis ulang komponen paket (replace-all) untuk sebuah offer. */
@@ -915,14 +1018,17 @@ function offer_form(PDO $pdo): void
                 'segment'     => $it['segment'],
                 'master_code' => $it['master_code'],
                 'name'        => $it['name_snapshot'],
+                'area'        => (float) $it['area_sqm'] > 0 ? rtrim(rtrim(number_format((float) $it['area_sqm'], 2, ',', ''), '0'), ',') : '',
                 'monthly'     => (int)$it['monthly_amount'],
                 'dp'          => (int)$it['dp_amount'],
                 'deposit'     => (int)$it['deposit_amount'],
             ];
         }
     }
+    // Tingkatan tarif per m² milik penawaran ini (kosong = tidak memakainya).
+    $tierRows = $existing ? offer_area_tiers($pdo, (int) $offer['id']) : [];
 
-    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $listrikTotal, $listrikUnit, $tplBaru, $tahapHarga) {
+    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $listrikTotal, $listrikUnit, $tplBaru, $tahapHarga, $tierRows) {
         $picSel = $offer['pic_name'] ?? $linkedPic;
         $disabled = $editable ? '' : 'disabled';
         ?>
@@ -1012,6 +1118,7 @@ function offer_form(PDO $pdo): void
                             <th style="padding:4px 6px">Segmen</th>
                             <th style="padding:4px 6px">Kode Unit/Titik</th>
                             <th style="padding:4px 6px">Nama Tampil</th>
+                            <th style="padding:4px 6px">Luas (m²)</th>
                             <th style="padding:4px 6px">Harga/Bulan</th>
                             <th style="padding:4px 6px">DP</th>
                             <th style="padding:4px 6px">Deposit</th>
@@ -1024,7 +1131,8 @@ function offer_form(PDO $pdo): void
                             <td style="padding:3px 6px"><select name="item_segment[]" <?= $editable ? '' : 'disabled' ?>><?php foreach ($segOpts as $sv => $sl): ?><option value="<?= $sv ?>" <?= (($br['segment'] ?? 'cl') === $sv) ? 'selected' : '' ?>><?= $sl ?></option><?php endforeach; ?></select></td>
                             <td style="padding:3px 6px"><input type="text" name="item_master_code[]" placeholder="GF-002" value="<?= h($br['master_code'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></td>
                             <td style="padding:3px 6px"><input type="text" name="item_name[]" placeholder="LED Atrium" value="<?= h($br['name'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></td>
-                            <td style="padding:3px 6px"><input type="text" inputmode="numeric" name="item_monthly[]" placeholder="0" value="<?= h($rupFmt($br['monthly'] ?? '')) ?>" <?= $editable ? '' : 'disabled' ?>></td>
+                            <td style="padding:3px 6px"><input type="text" inputmode="decimal" class="item-area" name="item_area[]" placeholder="0" style="width:72px" value="<?= h((string) ($br['area'] ?? '')) ?>" <?= $editable ? '' : 'disabled' ?>></td>
+                            <td style="padding:3px 6px"><input type="text" inputmode="numeric" class="item-harga" name="item_monthly[]" placeholder="0" value="<?= h($rupFmt($br['monthly'] ?? '')) ?>" <?= $editable ? '' : 'disabled' ?>></td>
                             <td style="padding:3px 6px"><input type="text" inputmode="numeric" name="item_dp[]" placeholder="0" value="<?= h($rupFmt($br['dp'] ?? '')) ?>" <?= $editable ? '' : 'disabled' ?>></td>
                             <td style="padding:3px 6px"><input type="text" inputmode="numeric" name="item_deposit[]" placeholder="0" value="<?= h($rupFmt($br['deposit'] ?? '')) ?>" <?= $editable ? '' : 'disabled' ?>></td>
                             <td style="padding:3px 6px"><button type="button" class="btn light bundle-del" style="padding:4px 8px;background:#fee2e2;color:#991b1b" <?= $editable ? '' : 'disabled' ?>>hapus</button></td>
@@ -1036,6 +1144,50 @@ function offer_form(PDO $pdo): void
                 <?php if ($editable): ?>
                 <p style="margin-top:8px"><button type="button" class="btn light" id="bundle-add" style="background:#0ea5e9;color:#fff">+ Tambah komponen</button></p>
                 <?php endif; ?>
+
+                <?php /* ── Tarif bertingkat per m² ────────────────────────────
+                         Dipakai bila harga melekat ke PAKET, bukan ke lokasinya
+                         satu per satu: mis. 48 m² dengan tarif A dan 32 m²
+                         sisanya dengan tarif B. Nilai paket dihitung di sini,
+                         lalu dibagi ke tiap lokasi menurut luasnya. */ ?>
+                <div style="margin-top:14px;border-top:1px dashed var(--border,#e2e8f0);padding-top:12px">
+                    <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
+                        <input type="checkbox" name="pakai_tier" id="pakai_tier" value="1" style="width:16px;height:16px;flex:none;margin-top:2px" <?= $tierRows ? 'checked' : '' ?> <?= $editable ? '' : 'disabled' ?>>
+                        <span><strong style="color:#0f766e">Harga dihitung per m² bertingkat (untuk seluruh paket)</strong><br>
+                        <span class="muted" style="font-size:12px">Centang bila tarifnya berbeda menurut bagian luas &mdash; mis. 48 m² pertama satu tarif, sisanya tarif lain. Harga per komponen akan dihitung otomatis menurut luas tiap lokasi.</span></span>
+                    </label>
+                    <div id="tier-box" style="margin-top:10px;<?= $tierRows ? '' : 'display:none' ?>">
+                        <table class="data" id="tier-tabel" style="width:100%;max-width:780px">
+                            <thead><tr>
+                                <th style="width:22%">Luas (m²)</th>
+                                <th style="width:30%">Tarif / m² / hari</th>
+                                <th style="width:38%">Keterangan</th>
+                                <th style="width:10%"></th>
+                            </tr></thead>
+                            <tbody>
+                            <?php $barisTier = $tierRows ?: [['area_sqm' => '', 'rate_per_sqm' => '', 'label' => '']]; ?>
+                            <?php foreach ($barisTier as $t): ?>
+                            <tr>
+                                <td><input type="text" inputmode="decimal" class="tier-luas" name="tier_luas[]" placeholder="0" value="<?= h((float) ($t['area_sqm'] ?? 0) > 0 ? rtrim(rtrim(number_format((float) $t['area_sqm'], 2, ',', ''), '0'), ',') : '') ?>" <?= $editable ? '' : 'disabled' ?>></td>
+                                <td>
+                                    <div style="display:flex;align-items:stretch">
+                                        <span style="display:flex;align-items:center;padding:0 9px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:12.5px;font-weight:700;color:#475569">Rp</span>
+                                        <input type="text" inputmode="numeric" class="tier-tarif" style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" value="<?= (float) ($t['rate_per_sqm'] ?? 0) > 0 ? number_format((float) $t['rate_per_sqm'], 0, ',', '.') : '' ?>" <?= $editable ? '' : 'disabled' ?>>
+                                        <input type="hidden" name="tier_tarif[]" value="<?= (int) ($t['rate_per_sqm'] ?? 0) ?>">
+                                    </div>
+                                </td>
+                                <td><input name="tier_label[]" placeholder="mis. Harga Sewa 75%" value="<?= h($t['label'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></td>
+                                <td style="text-align:center"><?php if ($editable): ?><button type="button" class="btn warn tier-hapus" style="padding:4px 9px;font-size:12px">&times;</button><?php endif; ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        <?php if ($editable): ?>
+                        <p style="margin:8px 0 0"><button type="button" class="btn light" id="tier-tambah" style="font-size:12.5px">+ Tambah Tingkatan</button></p>
+                        <?php endif; ?>
+                        <div id="tier-ringkas" class="help" style="margin-top:7px"></div>
+                    </div>
+                </div>
             </div>
 
             <div id="single-fields" style="<?= $isBundle ? 'display:none' : '' ?>">
@@ -1438,6 +1590,17 @@ function offer_form(PDO $pdo): void
             }
             function wireRow(tr) {
                 tr.querySelectorAll('input[name="item_monthly[]"],input[name="item_dp[]"],input[name="item_deposit[]"]').forEach(bundleFmt);
+                // Luas komponen diambil dari Master begitu kode unitnya diketik,
+                // supaya pembagian nilai paket memakai angka resmi, bukan ketikan.
+                var kode = tr.querySelector('input[name="item_master_code[]"]');
+                var luas = tr.querySelector('.item-area');
+                if (kode && luas) kode.addEventListener('change', function () {
+                    var m = (window.claraByCode || {})[this.value.trim()];
+                    if (m && m.area_sqm && !luas.value) {
+                        luas.value = String(m.area_sqm).replace('.', ',').replace(/,00$/, '');
+                        if (window.claraHitungTier) window.claraHitungTier();
+                    }
+                });
                 var del = tr.querySelector('.bundle-del');
                 if (del) del.addEventListener('click', function () {
                     var body = document.getElementById('bundle-body');
@@ -1458,9 +1621,84 @@ function offer_form(PDO $pdo): void
             if (bundleChk) bundleChk.addEventListener('change', applyBundleMode);
             applyBundleMode();
 
+            // ── Tarif bertingkat per m² (harga melekat ke PAKET) ─────────────
+            (function () {
+                var chk   = document.getElementById('pakai_tier');
+                var box   = document.getElementById('tier-box');
+                var tabel = document.getElementById('tier-tabel');
+                if (!chk || !box || !tabel) return;
+                var ringkas = document.getElementById('tier-ringkas');
+                function rp(x) { return 'Rp ' + Math.round(x || 0).toLocaleString('id-ID'); }
+                function num(v) { return parseFloat(String(v || '').replace(/\./g, '').replace(',', '.')) || 0; }
+                function hari() {
+                    var a = (document.getElementById('start_date') || {}).value,
+                        b = (document.getElementById('end_date') || {}).value;
+                    if (!a || !b) return 0;
+                    var d = Math.round((new Date(b) - new Date(a)) / 86400000) + 1;
+                    return d > 0 ? d : 0;
+                }
+                function luasKomponen() {
+                    var t = 0;
+                    document.querySelectorAll('#bundle-body .item-area').forEach(function (i) { t += num(i.value); });
+                    return t;
+                }
+                function hitung() {
+                    var n = hari(), total = 0, luas = 0, rinci = [];
+                    tabel.querySelectorAll('tbody tr').forEach(function (tr) {
+                        var m = num(tr.querySelector('.tier-luas').value);
+                        var f = tr.querySelector('.tier-tarif'), hid = tr.querySelector('input[type=hidden]');
+                        var r = parseInt((f.value || '').replace(/\D/g, ''), 10) || 0;
+                        if (hid) hid.value = r;
+                        if (m > 0 && r > 0) { total += m * r * n; luas += m; rinci.push(m + ' m² × ' + rp(r)); }
+                    });
+                    if (!chk.checked) { ringkas.textContent = ''; return; }
+                    if (!n) { ringkas.innerHTML = '<span style="color:#b45309">Isi tanggal mulai &amp; selesai dulu untuk menghitung totalnya.</span>'; return; }
+                    if (!rinci.length) { ringkas.textContent = 'Isi luas dan tarifnya untuk melihat nilai paket.'; return; }
+                    var lk = luasKomponen();
+                    var pesan = rinci.join(' · ') + ' × ' + n + ' hari &rarr; <b>nilai paket = ' + rp(total) + '</b>';
+                    if (lk > 0 && Math.abs(lk - luas) >= 0.01) {
+                        pesan += '<div style="margin-top:4px;color:#92400e">Luas tingkatan <b>' + luas + ' m²</b>, jumlah luas lokasi <b>' + lk + ' m²</b>'
+                               + ' &mdash; boleh berbeda (mis. area sirkulasi ikut dihitung), nilai paket tetap memakai tingkatan di atas.</div>';
+                    }
+                    ringkas.innerHTML = pesan;
+                }
+                chk.addEventListener('change', function () { box.style.display = this.checked ? '' : 'none'; hitung(); });
+                tabel.addEventListener('input', function (e) {
+                    if (e.target.classList.contains('tier-tarif')) {
+                        var raw = e.target.value.replace(/\D/g, '');
+                        e.target.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                    }
+                    hitung();
+                });
+                tabel.addEventListener('click', function (e) {
+                    if (!e.target.classList.contains('tier-hapus')) return;
+                    var rows = tabel.querySelectorAll('tbody tr');
+                    if (rows.length > 1) e.target.closest('tr').remove();
+                    else e.target.closest('tr').querySelectorAll('input').forEach(function (i) { i.value = ''; });
+                    hitung();
+                });
+                var tb = document.getElementById('tier-tambah');
+                if (tb) tb.addEventListener('click', function () {
+                    var baru = tabel.querySelector('tbody tr').cloneNode(true);
+                    baru.querySelectorAll('input').forEach(function (i) { i.value = ''; });
+                    tabel.querySelector('tbody').appendChild(baru);
+                    hitung();
+                });
+                ['start_date', 'end_date'].forEach(function (id) {
+                    var e = document.getElementById(id);
+                    if (e) e.addEventListener('change', hitung);
+                });
+                document.addEventListener('input', function (e) {
+                    if (e.target.classList && e.target.classList.contains('item-area')) hitung();
+                });
+                window.claraHitungTier = hitung;
+                hitung();
+            })();
+
             // ── Picker unit (searchable, sama seperti input transaksi) ──
             var masters = <?= json_encode(array_values($masters), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
             var byCode = Object.fromEntries(masters.map(function (m) { return [m.code, m]; }));
+            window.claraByCode = byCode;   // dipakai baris komponen paket utk mengisi luas
             function parseSizeM2(size) {
                 var m = String(size || '').replace(/[mM²]/g, '').match(/(\d+\.?\d*)\s*[×xX]\s*(\d+\.?\d*)/);
                 return m ? parseFloat(m[1]) * parseFloat(m[2]) : 0;
@@ -2023,9 +2261,27 @@ function offer_save(PDO $pdo): void
     // Periode SAMA utk semua item; harga eksplisit per item → total = Σ item.
     $isBundle = post('is_bundle') === '1';
     $bundleItems = $isBundle ? _offer_parse_bundle_items($months) : [];
+    // Tarif bertingkat per m²: nilai paket dihitung dari luas × tarif × hari,
+    // lalu dibagi ke tiap komponen menurut luasnya. Dipakai saat harga memang
+    // melekat ke paket, bukan ke lokasi satu per satu.
+    $tierRows = ($isBundle && post('pakai_tier') === '1') ? _offer_parse_area_tiers() : [];
+    $tierTotal = offer_tier_total($tierRows, $days);
     if ($isBundle && count($bundleItems) >= 2) {
         $conf = _offer_slot_conflicts($pdo, $pid, $bundleItems, $start, $end, $id);
         if ($conf) { flash('Bentrok slot: ' . implode('; ', $conf) . '. Perbaiki dulu.'); redirect_to('offer_form', $id ? ['id' => $id] : ['bundle' => 1]); }
+        if ($tierRows && $tierTotal > 0) {
+            $bundleItems = _offer_bagi_paket($bundleItems, $tierTotal);
+            $luasTier = array_sum(array_column($tierRows, 'area_sqm'));
+            $luasUnit = array_sum(array_map(fn($i) => (float) $i['area_sqm'], $bundleItems));
+            // Luas di surat sering berbeda dengan luas master (mis. 80 m² vs
+            // 72 m² karena area sirkulasi ikut dihitung). Dibolehkan, tapi
+            // harus terbaca — bukan diam-diam.
+            if ($luasUnit > 0 && abs($luasTier - $luasUnit) >= 0.01) {
+                flash('Catatan: luas pada tingkatan harga ' . rtrim(rtrim(number_format($luasTier, 2, ',', '.'), '0'), ',')
+                    . ' m², sedangkan jumlah luas lokasi yang dipilih ' . rtrim(rtrim(number_format($luasUnit, 2, ',', '.'), '0'), ',')
+                    . ' m². Nilai paket tetap memakai tingkatan harga, dan dibagi ke lokasi menurut luas masing-masing.');
+            }
+        }
         $data['module']           = 'bundle';
         $data['is_bundle']        = 1;
         $data['master_code']      = null;
@@ -2069,6 +2325,7 @@ function offer_save(PDO $pdo): void
         // tulis [] agar offer_items lama TERHAPUS (cegah orphan yg bisa meledak
         // jadi transaksi basi saat approve). Lihat review bundling.
         _offer_write_items($pdo, $id, $isBundle ? $bundleItems : []);
+        _offer_write_tiers($pdo, $pid, $id, $isBundle ? $tierRows : [], $uname);
         $tahapLama = _offer_write_steps($pdo, $pid, $id, $uname);
         _offer_sync_step_total($pdo, $id, $calc, $tahapLama);
         audit($pdo, 'update', 'offers', (string) $id, $data);
@@ -2092,6 +2349,7 @@ function offer_save(PDO $pdo): void
                    VALUES (:pid, :no, \'draft\', :uname, ' . implode(', ', $place) . ')')->execute($vals);
     $newId = (int) $pdo->lastInsertId();
     if ($isBundle) _offer_write_items($pdo, $newId, $bundleItems);
+    _offer_write_tiers($pdo, $pid, $newId, $isBundle ? $tierRows : [], $uname);
     _offer_write_steps($pdo, $pid, $newId, $uname);
     _offer_sync_step_total($pdo, $newId, $calc);
     $pdo->prepare('INSERT INTO offer_revisions (offer_id, rev_no, snapshot_json, note, created_by) VALUES (?,0,?,?,?)')
@@ -2204,6 +2462,9 @@ function offer_print(PDO $pdo): void
     // berikutnya sudah tercantum sejak surat pertama.
     require_once dirname(__DIR__) . '/AllocationService.php';
     $tahapHarga = AllocationService::priceSteps($pdo, null, (int) $o['id']);
+    // Tarif bertingkat per m² (paket) ikut dicetak supaya client melihat asal
+    // angkanya — persis seperti rincian di kertas yang selama ini dipakai.
+    $tierHarga = !empty($o['is_bundle']) ? offer_area_tiers($pdo, (int) $o['id']) : [];
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 

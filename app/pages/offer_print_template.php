@@ -182,13 +182,16 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     $segLbl = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
     $sumDp = $isBundle ? array_sum(array_column($items, 'dp_amount')) : (float) $o['dp_amount']; ?>
     <table class="obj">
-        <thead><tr><th>Lokasi / Titik</th><th><?= $isBundle ? 'Jenis' : 'Luasan' ?></th><th>Harga Sewa / Periode</th><th>Keterangan</th></tr></thead>
+        <?php $adaLuasItem = $isBundle && array_sum(array_map(fn($x) => (float) ($x['area_sqm'] ?? 0), $items)) > 0; ?>
+        <thead><tr><th>Lokasi / Titik</th><th><?= ($isBundle && !$adaLuasItem) ? 'Jenis' : 'Luasan' ?></th><th>Harga Sewa / Periode</th><th>Keterangan</th></tr></thead>
         <tbody>
         <?php if ($isBundle): ?>
             <?php foreach ($items as $it): ?>
             <tr>
                 <td><?= $h($it['name_snapshot'] ?: $it['master_code']) ?></td>
-                <td><?= $h($segLbl[$it['segment']] ?? $it['segment']) ?></td>
+                <td><?= (float) ($it['area_sqm'] ?? 0) > 0
+                        ? $h(rtrim(rtrim(number_format((float) $it['area_sqm'], 2, ',', '.'), '0'), ',')) . ' m²'
+                        : $h($segLbl[$it['segment']] ?? $it['segment']) ?></td>
                 <td><?= $rp($it['total_amount']) ?></td>
                 <td><?= $h($it['master_code'] ?? '-') ?></td>
             </tr>
@@ -208,8 +211,21 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     </div>
 
     <div class="sec">Rincian Biaya</div>
+    <?php $tierHarga = $tierHarga ?? []; ?>
     <table class="cost">
-        <?php if ($isBundle): ?>
+        <?php if ($isBundle && $tierHarga): ?>
+            <?php /* Harga melekat ke PAKET: dirinci menurut tingkatan luas ×
+                     tarif × lama hari, bukan per lokasi — sebab pembagian luasnya
+                     memang tidak jatuh di batas lokasi. */ ?>
+            <?php $luasTier = 0; foreach ($tierHarga as $t): $luasTier += (float) $t['area_sqm'];
+                  $sub = (float) $t['area_sqm'] * (float) $t['rate_per_sqm'] * max(1, $days); ?>
+            <tr><td class="lbl"><?= $h($t['label'] ?: 'Harga Sewa') ?>
+                <span class="muted" style="font-weight:400">(<?= $h(rtrim(rtrim(number_format((float) $t['area_sqm'], 2, ',', '.'), '0'), ',')) ?> m² × <?= $rp($t['rate_per_sqm']) ?> × <?= (int) $days ?> hari)</span></td>
+                <td class="amt"><?= $rp($sub) ?></td></tr>
+            <?php endforeach; ?>
+            <tr><td class="lbl">Total luas</td><td class="amt"><?= $h(rtrim(rtrim(number_format($luasTier, 2, ',', '.'), '0'), ',')) ?> m²</td></tr>
+            <tr class="sub"><td class="lbl">Biaya Sewa</td><td class="amt"><?= $rp($total) ?></td></tr>
+        <?php elseif ($isBundle): ?>
             <?php foreach ($items as $it): ?>
             <tr><td class="lbl"><?= $h($it['name_snapshot'] ?: $it['master_code']) ?> <span class="muted" style="font-weight:400">(<?= $h($segLbl[$it['segment']] ?? $it['segment']) ?>)</span></td><td class="amt"><?= $rp($it['total_amount']) ?></td></tr>
             <?php endforeach; ?>

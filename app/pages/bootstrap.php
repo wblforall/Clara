@@ -151,6 +151,7 @@ function layout(string $title, callable $body, array $opts = []): void
         ['', 'lookup_manage', 'Kelola Opsi Dropdown', 'manage_master'],
         ['', 'users', 'Users & Role', 'manage_users'],
         ['', 'roles', 'Role & Permission', 'manage_users'],
+        ['', 'approval_flow', 'Alur Approval Dokumen', 'manage_users'],
         ['', 'audit', 'Activity Log', 'view_logs'],
         ['', 'deleted_transactions', 'Transaksi Dihapus', 'manage_deleted'],
         ['Akun', 'my_signature', 'Tanda Tangan Saya', 'view_dashboard'],
@@ -368,7 +369,7 @@ function layout(string $title, callable $body, array $opts = []): void
             </div>
             <nav class="nav">
                 <?php
-                $_adminRoutes = ['lookup_manage','users','user_form','roles','audit','deleted_transactions'];
+                $_adminRoutes = ['lookup_manage','users','user_form','roles','approval_flow','audit','deleted_transactions'];
                 $_adminOpen   = in_array($route, $_adminRoutes);
                 $_inAdmin     = false;
                 foreach ($nav as [$group, $key, $label, $permission]):

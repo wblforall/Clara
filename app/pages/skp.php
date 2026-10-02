@@ -248,6 +248,17 @@ function skp_list_page(PDO $pdo): void
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
 
+    // Rantai persetujuan per jenis dokumen — dipakai untuk menunjukkan dokumen
+    // ini sedang berhenti di tahap siapa, bukan sekadar "Menunggu Approval".
+    require_once dirname(__DIR__) . '/ApprovalLine.php';
+    $alurCache = [];
+    foreach ($rows as $i => $r) {
+        $dt = (string) ($r['doc_type'] ?? 'skp');
+        if (!array_key_exists($dt, $alurCache)) $alurCache[$dt] = ApprovalLine::steps($pdo, $pid, $dt);
+        $rows[$i]['_alur_ket'] = ApprovalLine::keterangan($r, $alurCache[$dt]);
+        $rows[$i]['_alur_n']   = count($alurCache[$dt]);
+    }
+
     layout('Surat Konfirmasi Pameran (SKP)', function () use ($rows, $status, $module) {
         $modBadge = [
             'cl'     => ['Exhibition', '#0f766e', '#ccfbf1'],
@@ -310,7 +321,10 @@ function skp_list_page(PDO $pdo): void
                             <td><?= h($r['master_code']) ?></td>
                             <td><?= h($r['company_name'] ?? '-') ?></td>
                             <td style="white-space:nowrap;font-size:11.5px"><?= $r['start_date'] ? h(date('d/m/y', strtotime($r['start_date'])) . '–' . date('d/m/y', strtotime($r['end_date']))) : '—' ?></td>
-                            <td><span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span></td>
+                            <td><span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span><?php
+                                if ($r['status'] === 'submitted' && (int) ($r['_alur_n'] ?? 0) > 1): ?>
+                                <div style="font-size:11px;color:#92400e;margin-top:3px"><?= h(str_replace('Menunggu ', '', (string) $r['_alur_ket'])) ?></div>
+                                <?php endif; ?></td>
                             <td style="font-size:11.5px;color:var(--muted)"><?= h($r['created_by'] ?? '-') ?><br><?= h(substr($r['created_at'] ?? '', 0, 16)) ?></td>
                             <td style="white-space:nowrap">
                                 <a class="btn light" href="?r=skp_form&id=<?= (int)$r['id'] ?>"><?= $r['status'] === 'draft' || $r['status'] === 'rejected' ? 'Edit' : 'Lihat' ?></a>
@@ -519,6 +533,18 @@ function skp_form(PDO $pdo): void
     // show_achievement=0 / target_share=0 dikecualikan dari Laporan PIC, jadi
     // income yang dibagikan ke sana tidak akan muncul di tabel achievement.
     // Tetap boleh dipilih (mis. akun unit), tapi diberi penanda terang.
+    // Rantai persetujuan dokumen ini: tahap apa saja, giliran siapa sekarang,
+    // dan siapa yang sudah paraf.
+    require_once dirname(__DIR__) . '/ApprovalLine.php';
+    $alur      = $skp ? ApprovalLine::steps($pdo, $pid, (string) ($skp['doc_type'] ?? 'skp')) : [];
+    $alurTahap = ($skp && $alur) ? ApprovalLine::currentStep($skp, $alur) : null;
+    $alurKet   = $skp ? ApprovalLine::keterangan($skp, $alur) : '';
+    $alurJejak = $skp ? ApprovalLine::history($pdo, (int) $skp['id']) : [];
+    $alurBoleh = ($skp && $skp['status'] === 'submitted') ? ApprovalLine::canAct($pdo, $pid, $skp, $alur) : false;
+    $alurWakil = ($skp && $alur && $alurBoleh) ? ApprovalLine::mewakili($pdo, $pid, $skp, $alur) : false;
+    $alurTunggu = ($skp && $alur) ? ApprovalLine::penungguNama($pdo, $pid, $skp, $alur) : [];
+    $alurAkhir = $skp ? ApprovalLine::isFinalStep($skp, $alur) : true;
+
     $picAktif = $pdo->prepare("SELECT name, (show_achievement = 1 AND target_share > 0) AS di_laporan
                                FROM master_pic WHERE property_id = ? AND status = 'active' ORDER BY name");
     $picAktif->execute([$pid]);
@@ -532,7 +558,7 @@ function skp_form(PDO $pdo): void
     // Acuan jumlah: nilai kontrak dokumen ini, bukan angka yang diketik ulang.
     $nilaiAcuan = (float) ($src['final_amount'] ?: $src['total_calculated']);
 
-    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind) {
+    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir) {
         $statusSewaDefault = ($isRenew || (!empty($src['renewal_status']) && $src['renewal_status'] !== 'none')) ? 'Perpanjangan' : 'Baru';
         ?>
         <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=<?= $standalone ? 'skp' : ($offerId ? 'offer_form&id=' . (int)$offerId : 'allocation_detail&id=' . (int)$trxId) ?>">← <?= $standalone ? 'Daftar Dokumen' : ($offerId ? 'Penawaran' : 'Detail Alokasi') ?></a><a class="btn light" href="?r=skp">Daftar Dokumen</a> <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h($docLabel) ?></span></div>
@@ -879,21 +905,80 @@ function skp_form(PDO $pdo): void
         </div>
         <?php endif; ?>
 
-        <?php if ($skp && $skp['status'] === 'submitted' && can('approve_skp')): ?>
+        <?php /* ── Rantai persetujuan ────────────────────────────────────────
+                 Tahapnya diatur per properti (Master Data → Alur Approval).
+                 Tanpa pengaturan, tampil seperti dulu: satu tahap ke manager. */ ?>
+        <?php if ($skp && ($alur || $alurJejak)): ?>
+        <div class="panel" style="margin-top:12px">
+            <h3 style="margin-top:0">Alur Persetujuan</h3>
+            <?php if ($alur): ?>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:stretch;margin-bottom:9px">
+                <?php foreach ($alur as $i => $tp):
+                    $lewat  = $i < (int) ($skp['approval_level'] ?? 0) || in_array($skp['status'], ['approved','signed'], true);
+                    $kini   = !$lewat && $alurTahap && $alurTahap['step_no'] === $tp['step_no'] && $skp['status'] === 'submitted';
+                    $warna  = $lewat ? ['#166534','#dcfce7','#bbf7d0'] : ($kini ? ['#92400e','#fef3c7','#fde68a'] : ['#64748b','#f8fafc','#e2e8f0']);
+                ?>
+                <div style="flex:1;min-width:170px;border:1px solid <?= $warna[2] ?>;background:<?= $warna[1] ?>;border-radius:9px;padding:8px 11px">
+                    <div style="font-size:11px;color:<?= $warna[0] ?>;font-weight:700;text-transform:uppercase;letter-spacing:.04em">
+                        Tahap <?= (int) $tp['step_no'] ?><?= $lewat ? ' · selesai' : ($kini ? ' · menunggu' : '') ?>
+                    </div>
+                    <div style="font-weight:700;margin-top:2px"><?= h($tp['label']) ?></div>
+                    <?php if ($tp['pic_name']): ?><div style="font-size:11.5px;color:var(--muted)">khusus <?= h($tp['pic_name']) ?></div><?php endif; ?>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+            <?php if ($skp['status'] === 'submitted' && $alurKet): ?>
+            <p style="margin:0 0 6px"><strong><?= h($alurKet) ?></strong><?php
+                if ($alurTunggu): ?> &mdash; <span class="muted"><?= h(implode(', ', $alurTunggu)) ?></span><?php endif; ?></p>
+            <?php endif; ?>
+            <?php if ($alurJejak): ?>
+            <div class="table-wrap" style="margin-top:4px">
+                <table style="max-width:720px;font-size:12.5px">
+                    <thead><tr><th>Tahap</th><th>Tindakan</th><th>Oleh</th><th>Waktu</th><th>Catatan</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($alurJejak as $j):
+                        $lbl = ['paraf' => 'Diparaf', 'approve' => 'Disetujui', 'tolak' => 'Ditolak'][$j['action']] ?? $j['action'];
+                        $w   = $j['action'] === 'tolak' ? '#b91c1c' : '#15803d'; ?>
+                    <tr>
+                        <td><?= (int) $j['step_no'] ?>. <?= h($j['role_name'] ?: '-') ?></td>
+                        <td style="color:<?= $w ?>;font-weight:700"><?= h($lbl) ?></td>
+                        <td><?= h($j['approver_name'] ?: '-') ?></td>
+                        <td style="white-space:nowrap"><?= h(substr((string) $j['created_at'], 0, 16)) ?></td>
+                        <td><?= h($j['note'] ?: '—') ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($skp && $skp['status'] === 'submitted' && $alurBoleh): ?>
         <div class="panel" style="margin-top:12px;border:1px solid #bae6fd;background:#f0f9ff">
-            <h3 style="margin-top:0;color:#0369a1">Approval Manager</h3>
-            <form method="post" action="?r=skp_approve" style="display:inline">
+            <h3 style="margin-top:0;color:#0369a1"><?= $alurAkhir ? 'Persetujuan Akhir' : 'Paraf ' . h($alurTahap['label'] ?? '') ?></h3>
+            <?php if (!$alurAkhir): ?>
+            <p style="margin:0 0 8px;font-size:12.5px;color:#0c4a6e">Paraf Anda <strong>belum menerbitkan nomor dokumen</strong> &mdash;
+               dokumen diteruskan ke tahap berikutnya untuk persetujuan akhir.</p>
+            <?php endif; ?>
+            <?php if ($alurWakil): ?>
+            <p style="margin:0 0 8px;font-size:12.5px;color:#92400e">Anda bertindak <strong>mewakili <?= h($alurTahap['label'] ?? '') ?></strong>. Hal ini akan tercatat di jejak persetujuan.</p>
+            <?php endif; ?>
+            <form method="post" action="?r=skp_approve" style="display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$skp['id'] ?>">
-                <button type="submit" onclick="return confirm('Setujui SKP ini? Nomor SKP akan terbit dan nilai dikunci.')">✓ Setujui</button>
+                <input name="approval_note" placeholder="Catatan (opsional)" style="width:230px;max-width:100%">
+                <button type="submit" onclick="return confirm('<?= $alurAkhir ? 'Setujui dokumen ini? Nomor akan terbit dan nilai dikunci.' : 'Paraf dokumen ini dan teruskan ke tahap berikutnya?' ?>')"><?= $alurAkhir ? '✓ Setujui' : '✓ Paraf & Teruskan' ?></button>
             </form>
             <form method="post" action="?r=skp_reject" style="display:inline-flex;gap:8px;align-items:center;margin-left:10px;flex-wrap:wrap">
                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$skp['id'] ?>">
                 <input name="reject_note" placeholder="Alasan penolakan" style="width:240px;max-width:100%" required>
-                <button type="submit" class="btn warn" onclick="return confirm('Tolak dokumen ini?\n\nTransaksinya ikut DIBATALKAN dan alokasi bulanannya dihapus dari laporan.\n\nKalau hanya salah scan KTP/NPWP, jangan ditolak — pakai Ganti Berkas Lampiran.')">✗ Tolak</button>
+                <button type="submit" class="btn warn" onclick="return confirm('Tolak dokumen ini?\n\nDokumen dikembalikan ke sales dan harus menempuh alur persetujuan dari awal lagi.\n\nTransaksi yang sudah terbit ikut DIBATALKAN.\n\nKalau hanya salah scan KTP/NPWP, jangan ditolak — pakai Ganti Berkas Lampiran.')">✗ Tolak</button>
             </form>
         </div>
         <?php elseif ($skp && $skp['status'] === 'submitted'): ?>
-        <div class="panel" style="margin-top:12px;color:var(--muted)">Menunggu persetujuan manager.</div>
+        <div class="panel" style="margin-top:12px;color:var(--muted)"><?= h($alurKet ?: 'Menunggu persetujuan manager.') ?><?php
+            if ($alurTunggu): ?> &mdash; <?= h(implode(', ', $alurTunggu)) ?><?php endif; ?></div>
         <?php elseif ($skp && in_array($skp['status'], ['approved', 'signed'], true)):
             $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
             $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
@@ -1483,7 +1568,10 @@ function skp_save(PDO $pdo): void
         // Kolom yang diperbarui mengikuti $fields — dokumen mandiri otomatis ikut
         // menyimpan client / unit / periode / nilai miliknya sendiri.
         $setCols = implode(', ', array_map(fn($c) => "$c=:$c", array_keys($fields)));
+        // Setiap submit (termasuk submit ulang setelah ditolak) memulai rantai
+        // persetujuan dari tahap pertama.
         $sql = 'UPDATE skp_documents SET ' . $setCols . ', status=:status, reject_note=NULL,
+                approval_level=' . ($doSubmit ? '0' : 'approval_level') . ',
                 submitted_at=' . ($doSubmit ? 'CURRENT_TIMESTAMP' : 'submitted_at') . ',
                 updated_at=CURRENT_TIMESTAMP, updated_by=:uname
                 WHERE id=:id AND property_id=:pid';
@@ -1660,6 +1748,41 @@ function skp_approve(PDO $pdo): void
     $skp = $st->fetch();
     if (!$skp || $skp['status'] !== 'submitted') { flash('SKP tidak dalam status menunggu approval.'); redirect_to('skp_form', ['id' => $id]); }
 
+    // ── Rantai persetujuan berjenjang ──────────────────────────────────────
+    // Bila properti ini mengatur rantai (mis. Asst. Manager paraf dulu, baru
+    // Manager), tahap sebelum yang terakhir HANYA menaikkan tingkat — nomor
+    // dokumen dan transaksinya belum boleh terbit. Tanpa konfigurasi, bagian
+    // ini dilewati seluruhnya dan alurnya persis seperti sebelumnya.
+    require_once dirname(__DIR__) . '/ApprovalLine.php';
+    $alur = ApprovalLine::steps($pdo, $pid, (string) ($skp['doc_type'] ?? 'skp'));
+    if ($alur) {
+        $tahap = ApprovalLine::currentStep($skp, $alur);
+        if (!$tahap) { flash('Seluruh tahap persetujuan sudah terlewati.'); redirect_to('skp_form', ['id' => $id]); }
+        if (!ApprovalLine::canAct($pdo, $pid, $skp, $alur)) {
+            flash('Dokumen ini sedang menunggu ' . $tahap['label'] . ' — belum giliran Anda.');
+            redirect_to('skp_form', ['id' => $id]);
+        }
+        $wakil = ApprovalLine::mewakili($pdo, $pid, $skp, $alur)
+            ? ' (mewakili ' . $tahap['label'] . ')' : '';
+        if (!ApprovalLine::isFinalStep($skp, $alur)) {
+            // Tahap antara: cukup naikkan tingkat & catat parafnya.
+            $naik = (int) $skp['approval_level'] + 1;
+            $pdo->prepare('UPDATE skp_documents SET approval_level = ? WHERE id = ? AND property_id = ?')
+                ->execute([$naik, $id, $pid]);
+            ApprovalLine::record($pdo, $pid, $id, $tahap['step_no'], $tahap['role_name'], 'paraf',
+                trim((string) post('approval_note')) . $wakil);
+            audit($pdo, 'skp_paraf', 'skp_documents', (string) $id,
+                ['tahap' => $tahap['step_no'], 'jabatan' => $tahap['role_name'], 'mewakili' => $wakil !== '']);
+            $berikut = $alur[$naik] ?? null;
+            flash('Diparaf sebagai ' . $tahap['label'] . $wakil . '.'
+                . ($berikut ? ' Dokumen diteruskan ke ' . $berikut['label'] . '.' : ''));
+            redirect_to('skp_form', ['id' => $id]);
+        }
+        // Tahap terakhir → lanjut ke penerbitan nomor di bawah.
+        $tahapAkhir = $tahap;
+        $wakilAkhir = $wakil;
+    }
+
     // Dokumen Gudang/Media berdiri sendiri: sumbernya kolom dokumen itu sendiri.
     $standalone = empty($skp['offer_id']) && empty($skp['transaction_id']);
     $src = $standalone
@@ -1716,6 +1839,10 @@ function skp_approve(PDO $pdo): void
         'amounts' => $amt, 'sales' => $src['pic_name'], 'property_name' => $prop['name'] ?? '',
         // Jadwal harga bertahap ikut dibekukan supaya cetakan ulang tidak berubah.
         'tahap_harga' => AllocationService::priceSteps($pdo, (int) ($skp['transaction_id'] ?? 0), (int) ($skp['offer_id'] ?? 0)),
+        // Tarif bertingkat per m² (paket) ikut dibekukan supaya cetakan ulang
+        // tetap memperlihatkan asal angkanya walau penawarannya diubah.
+        'tier_harga' => (!empty($skp['offer_id']) && function_exists('offer_area_tiers'))
+            ? offer_area_tiers($pdo, (int) $skp['offer_id']) : [],
         // Referensi penawaran (offer-based) + daftar lampiran terunggah → tampil di PDF & TTD.
         'offer_no' => $src['offer_no'] ?? null,
         'attachments' => _skp_attachment_list($pdo, $id),
@@ -1814,6 +1941,12 @@ function skp_approve(PDO $pdo): void
         redirect_to('skp_form', ['id' => $id]);
     }
 
+    if (!empty($tahapAkhir)) {
+        ApprovalLine::record($pdo, $pid, $id, (int) $tahapAkhir['step_no'], (string) $tahapAkhir['role_name'],
+            'approve', trim((string) post('approval_note')) . ($wakilAkhir ?? ''));
+        $pdo->prepare('UPDATE skp_documents SET approval_level = ? WHERE id = ? AND property_id = ?')
+            ->execute([count($alur), $id, $pid]);
+    }
     audit($pdo, 'approve', 'skp_documents', (string) $id, ['skp_no' => $skpNo]);
     flash("Disetujui. Nomor terbit: $skpNo." . $trxMsg);
     redirect_to('skp_form', ['id' => $id]);
@@ -1827,10 +1960,20 @@ function skp_reject(PDO $pdo): void
     $pid = current_property_id();
     $id  = (int) post('id');
     $note = trim((string) post('reject_note')) ?: 'Tidak ada catatan.';
-    $st = $pdo->prepare('SELECT status, transaction_id FROM skp_documents WHERE id = ? AND property_id = ?');
+    $st = $pdo->prepare('SELECT status, transaction_id, approval_level, doc_type FROM skp_documents WHERE id = ? AND property_id = ?');
     $st->execute([$id, $pid]);
     $cur = $st->fetch();
     if (!$cur || $cur['status'] !== 'submitted') { flash('SKP tidak dalam status menunggu approval.'); redirect_to('skp_form', ['id' => $id]); }
+
+    // Penolakan boleh dilakukan di tahap mana pun oleh orang yang sedang
+    // mendapat giliran — justru itu guna tahap paraf: menyaring sebelum naik.
+    require_once dirname(__DIR__) . '/ApprovalLine.php';
+    $alurTolak = ApprovalLine::steps($pdo, $pid, (string) ($cur['doc_type'] ?? 'skp'));
+    $tahapTolak = $alurTolak ? ApprovalLine::currentStep($cur, $alurTolak) : null;
+    if ($alurTolak && !ApprovalLine::canAct($pdo, $pid, $cur, $alurTolak)) {
+        flash('Dokumen ini sedang menunggu ' . ($tahapTolak['label'] ?? 'tahap lain') . ' — belum giliran Anda.');
+        redirect_to('skp_form', ['id' => $id]);
+    }
 
     // Penolakan = kesepakatannya batal, bukan sekadar dokumen dikembalikan.
     // Transaksi yang sudah terbit (Exhibition: lahir saat penawaran DEAL) ikut
@@ -1845,7 +1988,9 @@ function skp_reject(PDO $pdo): void
     }
     $pdo->beginTransaction();
     try {
-        $pdo->prepare('UPDATE skp_documents SET status=\'rejected\', reject_note=? WHERE id=? AND property_id=?')
+        // approval_level dikembalikan ke 0: setelah diperbaiki sales, dokumen
+        // harus menempuh rantai dari tahap pertama lagi.
+        $pdo->prepare('UPDATE skp_documents SET status=\'rejected\', approval_level=0, reject_note=? WHERE id=? AND property_id=?')
             ->execute([$note, $id, $pid]);
         if ($trx) {
             $pdo->prepare('UPDATE transactions SET deleted_at = ?, deleted_by = ?, cancel_reason = ? WHERE id = ? AND property_id = ?')
@@ -1863,7 +2008,10 @@ function skp_reject(PDO $pdo): void
         $pdo->rollBack();
         throw $e;
     }
-    audit($pdo, 'reject', 'skp_documents', (string) $id, ['note' => $note, 'transaksi_dibatalkan' => $trx ? $trxId : null], (array) ($trx ?: []));
+    if ($tahapTolak) {
+        ApprovalLine::record($pdo, $pid, $id, (int) $tahapTolak['step_no'], (string) $tahapTolak['role_name'], 'tolak', $note);
+    }
+    audit($pdo, 'reject', 'skp_documents', (string) $id, ['note' => $note, 'tahap' => $tahapTolak['step_no'] ?? null, 'transaksi_dibatalkan' => $trx ? $trxId : null], (array) ($trx ?: []));
     flash($trx
         ? 'SKP ditolak. Transaksi #' . $trxId . ' ikut dibatalkan & alokasi bulanannya dihapus.'
         : 'SKP ditolak & dikembalikan ke sales.');
