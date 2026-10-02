@@ -272,11 +272,14 @@ final class ApprovalLine
         foreach ($rows as $r) {
             $dt = (string) ($r['doc_type'] ?? 'skp');
             if (!array_key_exists($dt, $cacheAlur)) $cacheAlur[$dt] = self::steps($pdo, $pid, $dt);
-            // Tanpa rantai, aturannya seperti sebelum fitur ini ada: siapa pun
-            // pemegang izin approval memang menunggu dokumen itu. Kalau tidak,
-            // panel "menunggu tindakan Anda" selalu 0 di properti yang belum
-            // diatur — justru di situlah dokumen paling sering terlewat.
-            if (!$cacheAlur[$dt]) { $ids[] = (int) $r['id']; continue; }
+            // Tanpa rantai, TIDAK ada dokumen yang diklaim sebagai giliran
+            // siapa pun. Panel "perlu tindakan Anda" berarti "dokumen ini
+            // menunggu SAYA" — selama alurnya belum diatur, pernyataan itu
+            // tidak punya dasar dan muncul ke semua pemegang approve_skp,
+            // termasuk Super Admin yang sebenarnya tidak memaraf apa pun.
+            // Dokumennya tetap terlihat di daftar SKP seperti biasa; yang
+            // hilang hanya klaim bahwa itu giliran orang yang sedang membuka.
+            if (!$cacheAlur[$dt]) continue;
             if (self::cocokJabatan($pdo, $pid, $r, $cacheAlur[$dt], true)) $ids[] = (int) $r['id'];
         }
         return $ids;
@@ -399,7 +402,11 @@ final class ApprovalLine
         $peran = function_exists('current_role') ? current_role() : '';
         if (in_array($peran, ['superadmin', 'admin'], true)) return !$persis;
         $tahap = self::revisiTahap($pdo, $pid, $docType);
-        if (!$tahap) return true;              // tanpa pengaturan → perilaku lama
+        // Tanpa pengaturan, WEWENANG-nya tetap seperti perilaku lama (pemegang
+        // approve_skp boleh memutuskan) supaya permintaan revisi tidak buntu.
+        // ANTREAN-nya tidak: $persis dipakai panel "perlu tindakan Anda", dan
+        // selama belum diatur tidak ada dasar menyebutnya giliran seseorang.
+        if (!$tahap) return !$persis;
         if ($tahap['pic_name'] !== null) {
             return strcasecmp(self::namaPic($pdo, $pid), $tahap['pic_name']) === 0;
         }
