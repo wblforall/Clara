@@ -706,13 +706,36 @@ function _recurring_save_cycle_allocations(PDO $pdo, int $trxId, array $trx, str
           allocation_start, allocation_end, allocated_days, amount, capacity_days, pic_name)
          VALUES (?,?,?,?,?,?,?,?,?,?,?)'
     );
+    // Penulis alokasi kedua di luar AllocationService — pembagian income ke
+    // beberapa PIC harus ikut dipecah di sini juga, kalau tidak pembagiannya
+    // hilang begitu kandidat recurring diproses.
+    require_once dirname(__DIR__) . '/AllocationService.php';
+    $splits = AllocationService::picSplits($pdo, $trxId);
+    $totalSplit = array_sum(array_column($splits, 'amount'));
     foreach ($cycles as $c) {
-        $stmt->execute([
-            $pid, $trxId, $trx['module'], $trx['master_code'],
-            $c['period_key'], $c['allocation_start'], $c['allocation_end'],
-            $c['allocated_days'], $c['amount'], $c['capacity_days'],
-            $trx['pic_name'] ?? null,
-        ]);
+        $baris = [$c + ['pic_name' => $trx['pic_name'] ?? null]];
+        if ($splits && $totalSplit > 0) {
+            $baris = []; $terpakai = 0.0; $n = count($splits);
+            foreach ($splits as $i => $sp) {
+                $porsi = $i === $n - 1
+                    ? round((float) $c['amount'] - $terpakai, 2)
+                    : round((float) $c['amount'] * ($sp['amount'] / $totalSplit), 2);
+                $terpakai += $porsi;
+                $b = $c;
+                $b['amount']   = $porsi;
+                $b['pic_name'] = $sp['pic'];
+                if ($i > 0) { $b['allocated_days'] = 0; $b['capacity_days'] = 0; }
+                $baris[] = $b;
+            }
+        }
+        foreach ($baris as $b) {
+            $stmt->execute([
+                $pid, $trxId, $trx['module'], $trx['master_code'],
+                $b['period_key'], $b['allocation_start'], $b['allocation_end'],
+                $b['allocated_days'], $b['amount'], $b['capacity_days'],
+                $b['pic_name'] ?? ($trx['pic_name'] ?? null),
+            ]);
+        }
     }
 }
 

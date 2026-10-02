@@ -514,8 +514,21 @@ function skp_form(PDO $pdo): void
     // Scan KTP/NPWP dari dokumen client yang sama sebelumnya → bisa dipakai ulang.
     $reuse = $editable ? _skp_reusable_attachments($pdo, (int) ($src['client_id'] ?? 0), (int) ($skp['id'] ?? 0)) : [];
     $val = fn(string $k, $def = '') => h((string) ($skp[$k] ?? $def));
+    // Pembagian income ke beberapa PIC. Pilihan PIC dibatasi master_pic aktif
+    // properti ini — nama di luar itu tidak akan muncul di tabel achievement.
+    $picAktif = $pdo->prepare("SELECT name FROM master_pic WHERE property_id = ? AND status = 'active' ORDER BY name");
+    $picAktif->execute([$pid]);
+    $picAktif = $picAktif->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    $bagi = [];
+    if ($skp) {
+        $bq = $pdo->prepare('SELECT pic_name, amount FROM transaction_pic_splits WHERE skp_id = ? ORDER BY id');
+        $bq->execute([(int) $skp['id']]);
+        $bagi = $bq->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+    // Acuan jumlah: nilai kontrak dokumen ini, bukan angka yang diketik ulang.
+    $nilaiAcuan = (float) ($src['final_amount'] ?: $src['total_calculated']);
 
-    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind) {
+    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind) {
         $statusSewaDefault = ($isRenew || (!empty($src['renewal_status']) && $src['renewal_status'] !== 'none')) ? 'Perpanjangan' : 'Baru';
         ?>
         <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=<?= $standalone ? 'skp' : ($offerId ? 'offer_form&id=' . (int)$offerId : 'allocation_detail&id=' . (int)$trxId) ?>">← <?= $standalone ? 'Daftar Dokumen' : ($offerId ? 'Penawaran' : 'Detail Alokasi') ?></a><a class="btn light" href="?r=skp">Daftar Dokumen</a> <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h($docLabel) ?></span></div>
@@ -766,6 +779,49 @@ function skp_form(PDO $pdo): void
                 <div><label>Grand Total (estimasi)</label><input id="skp-grand" value="<?= money($amt['grand_total']) ?>" disabled></div>
             </div>
             <?php endif; ?>
+
+            <?php /* Pembagian income: satu dokumen sering dikerjakan beberapa sales.
+                     Jumlah pembagian WAJIB pas dengan nilai kontrak — kurang atau
+                     lebih sedikit pun membuat laporan per PIC tidak lagi berjumlah
+                     sama dengan pendapatan properti. */ ?>
+            <h3>Pembagian Income per PIC <span style="font-weight:400;font-size:12px;color:var(--muted)">(opsional — kosongkan bila seluruhnya milik <?= h($src['pic_name'] ?: 'PIC dokumen') ?>)</span></h3>
+            <div id="bagi-box" data-acuan="<?= (int) round($nilaiAcuan) ?>">
+                <table class="data" id="bagi-tabel" style="width:100%;max-width:720px">
+                    <thead><tr>
+                        <th style="width:52%">PIC Penerima</th>
+                        <th style="width:38%">Nominal</th>
+                        <th style="width:10%"></th>
+                    </tr></thead>
+                    <tbody>
+                    <?php $barisBagi = $bagi ?: [['pic_name' => '', 'amount' => '']]; ?>
+                    <?php foreach ($barisBagi as $i => $b): ?>
+                    <tr>
+                        <td>
+                            <select name="bagi_pic[]" <?= $editable ? '' : 'disabled' ?>>
+                                <option value="">— pilih PIC —</option>
+                                <?php foreach ($picAktif as $pn): ?>
+                                <option value="<?= h($pn) ?>" <?= ($b['pic_name'] ?? '') === $pn ? 'selected' : '' ?>><?= h($pn) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                        <td>
+                            <div style="display:flex;align-items:stretch">
+                                <span style="display:flex;align-items:center;padding:0 9px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:12.5px;font-weight:700;color:#475569">Rp</span>
+                                <input type="text" inputmode="numeric" class="bagi-nilai" value="<?= (float) ($b['amount'] ?? 0) > 0 ? number_format((float) $b['amount'], 0, ',', '.') : '' ?>"
+                                       style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= $editable ? '' : 'disabled' ?>>
+                                <input type="hidden" name="bagi_nominal[]" value="<?= (int) ($b['amount'] ?? 0) ?>">
+                            </div>
+                        </td>
+                        <td style="text-align:center"><?php if ($editable): ?><button type="button" class="btn warn bagi-hapus" style="padding:4px 9px;font-size:12px">×</button><?php endif; ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php if ($editable): ?>
+                <p style="margin:8px 0 0"><button type="button" class="btn light" id="bagi-tambah" style="font-size:12.5px">+ Tambah PIC</button></p>
+                <?php endif; ?>
+                <div id="bagi-ringkas" style="margin-top:9px;font-size:13px"></div>
+            </div>
 
             <h3>Catatan Internal</h3>
             <textarea name="note" rows="2" <?= $editable ? '' : 'disabled' ?>><?= h($skp['note'] ?? '') ?></textarea>
@@ -1030,6 +1086,93 @@ function skp_form(PDO $pdo): void
             if (f) f.addEventListener('submit', function () { if (dep && hid) hid.value = (dep.value || '').replace(/\D/g, ''); });
         })();
         </script>
+        <script>
+        // ── Pembagian income per PIC ────────────────────────────────────────
+        // Jumlahnya WAJIB pas dengan nilai kontrak. Tombol "Submit untuk
+        // Approval" ditahan bila belum pas; "Simpan Draft" tetap boleh lewat
+        // supaya pekerjaan setengah jadi tidak hilang.
+        (function () {
+            var box = document.getElementById('bagi-box');
+            if (!box) return;
+            var ACUAN = parseInt(box.dataset.acuan, 10) || 0;
+            var tabel = document.getElementById('bagi-tabel');
+            var ringkas = document.getElementById('bagi-ringkas');
+            function rp(x) { return 'Rp ' + Math.round(x || 0).toLocaleString('id-ID'); }
+            function angka(el) { return parseInt((el.value || '').replace(/\D/g, ''), 10) || 0; }
+
+            function hitung() {
+                var total = 0, terisi = 0, pakai = [];
+                tabel.querySelectorAll('tbody tr').forEach(function (tr) {
+                    var pic = tr.querySelector('select'), nilai = tr.querySelector('.bagi-nilai'),
+                        hid = tr.querySelector('input[type=hidden]');
+                    var n = angka(nilai);
+                    if (hid) hid.value = n;
+                    if (pic && pic.value && n > 0) { total += n; terisi++; pakai.push(pic.value); }
+                });
+                var selisih = ACUAN - total;
+                var ganda = pakai.length !== new Set(pakai).size;
+                var pesan = '';
+                if (terisi === 0) {
+                    pesan = '<span class="muted">Belum dibagi — seluruh nilai tercatat atas nama PIC dokumen.</span>';
+                } else if (ganda) {
+                    pesan = '<span style="color:#b91c1c;font-weight:700">Ada PIC yang dipilih dua kali.</span>';
+                } else if (selisih === 0) {
+                    pesan = '<span style="color:#15803d;font-weight:700">✓ Pas: ' + rp(total) + ' dari ' + rp(ACUAN) + '</span>';
+                } else if (selisih > 0) {
+                    pesan = '<span style="color:#b45309;font-weight:700">Kurang ' + rp(selisih) + '</span>'
+                          + ' <span class="muted">— terbagi ' + rp(total) + ' dari ' + rp(ACUAN) + '</span>';
+                } else {
+                    pesan = '<span style="color:#b91c1c;font-weight:700">Lebih ' + rp(-selisih) + '</span>'
+                          + ' <span class="muted">— terbagi ' + rp(total) + ' dari ' + rp(ACUAN) + '</span>';
+                }
+                ringkas.innerHTML = pesan;
+                box.dataset.sah = (terisi === 0 || (selisih === 0 && !ganda)) ? '1' : '';
+                return box.dataset.sah === '1';
+            }
+
+            tabel.addEventListener('input', function (e) {
+                if (e.target.classList.contains('bagi-nilai')) {
+                    var raw = e.target.value.replace(/\D/g, '');
+                    e.target.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                }
+                hitung();
+            });
+            tabel.addEventListener('change', hitung);
+            tabel.addEventListener('click', function (e) {
+                if (!e.target.classList.contains('bagi-hapus')) return;
+                var tr = e.target.closest('tr');
+                if (tabel.querySelectorAll('tbody tr').length > 1) tr.remove();
+                else { tr.querySelector('select').value = ''; tr.querySelector('.bagi-nilai').value = ''; }
+                hitung();
+            });
+            var tambah = document.getElementById('bagi-tambah');
+            if (tambah) tambah.addEventListener('click', function () {
+                var tb = tabel.querySelector('tbody');
+                var baru = tb.rows[0].cloneNode(true);
+                baru.querySelector('select').value = '';
+                baru.querySelector('.bagi-nilai').value = '';
+                baru.querySelector('input[type=hidden]').value = '';
+                tb.appendChild(baru);
+                hitung();
+            });
+
+            // Penjaga submit: hanya menahan tombol Submit untuk Approval.
+            var form = box.closest('form');
+            if (form) form.addEventListener('submit', function (e) {
+                var aksi = document.getElementById('skp-action');
+                if (!aksi || aksi.value !== 'submit') return;
+                if (hitung()) return;
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                ringkas.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                alert('Pembagian income belum pas dengan nilai kontrak.\n\n'
+                    + ringkas.textContent.trim()
+                    + '\n\nPerbaiki dulu, atau simpan sebagai draft.');
+            }, true);
+
+            hitung();
+        })();
+        </script>
         <?php
     });
 }
@@ -1117,6 +1260,47 @@ function _skp_update_master(PDO $pdo, int $clientId, ?string $ktp, ?string $npwp
 }
 
 /** Lampiran wajib sebelum submit approval. Return label yang BELUM ada. */
+/**
+ * Pembagian income dari formulir: [['pic' => ..., 'amount' => ...], ...].
+ * Baris tanpa PIC atau bernilai 0 dibuang; PIC ganda digabung jadi satu.
+ */
+function _skp_bagi_dari_post(): array
+{
+    $pic = (array) ($_POST['bagi_pic'] ?? []);
+    $rp  = (array) ($_POST['bagi_nominal'] ?? []);
+    $out = [];
+    foreach ($pic as $i => $nama) {
+        $nama = trim((string) $nama);
+        $n = (float) preg_replace('/\D/', '', (string) ($rp[$i] ?? '0'));
+        if ($nama === '' || $n <= 0) continue;
+        $out[$nama] = ($out[$nama] ?? 0) + $n;
+    }
+    $hasil = [];
+    foreach ($out as $nama => $n) $hasil[] = ['pic' => $nama, 'amount' => $n];
+    return $hasil;
+}
+
+/**
+ * Simpan pembagian milik satu dokumen, lalu terapkan ke alokasi transaksinya
+ * (bila transaksinya sudah ada) tanpa menghitung ulang nominal per bulan.
+ */
+function _skp_simpan_bagi(PDO $pdo, int $pid, int $skpId, ?int $trxId, array $bagi, string $uname): void
+{
+    $pdo->prepare('DELETE FROM transaction_pic_splits WHERE skp_id = ?')->execute([$skpId]);
+    if ($trxId) $pdo->prepare('DELETE FROM transaction_pic_splits WHERE transaction_id = ? AND skp_id <> ?')->execute([$trxId, $skpId]);
+    if ($bagi) {
+        $ins = $pdo->prepare(
+            'INSERT INTO transaction_pic_splits (property_id, transaction_id, skp_id, pic_name, amount, created_by)
+             VALUES (?,?,?,?,?,?)'
+        );
+        foreach ($bagi as $b) $ins->execute([$pid, $trxId ?: null, $skpId, $b['pic'], $b['amount'], $uname]);
+    }
+    if ($trxId) {
+        require_once dirname(__DIR__) . '/AllocationService.php';
+        AllocationService::terapkanPembagian($pdo, $trxId);
+    }
+}
+
 function _skp_missing_required(PDO $pdo, int $skpId): array
 {
     // Bukti Transfer sengaja tidak di sini — lihat catatan di form lampiran.
@@ -1198,6 +1382,19 @@ function skp_save(PDO $pdo): void
     $missNum = [];
     if (!$ktp)  $missNum[] = 'Nomor KTP';
     if (!$npwp) $missNum[] = 'Nomor NPWP';
+    // Pembagian income harus PAS dengan nilai kontrak — kurang atau lebih
+    // sedikit pun membuat laporan per PIC tidak lagi berjumlah sama dengan
+    // pendapatan properti. Acuannya nilai sumber, bukan angka yang diketik.
+    $bagi = _skp_bagi_dari_post();
+    if ($bagi) {
+        $acuanBagi = round((float) ($src['final_amount'] ?: $src['total_calculated']));
+        $jumlahBagi = round(array_sum(array_column($bagi, 'amount')));
+        if ($jumlahBagi !== $acuanBagi) {
+            $selisih = $acuanBagi - $jumlahBagi;
+            $missNum[] = 'Pembagian income ' . ($selisih > 0 ? 'kurang ' : 'lebih ') . money(abs($selisih))
+                . ' (terbagi ' . money($jumlahBagi) . ' dari ' . money($acuanBagi) . ')';
+        }
+    }
 
     if ($id) {
         $cur = $pdo->prepare('SELECT status FROM skp_documents WHERE id = ? AND property_id = ?');
@@ -1221,6 +1418,7 @@ function skp_save(PDO $pdo): void
                 updated_at=CURRENT_TIMESTAMP, updated_by=:uname
                 WHERE id=:id AND property_id=:pid';
         $pdo->prepare($sql)->execute(array_merge($fields, [':status' => $newStatus, ':uname' => $uname, ':id' => $id, ':pid' => $pid]));
+        _skp_simpan_bagi($pdo, $pid, $id, $trxId ?: null, $bagi, $uname);
         audit($pdo, $doSubmit ? 'submit' : 'update', 'skp_documents', (string) $id, $fields);
         flash($blockMsg ?: ($doSubmit ? 'Dokumen disubmit untuk approval.' : 'Draft disimpan.'));
         redirect_to('skp_form', ['id' => $id]);
@@ -1260,6 +1458,7 @@ function skp_save(PDO $pdo): void
         throw $e;
     }
     $newId = (int) $pdo->lastInsertId();
+    _skp_simpan_bagi($pdo, $pid, $newId, $trxId ?: null, $bagi, $uname);
     _skp_handle_uploads($pdo, $newId, $uname, $clientId);
     _skp_update_master($pdo, $clientId, $ktp, $npwp, $siup);
     audit($pdo, 'create', 'skp_documents', (string) $newId, $fields);
@@ -1281,6 +1480,22 @@ function skp_save(PDO $pdo): void
  */
 // $item != null → mode PAKET: transaksi untuk satu komponen offer_items
 // (segmen/titik/harga sendiri), periode & client tetap dari $src (level offer).
+/**
+ * Tautkan pembagian income milik dokumen ke transaksi yang baru terbit saat
+ * approve, lalu terapkan ke alokasinya. Dipakai hanya untuk dokumen yang
+ * melahirkan SATU transaksi — pada paket, nilainya terpecah per komponen
+ * sehingga pembagian per PIC tidak punya arti tunggal.
+ */
+function _skp_tautkan_bagi(PDO $pdo, int $skpId, int $trxId): void
+{
+    $st = $pdo->prepare('UPDATE transaction_pic_splits SET transaction_id = ? WHERE skp_id = ?');
+    $st->execute([$trxId, $skpId]);
+    if ($st->rowCount() > 0) {
+        require_once dirname(__DIR__) . '/AllocationService.php';
+        AllocationService::terapkanPembagian($pdo, $trxId);
+    }
+}
+
 function _skp_create_transaction(PDO $pdo, array $skp, array $src, int $pid, ?array $item = null): int
 {
     $start  = (string) $src['start_date'];
@@ -1449,6 +1664,7 @@ function skp_approve(PDO $pdo): void
             // Gudang/Media: transaksi + alokasi terbit dari data dokumen ini.
             $tid = _skp_create_transaction($pdo, array_merge($skp, ['skp_no' => $skpNo]), $src, $pid);
             $pdo->prepare('UPDATE skp_documents SET transaction_id=? WHERE id=? AND property_id=?')->execute([$tid, $id, $pid]);
+            _skp_tautkan_bagi($pdo, $id, $tid);
             $trxMsg = ' Transaksi #' . $tid . ' terbit otomatis.';
         } elseif (empty($skp['transaction_id']) && !empty($skp['offer_id'])) {
             $offerId = (int) $skp['offer_id'];
@@ -1476,6 +1692,7 @@ function skp_approve(PDO $pdo): void
                 $newTrxId = _skp_create_transaction($pdo, $skpArg, $src, $pid);
                 $pdo->prepare('UPDATE transactions SET skp_id=? WHERE id=?')->execute([$id, $newTrxId]);
                 $pdo->prepare('UPDATE skp_documents SET transaction_id=? WHERE id=? AND property_id=?')->execute([$newTrxId, $id, $pid]);
+                _skp_tautkan_bagi($pdo, $id, $newTrxId);
                 audit($pdo, 'create', 'transactions', (string) $newTrxId, ['from_skp' => $id, 'skp_no' => $skpNo]);
                 $trxMsg = ' Transaksi #' . $newTrxId . ' terbit & masuk laporan.';
             }
