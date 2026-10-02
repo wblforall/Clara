@@ -14,13 +14,33 @@
 
 require_once dirname(__DIR__) . '/ApprovalLine.php';
 
-/** Daftar jabatan yang tersedia di properti ini (dari Master PIC). */
+/**
+ * Properti yang boleh dilihat/diatur oleh pemakai ini — dipakai sebagai lingkup
+ * pencarian jabatan dan sebagai sasaran saat alurnya diberlakukan ke semuanya.
+ */
+function _af_properti(): array
+{
+    $ids = array_map('intval', allowed_property_ids());
+    return $ids ?: [current_property_id()];
+}
+
+/**
+ * Daftar jabatan yang bisa dipakai di alur properti ini.
+ *
+ * Lingkupnya SELURUH properti yang boleh diakses, bukan properti ini saja.
+ * Casual Leasing e-Walk & Pentacity dipegang tim yang sama: Manager dan Asst.
+ * Manager-nya satu orang untuk dua mal, tetapi di Master PIC ia hanya terdaftar
+ * di salah satunya. Kalau daftarnya dibatasi per properti, jabatan itu tidak
+ * muncul sama sekali di mal yang lain dan alurnya mustahil disusun di sana.
+ */
 function _af_jabatan(PDO $pdo, int $pid): array
 {
+    $ids = _af_properti();
+    $in  = implode(',', array_fill(0, count($ids), '?'));
     $st = $pdo->prepare("SELECT DISTINCT role_name FROM master_pic
-                          WHERE property_id = ? AND status = 'active'
+                          WHERE property_id IN ($in) AND status = 'active'
                             AND COALESCE(role_name,'') <> '' ORDER BY role_name");
-    $st->execute([$pid]);
+    $st->execute($ids);
     return $st->fetchAll(PDO::FETCH_COLUMN) ?: [];
 }
 
@@ -38,19 +58,35 @@ function _af_orang(PDO $pdo, int $pid): array
 {
     // can() memuliakan superadmin & admin tanpa melihat matrix, jadi dua role itu
     // dianggap selalu berizin — sama seperti perilaku can() yang sebenarnya.
-    $st = $pdo->prepare("SELECT p.role_name, p.name, p.user_id,
+    // PIC dicari di semua properti yang boleh diakses (lihat _af_jabatan),
+    // TETAPI hak akses propertinya diperiksa terhadap properti yang sedang
+    // diatur — bukan properti tempat baris PIC-nya terdaftar. Yusri boleh
+    // terdaftar sebagai Asst. Manager di e-Walk, namun untuk memaraf dokumen
+    // Pentacity akunnya tetap harus diberi akses ke Pentacity.
+    $ids = _af_properti();
+    $in  = implode(',', array_fill(0, count($ids), '?'));
+    $st = $pdo->prepare("SELECT p.role_name, p.name, p.user_id, p.property_id,
                                 u.id AS akun, u.status AS akun_status, u.role AS akun_role,
                                 (up.user_id IS NOT NULL) AS boleh_properti,
                                 (u.role IN ('superadmin','admin') OR rp.role IS NOT NULL) AS boleh_approve
                            FROM master_pic p
                            LEFT JOIN users u ON u.id = p.user_id
-                           LEFT JOIN user_properties up ON up.user_id = p.user_id AND up.property_id = p.property_id
+                           LEFT JOIN user_properties up ON up.user_id = p.user_id AND up.property_id = ?
                            LEFT JOIN role_permissions rp ON rp.role = u.role AND rp.permission = 'approve_skp'
-                          WHERE p.property_id = ? AND p.status = 'active'
-                            AND COALESCE(p.role_name,'') <> '' ORDER BY p.role_name, p.name");
-    $st->execute([$pid]);
+                          WHERE p.property_id IN ($in) AND p.status = 'active'
+                            AND COALESCE(p.role_name,'') <> ''
+                          ORDER BY p.role_name, (p.property_id = ?) DESC, p.name");
+    $st->execute(array_merge([$pid], $ids, [$pid]));
     $out = [];
-    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $out[$r['role_name']][] = $r;
+    // Satu orang bisa punya baris PIC di dua properti dengan jabatan sama —
+    // tampilkan sekali saja supaya dropdown tidak berisi nama kembar.
+    $sudah = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $kunci = $r['role_name'] . '/' . $r['name'];
+        if (isset($sudah[$kunci])) continue;
+        $sudah[$kunci] = true;
+        $out[$r['role_name']][] = $r;
+    }
     return $out;
 }
 
@@ -93,6 +129,37 @@ function approval_flow_page(PDO $pdo): void
     $revisi = $rv->fetch(PDO::FETCH_ASSOC) ?: ['role_name' => '', 'pic_name' => ''];
     $prop    = current_property();
 
+    // Apakah pengaturan ini sudah sama persis di SEMUA properti? Kalau ya,
+    // centang "berlaku untuk semua properti" ditampilkan sudah tercentang —
+    // supaya menyimpan ulang tidak diam-diam memutus kesamaannya.
+    $sidikAlur = function (int $q) use ($pdo, $jenis): string {
+        $sx = $pdo->prepare("SELECT role_name, pic_name FROM skp_approval_flow
+                              WHERE property_id = ? AND (doc_type = ? OR ((doc_type IS NULL OR doc_type = '') AND ? = 'skp'))
+                              ORDER BY step_no ASC, id ASC");
+        $sx->execute([$q, $jenis, $jenis]);
+        return implode('|', array_map(
+            fn($r) => (string) $r['role_name'] . '/' . (string) ($r['pic_name'] ?? ''),
+            $sx->fetchAll(PDO::FETCH_ASSOC) ?: []
+        ));
+    };
+    $sidikRev = function (int $q) use ($pdo, $jenis): string {
+        $sx = $pdo->prepare("SELECT role_name, pic_name FROM skp_revision_flow
+                              WHERE property_id = ? AND (doc_type = ? OR ((doc_type IS NULL OR doc_type = '') AND ? = 'skp'))
+                              ORDER BY id ASC LIMIT 1");
+        $sx->execute([$q, $jenis, $jenis]);
+        $r = $sx->fetch(PDO::FETCH_ASSOC) ?: null;
+        return $r ? ((string) $r['role_name'] . '/' . (string) ($r['pic_name'] ?? '')) : '';
+    };
+    $propSemua = _af_properti();
+    $namaProp  = array_column(allowed_properties(), 'name');
+    $banyakProp = count($propSemua) > 1;
+    $lintasAlur = $banyakProp
+        && count(array_unique(array_map($sidikAlur, $propSemua))) === 1
+        && $sidikAlur($pid) !== '';
+    $lintasRev  = $banyakProp
+        && count(array_unique(array_map($sidikRev, $propSemua))) === 1
+        && $sidikRev($pid) !== '';
+
     // Berapa dokumen yang sedang berjalan — mengubah alur saat ada dokumen di
     // tengah jalan harus disadari, bukan kejutan.
     $jalan = $pdo->prepare("SELECT COUNT(*) FROM skp_documents
@@ -100,7 +167,7 @@ function approval_flow_page(PDO $pdo): void
     $jalan->execute([$pid, $jenis]);
     $jalan = (int) $jalan->fetchColumn();
 
-    layout('Alur Approval Dokumen', function () use ($baris, $jabatan, $orang, $jenis, $prop, $jalan, $revisi) {
+    layout('Alur Approval Dokumen', function () use ($baris, $jabatan, $orang, $jenis, $prop, $jalan, $revisi, $banyakProp, $namaProp, $lintasAlur, $lintasRev) {
         $label = ['skp' => 'SKP Pameran (Exhibition)', 'sks' => 'SKS Gudang', 'fu' => 'Form Utilities (Media)'];
         ?>
         <div class="panel">
@@ -204,6 +271,14 @@ function approval_flow_page(PDO $pdo): void
                 </table>
                 <p style="margin:9px 0 0"><button type="button" class="btn light" id="alur-tambah" style="font-size:12.5px">+ Tambah Tahap</button></p>
                 <div id="alur-ringkas" style="margin-top:10px;font-size:13px"></div>
+                <?php if ($banyakProp): ?>
+                <label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;padding:10px 12px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:6px;max-width:860px;cursor:pointer">
+                    <input type="checkbox" name="semua_properti" value="1" style="margin-top:2px" <?= $lintasAlur ? 'checked' : '' ?>>
+                    <span style="font-size:13px">Berlaku untuk <strong>semua properti</strong> (<?= h(implode(' &amp; ', $namaProp)) ?>)
+                        <span class="help" style="display:block;margin-top:2px">Alur yang sama disimpan ke seluruh properti sekaligus, jadi tidak perlu diatur dua kali.
+                        Lepas centangnya bila properti ini ingin dibuat berbeda.</span></span>
+                </label>
+                <?php endif; ?>
                 <p style="margin-top:12px"><button type="submit">Simpan Alur</button>
                    <a class="btn secondary" href="?r=skp">Batal</a></p>
             </form>
@@ -239,6 +314,12 @@ function approval_flow_page(PDO $pdo): void
                             <?php endforeach; endforeach; ?>
                         </select>
                     </div>
+                    <?php if ($banyakProp): ?>
+                    <label style="display:flex;gap:7px;align-items:center;font-size:12.5px;cursor:pointer">
+                        <input type="checkbox" name="semua_properti" value="1" <?= $lintasRev ? 'checked' : '' ?>>
+                        Berlaku untuk semua properti
+                    </label>
+                    <?php endif; ?>
                     <button type="submit">Simpan Pemutus Revisi</button>
                 </form>
             </div>
@@ -318,18 +399,26 @@ function approval_flow_save(PDO $pdo): void
             flash('Jabatan "' . $rRole . '" tidak ada di Master PIC aktif properti ini. Pengaturan revisi tidak disimpan.');
             redirect_to('approval_flow', ['doc_type' => $jenis]);
         }
-        $pdo->prepare("DELETE FROM skp_revision_flow WHERE property_id = ?
-                        AND (doc_type = ? OR ((doc_type IS NULL OR doc_type = '') AND ? = 'skp'))")
-            ->execute([$pid, $jenis, $jenis]);
-        if ($rRole !== '') {
-            $pdo->prepare('INSERT INTO skp_revision_flow (property_id, doc_type, role_name, pic_name, is_active, created_by)
-                           VALUES (?,?,?,?,1,?)')
-                ->execute([$pid, $jenis, $rRole, $rPic !== '' ? $rPic : null, $uname]);
+        $sasaranProp = post('semua_properti') === '1' ? _af_properti() : [$pid];
+        $hapus = $pdo->prepare("DELETE FROM skp_revision_flow WHERE property_id = ?
+                                 AND (doc_type = ? OR ((doc_type IS NULL OR doc_type = '') AND ? = 'skp'))");
+        $tulis = $pdo->prepare('INSERT INTO skp_revision_flow (property_id, doc_type, role_name, pic_name, is_active, created_by)
+                                VALUES (?,?,?,?,1,?)');
+        foreach ($sasaranProp as $q) {
+            $hapus->execute([$q, $jenis, $jenis]);
+            if ($rRole !== '') {
+                $tulis->execute([$q, $jenis, $rRole, $rPic !== '' ? $rPic : null, $uname]);
+            }
         }
-        audit($pdo, 'update', 'skp_revision_flow', $jenis, ['jabatan' => $rRole ?: '(ikut tahap pertama)', 'orang' => $rPic ?: null]);
-        flash($rRole !== ''
+        audit($pdo, 'update', 'skp_revision_flow', $jenis, [
+            'jabatan'  => $rRole ?: '(ikut tahap pertama)',
+            'orang'    => $rPic ?: null,
+            'properti' => $sasaranProp,
+        ]);
+        $cakupan = count($sasaranProp) > 1 ? ' Berlaku untuk ' . count($sasaranProp) . ' properti.' : '';
+        flash(($rRole !== ''
             ? 'Permintaan revisi akan diputuskan oleh ' . $rRole . ($rPic !== '' ? ' (' . $rPic . ')' : '') . '.'
-            : 'Permintaan revisi mengikuti tahap pertama alur persetujuan.');
+            : 'Permintaan revisi mengikuti tahap pertama alur persetujuan.') . $cakupan);
         redirect_to('approval_flow', ['doc_type' => $jenis]);
     }
 
@@ -341,8 +430,15 @@ function approval_flow_save(PDO $pdo): void
     // POST tidak boleh masuk, karena tidak akan pernah cocok dengan siapa pun
     // lalu dokumen tersangkut selamanya.
     $sah = _af_jabatan($pdo, $pid);
-    $sahOrang = $pdo->prepare("SELECT name FROM master_pic WHERE property_id = ? AND status = 'active'");
-    $sahOrang->execute([$pid]);
+    // Lingkupnya ikut _af_jabatan(): seluruh properti yang boleh diakses. Kalau
+    // dibatasi properti ini saja, nama yang baru saja dipilih dari dropdown
+    // (mis. Asst. Manager yang terdaftar di mal sebelah) ditolak diam-diam dan
+    // tahapnya tersimpan tanpa penguncian orang yang dimaksud.
+    $idsProp = _af_properti();
+    $sahOrang = $pdo->prepare("SELECT name FROM master_pic
+                                WHERE property_id IN (" . implode(',', array_fill(0, count($idsProp), '?')) . ")
+                                  AND status = 'active'");
+    $sahOrang->execute($idsProp);
     $sahOrang = $sahOrang->fetchAll(PDO::FETCH_COLUMN) ?: [];
 
     $tahap = [];
@@ -367,38 +463,48 @@ function approval_flow_save(PDO $pdo): void
         flash('Perhatian: jabatan ' . implode(', ', array_unique($ditolak)) . ' tidak ada lagi di Master PIC aktif properti ini. Tahapnya tetap disimpan, tetapi belum ada yang bisa memparafnya — perbaiki di Master PIC atau ganti jabatannya.');
     }
 
-    // Apakah rantainya benar-benar berubah? Menyimpan ulang tanpa perubahan
-    // tidak boleh mengganggu dokumen yang sedang berjalan.
+    // Satu alur boleh diberlakukan ke beberapa properti sekaligus. Casual
+    // Leasing e-Walk & Pentacity dijalankan tim yang sama, jadi mengatur alur
+    // yang identik dua kali hanya menambah peluang keduanya jadi berbeda tanpa
+    // disengaja. Tiap properti tetap diperiksa & diperbarui sendiri-sendiri.
+    $sasaranProp = post('semua_properti') === '1' ? _af_properti() : [$pid];
+
+    $sidik = fn(array $rows) => implode('|', array_map(fn($r) => ($r['role_name'] ?? $r['role']) . '/' . ($r['pic_name'] ?? $r['pic'] ?? ''), $rows));
     $lamaSt = $pdo->prepare("SELECT role_name, pic_name FROM skp_approval_flow
                               WHERE property_id = ? AND (doc_type = ? OR ((doc_type IS NULL OR doc_type = '') AND ? = 'skp'))
                               ORDER BY step_no ASC, id ASC");
-    $lamaSt->execute([$pid, $jenis, $jenis]);
-    $sidik = fn(array $rows) => implode('|', array_map(fn($r) => ($r['role_name'] ?? $r['role']) . '/' . ($r['pic_name'] ?? $r['pic'] ?? ''), $rows));
-    $berubah = $sidik($lamaSt->fetchAll(PDO::FETCH_ASSOC) ?: []) !== $sidik($tahap);
 
     $pdo->beginTransaction();
     try {
-        $pdo->prepare("DELETE FROM skp_approval_flow WHERE property_id = ?
-                        AND (doc_type = ? OR ((doc_type IS NULL OR doc_type = '') AND ? = 'skp'))")
-            ->execute([$pid, $jenis, $jenis]);
+        $hapus = $pdo->prepare("DELETE FROM skp_approval_flow WHERE property_id = ?
+                                 AND (doc_type = ? OR ((doc_type IS NULL OR doc_type = '') AND ? = 'skp'))");
         $ins = $pdo->prepare('INSERT INTO skp_approval_flow
                               (property_id, step_no, role_name, label, pic_name, doc_type, is_active, created_by)
                               VALUES (?,?,?,?,?,?,1,?)');
-        foreach ($tahap as $i => $t) {
-            $ins->execute([$pid, $i + 1, $t['role'], $t['label'], $t['pic'], $jenis, $uname]);
-        }
-        // Dokumen yang sedang di tengah rantai LAMA dikembalikan ke tahap 1.
-        // approval_level hanya menghitung BERAPA tahap yang sudah lewat, bukan
-        // jabatan mana — kalau urutannya berubah, "sudah 1 tahap" bisa berarti
-        // jabatan yang sama sekali berbeda, dan paraf orang lain jadi salah
-        // alamat. Mengulang dari awal lebih sedikit ruginya daripada dokumen
-        // yang terlihat sudah diperiksa padahal belum.
         $diulang = 0;
-        if ($berubah) {
+        foreach ($sasaranProp as $q) {
+            // Apakah rantainya benar-benar berubah DI PROPERTI INI? Menyimpan
+            // ulang tanpa perubahan tidak boleh mengganggu dokumen berjalan —
+            // dan dua properti bisa saja berangkat dari keadaan berbeda.
+            $lamaSt->execute([$q, $jenis, $jenis]);
+            $berubah = $sidik($lamaSt->fetchAll(PDO::FETCH_ASSOC) ?: []) !== $sidik($tahap);
+
+            $hapus->execute([$q, $jenis, $jenis]);
+            foreach ($tahap as $i => $t) {
+                $ins->execute([$q, $i + 1, $t['role'], $t['label'], $t['pic'], $jenis, $uname]);
+            }
+            if (!$berubah) continue;
+
+            // Dokumen yang sedang di tengah rantai LAMA dikembalikan ke tahap 1.
+            // approval_level hanya menghitung BERAPA tahap yang sudah lewat,
+            // bukan jabatan mana — kalau urutannya berubah, "sudah 1 tahap" bisa
+            // berarti jabatan yang sama sekali berbeda, dan paraf orang lain
+            // jadi salah alamat. Mengulang dari awal lebih sedikit ruginya
+            // daripada dokumen yang terlihat sudah diperiksa padahal belum.
             $sasaran = $pdo->prepare("SELECT id FROM skp_documents
                                         WHERE property_id = ? AND status = 'submitted'
                                           AND approval_level > 0 AND doc_type = ?");
-            $sasaran->execute([$pid, $jenis]);
+            $sasaran->execute([$q, $jenis]);
             $sasaran = $sasaran->fetchAll(PDO::FETCH_COLUMN) ?: [];
             if ($sasaran) {
                 $pdo->prepare('UPDATE skp_documents SET approval_level = 0 WHERE id IN ('
@@ -407,11 +513,11 @@ function approval_flow_save(PDO $pdo): void
                 // dibekukan ke snapshot dan tercetak di surat yang diserahkan ke
                 // client, seolah memeriksa dokumen dengan alur yang sekarang.
                 foreach ($sasaran as $sid) {
-                    ApprovalLine::record($pdo, $pid, (int) $sid, 0, null, 'ulang',
+                    ApprovalLine::record($pdo, $q, (int) $sid, 0, null, 'ulang',
                         'Alur approval diubah — pemeriksaan diulang dari tahap 1');
                 }
             }
-            $diulang = count($sasaran);
+            $diulang += count($sasaran);
         }
         $pdo->commit();
     } catch (Throwable $e) {
@@ -419,11 +525,15 @@ function approval_flow_save(PDO $pdo): void
         throw $e;
     }
 
-    audit($pdo, 'update', 'skp_approval_flow', $jenis,
-        ['tahap' => array_map(fn($t) => $t['role'] . ($t['pic'] ? ' / ' . $t['pic'] : ''), $tahap)]);
+    audit($pdo, 'update', 'skp_approval_flow', $jenis, [
+        'tahap'    => array_map(fn($t) => $t['role'] . ($t['pic'] ? ' / ' . $t['pic'] : ''), $tahap),
+        'properti' => $sasaranProp,
+    ]);
+    $cakupan = count($sasaranProp) > 1 ? ' Berlaku untuk ' . count($sasaranProp) . ' properti.' : '';
     flash(($tahap
         ? 'Alur approval disimpan: ' . count($tahap) . ' tahap (' . implode(' → ', array_column($tahap, 'label')) . ').'
         : 'Alur approval dikosongkan — dokumen kembali langsung ke pemegang izin approval.')
+        . $cakupan
         . ($diulang > 0 ? ' ' . $diulang . ' dokumen yang sedang berjalan dikembalikan ke tahap 1 karena urutannya berubah.' : ''));
     redirect_to('approval_flow', ['doc_type' => $jenis]);
 }

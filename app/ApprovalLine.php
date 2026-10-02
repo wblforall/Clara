@@ -93,8 +93,17 @@ final class ApprovalLine
         $kunci = $uid . '@' . $pid;
         if (array_key_exists($kunci, $ingat)) return $ingat[$kunci];
         try {
+            // Jabatan di properti ini lebih dulu. Kalau orangnya tidak terdaftar
+            // sebagai PIC di sini, dipakai jabatannya di properti lain —
+            // e-Walk dan Pentacity dikelola tim Casual Leasing yang sama, dan
+            // Manager/Asst. Manager-nya memang satu orang untuk keduanya.
+            // Ini tidak membuka akses: properti mana yang boleh dibuka tetap
+            // ditentukan user_properties, dan izin approve_skp tetap diperiksa.
             $st = $pdo->prepare("SELECT role_name FROM master_pic
-                                  WHERE user_id = ? AND property_id = ? AND status = 'active' LIMIT 1");
+                                  WHERE user_id = ? AND status = 'active'
+                                    AND COALESCE(role_name,'') <> ''
+                                  ORDER BY (property_id = ?) DESC, property_id ASC, id ASC
+                                  LIMIT 1");
             $st->execute([$uid, $pid]);
             return $ingat[$kunci] = trim((string) ($st->fetchColumn() ?: ''));
         } catch (Throwable $e) {
@@ -108,8 +117,13 @@ final class ApprovalLine
         $uid = (int) ($_SESSION['user']['id'] ?? 0);
         if (!$uid) return '';
         try {
+            // Urutan sama seperti jabatan(): properti ini dulu, baru properti
+            // lain — supaya tahap yang dikunci ke satu orang tetap cocok walau
+            // orangnya hanya terdaftar sebagai PIC di properti sebelah.
             $st = $pdo->prepare("SELECT name FROM master_pic
-                                  WHERE user_id = ? AND property_id = ? AND status = 'active' LIMIT 1");
+                                  WHERE user_id = ? AND status = 'active'
+                                  ORDER BY (property_id = ?) DESC, property_id ASC, id ASC
+                                  LIMIT 1");
             $st->execute([$uid, $pid]);
             return trim((string) ($st->fetchColumn() ?: ''));
         } catch (Throwable $e) {
