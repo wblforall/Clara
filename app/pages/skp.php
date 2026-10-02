@@ -1443,7 +1443,13 @@ function skp_save(PDO $pdo): void
     // Nama di luar master_pic aktif tidak akan muncul di laporan per PIC —
     // ditolak terang-terangan, bukan diam-diam hilang.
     $picSalah = array_column(array_filter($bagi, fn($b) => isset($b['valid']) && !$b['valid']), 'pic');
-    if ($picSalah) $missNum[] = 'PIC tidak dikenal / tidak aktif: ' . implode(', ', $picSalah);
+    if ($picSalah) {
+        $missNum[] = 'PIC tidak dikenal / tidak aktif: ' . implode(', ', $picSalah);
+        // Jangan disimpan sekalipun sebagai draft: pada SKP perpanjangan
+        // transaksinya sudah ada, jadi nama asing itu langsung ikut tertulis ke
+        // baris alokasi dan tidak akan pernah muncul di laporan mana pun.
+        $bagi = array_values(array_filter($bagi, fn($b) => !isset($b['valid']) || $b['valid']));
+    }
     // Paket: satu dokumen melahirkan beberapa transaksi, pembagian tunggal tidak
     // punya arti — dibuang supaya tidak tersimpan lalu terabaikan diam-diam.
     if ($bagi && !empty($src['is_bundle'])) {
