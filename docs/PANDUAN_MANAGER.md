@@ -10,13 +10,22 @@
 ## 1. Persetujuan (inti peran Manajer)
 
 ### A. Approve / Reject SKP
-1. Menu **SKP Pameran** → SKP berstatus *submitted* menunggu Anda.
-2. Buka, periksa: kelengkapan **KTP/NPWP**, nilai, periode, dan lampiran.
+1. **Dashboard** → panel biru **“N dokumen menunggu tindakan Anda”**, atau menu **SKP Pameran** → tab **🖊 Giliran Saya**. Tab itu hanya memuat dokumen yang benar-benar berhenti di tahap Anda, jadi tidak perlu menebak.
+2. Buka, periksa: kelengkapan **KTP/NPWP**, nilai, periode, dan lampiran. Panel **Alur Persetujuan** menunjukkan tahap mana yang sudah lewat, siapa yang memarafnya, kapan, dan catatannya.
 3. **Approve** → sistem secara **atomik** menerbitkan nomor SKP final + transaksi + alokasi (inilah titik deal masuk ke Dashboard/Achievement/Recurring). **Reject** → kembali ke sales dengan catatan.
 
 > Approve bersifat sekali-jalan & terkunci. Pastikan benar sebelum menyetujui.
 
-@@SHOT:skp|Daftar SKP — yang berstatus submitted menunggu persetujuan@@
+#### Bila properti memakai pemeriksaan berjenjang
+Bila Admin sudah menyusun alur di **Alur Approval Dokumen** (mis. *Asst. Manager* memeriksa dulu, lalu *Manager*), maka:
+
+- Dokumen yang baru disubmit sales **belum sampai ke Anda** — ia menunggu paraf tahap pertama. Judul panelnya di tahap itu berbunyi **Paraf & Teruskan**, dan **nomor dokumen belum terbit**.
+- Dokumen baru muncul di **Giliran Saya** milik Anda setelah tahap sebelumnya memaraf. Tombolnya lalu berbunyi **✓ Setujui** — di sinilah nomor terbit dan transaksinya lahir.
+- Anda tetap boleh **memaraf tahap di bawah Anda** bila orangnya berhalangan. Tindakan itu tercatat sebagai *“mewakili …”* di jejak persetujuan, bukan disamarkan. Perlu dua langkah: paraf dulu, lalu setujui.
+- **Tolak di tahap mana pun** mengembalikan dokumen ke sales dan **mengulang alur dari tahap pertama** setelah diperbaiki.
+- Nama pemaraf tahap sebelumnya **ikut tercetak** di PDF dokumen (baris *“Diperiksa sebelum disetujui”*) dan di halaman validasi QR.
+
+@@SHOT:skp|Daftar SKP — tab “Giliran Saya” memuat dokumen yang menunggu tindakan Anda@@
 
 @@SHOT:skp_form|Detail SKP — periksa identitas, nilai, lampiran sebelum Approve/Reject@@
 
@@ -73,7 +82,7 @@ Membuat/menonaktifkan **akun & role**, mengatur **Role & Permission**, membaca *
 ---
 
 ## 6. Ritme harian yang disarankan
-1. Cek antrean **SKP** untuk di-approve.
+1. Buka **Dashboard** — kalau panel biru **“menunggu tindakan Anda”** muncul, tuntaskan dulu (selama belum, nomor dokumennya belum terbit dan belum bisa diserahkan ke client).
 2. Cek **Permintaan Kontrak** menunggu persetujuan.
 3. Pantau **Renewal** yang 🔴 mendesak.
 4. Lihat **Laporan/Performa PIC** untuk progres tim.

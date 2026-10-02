@@ -38,6 +38,13 @@ async function submitFormAndWait(page, formSelector, timeout = 15000) {
     execSync(`${mysql} -u root clara_unified -e "DELETE FROM transaction_allocations WHERE transaction_id IN (SELECT id FROM transactions WHERE skp_id=23);"`);
     execSync(`${mysql} -u root clara_unified -e "DELETE FROM transactions WHERE skp_id=23;"`);
     execSync(`${mysql} -u root clara_unified -e "UPDATE skp_documents SET status='submitted', skp_no=NULL, approved_by=NULL, approved_at=NULL, transaction_id=NULL WHERE id=23;"`);
+    // Sejak ada line approval berjenjang, dokumen 'submitted' belum tentu
+    // menunggu MANAGER — bisa jadi masih menunggu paraf tahap pertama, dan form
+    // ?r=skp_approve milik manager memang belum muncul. Uji ini menguji tahap
+    // AKHIR, jadi dokumennya didudukkan di tahap terakhir sesuai jumlah tahap
+    // yang dikonfigurasi (0 bila properti itu tidak memakai rantai).
+    execSync(`${mysql} -u root clara_unified -e "UPDATE skp_documents d SET d.approval_level = GREATEST((SELECT COUNT(*) FROM skp_approval_flow f WHERE f.property_id = d.property_id AND f.is_active = 1 AND (f.doc_type IS NULL OR f.doc_type = '' OR f.doc_type = d.doc_type COLLATE utf8mb4_unicode_ci)) - 1, 0) WHERE d.id IN (19,23);"`);
+    execSync(`${mysql} -u root clara_unified -e "DELETE FROM skp_approvals WHERE skp_id IN (19,23);"`);
     execSync(`${mysql} -u root clara_unified -e "UPDATE contract_requests SET status='sent', legal_by=NULL, legal_approved_at=NULL, legal_note=NULL WHERE id=2;"`);
     execSync(`${mysql} -u root clara_unified -e "UPDATE transactions SET deleted_at=NULL, deleted_by=NULL, cancel_reason=NULL WHERE id=1142;"`);
     console.log("DB prepared.");
