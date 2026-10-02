@@ -53,6 +53,13 @@ table.kv td.v{font-weight:600;text-align:right}
                 <tr><td class="l">Periode</td><td class="v"><?= $h(date('d/m/Y', strtotime($d['start_date'] ?? 'now')) . ' s/d ' . date('d/m/Y', strtotime($d['end_date'] ?? 'now'))) ?></td></tr>
                 <tr><td class="l">Nilai (Grand Total)</td><td class="v"><?= $rp($a['grand_total'] ?? 0) ?></td></tr>
                 <tr><td class="l">Dibuat oleh (Sales)</td><td class="v"><?= $h($d['sales'] ?? '-') ?> <span class="chip <?= $salesReg ? 'ok' : 'no' ?>"><?= $salesReg ? 'TTD terdaftar ✓' : 'tanpa TTD' ?></span></td></tr>
+                <?php /* Pemeriksa tahap sebelumnya ikut ditampilkan supaya client
+                         yang memindai QR bisa melihat rantai pemeriksaannya utuh,
+                         bukan hanya penyetuju akhir. Dokumen tanpa tahap paraf
+                         tidak menampilkan baris ini. */ ?>
+                <?php foreach (($d['paraf'] ?? []) as $pf): if (($pf['action'] ?? '') !== 'paraf') continue; ?>
+                <tr><td class="l">Diperiksa oleh (<?= $h($pf['role_name'] ?: 'Pemeriksa') ?>)</td><td class="v"><?= $h($pf['nama'] ?: '-') ?><?= ($pf['waktu'] ?? '') !== '' ? ' <span class="chip ok">' . $h(date('d/m/Y H:i', strtotime((string) $pf['waktu']))) . '</span>' : '' ?></td></tr>
+                <?php endforeach; ?>
                 <tr><td class="l">Disetujui oleh (Manager)</td><td class="v"><?= $h($skp['approved_by'] ?? '-') ?> <span class="chip <?= $mgrReg ? 'ok' : 'no' ?>"><?= $mgrReg ? 'TTD terdaftar ✓' : 'tanpa TTD' ?></span></td></tr>
                 <tr><td class="l">Disetujui pada</td><td class="v"><?= $h(substr($skp['approved_at'] ?? '', 0, 16)) ?></td></tr>
                 <tr><td class="l">TTD Customer</td><td class="v"><?= ($skp['status'] === 'signed') ? '<span class="chip ok">Sudah (' . $h($skp['sign_name'] ?? '') . ')</span>' : '<span class="chip no">Belum</span>' ?></td></tr>

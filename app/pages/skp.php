@@ -251,6 +251,17 @@ function skp_list_page(PDO $pdo): void
     // Rantai persetujuan per jenis dokumen — dipakai untuk menunjukkan dokumen
     // ini sedang berhenti di tahap siapa, bukan sekadar "Menunggu Approval".
     require_once dirname(__DIR__) . '/ApprovalLine.php';
+    // Dokumen yang menunggu tindakan orang yang sedang masuk. Dihitung dari
+    // seluruh dokumen 'submitted' propertinya (bukan dari $rows yang sudah
+    // tersaring), supaya angka di tab tetap benar walau sedang memfilter.
+    $antreanIds = ApprovalLine::antreanSaya($pdo, $pid);
+    $antreanN   = count($antreanIds);
+    // Tab "Giliran Saya": saring barisnya di PHP, karena kelayakan bertindak
+    // bergantung jabatan & tahap — bukan sesuatu yang bisa ditanyakan ke SQL.
+    $giliran = getv('giliran') === '1';
+    if ($giliran) {
+        $rows = array_values(array_filter($rows, fn($r) => in_array((int) $r['id'], $antreanIds, true)));
+    }
     $alurCache = [];
     foreach ($rows as $i => $r) {
         $dt = (string) ($r['doc_type'] ?? 'skp');
@@ -259,7 +270,7 @@ function skp_list_page(PDO $pdo): void
         $rows[$i]['_alur_n']   = count($alurCache[$dt]);
     }
 
-    layout('Surat Konfirmasi Pameran (SKP)', function () use ($rows, $status, $module) {
+    layout('Surat Konfirmasi Pameran (SKP)', function () use ($rows, $status, $module, $antreanN, $giliran) {
         $modBadge = [
             'cl'     => ['Exhibition', '#0f766e', '#ccfbf1'],
             'media'  => ['Media', '#0369a1', '#e0f2fe'],
@@ -291,8 +302,14 @@ function skp_list_page(PDO $pdo): void
                 </div>
             </div>
             <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+                <?php /* Tab giliran sendiri: supaya pemeriksa tidak perlu menebak
+                         mana dokumen yang menunggunya. Hanya tampil kalau dia
+                         memang punya wewenang approval. */ ?>
+                <?php if ($antreanN > 0 || $giliran): ?>
+                    <a class="btn light" style="<?= $giliran ? 'background:#1d4ed8;color:#fff;border-color:#1d4ed8' : 'background:#eff6ff;color:#1e40af;border:1px solid #93c5fd;font-weight:700' ?>" href="?r=skp&giliran=1<?= $mq ?>">🖊 Giliran Saya (<?= $antreanN ?>)</a>
+                <?php endif; ?>
                 <?php foreach (['' => 'Semua', 'draft' => 'Draft', 'submitted' => 'Menunggu', 'approved' => 'Perlu TTD', 'signed' => 'Ditandatangani', 'rejected' => 'Ditolak'] as $k => $lbl): ?>
-                    <a class="btn light" style="<?= $status === $k ? 'background:var(--primary,#0d9488);color:#fff' : '' ?>" href="?r=skp<?= $k ? '&status=' . $k : '' ?><?= $mq ?>"><?= $lbl ?></a>
+                    <a class="btn light" style="<?= (!$giliran && $status === $k) ? 'background:var(--primary,#0d9488);color:#fff' : '' ?>" href="?r=skp<?= $k ? '&status=' . $k : '' ?><?= $mq ?>"><?= $lbl ?></a>
                 <?php endforeach; ?>
             </div>
         </div>
@@ -309,7 +326,7 @@ function skp_list_page(PDO $pdo): void
                 <table style="font-size:12.5px">
                     <thead><tr><th>No. SKP/SKS</th><th>Modul</th><th>Kode</th><th>Client</th><th>Periode</th><th>Status</th><th>Dibuat</th><th></th></tr></thead>
                     <tbody>
-                    <?php if (!$rows): ?><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">Belum ada SKP/SKS.</td></tr><?php endif; ?>
+                    <?php if (!$rows): ?><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px"><?= $giliran ? 'Tidak ada dokumen yang menunggu tindakan Anda saat ini.' : 'Belum ada SKP/SKS.' ?></td></tr><?php endif; ?>
                     <?php foreach ($rows as $r): $b = $badge[$r['status']] ?? $badge['draft']; $mb = $modBadge[$r['module']] ?? ['—', '#374151', '#f1f5f9']; ?>
                         <tr>
                             <?php /* Nomor baru terbit saat manager menyetujui — sebelum itu
@@ -914,8 +931,12 @@ function skp_form(PDO $pdo): void
             <?php if ($alur): ?>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:stretch;margin-bottom:9px">
                 <?php foreach ($alur as $i => $tp):
-                    $lewat  = $i < (int) ($skp['approval_level'] ?? 0) || in_array($skp['status'], ['approved','signed'], true);
-                    $kini   = !$lewat && $alurTahap && $alurTahap['step_no'] === $tp['step_no'] && $skp['status'] === 'submitted';
+                    // Tahap yang sedang menunggu ditentukan lebih dulu, lalu
+                    // dikeluarkan dari hitungan "sudah lewat" — kalau tidak,
+                    // rantai yang dipendekkan membuat tahap terakhir tampil
+                    // hijau "selesai" padahal tombolnya masih menunggu.
+                    $kini   = $alurTahap && $alurTahap['step_no'] === $tp['step_no'] && $skp['status'] === 'submitted';
+                    $lewat  = !$kini && ($i < (int) ($skp['approval_level'] ?? 0) || in_array($skp['status'], ['approved','signed'], true));
                     $warna  = $lewat ? ['#166534','#dcfce7','#bbf7d0'] : ($kini ? ['#92400e','#fef3c7','#fde68a'] : ['#64748b','#f8fafc','#e2e8f0']);
                 ?>
                 <div style="flex:1;min-width:170px;border:1px solid <?= $warna[2] ?>;background:<?= $warna[1] ?>;border-radius:9px;padding:8px 11px">
@@ -1765,12 +1786,34 @@ function skp_approve(PDO $pdo): void
         $wakil = ApprovalLine::mewakili($pdo, $pid, $skp, $alur)
             ? ' (mewakili ' . $tahap['label'] . ')' : '';
         if (!ApprovalLine::isFinalStep($skp, $alur)) {
-            // Tahap antara: cukup naikkan tingkat & catat parafnya.
-            $naik = (int) $skp['approval_level'] + 1;
-            $pdo->prepare('UPDATE skp_documents SET approval_level = ? WHERE id = ? AND property_id = ?')
-                ->execute([$naik, $id, $pid]);
-            ApprovalLine::record($pdo, $pid, $id, $tahap['step_no'], $tahap['role_name'], 'paraf',
-                trim((string) post('approval_note')) . $wakil);
+            // Tahap antara: TIDAK menerbitkan nomor, TIDAK melahirkan transaksi.
+            // Yang terjadi hanya dua hal, dan keduanya harus terjadi bersama —
+            // kalau tingkatnya naik tapi jejaknya gagal tersimpan, dokumen maju
+            // tanpa bukti siapa yang memparaf. Jadi dibungkus satu transaksi DB.
+            $lama = (int) $skp['approval_level'];
+            $naik = $lama + 1;
+            $pdo->beginTransaction();
+            try {
+                // Syarat approval_level = nilai yang tadi dibaca: dua orang yang
+                // menekan Paraf bersamaan tidak boleh membuat dokumen melompati
+                // satu tahap.
+                $upd = $pdo->prepare('UPDATE skp_documents SET approval_level = ?
+                                       WHERE id = ? AND property_id = ? AND status = \'submitted\' AND approval_level = ?');
+                $upd->execute([$naik, $id, $pid, $lama]);
+                if ($upd->rowCount() === 0) {
+                    $pdo->rollBack();
+                    flash('Dokumen ini baru saja ditangani orang lain — silakan muat ulang halamannya.');
+                    redirect_to('skp_form', ['id' => $id]);
+                }
+                ApprovalLine::record($pdo, $pid, $id, $tahap['step_no'], $tahap['role_name'], 'paraf',
+                    trim((string) post('approval_note')) . $wakil, true);
+                $pdo->commit();
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                error_log('paraf SKP gagal (id=' . $id . '): ' . $e->getMessage());
+                flash('Paraf gagal disimpan, dokumen tidak berubah. Coba lagi.');
+                redirect_to('skp_form', ['id' => $id]);
+            }
             audit($pdo, 'skp_paraf', 'skp_documents', (string) $id,
                 ['tahap' => $tahap['step_no'], 'jabatan' => $tahap['role_name'], 'mewakili' => $wakil !== '']);
             $berikut = $alur[$naik] ?? null;
@@ -1839,6 +1882,11 @@ function skp_approve(PDO $pdo): void
         'amounts' => $amt, 'sales' => $src['pic_name'], 'property_name' => $prop['name'] ?? '',
         // Jadwal harga bertahap ikut dibekukan supaya cetakan ulang tidak berubah.
         'tahap_harga' => AllocationService::priceSteps($pdo, (int) ($skp['transaction_id'] ?? 0), (int) ($skp['offer_id'] ?? 0)),
+        // Paraf tahap-tahap sebelum persetujuan akhir ikut dibekukan, supaya
+        // dokumen yang diserahkan ke client menyebut siapa yang memeriksanya —
+        // dan tetap menyebut nama yang sama walau alurnya nanti diubah.
+        // Dokumen lama tidak punya kunci ini, jadi cetakannya tidak berubah.
+        'paraf' => ApprovalLine::jejakBeku($pdo, $id),
         // Tarif bertingkat per m² (paket) ikut dibekukan supaya cetakan ulang
         // tetap memperlihatkan asal angkanya walau penawarannya diubah.
         'tier_harga' => (!empty($skp['offer_id']) && function_exists('offer_area_tiers'))

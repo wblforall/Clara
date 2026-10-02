@@ -860,7 +860,23 @@ function mobile_skp_page(PDO $pdo): void
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
 
-    layout('SKP / SKS', function () use ($rows, $status, $module) {
+    // Dokumen yang menunggu paraf/persetujuan berhenti di tahap siapa. Sales
+    // memakai HP, jadi keterangan ini harus ada di sini juga — kalau tidak,
+    // kartunya cuma menulis "Menunggu Approval" dan tidak ada yang tahu bahwa
+    // dokumennya masih di Asst. Manager, belum di Manager.
+    require_once dirname(__DIR__) . '/ApprovalLine.php';
+    $alurCacheM = [];
+    foreach ($rows as $i => $r) {
+        $dt = (string) ($r['doc_type'] ?? 'skp');
+        if (!array_key_exists($dt, $alurCacheM)) $alurCacheM[$dt] = ApprovalLine::steps($pdo, $pid, $dt);
+        $rows[$i]['_alur_ket'] = ApprovalLine::keterangan($r, $alurCacheM[$dt]);
+        $rows[$i]['_alur_n']   = count($alurCacheM[$dt]);
+    }
+    // Antrean milik orang ini — tombol pintas ke daftar desktop yang punya
+    // panel paraf (kartu mobile sengaja tidak diberi tombol menyetujui).
+    $antreanM = count(ApprovalLine::antreanSaya($pdo, $pid));
+
+    layout('SKP / SKS', function () use ($rows, $status, $module, $antreanM) {
         $badge = [
             'draft'     => ['Draft', '#475569', '#f1f5f9'],
             'submitted' => ['Menunggu Approval', '#92400e', '#fef3c7'],
@@ -907,6 +923,13 @@ function mobile_skp_page(PDO $pdo): void
             <?php endforeach; ?>
         </div>
 
+        <?php if ($antreanM > 0): ?>
+        <div class="m-card" style="border:1px solid #93c5fd;background:#eff6ff;margin-bottom:10px">
+            <div style="font-weight:700;color:#1e40af;font-size:13px">🖊 <?= $antreanM ?> dokumen menunggu tindakan Anda</div>
+            <div style="font-size:11.5px;color:#1e3a8a;margin-top:2px">Tombol paraf / setujui hanya ada di tampilan desktop.</div>
+            <a href="?view=desktop" style="display:inline-block;margin-top:7px;font-size:12px;font-weight:700;color:#1d4ed8">Pindah ke tampilan desktop →</a>
+        </div>
+        <?php endif; ?>
         <?php if (empty($rows)): ?>
             <div class="m-card m-empty">Belum ada SKP/SKS.<br><span style="font-size:12px">Dibuat dari Preview Penawaran yang sudah DEAL.</span></div>
         <?php else: foreach ($rows as $s):
@@ -919,6 +942,9 @@ function mobile_skp_page(PDO $pdo): void
                     <span class="st" style="color:<?= $st[1] ?>;background:<?= $st[2] ?>"><?= $st[0] ?></span>
                 </div>
                 <div class="nm"><?= h($s['company_name'] ?? '—') ?></div>
+                <?php if ($s['status'] === 'submitted' && (int) ($s['_alur_n'] ?? 0) > 1 && ($s['_alur_ket'] ?? '')): ?>
+                <div style="font-size:11.5px;color:#92400e;margin:2px 0 1px"><?= h($s['_alur_ket']) ?></div>
+                <?php endif; ?>
                 <div class="meta">
                     <span class="mb" style="color:<?= $mc ?>;background:<?= $mbg ?>"><?= h($ml) ?></span>
                     <span><?= $fmt($s['start_date']) ?> – <?= $fmt($s['end_date']) ?></span>

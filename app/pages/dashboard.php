@@ -7,6 +7,11 @@ function dashboard(PDO $pdo): void
     $pid = current_property_id();
     // Hanya yang berhak mengubah master yang perlu tahu — dan yang bisa memperbaikinya.
     $masterIssues = can('manage_master') ? master_data_issues($pdo, $pid) : [];
+    // Dokumen yang menunggu paraf/persetujuan ORANG INI. Sebelum ada ini,
+    // pemeriksa tidak punya cara tahu ada yang menunggunya selain membuka
+    // daftar SKP dan menebak — itulah sebab "sering miss".
+    require_once dirname(__DIR__) . '/ApprovalLine.php';
+    $antreanSaya = count(ApprovalLine::antreanSaya($pdo, $pid));
     $tgtStmt = $pdo->prepare("SELECT target_amount FROM targets_monthly WHERE period_key = ? AND property_id = ?");
     $tgtStmt->execute([$period, $pid]);
     $target = (float) ($tgtStmt->fetchColumn() ?: 0);
@@ -156,7 +161,7 @@ function dashboard(PDO $pdo): void
         $monthsByYear[$y][] = $m;
     }
 
-    layout('Dashboard Bulanan', function () use ($pdo, $period, $target, $projection, $actual, $capacity, $occupancy, $totalProjection, $totalActual, $totalRecurring, $detail, $detailCl, $detailGudang, $pic, $periodDays, $years, $monthsByYear, $periodYear, $periodMonth, $monthNames, $mediaRates, $totalNewClients, $masterIssues) {
+    layout('Dashboard Bulanan', function () use ($pdo, $period, $target, $projection, $actual, $capacity, $occupancy, $totalProjection, $totalActual, $totalRecurring, $detail, $detailCl, $detailGudang, $pic, $periodDays, $years, $monthsByYear, $periodYear, $periodMonth, $monthNames, $mediaRates, $totalNewClients, $masterIssues, $antreanSaya) {
         $achPct   = $totalProjection > 0 ? $totalActual / $totalProjection : 0;
         $achClass = $achPct >= 1.0 ? 'kpi-good' : ($achPct >= 0.8 ? 'kpi-warn' : 'kpi-bad');
         $gi       = 0;
@@ -227,6 +232,16 @@ function dashboard(PDO $pdo): void
                 </div>
             </div>
         </form>
+        <?php if ($antreanSaya > 0): ?>
+        <div class="panel" style="margin:12px 0;border:1px solid #93c5fd;background:#eff6ff;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <div style="font-size:22px">🖊</div>
+            <div style="flex:1;min-width:220px">
+                <div style="font-weight:700;color:#1e40af"><?= $antreanSaya ?> dokumen menunggu tindakan Anda</div>
+                <div style="font-size:12.5px;color:#1e3a8a">Dokumen sudah sampai di tahap Anda dalam alur persetujuan. Selama belum Anda tangani, nomornya belum terbit dan belum bisa diserahkan ke client.</div>
+            </div>
+            <a class="btn" href="?r=skp&giliran=1" style="background:#1d4ed8">Buka daftarnya →</a>
+        </div>
+        <?php endif; ?>
         <?php if ($masterIssues): $totalIssues = array_sum(array_map(fn($i) => count($i['rows']), $masterIssues)); ?>
         <details class="panel" style="margin:12px 0;border:1px solid #fcd34d;background:#fffbeb">
             <summary style="cursor:pointer;font-weight:700;color:#92400e">

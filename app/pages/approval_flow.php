@@ -25,21 +25,27 @@ function _af_jabatan(PDO $pdo, int $pid): array
 }
 
 /**
- * Orang per jabatan — berikut apakah akunnya BISA membuka properti ini.
+ * Orang per jabatan — berikut apakah akunnya benar-benar BISA memparaf di sini.
  *
- * Jabatan di Master PIC dan hak akses properti di akun user adalah dua hal
- * terpisah. Seseorang bisa tercatat sebagai Asst. Manager di sini tetapi
- * akunnya tidak diberi akses ke properti ini — alurnya akan tersangkut tanpa
- * ada yang tahu sebabnya. Jadi kondisinya ditampilkan terang-terangan.
+ * Jabatan di Master PIC, hak akses properti, dan izin approval adalah TIGA hal
+ * terpisah. Seseorang bisa tercatat sebagai Asst. Manager di sini tetapi akunnya
+ * tidak diberi akses ke properti ini, atau role-nya tidak memegang izin
+ * "Approve SKP" — dua-duanya membuat tombol parafnya tidak pernah muncul dan
+ * alurnya tersangkut tanpa ada yang tahu sebabnya. Jadi ketiga syarat itu
+ * diperiksa dan kondisinya ditampilkan terang-terangan.
  */
 function _af_orang(PDO $pdo, int $pid): array
 {
+    // can() memuliakan superadmin & admin tanpa melihat matrix, jadi dua role itu
+    // dianggap selalu berizin — sama seperti perilaku can() yang sebenarnya.
     $st = $pdo->prepare("SELECT p.role_name, p.name, p.user_id,
-                                u.id AS akun, u.status AS akun_status,
-                                (up.user_id IS NOT NULL) AS boleh_properti
+                                u.id AS akun, u.status AS akun_status, u.role AS akun_role,
+                                (up.user_id IS NOT NULL) AS boleh_properti,
+                                (u.role IN ('superadmin','admin') OR rp.role IS NOT NULL) AS boleh_approve
                            FROM master_pic p
                            LEFT JOIN users u ON u.id = p.user_id
                            LEFT JOIN user_properties up ON up.user_id = p.user_id AND up.property_id = p.property_id
+                           LEFT JOIN role_permissions rp ON rp.role = u.role AND rp.permission = 'approve_skp'
                           WHERE p.property_id = ? AND p.status = 'active'
                             AND COALESCE(p.role_name,'') <> '' ORDER BY p.role_name, p.name");
     $st->execute([$pid]);
@@ -56,6 +62,9 @@ function _af_siap(array $orang, string $jabatan): array
         if (!$o['akun'])                       { $kendala[] = $o['name'] . ' (belum punya akun)'; continue; }
         if (($o['akun_status'] ?? '') !== 'active') { $kendala[] = $o['name'] . ' (akun nonaktif)'; continue; }
         if (!$o['boleh_properti'])             { $kendala[] = $o['name'] . ' (akunnya belum diberi akses properti ini)'; continue; }
+        // Tanpa izin Approve SKP, tombol parafnya tidak akan pernah muncul
+        // (ApprovalLine::canAct mensyaratkannya) — jadi dia belum "siap".
+        if (!$o['boleh_approve'])              { $kendala[] = $o['name'] . ' (role "' . ($o['akun_role'] ?: '-') . '" belum punya izin Approve SKP)'; continue; }
         $siap[] = $o['name'];
     }
     return ['siap' => $siap, 'kendala' => $kendala];
@@ -124,7 +133,9 @@ function approval_flow_page(PDO $pdo): void
             <div class="panel" style="background:#fef2f2;border:1px solid #fecaca">
                 <p style="margin:0;color:#991b1b"><strong>Alur ini akan tersangkut.</strong> Tidak ada orang aktif yang bisa memparaf tahap:
                    <strong><?= h(implode(', ', $buntu)) ?></strong>. Pastikan orangnya punya akun, akunnya aktif,
-                   dan akun itu diberi akses ke properti ini di <a href="?r=users">Users &amp; Role</a>.</p>
+                   akun itu diberi akses ke properti ini di <a href="?r=users">Users &amp; Role</a>,
+                   dan role-nya memegang izin <strong>Approve SKP</strong> di <a href="?r=roles">Role &amp; Permission</a>.
+                   Keterangan per baris di bawah menyebut kendalanya masing-masing.</p>
             </div>
             <?php endif; ?>
             <form method="post" action="?r=approval_flow_save">
