@@ -1109,12 +1109,35 @@ function _trx_locking_skp(PDO $pdo, int $trxId, int $pid): ?array
 {
     if ($trxId <= 0) return null;
     $st = $pdo->prepare(
-        "SELECT skp_no, status, doc_type FROM skp_documents
+        "SELECT skp_no, status, doc_type, snapshot_json FROM skp_documents
          WHERE transaction_id = ? AND property_id = ? AND status IN ('approved','signed')
          ORDER BY id DESC LIMIT 1"
     );
     $st->execute([$trxId, $pid]);
     return $st->fetch() ?: null;
+}
+
+/**
+ * Apakah jadwal harga kontrak sekarang BERBEDA dari yang tercetak di dokumen
+ * bertanda tangan?
+ *
+ * Jadwal yang memang ikut terbit bersama suratnya (kasus Mr. Donut: dua harga
+ * sudah tercantum sejak Surat Penawaran) BUKAN penyimpangan — peringatannya
+ * tidak boleh muncul di situ, kalau tidak sales akan terbiasa mengabaikannya.
+ * Pembanding diambil dari snapshot dokumen yang dibekukan saat disetujui.
+ */
+function _trx_tahap_beda_dari_surat(?array $lockSkp, array $tahap): bool
+{
+    if (!$lockSkp || !$tahap) return false;
+    $snap = json_decode((string) ($lockSkp['snapshot_json'] ?? ''), true);
+    // Dokumen lama tanpa snapshot jadwal → tidak bisa dibandingkan; anggap beda
+    // supaya tetap ada peringatan, bukan diam-diam dianggap sama.
+    if (!is_array($snap) || !array_key_exists('tahap_harga', $snap)) return true;
+    $ringkas = fn(array $rows) => array_map(
+        fn($r) => [(string) ($r['from'] ?? ''), round((float) ($r['amount'] ?? 0))],
+        array_values($rows)
+    );
+    return $ringkas((array) ($snap['tahap_harga'] ?: [])) !== $ringkas($tahap);
 }
 
 function transaction_edit(PDO $pdo): void
@@ -2051,7 +2074,7 @@ function allocation_detail(PDO $pdo): void
     // Transaksi yang terbit dari dokumen bertanda tangan tetap boleh dinaikkan —
     // itu memang kebutuhannya — tapi harus terbaca jelas bahwa nilainya lalu
     // berbeda dari surat yang dipegang client.
-    $bedaDariSurat = $lockSkp && $tahap;
+    $bedaDariSurat = _trx_tahap_beda_dari_surat($lockSkp, $tahap);
     layout('Detail Alokasi Transaksi #' . $id, function () use ($trx, $allocRows, $adaBagi, $lockSkp, $tahap, $bisaUbahHarga, $bedaDariSurat, $bagiTrx, $picPilihan, $bisaUbahBagi, $acuanBagiTrx) {
         ?>
         <div class="panel">
