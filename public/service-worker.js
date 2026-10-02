@@ -13,7 +13,7 @@
 
 // Bump VERSION setiap kali aset (CSS/JS/ikon) berubah → activate menghapus cache
 // lama lalu precache ulang, sehingga klien lama pasti dapat aset terbaru.
-const VERSION    = 'clara-v2';
+const VERSION    = 'clara-v3';
 const ASSETCACHE = 'clara-assets-' + VERSION;
 const SHELLCACHE = 'clara-shell-' + VERSION;
 

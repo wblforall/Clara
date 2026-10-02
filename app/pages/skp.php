@@ -5,6 +5,11 @@
 //       → cetak/PDF. Lihat [[project-skp]] / migration 013.
 
 require_once __DIR__ . '/skp_modules.php';
+// Dimuat di tingkat berkas, bukan di dalam fungsi: require_once di dalam satu
+// fungsi hanya jalan bila fungsi ITU dipanggil, sehingga fungsi lain di berkas
+// yang sama bisa fatal "Class ApprovalLine not found". Berkasnya hanya berisi
+// definisi kelas, tanpa efek samping, jadi aman dimuat selalu.
+require_once dirname(__DIR__) . '/ApprovalLine.php';
 
 /** Ketentuan/Note baku dokumen SKP/SKS (sumber tunggal: cetakan & halaman TTD). */
 function skp_terms(): array
@@ -254,7 +259,12 @@ function skp_list_page(PDO $pdo): void
     // Dokumen yang menunggu tindakan orang yang sedang masuk. Dihitung dari
     // seluruh dokumen 'submitted' propertinya (bukan dari $rows yang sudah
     // tersaring), supaya angka di tab tetap benar walau sedang memfilter.
-    $antreanIds = ApprovalLine::antreanSaya($pdo, $pid);
+    // Antrean = dokumen yang menunggu paraf/persetujuan saya DITAMBAH permintaan
+    // revisi yang menunggu keputusan saya. Keduanya sama-sama menahan dokumen.
+    $antreanIds = array_values(array_unique(array_merge(
+        ApprovalLine::antreanSaya($pdo, $pid),
+        ApprovalLine::antreanRevisiSaya($pdo, $pid)
+    )));
     $antreanN   = count($antreanIds);
     // Tab "Giliran Saya": saring barisnya di PHP, karena kelayakan bertindak
     // bergantung jabatan & tahap — bukan sesuatu yang bisa ditanyakan ke SQL.
@@ -268,6 +278,7 @@ function skp_list_page(PDO $pdo): void
         if (!array_key_exists($dt, $alurCache)) $alurCache[$dt] = ApprovalLine::steps($pdo, $pid, $dt);
         $rows[$i]['_alur_ket'] = ApprovalLine::keterangan($r, $alurCache[$dt]);
         $rows[$i]['_alur_n']   = count($alurCache[$dt]);
+        $rows[$i]['_revisi']   = ($r['status'] === 'approved' && ApprovalLine::revisiPending($pdo, (int) $r['id'])) ? 1 : 0;
     }
 
     layout('Surat Konfirmasi Pameran (SKP)', function () use ($rows, $status, $module, $antreanN, $giliran) {
@@ -344,6 +355,12 @@ function skp_list_page(PDO $pdo): void
                             <td><span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span><?php
                                 if ($r['status'] === 'submitted' && (int) ($r['_alur_n'] ?? 0) > 1): ?>
                                 <div style="font-size:11px;color:#92400e;margin-top:3px"><?= h(str_replace('Menunggu ', '', (string) $r['_alur_ket'])) ?></div>
+                                <?php endif; ?>
+                                <?php if (!empty($r['_revisi'])): ?>
+                                <div style="font-size:11px;color:#5b21b6;margin-top:3px;font-weight:700">menunggu keputusan revisi</div>
+                                <?php endif; ?>
+                                <?php if ((int) ($r['revisi_ke'] ?? 0) > 0): ?>
+                                <div style="font-size:11px;color:var(--muted);margin-top:2px">revisi ke-<?= (int) $r['revisi_ke'] ?></div>
                                 <?php endif; ?></td>
                             <td style="font-size:11.5px;color:var(--muted)"><?= h($r['created_by'] ?? '-') ?><br><?= h(substr($r['created_at'] ?? '', 0, 16)) ?></td>
                             <td style="white-space:nowrap">
@@ -534,8 +551,20 @@ function skp_form(PDO $pdo): void
     // Manager / Manager) memegang izin manage_skp juga, jadi tanpa pembatasan
     // ini mereka bisa mengedit sendiri dokumen yang baru saja mereka kembalikan —
     // dan jejak "siapa memperbaiki apa" jadi kabur.
+    // ApprovalLine dipakai beberapa baris di bawah ini. require_once di dalam
+    // fungsi LAIN tidak menolong — ia hanya jalan bila fungsi itu dipanggil.
+    require_once dirname(__DIR__) . '/ApprovalLine.php';
     $sayaPic = _skp_pemilik($pdo, $pid, $skp, $src);
-    $editable = ($skp === null || in_array($skp['status'], ['draft', 'rejected'], true)) && $sayaPic;
+    // Kesepakatan yang DIBATALKAN berbeda dari dokumen yang dikembalikan untuk
+    // diperbaiki: transaksinya sudah dimatikan, jadi memperbaikinya tidak akan
+    // bisa disetujui lagi. Jangan ditampilkan seolah masih bisa dikerjakan.
+    $dibatalkan = false;
+    if ($skp && ($skp['status'] ?? '') === 'rejected') {
+        foreach (array_reverse(ApprovalLine::history($pdo, (int) $skp['id'])) as $j) {
+            if (in_array($j['action'] ?? '', ['batal', 'tolak'], true)) { $dibatalkan = ($j['action'] === 'batal'); break; }
+        }
+    }
+    $editable = ($skp === null || in_array($skp['status'], ['draft', 'rejected'], true)) && $sayaPic && !$dibatalkan;
     $days     = _skp_days($src['start_date'], $src['end_date']);
     $total    = (float) ($src['final_amount'] ?: $src['total_calculated']);
     $defDeposit = (float) ($skp['deposit_amount'] ?? $src['deposit_amount'] ?? 0);
@@ -595,6 +624,13 @@ function skp_form(PDO $pdo): void
     $alurWakil = ($skp && $alur && $alurBoleh) ? ApprovalLine::mewakili($pdo, $pid, $skp, $alur) : false;
     $alurTunggu = ($skp && $alur) ? ApprovalLine::penungguNama($pdo, $pid, $skp, $alur) : [];
     $alurAkhir = $skp ? ApprovalLine::isFinalStep($skp, $alur) : true;
+    // Permintaan revisi: hanya berlaku untuk dokumen yang sudah disetujui dan
+    // BELUM ditandatangani client.
+    $revTahap   = $skp ? ApprovalLine::revisiTahap($pdo, $pid, (string) ($skp['doc_type'] ?? 'skp')) : null;
+    $revPending = $skp ? ApprovalLine::revisiPending($pdo, (int) $skp['id']) : null;
+    $revRiwayat = $skp ? ApprovalLine::revisiRiwayat($pdo, (int) $skp['id']) : [];
+    $revBolehAjukan = $skp && ApprovalLine::bolehAjukanRevisi($skp) && !$revPending && $sayaPic;
+    $revBolehPutus  = ($skp && $revPending) ? ApprovalLine::bolehPutusRevisi($pdo, $pid, (string) ($skp['doc_type'] ?? 'skp')) : false;
 
     $picAktif = $pdo->prepare("SELECT name, (show_achievement = 1 AND target_share > 0) AS di_laporan
                                FROM master_pic WHERE property_id = ? AND status = 'active' ORDER BY name");
@@ -609,10 +645,31 @@ function skp_form(PDO $pdo): void
     // Acuan jumlah: nilai kontrak dokumen ini, bukan angka yang diketik ulang.
     $nilaiAcuan = (float) ($src['final_amount'] ?: $src['total_calculated']);
 
-    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir) {
+    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir, $revTahap, $revPending, $revRiwayat, $revBolehAjukan, $revBolehPutus, $dibatalkan) {
         $statusSewaDefault = ($isRenew || (!empty($src['renewal_status']) && $src['renewal_status'] !== 'none')) ? 'Perpanjangan' : 'Baru';
         ?>
         <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=<?= $standalone ? 'skp' : ($offerId ? 'offer_form&id=' . (int)$offerId : 'allocation_detail&id=' . (int)$trxId) ?>">← <?= $standalone ? 'Daftar Dokumen' : ($offerId ? 'Penawaran' : 'Detail Alokasi') ?></a><a class="btn light" href="?r=skp">Daftar Dokumen</a> <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h($docLabel) ?></span></div>
+
+        <?php /* Dokumen yang dibuka kembali karena revisi disetujui: PIC perlu
+                 tahu sebabnya, karena statusnya 'draft' (bukan 'rejected') dan
+                 spanduk penolakan di bawah tidak muncul. */ ?>
+        <?php if ($skp && ($skp['status'] ?? '') === 'draft' && (int) ($skp['revisi_ke'] ?? 0) > 0): ?>
+        <div class="panel" style="margin-top:10px;background:#f5f3ff;border:1px solid #ddd6fe">
+            <strong style="color:#5b21b6">Dibuka kembali untuk revisi ke-<?= (int) $skp['revisi_ke'] ?></strong>
+            <?php $rvAkhir = $revRiwayat[0] ?? null; if ($rvAkhir && ($rvAkhir['status'] ?? '') === 'approved'): ?>
+                &mdash; disetujui <strong><?= h($rvAkhir['decided_by'] ?: '-') ?></strong><?php
+                if (($rvAkhir['decided_role'] ?? '') !== ''): ?> (<?= h($rvAkhir['decided_role']) ?>)<?php endif; ?>,
+                <?= h(substr((string) ($rvAkhir['decided_at'] ?? ''), 0, 16)) ?>
+            <?php endif; ?><br>
+            <span style="color:#4c1d95">Alasan: <?= h($rvAkhir['alasan'] ?? ($skp['reject_note'] ?? '-')) ?></span>
+            <div style="margin-top:6px;font-size:12.5px;color:#5b21b6">
+                Nomor dokumen <strong><?= h($skp['skp_no'] ?: '-') ?></strong> tetap dipakai.
+                <?= $editable
+                    ? 'Perbaiki lalu <strong>Submit untuk Approval</strong> &mdash; dokumen menempuh alur persetujuan dari tahap pertama, dan tautan tanda tangan baru terbit setelah disetujui.'
+                    : 'Hanya <strong>PIC dokumen ini</strong> yang bisa memperbaikinya.' ?>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <?php if ($skp && $skp['status'] === 'rejected'):
             // Siapa yang mengembalikan & dari tahap mana — diambil dari jejak,
@@ -621,7 +678,6 @@ function skp_form(PDO $pdo): void
             foreach (array_reverse($alurJejak) as $j) {
                 if (in_array($j['action'] ?? '', ['tolak', 'batal'], true)) { $tlk = $j; break; }
             }
-            $dibatalkan = ($tlk['action'] ?? '') === 'batal';
         ?>
         <div class="panel" style="margin-top:10px;background:#fef2f2;border:1px solid #fecaca">
             <strong style="color:#991b1b"><?= $dibatalkan ? 'Kesepakatan dibatalkan' : 'Dikembalikan untuk diperbaiki' ?></strong>
@@ -630,13 +686,16 @@ function skp_form(PDO $pdo): void
                 if (($tlk['created_at'] ?? '') !== ''): ?>, <?= h(substr((string) $tlk['created_at'], 0, 16)) ?><?php endif;
             endif; ?>.<br>
             <span style="color:#7f1d1d">Catatan: <?= h($skp['reject_note'] ?? '-') ?></span>
-            <?php if (!$dibatalkan): ?>
             <div style="margin-top:6px;font-size:12.5px;color:#991b1b">
-                <?= $editable
-                    ? 'Perbaiki isinya lalu <strong>Submit untuk Approval</strong> lagi — dokumen menempuh alur dari tahap pertama.'
-                    : 'Hanya <strong>PIC dokumen ini</strong> yang bisa memperbaikinya.' ?>
+                <?php if ($dibatalkan): ?>
+                    Kesepakatan ini sudah dibatalkan beserta transaksinya &mdash; dokumen tidak bisa diperbaiki lagi.
+                    Bila ternyata jadi, terbitkan dokumen baru.
+                <?php else: ?>
+                    <?= $editable
+                        ? 'Perbaiki isinya lalu <strong>Submit untuk Approval</strong> lagi — dokumen menempuh alur dari tahap pertama.'
+                        : 'Hanya <strong>PIC dokumen ini</strong> yang bisa memperbaikinya.' ?>
+                <?php endif; ?>
             </div>
-            <?php endif; ?>
         </div>
         <?php endif; ?>
 
@@ -973,6 +1032,70 @@ function skp_form(PDO $pdo): void
                 </div>
                 <?php endforeach; ?>
             </div>
+        </div>
+        <?php endif; ?>
+
+        <?php /* ── Permintaan revisi ──────────────────────────────────────────
+                 Dokumen yang sudah disetujui memang dikunci. Tetapi selama client
+                 BELUM menandatangani, koreksi lebih masuk akal diperbaiki
+                 daripada dokumennya dibatalkan lalu dibuat ulang. */ ?>
+        <?php if ($skp && ($revBolehAjukan || $revPending || $revRiwayat)): ?>
+        <div class="panel" style="margin-top:12px;border:1px solid #ddd6fe;background:#f5f3ff">
+            <h3 style="margin-top:0;color:#5b21b6">Permintaan Revisi<?= (int) ($skp['revisi_ke'] ?? 0) > 0 ? ' <span class="badge" style="background:#ede9fe;color:#5b21b6">dokumen ini sudah revisi ke-' . (int) $skp['revisi_ke'] . '</span>' : '' ?></h3>
+
+            <?php if ($revPending): ?>
+            <div style="background:#fff;border:1px solid #ddd6fe;border-radius:8px;padding:10px 13px;margin-bottom:9px">
+                <div style="font-weight:700;color:#5b21b6">Menunggu keputusan <?= h($revTahap['label'] ?? 'penanggung jawab revisi') ?></div>
+                <div style="font-size:12.5px;margin-top:3px">Diajukan <strong><?= h($revPending['requested_by'] ?: '-') ?></strong>
+                    <?= h(substr((string) $revPending['requested_at'], 0, 16)) ?><br>
+                    Alasan: <?= h($revPending['alasan']) ?></div>
+            </div>
+                <?php if ($revBolehPutus): ?>
+                <form method="post" action="?r=skp_revision_decide" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int) $skp['id'] ?>">
+                    <input name="decision_note" placeholder="Catatan (opsional)" style="width:230px;max-width:100%">
+                    <button type="submit" name="keputusan" value="setuju" style="background:#6d28d9"
+                        onclick="return confirm('Setujui permintaan revisi ini?\n\nDokumen dibuka kembali untuk PIC. Nomornya TETAP, tetapi setelah diperbaiki harus menempuh alur persetujuan dari awal lagi, dan tautan tanda tangan yang lama dimatikan.')">✓ Setujui Revisi</button>
+                    <button type="submit" name="keputusan" value="tolak" class="btn warn"
+                        onclick="return confirm('Tolak permintaan revisi ini? Dokumen tetap seperti semula.')">✗ Tolak Permintaan</button>
+                </form>
+                <?php else: ?>
+                <p class="help" style="margin:0">Keputusannya ada pada <strong><?= h($revTahap['label'] ?? 'penanggung jawab revisi') ?></strong>.</p>
+                <?php endif; ?>
+            <?php elseif ($revBolehAjukan): ?>
+            <p style="margin:0 0 8px;font-size:12.5px">Dokumen sudah disetujui tetapi <strong>belum ditandatangani client</strong>, jadi masih bisa diperbaiki.
+               Permintaan akan dikirim ke <strong><?= h($revTahap['label'] ?? 'pemegang izin approval') ?></strong>; kalau disetujui, dokumen terbuka kembali untuk Anda edit.</p>
+            <form method="post" action="?r=skp_revision_request" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int) $skp['id'] ?>">
+                <input name="alasan" placeholder="Apa yang perlu diperbaiki" style="width:300px;max-width:100%" required>
+                <button type="submit" style="background:#6d28d9">Ajukan Revisi</button>
+            </form>
+            <?php endif; ?>
+
+            <?php $revSelesai = array_values(array_filter($revRiwayat, fn($r) => $r['status'] !== 'pending')); ?>
+            <?php if ($revSelesai): ?>
+            <div class="table-wrap" style="margin-top:9px">
+                <table style="max-width:760px;font-size:12.5px">
+                    <thead><tr><th>Diajukan</th><th>Alasan</th><th>Keputusan</th><th>Oleh</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($revSelesai as $r): ?>
+                    <tr>
+                        <td style="white-space:nowrap"><?= h(substr((string) $r['requested_at'], 0, 16)) ?><br><span class="muted"><?= h($r['requested_by'] ?: '-') ?></span></td>
+                        <td><?= h($r['alasan']) ?></td>
+                        <td style="font-weight:700;color:<?= $r['status'] === 'approved' ? '#15803d' : '#b91c1c' ?>"><?= $r['status'] === 'approved' ? 'Disetujui' : 'Ditolak' ?>
+                            <?= $r['decision_note'] ? '<br><span class="muted" style="font-weight:400">' . h($r['decision_note']) . '</span>' : '' ?></td>
+                        <td style="white-space:nowrap"><?= h($r['decided_by'] ?: '-') ?><br><span class="muted"><?= h(substr((string) ($r['decided_at'] ?? ''), 0, 16)) ?></span></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+        </div>
+        <?php elseif ($skp && ($skp['status'] ?? '') === 'signed'): ?>
+        <div class="panel" style="margin-top:12px;color:var(--muted);font-size:12.5px">
+            Dokumen sudah <strong>ditandatangani client</strong> &mdash; tidak bisa direvisi lagi.
+            Bila memang ada perubahan, terbitkan dokumen baru.
         </div>
         <?php endif; ?>
 
@@ -2024,8 +2147,15 @@ function skp_approve(PDO $pdo): void
     try {
         $pdo->beginTransaction();
 
-        $seq   = next_seq_no($pdo, 'skp_counters', $pid, $year);
-        $skpNo = sprintf('%s/%s/%d/%03d', $prefix, $code, $year, $seq);
+        // Dokumen hasil REVISI memakai nomor yang SAMA — ini dokumen yang sama,
+        // versi berikutnya. Menerbitkan nomor baru akan membakar urutan counter
+        // dan membuat client memegang dua nomor untuk satu kesepakatan.
+        if (!empty($skp['skp_no'])) {
+            $skpNo = (string) $skp['skp_no'];
+        } else {
+            $seq   = next_seq_no($pdo, 'skp_counters', $pid, $year);
+            $skpNo = sprintf('%s/%s/%d/%03d', $prefix, $code, $year, $seq);
+        }
 
         // Syarat status masih 'submitted': dua orang yang menekan Setujui
         // bersamaan tidak boleh sama-sama menerbitkan nomor. Yang kalah
@@ -2106,12 +2236,15 @@ function skp_approve(PDO $pdo): void
             $tid = (int) $skp['transaction_id'];
             $cekAlok = $pdo->prepare('SELECT COUNT(*) FROM transaction_allocations WHERE transaction_id = ?');
             $cekAlok->execute([$tid]);
-            if ((int) $cekAlok->fetchColumn() === 0) {
+            // Dihitung ulang bila alokasinya kosong (bekas dikembalikan ke PIC)
+            // ATAU dokumen ini hasil revisi — isinya bisa berubah, jadi angkanya
+            // tidak boleh tetap memakai hitungan versi lama.
+            if ((int) $cekAlok->fetchColumn() === 0 || (int) ($skp['revisi_ke'] ?? 0) > 0) {
                 $tq = $pdo->prepare('SELECT * FROM transactions WHERE id = ? AND property_id = ? AND deleted_at IS NULL');
                 $tq->execute([$tid, $pid]);
                 if ($trxUlang = $tq->fetch()) {
                     AllocationService::saveAllocations($pdo, $tid, $trxUlang);
-                    $trxMsg = ' Alokasi bulanan transaksi #' . $tid . ' dihitung ulang & kembali masuk laporan.';
+                    $trxMsg = ' Alokasi bulanan transaksi #' . $tid . ' dihitung ulang.';
                 }
             }
         }
@@ -2132,7 +2265,10 @@ function skp_approve(PDO $pdo): void
             ->execute([count($alur), $id, $pid]);
     }
     audit($pdo, 'approve', 'skp_documents', (string) $id, ['skp_no' => $skpNo]);
-    flash("Disetujui. Nomor terbit: $skpNo." . $trxMsg);
+    $revKe = (int) ($skp['revisi_ke'] ?? 0);
+    flash($revKe > 0
+        ? "Revisi ke-$revKe disetujui. Nomor dokumen tetap: $skpNo." . $trxMsg . ' Tautan tanda tangan baru sudah terbit — kirim ulang ke client.'
+        : "Disetujui. Nomor terbit: $skpNo." . $trxMsg);
     redirect_to('skp_form', ['id' => $id]);
 }
 
@@ -2231,6 +2367,148 @@ function skp_reject(PDO $pdo): void
     if ($picDok === '') $picDok = trim((string) ($cur['created_by'] ?? '')) ?: 'sales';
     flash('Dokumen dikembalikan ke PIC (' . h($picDok) . ') untuk diperbaiki.'
         . ($trxId ? ' Alokasi bulanannya dilepas dulu dari laporan sampai disetujui kembali.' : ''));
+    redirect_to('skp_form', ['id' => $id]);
+}
+
+/**
+ * PIC mengajukan revisi atas dokumen yang SUDAH disetujui tetapi BELUM
+ * ditandatangani client.
+ *
+ * Dokumen yang sudah ditandatangani tidak bisa direvisi — yang dipegang client
+ * sudah mengikat, jadi perubahannya harus lewat dokumen baru.
+ */
+function skp_revision_request(PDO $pdo): void
+{
+    require_permission('manage_skp');
+    verify_csrf();
+    $pid    = current_property_id();
+    $id     = (int) post('id');
+    $alasan = trim((string) post('alasan'));
+    if ($alasan === '') { flash('Alasan revisi wajib diisi.'); redirect_to('skp_form', ['id' => $id]); }
+
+    $st = $pdo->prepare('SELECT * FROM skp_documents WHERE id = ? AND property_id = ?');
+    $st->execute([$id, $pid]);
+    $skp = $st->fetch();
+    if (!$skp) { flash('Dokumen tidak ditemukan.'); redirect_to('skp'); }
+
+    if (($skp['status'] ?? '') === 'signed') {
+        flash('Dokumen sudah ditandatangani client — tidak bisa direvisi lagi. Terbitkan dokumen baru bila memang ada perubahan.');
+        redirect_to('skp_form', ['id' => $id]);
+    }
+    if (($skp['status'] ?? '') !== 'approved') {
+        flash('Pengajuan revisi hanya untuk dokumen yang sudah disetujui dan belum ditandatangani client.');
+        redirect_to('skp_form', ['id' => $id]);
+    }
+
+    require_once dirname(__DIR__) . '/ApprovalLine.php';
+    if (ApprovalLine::revisiPending($pdo, $id)) {
+        flash('Sudah ada permintaan revisi yang menunggu keputusan untuk dokumen ini.');
+        redirect_to('skp_form', ['id' => $id]);
+    }
+
+    // Hanya PIC dokumen ini (atau admin) yang boleh mengajukan.
+    $src = !empty($skp['offer_id'])
+        ? _skp_source_from_offer($pdo, (int) $skp['offer_id'], $pid)
+        : (!empty($skp['transaction_id'])
+            ? _skp_source($pdo, (int) $skp['transaction_id'], $pid)
+            : skp_standalone_src($pdo, $pid, skp_doc_module((string) $skp['doc_type']), $skp));
+    if (!_skp_pemilik($pdo, $pid, $skp, (array) ($src ?: []))) {
+        flash('Hanya PIC dokumen ini yang bisa mengajukan revisi.');
+        redirect_to('skp_form', ['id' => $id]);
+    }
+
+    $tahap = ApprovalLine::revisiTahap($pdo, $pid, (string) ($skp['doc_type'] ?? 'skp'));
+    $pdo->prepare('INSERT INTO skp_revision_requests
+                   (property_id, skp_id, alasan, status, requested_by, requested_user_id)
+                   VALUES (?,?,?,\'pending\',?,?)')
+        ->execute([$pid, $id, mb_substr($alasan, 0, 500),
+                   $_SESSION['user']['name'] ?? 'system', (int) ($_SESSION['user']['id'] ?? 0) ?: null]);
+
+    audit($pdo, 'skp_revisi_ajukan', 'skp_documents', (string) $id, ['alasan' => $alasan]);
+    flash('Permintaan revisi dikirim' . ($tahap ? ' ke ' . $tahap['label'] : '')
+        . '. Dokumen belum berubah sampai permintaannya disetujui.');
+    redirect_to('skp_form', ['id' => $id]);
+}
+
+/**
+ * Penanggung jawab revisi memutuskan: disetujui atau ditolak.
+ *
+ * Bila disetujui, dokumen dibuka kembali untuk PIC (status draft) TANPA
+ * mengganti nomornya — yang bertambah hanya nomor revisinya. Tautan tanda
+ * tangan lama dimatikan, karena isi dokumennya akan berubah.
+ */
+function skp_revision_decide(PDO $pdo): void
+{
+    require_permission('approve_skp');
+    verify_csrf();
+    $pid   = current_property_id();
+    $id    = (int) post('id');
+    $setuju = post('keputusan') === 'setuju';
+    $note  = trim((string) post('decision_note'));
+
+    $st = $pdo->prepare('SELECT * FROM skp_documents WHERE id = ? AND property_id = ?');
+    $st->execute([$id, $pid]);
+    $skp = $st->fetch();
+    if (!$skp) { flash('Dokumen tidak ditemukan.'); redirect_to('skp'); }
+
+    require_once dirname(__DIR__) . '/ApprovalLine.php';
+    $minta = ApprovalLine::revisiPending($pdo, $id);
+    if (!$minta) { flash('Tidak ada permintaan revisi yang menunggu.'); redirect_to('skp_form', ['id' => $id]); }
+
+    $docType = (string) ($skp['doc_type'] ?? 'skp');
+    if (!ApprovalLine::bolehPutusRevisi($pdo, $pid, $docType)) {
+        $tahap = ApprovalLine::revisiTahap($pdo, $pid, $docType);
+        flash('Permintaan revisi diputuskan oleh ' . ($tahap['label'] ?? 'penanggung jawab revisi') . '.');
+        redirect_to('skp_form', ['id' => $id]);
+    }
+    // Keadaan bisa berubah sejak halaman dibuka (mis. client menandatangani).
+    if ($setuju && ($skp['status'] ?? '') !== 'approved') {
+        flash('Dokumen sudah tidak dalam keadaan bisa direvisi (status: ' . h((string) $skp['status']) . ').');
+        redirect_to('skp_form', ['id' => $id]);
+    }
+
+    $jab = ApprovalLine::jabatan($pdo, $pid);
+    $pdo->beginTransaction();
+    try {
+        $upd = $pdo->prepare("UPDATE skp_revision_requests
+                                 SET status = ?, decided_by = ?, decided_role = ?, decided_at = NOW(), decision_note = ?
+                               WHERE id = ? AND status = 'pending'");
+        $upd->execute([$setuju ? 'approved' : 'rejected', $_SESSION['user']['name'] ?? 'system',
+                       $jab ?: null, $note !== '' ? mb_substr($note, 0, 500) : null, (int) $minta['id']]);
+        if ($upd->rowCount() === 0) {
+            $pdo->rollBack();
+            flash('Permintaan ini baru saja diputuskan orang lain — silakan muat ulang halamannya.');
+            redirect_to('skp_form', ['id' => $id]);
+        }
+        if ($setuju) {
+            // Dibuka kembali untuk PIC. Nomor dokumen DIPERTAHANKAN — ini
+            // dokumen yang sama, versi berikutnya. sign_token dimatikan supaya
+            // tautan tanda tangan yang sudah terlanjur dikirim tidak lagi
+            // menampilkan isi yang sudah berubah.
+            // Nomor revisi dihitung di PHP. Memakai "revisi_ke + 1" di dalam
+            // CONCAT pada UPDATE yang sama akan membaca nilai yang SUDAH
+            // dinaikkan, sehingga catatannya meleset satu angka.
+            $revBaru = (int) ($skp['revisi_ke'] ?? 0) + 1;
+            $pdo->prepare("UPDATE skp_documents
+                              SET status = 'draft', approval_level = 0, revisi_ke = ?,
+                                  sign_token = NULL, sign_token_expires_at = NULL,
+                                  reject_note = ?
+                            WHERE id = ? AND property_id = ?")
+                ->execute([$revBaru, 'REVISI #' . $revBaru . ': ' . mb_substr((string) $minta['alasan'], 0, 300), $id, $pid]);
+            ApprovalLine::record($pdo, $pid, $id, 0, $jab ?: null, 'revisi',
+                'Revisi disetujui: ' . $minta['alasan'] . ($note !== '' ? ' — ' . $note : ''), true);
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+
+    audit($pdo, $setuju ? 'skp_revisi_setuju' : 'skp_revisi_tolak', 'skp_documents', (string) $id,
+        ['alasan' => $minta['alasan'], 'catatan' => $note]);
+    flash($setuju
+        ? 'Revisi disetujui. Dokumen dibuka kembali untuk PIC — nomornya tetap, dan setelah diperbaiki harus menempuh alur persetujuan dari awal lagi.'
+        : 'Permintaan revisi ditolak. Dokumen tetap seperti semula.');
     redirect_to('skp_form', ['id' => $id]);
 }
 
@@ -2519,6 +2797,19 @@ function skp_sign_save(PDO $pdo): void
         $data,
         (int) $skp['id'], $token,
     ]);
+
+    // Client sudah menandatangani → permintaan revisi yang masih menggantung
+    // tidak mungkin lagi dikabulkan (dokumen bertanda tangan tidak bisa
+    // direvisi). Ditutup sekarang juga, supaya tidak mengendap selamanya di
+    // antrean pemeriksa tanpa ada yang bisa memutuskannya.
+    try {
+        $pdo->prepare("UPDATE skp_revision_requests
+                          SET status = 'rejected', decided_by = 'sistem', decided_at = NOW(),
+                              decision_note = 'Ditutup otomatis: dokumen sudah ditandatangani client'
+                        WHERE skp_id = ? AND status = 'pending'")->execute([(int) $skp['id']]);
+    } catch (Throwable $e) {
+        error_log('gagal menutup permintaan revisi (skp=' . (int) $skp['id'] . '): ' . $e->getMessage());
+    }
     audit($pdo, 'customer_sign', 'skp_documents', (string) $skp['id'], ['name' => $name], [], 'skp');
     redirect_to('skp_sign', ['token' => $token, 'done' => 1]);
 }

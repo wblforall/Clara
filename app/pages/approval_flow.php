@@ -84,6 +84,13 @@ function approval_flow_page(PDO $pdo): void
 
     $jabatan = _af_jabatan($pdo, $pid);
     $orang   = _af_orang($pdo, $pid);
+    // Penanggung jawab permintaan revisi (dokumen sudah disetujui tapi belum
+    // ditandatangani client). Kosong = ikut tahap pertama alur persetujuan.
+    $rv = $pdo->prepare("SELECT role_name, pic_name FROM skp_revision_flow
+                          WHERE property_id = ? AND (doc_type = ? OR ((doc_type IS NULL OR doc_type = '') AND ? = 'skp'))
+                          ORDER BY id ASC LIMIT 1");
+    $rv->execute([$pid, $jenis, $jenis]);
+    $revisi = $rv->fetch(PDO::FETCH_ASSOC) ?: ['role_name' => '', 'pic_name' => ''];
     $prop    = current_property();
 
     // Berapa dokumen yang sedang berjalan — mengubah alur saat ada dokumen di
@@ -93,7 +100,7 @@ function approval_flow_page(PDO $pdo): void
     $jalan->execute([$pid, $jenis]);
     $jalan = (int) $jalan->fetchColumn();
 
-    layout('Alur Approval Dokumen', function () use ($baris, $jabatan, $orang, $jenis, $prop, $jalan) {
+    layout('Alur Approval Dokumen', function () use ($baris, $jabatan, $orang, $jenis, $prop, $jalan, $revisi) {
         $label = ['skp' => 'SKP Pameran (Exhibition)', 'sks' => 'SKS Gudang', 'fu' => 'Form Utilities (Media)'];
         ?>
         <div class="panel">
@@ -201,6 +208,41 @@ function approval_flow_page(PDO $pdo): void
                    <a class="btn secondary" href="?r=skp">Batal</a></p>
             </form>
 
+            <div class="panel" style="margin-top:14px;border:1px solid #ddd6fe;background:#f5f3ff">
+                <h3 style="margin-top:0;color:#5b21b6">Penanggung Jawab Permintaan Revisi</h3>
+                <p class="help" style="margin-top:0">Dokumen yang <strong>sudah disetujui tetapi belum ditandatangani client</strong>
+                   masih bisa diperbaiki &mdash; PIC mengajukan revisi, dan jabatan di bawah ini yang memutuskan.
+                   Bila disetujui, dokumen terbuka kembali untuk PIC dengan <strong>nomor yang sama</strong>, lalu menempuh
+                   alur persetujuan dari awal lagi. Dokumen yang sudah ditandatangani tidak bisa direvisi.</p>
+                <form method="post" action="?r=approval_flow_save" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+                    <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                    <input type="hidden" name="doc_type" value="<?= h($jenis) ?>">
+                    <input type="hidden" name="hanya_revisi" value="1">
+                    <div>
+                        <label style="font-size:12px;font-weight:700;display:block;margin-bottom:3px">Jabatan pemutus revisi</label>
+                        <select name="revisi_role">
+                            <option value="">&mdash; ikut tahap pertama alur persetujuan &mdash;</option>
+                            <?php foreach ($jabatan as $j): ?>
+                            <option value="<?= h($j) ?>" <?= ($revisi['role_name'] ?? '') === $j ? 'selected' : '' ?>><?= h($j) ?></option>
+                            <?php endforeach; ?>
+                            <?php if (($revisi['role_name'] ?? '') !== '' && !in_array($revisi['role_name'], $jabatan, true)): ?>
+                            <option value="<?= h($revisi['role_name']) ?>" selected><?= h($revisi['role_name']) ?> &mdash; sudah tidak ada di Master PIC aktif</option>
+                            <?php endif; ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size:12px;font-weight:700;display:block;margin-bottom:3px">Khusus orang <span class="muted" style="font-weight:400">(opsional)</span></label>
+                        <select name="revisi_pic">
+                            <option value="">semua yang berjabatan itu</option>
+                            <?php foreach ($orang as $jn => $list): foreach ($list as $o): ?>
+                            <option value="<?= h($o['name']) ?>" <?= ($revisi['pic_name'] ?? '') === $o['name'] ? 'selected' : '' ?>><?= h($o['name']) ?> &mdash; <?= h($jn) ?></option>
+                            <?php endforeach; endforeach; ?>
+                        </select>
+                    </div>
+                    <button type="submit">Simpan Pemutus Revisi</button>
+                </form>
+            </div>
+
             <div class="panel" style="margin-top:14px;background:#f8fafc">
                 <h3 style="margin-top:0">Cara kerjanya</h3>
                 <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7">
@@ -211,6 +253,7 @@ function approval_flow_page(PDO $pdo): void
                     <li><strong>Ditolak di tahap mana pun</strong> &rarr; dokumen kembali ke sales dan harus menempuh alur dari tahap 1 lagi.</li>
                     <li>Atasan (jabatan di tahap yang lebih tinggi) boleh memparaf tahap di bawahnya bila yang bersangkutan berhalangan &mdash; tercatat sebagai &ldquo;mewakili&rdquo; di jejak persetujuan.</li>
                     <li><strong>Kosongkan seluruh tahap</strong> untuk kembali ke cara lama: satu langkah, langsung ke pemegang izin approval.</li>
+                    <li><strong>Revisi</strong> hanya untuk dokumen yang sudah disetujui dan <strong>belum ditandatangani client</strong>. Nomor dokumennya tidak berubah; nomor revisinya bertambah, dan tautan tanda tangan lama dimatikan.</li>
                 </ul>
             </div>
             <?php endif; ?>
@@ -265,6 +308,30 @@ function approval_flow_save(PDO $pdo): void
     $pid   = current_property_id();
     $jenis = in_array(post('doc_type'), ['skp', 'sks', 'fu'], true) ? post('doc_type') : 'skp';
     $uname = $_SESSION['user']['name'] ?? 'system';
+
+    // Formulir pemutus revisi dikirim terpisah — jangan sampai menyentuh
+    // rantai persetujuan (yang field-nya tidak ikut terkirim) dan menghapusnya.
+    if (post('hanya_revisi') === '1') {
+        $rRole = trim((string) post('revisi_role'));
+        $rPic  = trim((string) post('revisi_pic'));
+        if ($rRole !== '' && !in_array($rRole, _af_jabatan($pdo, $pid), true)) {
+            flash('Jabatan "' . $rRole . '" tidak ada di Master PIC aktif properti ini. Pengaturan revisi tidak disimpan.');
+            redirect_to('approval_flow', ['doc_type' => $jenis]);
+        }
+        $pdo->prepare("DELETE FROM skp_revision_flow WHERE property_id = ?
+                        AND (doc_type = ? OR ((doc_type IS NULL OR doc_type = '') AND ? = 'skp'))")
+            ->execute([$pid, $jenis, $jenis]);
+        if ($rRole !== '') {
+            $pdo->prepare('INSERT INTO skp_revision_flow (property_id, doc_type, role_name, pic_name, is_active, created_by)
+                           VALUES (?,?,?,?,1,?)')
+                ->execute([$pid, $jenis, $rRole, $rPic !== '' ? $rPic : null, $uname]);
+        }
+        audit($pdo, 'update', 'skp_revision_flow', $jenis, ['jabatan' => $rRole ?: '(ikut tahap pertama)', 'orang' => $rPic ?: null]);
+        flash($rRole !== ''
+            ? 'Permintaan revisi akan diputuskan oleh ' . $rRole . ($rPic !== '' ? ' (' . $rPic . ')' : '') . '.'
+            : 'Permintaan revisi mengikuti tahap pertama alur persetujuan.');
+        redirect_to('approval_flow', ['doc_type' => $jenis]);
+    }
 
     $peran = (array) ($_POST['flow_role'] ?? []);
     $label = (array) ($_POST['flow_label'] ?? []);
