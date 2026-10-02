@@ -381,15 +381,23 @@ function _offer_parse_area_tiers(): array
     $tarif = (array) ($_POST['tier_tarif'] ?? []);
     $label = (array) ($_POST['tier_label'] ?? []);
     $out = [];
+    $separuh = [];
     foreach ($luas as $i => $m) {
         $m = _offer_parse_luas((string) $m);
         $r = parse_rupiah((string) ($tarif[$i] ?? '0'));
+        // Baris yang terisi SEPARUH (luas ada tarif kosong, atau sebaliknya)
+        // dulu dibuang tanpa pesan — paketnya tersimpan lebih murah dari maksud
+        // sales dan tidak ada yang tahu. Sekarang disebutkan baris ke berapa.
+        if (($m > 0) !== ($r > 0)) $separuh[] = $i + 1;
         if ($m <= 0 || $r <= 0) continue;
         $out[] = [
             'area_sqm'     => round($m, 2),
             'rate_per_sqm' => round($r, 2),
             'label'        => trim((string) ($label[$i] ?? '')) ?: null,
         ];
+    }
+    if ($separuh && function_exists('flash')) {
+        flash('Baris tingkatan harga ke-' . implode(', ', $separuh) . ' diabaikan karena luas atau tarifnya belum terisi.');
     }
     return $out;
 }
@@ -1272,7 +1280,7 @@ function offer_form(PDO $pdo): void
             <h3>Periode</h3>
             <div class="form-grid">
                 <div><label>Tanggal Mulai</label><input type="date" name="start_date" id="start_date" value="<?= $v('start_date') ?>" required <?= $disabled ?>></div>
-                <div><label>Tanggal Selesai</label><input type="date" name="end_date" id="end_date" value="<?= $v('end_date') ?>" required <?= $disabled ?>></div>
+                <div><label>Tanggal Selesai</label><input type="date" name="end_date" id="end_date" data-min-dari="start_date" value="<?= $v('end_date') ?>" required <?= $disabled ?>></div>
             </div>
 
             <h3>Pengakuan & Recurring</h3>
@@ -2195,6 +2203,7 @@ function offer_save(PDO $pdo): void
     $uname = $_SESSION['user']['name'] ?? 'system';
 
     $module   = in_array(post('module'), ['cl', 'media', 'gudang'], true) ? post('module') : 'cl';
+    $isBundleAwal = post('is_bundle') === '1';
     $start    = post('start_date') ?: null;
     $end      = post('end_date') ?: null;
     $months   = _offer_months($start, $end);
@@ -2295,6 +2304,15 @@ function offer_save(PDO $pdo): void
 
     // Paket: bila >=2 komponen dikirim, timpa agregat & tandai is_bundle.
     // Periode SAMA utk semua item; harga eksplisit per item → total = Σ item.
+    // Tanggal selesai mendahului tanggal mulai: lama sewa jadi 0, sehingga nilai
+    // paket bertingkat TIDAK dihitung ulang dan angka periode LAMA ikut
+    // tersimpan — layar, surat, dan SKP lalu memuat tiga angka berbeda.
+    if ($start && $end && $end < $start) {
+        flash('Tanggal selesai (' . date('d/m/Y', strtotime($end)) . ') lebih awal daripada tanggal mulai ('
+            . date('d/m/Y', strtotime($start)) . '). Perbaiki dulu — nilai sewa tidak bisa dihitung.');
+        redirect_to('offer_form', $id ? ['id' => $id] : ($isBundleAwal ? ['bundle' => 1] : []));
+    }
+
     $isBundle = post('is_bundle') === '1';
     $bundleItems = $isBundle ? _offer_parse_bundle_items($months) : [];
     // Tarif bertingkat per m²: nilai paket dihitung dari luas × tarif × hari,
@@ -2305,6 +2323,10 @@ function offer_save(PDO $pdo): void
     if ($isBundle && count($bundleItems) >= 2) {
         $conf = _offer_slot_conflicts($pdo, $pid, $bundleItems, $start, $end, $id);
         if ($conf) { flash('Bentrok slot: ' . implode('; ', $conf) . '. Perbaiki dulu.'); redirect_to('offer_form', $id ? ['id' => $id] : ['bundle' => 1]); }
+        if ($tierRows && $tierTotal <= 0) {
+            flash('Tarif bertingkat terisi tetapi lama sewanya 0 hari — periksa tanggal mulai & selesai. Penawaran tidak disimpan agar nilainya tidak tertinggal memakai periode lama.');
+            redirect_to('offer_form', $id ? ['id' => $id] : ['bundle' => 1]);
+        }
         if ($tierRows && $tierTotal > 0) {
             if (_offer_ada_tanpa_luas($bundleItems)) {
                 flash('Ada komponen paket yang luasnya belum diisi — nilai paket dibagi RATA, bukan menurut luas. Isi kolom Luas (m²) tiap lokasi agar pembagiannya tepat.');

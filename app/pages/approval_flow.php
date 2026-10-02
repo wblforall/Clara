@@ -89,8 +89,8 @@ function approval_flow_page(PDO $pdo): void
     // Berapa dokumen yang sedang berjalan — mengubah alur saat ada dokumen di
     // tengah jalan harus disadari, bukan kejutan.
     $jalan = $pdo->prepare("SELECT COUNT(*) FROM skp_documents
-                             WHERE property_id = ? AND status = 'submitted'");
-    $jalan->execute([$pid]);
+                             WHERE property_id = ? AND status = 'submitted' AND doc_type = ?");
+    $jalan->execute([$pid, $jenis]);
     $jalan = (int) $jalan->fetchColumn();
 
     layout('Alur Approval Dokumen', function () use ($baris, $jabatan, $orang, $jenis, $prop, $jalan) {
@@ -162,6 +162,12 @@ function approval_flow_page(PDO $pdo): void
                                 <?php foreach ($jabatan as $j): $sp = _af_siap($orang, $j); ?>
                                 <option value="<?= h($j) ?>" <?= ($b['role_name'] ?? '') === $j ? 'selected' : '' ?>><?= h($j) ?> (<?= count($sp['siap']) ?> siap)</option>
                                 <?php endforeach; ?>
+                                <?php /* Jabatan yang sudah tidak ada lagi di Master PIC tetap
+                                         ditampilkan. Tanpa ini, satu klik Simpan menghapus
+                                         tahapnya diam-diam karena pilihannya terkirim kosong. */ ?>
+                                <?php if (($b['role_name'] ?? '') !== '' && !in_array($b['role_name'], $jabatan, true)): ?>
+                                <option value="<?= h($b['role_name']) ?>" selected><?= h($b['role_name']) ?> &mdash; sudah tidak ada di Master PIC aktif</option>
+                                <?php endif; ?>
                             </select>
                             <?php $spIni = ($b['role_name'] ?? '') ? _af_siap($orang, $b['role_name']) : null; ?>
                             <?php if ($spIni): ?>
@@ -277,7 +283,11 @@ function approval_flow_save(PDO $pdo): void
     foreach ($peran as $i => $r) {
         $r = trim((string) $r);
         if ($r === '') continue;
-        if (!in_array($r, $sah, true)) { $ditolak[] = $r; continue; }
+        // Jabatan yang sudah tidak ada di Master PIC TETAP disimpan — membuangnya
+        // justru menghapus tahap yang masih dipakai. Yang perlu dilakukan adalah
+        // memperingatkan, dan halaman ini sudah menampilkan "tidak ada yang bisa
+        // memparaf tahap ini" di baris bersangkutan.
+        if (!in_array($r, $sah, true)) $ditolak[] = $r;
         $pc = trim((string) ($orang[$i] ?? ''));
         if ($pc !== '' && !in_array($pc, $sahOrang, true)) $pc = '';
         $tahap[] = [
@@ -287,7 +297,7 @@ function approval_flow_save(PDO $pdo): void
         ];
     }
     if ($ditolak) {
-        flash('Jabatan tidak dikenal di properti ini: ' . implode(', ', array_unique($ditolak)) . '. Baris itu tidak disimpan.');
+        flash('Perhatian: jabatan ' . implode(', ', array_unique($ditolak)) . ' tidak ada lagi di Master PIC aktif properti ini. Tahapnya tetap disimpan, tetapi belum ada yang bisa memparafnya — perbaiki di Master PIC atau ganti jabatannya.');
     }
 
     // Apakah rantainya benar-benar berubah? Menyimpan ulang tanpa perubahan
@@ -318,11 +328,23 @@ function approval_flow_save(PDO $pdo): void
         // yang terlihat sudah diperiksa padahal belum.
         $diulang = 0;
         if ($berubah) {
-            $u = $pdo->prepare("UPDATE skp_documents SET approval_level = 0
-                                 WHERE property_id = ? AND status = 'submitted'
-                                   AND approval_level > 0 AND doc_type = ?");
-            $u->execute([$pid, $jenis]);
-            $diulang = $u->rowCount();
+            $sasaran = $pdo->prepare("SELECT id FROM skp_documents
+                                        WHERE property_id = ? AND status = 'submitted'
+                                          AND approval_level > 0 AND doc_type = ?");
+            $sasaran->execute([$pid, $jenis]);
+            $sasaran = $sasaran->fetchAll(PDO::FETCH_COLUMN) ?: [];
+            if ($sasaran) {
+                $pdo->prepare('UPDATE skp_documents SET approval_level = 0 WHERE id IN ('
+                    . implode(',', array_fill(0, count($sasaran), '?')) . ')')->execute($sasaran);
+                // Penanda putaran: tanpa ini, paraf dari urutan LAMA ikut
+                // dibekukan ke snapshot dan tercetak di surat yang diserahkan ke
+                // client, seolah memeriksa dokumen dengan alur yang sekarang.
+                foreach ($sasaran as $sid) {
+                    ApprovalLine::record($pdo, $pid, (int) $sid, 0, null, 'ulang',
+                        'Alur approval diubah — pemeriksaan diulang dari tahap 1');
+                }
+            }
+            $diulang = count($sasaran);
         }
         $pdo->commit();
     } catch (Throwable $e) {

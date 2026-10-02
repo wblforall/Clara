@@ -306,7 +306,10 @@ function skp_list_page(PDO $pdo): void
                          mana dokumen yang menunggunya. Hanya tampil kalau dia
                          memang punya wewenang approval. */ ?>
                 <?php if ($antreanN > 0 || $giliran): ?>
-                    <a class="btn light" style="<?= $giliran ? 'background:#1d4ed8;color:#fff;border-color:#1d4ed8' : 'background:#eff6ff;color:#1e40af;border:1px solid #93c5fd;font-weight:700' ?>" href="?r=skp&giliran=1<?= $mq ?>">🖊 Giliran Saya (<?= $antreanN ?>)</a>
+                    <?php /* Tanpa $mq: antrean itu lintas modul. Kalau filter modul
+                             ikut terbawa, angka di badge (dihitung lintas modul)
+                             bisa berlawanan dengan isi tabelnya sendiri. */ ?>
+                    <a class="btn light" style="<?= $giliran ? 'background:#1d4ed8;color:#fff;border-color:#1d4ed8' : 'background:#eff6ff;color:#1e40af;border:1px solid #93c5fd;font-weight:700' ?>" href="?r=skp&giliran=1">🖊 Giliran Saya (<?= $antreanN ?>)</a>
                 <?php endif; ?>
                 <?php foreach (['' => 'Semua', 'draft' => 'Draft', 'submitted' => 'Menunggu', 'approved' => 'Perlu TTD', 'signed' => 'Ditandatangani', 'rejected' => 'Ditolak'] as $k => $lbl): ?>
                     <a class="btn light" style="<?= (!$giliran && $status === $k) ? 'background:var(--primary,#0d9488);color:#fff' : '' ?>" href="?r=skp<?= $k ? '&status=' . $k : '' ?><?= $mq ?>"><?= $lbl ?></a>
@@ -936,12 +939,16 @@ function skp_form(PDO $pdo): void
                     // rantai yang dipendekkan membuat tahap terakhir tampil
                     // hijau "selesai" padahal tombolnya masih menunggu.
                     $kini   = $alurTahap && $alurTahap['step_no'] === $tp['step_no'] && $skp['status'] === 'submitted';
-                    $lewat  = !$kini && ($i < (int) ($skp['approval_level'] ?? 0) || in_array($skp['status'], ['approved','signed'], true));
+                    // Dokumen lama terbit SEBELUM rantai ini ada: approval_level-nya
+                    // hasil backfill, bukan bukti. Menampilkannya hijau "selesai"
+                    // sama dengan mengarang bahwa seseorang sudah memeriksanya.
+                    $tanpaBukti = !$alurJejak && (int) ($skp['approval_level'] ?? 0) >= 99;
+                    $lewat  = !$kini && !$tanpaBukti && ($i < (int) ($skp['approval_level'] ?? 0) || in_array($skp['status'], ['approved','signed'], true));
                     $warna  = $lewat ? ['#166534','#dcfce7','#bbf7d0'] : ($kini ? ['#92400e','#fef3c7','#fde68a'] : ['#64748b','#f8fafc','#e2e8f0']);
                 ?>
                 <div style="flex:1;min-width:170px;border:1px solid <?= $warna[2] ?>;background:<?= $warna[1] ?>;border-radius:9px;padding:8px 11px">
                     <div style="font-size:11px;color:<?= $warna[0] ?>;font-weight:700;text-transform:uppercase;letter-spacing:.04em">
-                        Tahap <?= (int) $tp['step_no'] ?><?= $lewat ? ' · selesai' : ($kini ? ' · menunggu' : '') ?>
+                        Tahap <?= (int) $tp['step_no'] ?><?= $lewat ? ' · selesai' : ($kini ? ' · menunggu' : ($tanpaBukti ? ' · sebelum alur ini' : '')) ?>
                     </div>
                     <div style="font-weight:700;margin-top:2px"><?= h($tp['label']) ?></div>
                     <?php if ($tp['pic_name']): ?><div style="font-size:11.5px;color:var(--muted)">khusus <?= h($tp['pic_name']) ?></div><?php endif; ?>

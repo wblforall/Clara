@@ -183,14 +183,16 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     $sumDp = $isBundle ? array_sum(array_column($items, 'dp_amount')) : (float) $o['dp_amount']; ?>
     <table class="obj">
         <?php $adaLuasItem = $isBundle && array_sum(array_map(fn($x) => (float) ($x['area_sqm'] ?? 0), $items)) > 0; ?>
-        <thead><tr><th>Lokasi / Titik</th><th><?= ($isBundle && !$adaLuasItem) ? 'Jenis' : 'Luasan' ?></th><th>Harga Sewa / Periode</th><th>Keterangan</th></tr></thead>
+        <thead><tr><th>Lokasi / Titik</th><th><?= ($isBundle && $adaLuasItem) ? 'Luasan / Jenis' : ($isBundle ? 'Jenis' : 'Luasan') ?></th><th>Harga Sewa / Periode</th><th>Keterangan</th></tr></thead>
         <tbody>
         <?php if ($isBundle): ?>
             <?php foreach ($items as $it): ?>
             <tr>
                 <td><?= $h($it['name_snapshot'] ?: $it['master_code']) ?></td>
+                <?php /* Dua keterangan, bukan salah satu: paket campuran punya titik
+                         media tanpa luas, dan jenisnya tetap perlu terbaca. */ ?>
                 <td><?= (float) ($it['area_sqm'] ?? 0) > 0
-                        ? $h(rtrim(rtrim(number_format((float) $it['area_sqm'], 2, ',', '.'), '0'), ',')) . ' m²'
+                        ? $h(rtrim(rtrim(number_format((float) $it['area_sqm'], 2, ',', '.'), '0'), ',')) . ' m² · ' . $h($segLbl[$it['segment']] ?? $it['segment'])
                         : $h($segLbl[$it['segment']] ?? $it['segment']) ?></td>
                 <td><?= $rp($it['total_amount']) ?></td>
                 <td><?= $h($it['master_code'] ?? '-') ?></td>
@@ -213,12 +215,12 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     <div class="sec">Rincian Biaya</div>
     <?php $tierHarga = $tierHarga ?? []; ?>
     <table class="cost">
-        <?php if ($isBundle && $tierHarga): ?>
+        <?php if ($isBundle && $tierHarga && $days > 0): ?>
             <?php /* Harga melekat ke PAKET: dirinci menurut tingkatan luas ×
                      tarif × lama hari, bukan per lokasi — sebab pembagian luasnya
                      memang tidak jatuh di batas lokasi. */ ?>
             <?php $luasTier = 0; foreach ($tierHarga as $t): $luasTier += (float) $t['area_sqm'];
-                  $sub = (float) $t['area_sqm'] * (float) $t['rate_per_sqm'] * max(1, $days); ?>
+                  $sub = (float) $t['area_sqm'] * (float) $t['rate_per_sqm'] * $days; ?>
             <tr><td class="lbl"><?= $h($t['label'] ?: 'Harga Sewa') ?>
                 <span class="muted" style="font-weight:400">(<?= $h(rtrim(rtrim(number_format((float) $t['area_sqm'], 2, ',', '.'), '0'), ',')) ?> m² × <?= $rp($t['rate_per_sqm']) ?> × <?= (int) $days ?> hari)</span></td>
                 <td class="amt"><?= $rp($sub) ?></td></tr>
