@@ -44,10 +44,12 @@ Urutannya **offer-first**: semua berawal dari Surat Penawaran, bukan input trans
 ### C. Buat SKP (Surat Konfirmasi Pemesanan)
 1. Dari penawaran yang sudah deal → buat **SKP Pameran**.
 2. Lengkapi identitas wajib: **No. KTP** & **No. NPWP** penanggung jawab (SIUP opsional), unggah lampiran scan.
-3. **Submit untuk approval.** ✋ Anda **tidak** menyetujui sendiri — SKP masuk antrean **Manajer** untuk di-approve.
-4. Setelah di-approve manajer, SKP final + transaksi otomatis terbit (masuk ke dashboard/achievement).
+3. **Submit untuk approval.** ✋ Anda **tidak** menyetujui sendiri — SKP masuk **alur pemeriksaan**.
+4. Alurnya bisa lebih dari satu tahap. Bila properti Anda memakai pemeriksaan berjenjang, dokumen **diparaf Asst. Manager lebih dulu**, baru naik ke **Manager**. Di daftar SKP, baris statusnya menyebut dokumen sedang menunggu siapa — mis. *“paraf Verifikasi Asst. Manager (tahap 1 dari 2)”* — jadi Anda tahu di mana dokumennya berhenti tanpa perlu bertanya.
+5. Setelah tahap **terakhir** menyetujui, SKP final + transaksi otomatis terbit (masuk ke dashboard/achievement). Sebelum itu, nomor dokumen memang belum ada.
+6. **Ditolak di tahap mana pun** → dokumen kembali bisa Anda edit, dan setelah disubmit ulang alurnya **dimulai dari tahap pertama lagi**.
 
-@@PAIR:skp|m_skp|Daftar SKP Pameran — status submitted menunggu approval manajer@@
+@@PAIR:skp|m_skp|Daftar SKP Pameran — status menyebut dokumen sedang menunggu tahap siapa@@
 
 ### D. Permintaan Kontrak ke Legal
 1. Menu **Permintaan Kontrak** → buat dari SKP final.
@@ -91,5 +93,5 @@ Approve/Reject SKP, setujui kontrak Legal, batalkan transaksi, Executive Summary
 ## 6. Masalah umum
 - **Lupa password** → hubungi Superadmin untuk reset.
 - **Link TTD customer kedaluwarsa** → buka penawaran, terbitkan link baru.
-- **SKP belum jadi transaksi** → cek apakah sudah di-approve Manajer.
+- **SKP belum jadi transaksi** → lihat baris statusnya di daftar SKP: di situ tertulis dokumennya sedang menunggu tahap siapa. Transaksi baru terbit setelah tahap **terakhir** menyetujui.
 - **Customer tak bisa buka lampiran** → pastikan Anda kirim tautan resmi (jangan salin URL berkas langsung).
