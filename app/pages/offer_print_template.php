@@ -223,7 +223,10 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                 <span class="muted" style="font-weight:400">(<?= $h(rtrim(rtrim(number_format((float) $t['area_sqm'], 2, ',', '.'), '0'), ',')) ?> m² × <?= $rp($t['rate_per_sqm']) ?> × <?= (int) $days ?> hari)</span></td>
                 <td class="amt"><?= $rp($sub) ?></td></tr>
             <?php endforeach; ?>
-            <tr><td class="lbl">Total luas</td><td class="amt"><?= $h(rtrim(rtrim(number_format($luasTier, 2, ',', '.'), '0'), ',')) ?> m²</td></tr>
+            <?php $luasUnit = array_sum(array_map(fn($x) => (float) ($x['area_sqm'] ?? 0), $items)); ?>
+            <tr><td class="lbl">Total luas dasar perhitungan<?php if ($luasUnit > 0 && abs($luasUnit - $luasTier) >= 0.01): ?>
+                <span class="muted" style="font-weight:400">(luas terukur tiap titik <?= $h(rtrim(rtrim(number_format($luasUnit, 2, ',', '.'), '0'), ',')) ?> m²)</span>
+                <?php endif; ?></td><td class="amt"><?= $h(rtrim(rtrim(number_format($luasTier, 2, ',', '.'), '0'), ',')) ?> m²</td></tr>
             <tr class="sub"><td class="lbl">Biaya Sewa</td><td class="amt"><?= $rp($total) ?></td></tr>
         <?php elseif ($isBundle): ?>
             <?php foreach ($items as $it): ?>

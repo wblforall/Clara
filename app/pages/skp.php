@@ -1917,10 +1917,20 @@ function skp_approve(PDO $pdo): void
         $seq   = next_seq_no($pdo, 'skp_counters', $pid, $year);
         $skpNo = sprintf('%s/%s/%d/%03d', $prefix, $code, $year, $seq);
 
-        $pdo->prepare(
+        // Syarat status masih 'submitted': dua orang yang menekan Setujui
+        // bersamaan tidak boleh sama-sama menerbitkan nomor. Yang kalah
+        // membatalkan seluruh transaksi DB-nya, termasuk counter nomor.
+        $updApp = $pdo->prepare(
             'UPDATE skp_documents SET status=\'approved\', skp_no=?, approved_by=?, approved_at=CURRENT_TIMESTAMP,
-             snapshot_json=?, sign_token=?, sign_token_expires_at=' . sign_token_expiry_sql() . ' WHERE id=? AND property_id=?'
-        )->execute([$skpNo, $_SESSION['user']['name'] ?? 'manager', json_encode($snapshot, JSON_UNESCAPED_UNICODE), $signToken, $id, $pid]);
+             snapshot_json=?, sign_token=?, sign_token_expires_at=' . sign_token_expiry_sql() . '
+             WHERE id=? AND property_id=? AND status=\'submitted\''
+        );
+        $updApp->execute([$skpNo, $_SESSION['user']['name'] ?? 'manager', json_encode($snapshot, JSON_UNESCAPED_UNICODE), $signToken, $id, $pid]);
+        if ($updApp->rowCount() === 0) {
+            $pdo->rollBack();
+            flash('Dokumen ini baru saja disetujui orang lain — silakan muat ulang halamannya.');
+            redirect_to('skp_form', ['id' => $id]);
+        }
 
         // Transaksi + alokasi terbit saat approve (offer-based, bila belum ada).
         // Inilah titik deal masuk ke Dashboard/Achievement/Recurring.

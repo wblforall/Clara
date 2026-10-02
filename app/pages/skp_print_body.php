@@ -183,7 +183,7 @@ $skpHasQr = !empty($skp['sign_token']);
                 <span class="muted">(<?= $h(rtrim(rtrim(number_format((float) $t['area_sqm'], 2, ',', '.'), '0'), ',')) ?> m² × <?= $rp($t['rate_per_sqm']) ?> × <?= $hariSkp ?> Hari)</span></td>
                 <td class="amt"><?= $rp($subT) ?></td></tr>
             <?php endforeach; ?>
-            <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Luas Area</td><td class="amt"><?= $h(rtrim(rtrim(number_format($luasSkp, 2, ',', '.'), '0'), ',')) ?> m²</td></tr>
+            <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Luas Area <span class="muted">(dasar perhitungan)</span></td><td class="amt"><?= $h(rtrim(rtrim(number_format($luasSkp, 2, ',', '.'), '0'), ',')) ?> m²</td></tr>
         <?php else: ?>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Biaya Sewa / m² / hari</td><td class="amt"><?= $rp($a['rate_m_day'] ?? 0) ?></td></tr>
         <?php endif; ?>

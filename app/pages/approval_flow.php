@@ -118,7 +118,9 @@ function approval_flow_page(PDO $pdo): void
             <?php if ($jalan > 0): ?>
             <div class="panel" style="background:#fffbeb;border:1px solid #fde68a">
                 <p style="margin:0;color:#92400e">Ada <strong><?= $jalan ?> dokumen</strong> yang sedang menunggu persetujuan.
-                   Perubahan alur langsung berlaku untuk dokumen itu juga &mdash; tahap yang sudah diparaf tetap dihitung sudah lewat.</p>
+                   Bila urutan tahapnya Anda ubah, dokumen itu <strong>dikembalikan ke tahap 1</strong> dan harus diparaf ulang &mdash;
+                   sebab paraf yang sudah masuk menilai urutan yang lama, dan memindahkannya begitu saja akan salah alamat.
+                   Menyimpan tanpa mengubah apa pun tidak mengganggu dokumen yang berjalan.</p>
             </div>
             <?php endif; ?>
 
@@ -288,6 +290,15 @@ function approval_flow_save(PDO $pdo): void
         flash('Jabatan tidak dikenal di properti ini: ' . implode(', ', array_unique($ditolak)) . '. Baris itu tidak disimpan.');
     }
 
+    // Apakah rantainya benar-benar berubah? Menyimpan ulang tanpa perubahan
+    // tidak boleh mengganggu dokumen yang sedang berjalan.
+    $lamaSt = $pdo->prepare("SELECT role_name, pic_name FROM skp_approval_flow
+                              WHERE property_id = ? AND (doc_type = ? OR ((doc_type IS NULL OR doc_type = '') AND ? = 'skp'))
+                              ORDER BY step_no ASC, id ASC");
+    $lamaSt->execute([$pid, $jenis, $jenis]);
+    $sidik = fn(array $rows) => implode('|', array_map(fn($r) => ($r['role_name'] ?? $r['role']) . '/' . ($r['pic_name'] ?? $r['pic'] ?? ''), $rows));
+    $berubah = $sidik($lamaSt->fetchAll(PDO::FETCH_ASSOC) ?: []) !== $sidik($tahap);
+
     $pdo->beginTransaction();
     try {
         $pdo->prepare("DELETE FROM skp_approval_flow WHERE property_id = ?
@@ -299,6 +310,20 @@ function approval_flow_save(PDO $pdo): void
         foreach ($tahap as $i => $t) {
             $ins->execute([$pid, $i + 1, $t['role'], $t['label'], $t['pic'], $jenis, $uname]);
         }
+        // Dokumen yang sedang di tengah rantai LAMA dikembalikan ke tahap 1.
+        // approval_level hanya menghitung BERAPA tahap yang sudah lewat, bukan
+        // jabatan mana — kalau urutannya berubah, "sudah 1 tahap" bisa berarti
+        // jabatan yang sama sekali berbeda, dan paraf orang lain jadi salah
+        // alamat. Mengulang dari awal lebih sedikit ruginya daripada dokumen
+        // yang terlihat sudah diperiksa padahal belum.
+        $diulang = 0;
+        if ($berubah) {
+            $u = $pdo->prepare("UPDATE skp_documents SET approval_level = 0
+                                 WHERE property_id = ? AND status = 'submitted'
+                                   AND approval_level > 0 AND doc_type = ?");
+            $u->execute([$pid, $jenis]);
+            $diulang = $u->rowCount();
+        }
         $pdo->commit();
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -307,8 +332,9 @@ function approval_flow_save(PDO $pdo): void
 
     audit($pdo, 'update', 'skp_approval_flow', $jenis,
         ['tahap' => array_map(fn($t) => $t['role'] . ($t['pic'] ? ' / ' . $t['pic'] : ''), $tahap)]);
-    flash($tahap
+    flash(($tahap
         ? 'Alur approval disimpan: ' . count($tahap) . ' tahap (' . implode(' → ', array_column($tahap, 'label')) . ').'
-        : 'Alur approval dikosongkan — dokumen kembali langsung ke pemegang izin approval.');
+        : 'Alur approval dikosongkan — dokumen kembali langsung ke pemegang izin approval.')
+        . ($diulang > 0 ? ' ' . $diulang . ' dokumen yang sedang berjalan dikembalikan ke tahap 1 karena urutannya berubah.' : ''));
     redirect_to('approval_flow', ['doc_type' => $jenis]);
 }

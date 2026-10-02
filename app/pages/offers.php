@@ -345,7 +345,7 @@ function _offer_parse_bundle_items(int $months): array
         // Luas komponen: dipakai sebagai dasar pembagian nilai paket saat
         // harganya bertingkat per m², dan diteruskan ke transaksinya supaya
         // laporan luas/occupancy per unit tidak lagi nol.
-        $area = (float) str_replace(',', '.', preg_replace('/[^0-9,.]/', '', (string) ($ars[$i] ?? '0')));
+        $area = _offer_parse_luas((string) ($ars[$i] ?? '0'));
         $out[] = [
             'segment'        => $seg,
             'master_code'    => $mc,
@@ -382,7 +382,7 @@ function _offer_parse_area_tiers(): array
     $label = (array) ($_POST['tier_label'] ?? []);
     $out = [];
     foreach ($luas as $i => $m) {
-        $m = (float) str_replace(',', '.', preg_replace('/[^0-9,.]/', '', (string) $m));
+        $m = _offer_parse_luas((string) $m);
         $r = parse_rupiah((string) ($tarif[$i] ?? '0'));
         if ($m <= 0 || $r <= 0) continue;
         $out[] = [
@@ -392,6 +392,27 @@ function _offer_parse_area_tiers(): array
         ];
     }
     return $out;
+}
+
+/**
+ * Baca angka luas seperti orang menuliskannya di Indonesia — dan persis sama
+ * dengan cara layar membacanya: titik = pemisah ribuan, koma = desimal.
+ *
+ * Tanpa ini "1.500" terbaca 1,5 m² oleh PHP tetapi 1.500 m² oleh JS di layar,
+ * sehingga angka yang dilihat sales dan angka yang tersimpan bisa berbeda
+ * seribu kali lipat.
+ */
+function _offer_parse_luas(string $v): float
+{
+    // Ambil angka di DEPAN saja. Membuang semua huruf akan mengubah "20 m2"
+    // menjadi "202" karena angka 2 pada satuannya ikut terbawa.
+    $v = ltrim($v);
+    if (!preg_match('/^[0-9][0-9.,]*/', $v, $m)) return 0.0;
+    $v = rtrim($m[0], '.,');
+    if ($v === '') return 0.0;
+    $v = str_replace('.', '', $v);          // titik = ribuan
+    $v = str_replace(',', '.', $v);         // koma  = desimal
+    return round(max(0, (float) $v), 2);
 }
 
 /** Tingkatan tarif milik satu penawaran (kosong = tidak memakai cara ini). */
@@ -439,26 +460,41 @@ function _offer_write_tiers(PDO $pdo, int $pid, int $offerId, array $tiers, stri
  * Sisa pembulatan jatuh ke komponen terakhir supaya jumlahnya selalu pas.
  * Komponen tanpa luas dibagi rata, agar tidak ada yang bernilai nol diam-diam.
  */
-function _offer_bagi_paket(array $items, float $total): array
+function _offer_bagi_paket(array $items, float $total, int $months = 1): array
 {
     $n = count($items);
     if ($n === 0 || $total <= 0) return $items;
+    // Pro-rata hanya dipakai bila SELURUH komponen punya luas. Bila ada satu
+    // saja yang kosong, bagian komponen itu akan jadi Rp 0 dan sisanya menumpuk
+    // di komponen terakhir — diam-diam salah. Lebih jujur dibagi rata, dan
+    // pemanggilnya memberi tahu user supaya luasnya dilengkapi.
+    $semuaBerluas = true;
+    foreach ($items as $it) if ((float) ($it['area_sqm'] ?? 0) <= 0) { $semuaBerluas = false; break; }
     $luas = array_sum(array_map(fn($i) => (float) ($i['area_sqm'] ?? 0), $items));
+    if (!$semuaBerluas || $luas <= 0) $luas = 0.0;
+
+    $bulan = max(1, $months);
     $pakai = 0.0;
     foreach ($items as $i => &$it) {
-        if ($i === $n - 1) {
-            $bagian = round($total - $pakai);
-        } else {
-            $bagian = $luas > 0
-                ? round($total * ((float) ($it['area_sqm'] ?? 0) / $luas))
-                : round($total / $n);
-        }
+        $bagian = $i === $n - 1
+            ? round($total - $pakai)
+            : ($luas > 0 ? round($total * ((float) $it['area_sqm'] / $luas)) : round($total / $n));
         $pakai += $bagian;
-        $it['total_amount']   = $bagian;
-        $it['monthly_amount'] = $bagian;
+        $it['total_amount'] = $bagian;
+        // monthly_amount harus tetap berarti "per bulan". Kalau diisi nilai
+        // seluruh periode, melepas centang tarif bertingkat akan membuat
+        // nilainya berlipat (total = monthly × jumlah bulan).
+        $it['monthly_amount'] = round($bagian / $bulan);
     }
     unset($it);
     return $items;
+}
+
+/** Apakah ada komponen paket yang luasnya belum diisi? */
+function _offer_ada_tanpa_luas(array $items): bool
+{
+    foreach ($items as $it) if ((float) ($it['area_sqm'] ?? 0) <= 0) return true;
+    return false;
 }
 
 /** Tulis ulang komponen paket (replace-all) untuk sebuah offer. */
@@ -2270,7 +2306,10 @@ function offer_save(PDO $pdo): void
         $conf = _offer_slot_conflicts($pdo, $pid, $bundleItems, $start, $end, $id);
         if ($conf) { flash('Bentrok slot: ' . implode('; ', $conf) . '. Perbaiki dulu.'); redirect_to('offer_form', $id ? ['id' => $id] : ['bundle' => 1]); }
         if ($tierRows && $tierTotal > 0) {
-            $bundleItems = _offer_bagi_paket($bundleItems, $tierTotal);
+            if (_offer_ada_tanpa_luas($bundleItems)) {
+                flash('Ada komponen paket yang luasnya belum diisi — nilai paket dibagi RATA, bukan menurut luas. Isi kolom Luas (m²) tiap lokasi agar pembagiannya tepat.');
+            }
+            $bundleItems = _offer_bagi_paket($bundleItems, $tierTotal, $months);
             $luasTier = array_sum(array_column($tierRows, 'area_sqm'));
             $luasUnit = array_sum(array_map(fn($i) => (float) $i['area_sqm'], $bundleItems));
             // Luas di surat sering berbeda dengan luas master (mis. 80 m² vs
