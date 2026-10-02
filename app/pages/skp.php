@@ -1067,7 +1067,7 @@ function skp_form(PDO $pdo): void
                 <button type="submit" class="btn warn" onclick="return confirm('<?= $konfTlk ?>')"><?= $labelTlk ?></button>
             </form>
             <p class="help" style="margin:8px 0 0">Menolak berarti <strong>menurunkan dokumen satu tahap</strong>, bukan membatalkan kesepakatan.
-               Urutannya PIC &rarr; <?= h(implode(' &rarr; ', array_column($alur, 'label'))) ?>. Hanya <strong>PIC</strong> yang bisa memperbaiki isinya.</p>
+               Urutannya PIC &rarr; <?= implode(' &rarr; ', array_map('h', array_column($alur, 'label'))) ?>. Hanya <strong>PIC</strong> yang bisa memperbaiki isinya.</p>
         </div>
 
         <?php /* Membatalkan kesepakatan adalah tindakan tersendiri, wewenang
