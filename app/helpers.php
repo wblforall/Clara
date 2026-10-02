@@ -541,7 +541,7 @@ function permission_for_route(string $route): string
         'skp', 'skp_pick', 'skp_form', 'skp_save', 'skp_print', 'skp_sign_upload',
         'skp_attachment_replace' => 'manage_skp',
         'contract_requests', 'contract_request_form', 'contract_request_save', 'contract_request_print' => 'manage_skp',
-        'skp_approve', 'skp_reject' => 'approve_skp',
+        'skp_approve', 'skp_reject', 'skp_cancel_deal' => 'approve_skp',
         'offers', 'offer_view', 'offer_form', 'offer_save', 'offer_status', 'offer_print', 'offer_template_rule' => 'manage_offers',
         'offer_templates', 'offer_template_form', 'offer_template_save' => 'manage_master',
         'm_home' => 'view_dashboard',

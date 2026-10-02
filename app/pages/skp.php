@@ -431,6 +431,32 @@ function skp_pick(PDO $pdo): void
 }
 
 // ─── Form SKP (buat/edit) ────────────────────────────────────────────────────
+/**
+ * Apakah orang yang sedang masuk adalah PIC dokumen ini (yang berhak
+ * memperbaikinya)? Admin/superadmin selalu boleh — merekalah yang menolong
+ * kalau PIC-nya berhalangan.
+ *
+ * Dicocokkan lewat master_pic.user_id, bukan nama yang diketik, supaya tidak
+ * bisa diakali dengan menyamakan nama.
+ */
+function _skp_pemilik(PDO $pdo, int $pid, ?array $skp, array $src): bool
+{
+    $peran = function_exists('current_role') ? current_role() : '';
+    if (in_array($peran, ['superadmin', 'admin'], true)) return true;
+    if ($skp === null) return true;                     // dokumen baru: sedang dibuat
+
+    $uname = (string) ($_SESSION['user']['name'] ?? '');
+    if (($skp['created_by'] ?? '') !== '' && $skp['created_by'] === $uname) return true;
+
+    require_once dirname(__DIR__) . '/ApprovalLine.php';
+    $pic = ApprovalLine::namaPic($pdo, $pid);
+    if ($pic === '') return false;
+    return in_array($pic, [
+        (string) ($src['pic_name'] ?? ''),
+        (string) ($skp['pic_name'] ?? ''),
+    ], true);
+}
+
 function skp_form(PDO $pdo): void
 {
     require_permission('manage_skp');
@@ -504,7 +530,12 @@ function skp_form(PDO $pdo): void
     $docType  = (string) ($skp['doc_type'] ?? skp_doc_type($src['module'] ?? 'cl'));
     $docLabel = skp_doc_label($docType);
 
-    $editable = !$skp || in_array($skp['status'], ['draft', 'rejected'], true);
+    // Hanya PIC dokumen ini yang boleh memperbaiki isinya. Pemeriksa (Asst.
+    // Manager / Manager) memegang izin manage_skp juga, jadi tanpa pembatasan
+    // ini mereka bisa mengedit sendiri dokumen yang baru saja mereka kembalikan —
+    // dan jejak "siapa memperbaiki apa" jadi kabur.
+    $sayaPic = _skp_pemilik($pdo, $pid, $skp, $src);
+    $editable = ($skp === null || in_array($skp['status'], ['draft', 'rejected'], true)) && $sayaPic;
     $days     = _skp_days($src['start_date'], $src['end_date']);
     $total    = (float) ($src['final_amount'] ?: $src['total_calculated']);
     $defDeposit = (float) ($skp['deposit_amount'] ?? $src['deposit_amount'] ?? 0);
@@ -583,9 +614,29 @@ function skp_form(PDO $pdo): void
         ?>
         <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=<?= $standalone ? 'skp' : ($offerId ? 'offer_form&id=' . (int)$offerId : 'allocation_detail&id=' . (int)$trxId) ?>">← <?= $standalone ? 'Daftar Dokumen' : ($offerId ? 'Penawaran' : 'Detail Alokasi') ?></a><a class="btn light" href="?r=skp">Daftar Dokumen</a> <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h($docLabel) ?></span></div>
 
-        <?php if ($skp && $skp['status'] === 'rejected'): ?>
+        <?php if ($skp && $skp['status'] === 'rejected'):
+            // Siapa yang mengembalikan & dari tahap mana — diambil dari jejak,
+            // bukan ditebak "manager", karena sekarang pengembaliannya berjenjang.
+            $tlk = null;
+            foreach (array_reverse($alurJejak) as $j) {
+                if (in_array($j['action'] ?? '', ['tolak', 'batal'], true)) { $tlk = $j; break; }
+            }
+            $dibatalkan = ($tlk['action'] ?? '') === 'batal';
+        ?>
         <div class="panel" style="margin-top:10px;background:#fef2f2;border:1px solid #fecaca">
-            <strong style="color:#991b1b">Ditolak manager.</strong> Catatan: <?= h($skp['reject_note'] ?? '-') ?>. Perbaiki lalu submit ulang.
+            <strong style="color:#991b1b"><?= $dibatalkan ? 'Kesepakatan dibatalkan' : 'Dikembalikan untuk diperbaiki' ?></strong>
+            <?php if ($tlk): ?> oleh <strong><?= h($tlk['approver_name'] ?: '-') ?></strong><?php
+                if (($tlk['role_name'] ?? '') !== ''): ?> (<?= h($tlk['role_name']) ?>)<?php endif;
+                if (($tlk['created_at'] ?? '') !== ''): ?>, <?= h(substr((string) $tlk['created_at'], 0, 16)) ?><?php endif;
+            endif; ?>.<br>
+            <span style="color:#7f1d1d">Catatan: <?= h($skp['reject_note'] ?? '-') ?></span>
+            <?php if (!$dibatalkan): ?>
+            <div style="margin-top:6px;font-size:12.5px;color:#991b1b">
+                <?= $editable
+                    ? 'Perbaiki isinya lalu <strong>Submit untuk Approval</strong> lagi — dokumen menempuh alur dari tahap pertama.'
+                    : 'Hanya <strong>PIC dokumen ini</strong> yang bisa memperbaikinya.' ?>
+            </div>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
 
@@ -966,8 +1017,10 @@ function skp_form(PDO $pdo): void
                     <thead><tr><th>Tahap</th><th>Tindakan</th><th>Oleh</th><th>Waktu</th><th>Catatan</th></tr></thead>
                     <tbody>
                     <?php foreach ($alurJejak as $j):
-                        $lbl = ['paraf' => 'Diparaf', 'approve' => 'Disetujui', 'tolak' => 'Ditolak'][$j['action']] ?? $j['action'];
-                        $w   = $j['action'] === 'tolak' ? '#b91c1c' : '#15803d'; ?>
+                        $lbl = ['paraf' => 'Diparaf', 'approve' => 'Disetujui', 'tolak' => 'Dikembalikan ke PIC',
+                                'kembali' => 'Dikembalikan ke tahap sebelumnya', 'batal' => 'Kesepakatan dibatalkan',
+                                'ulang' => 'Alur diubah — diulang'][$j['action']] ?? $j['action'];
+                        $w   = in_array($j['action'], ['tolak', 'batal', 'kembali'], true) ? '#b91c1c' : ($j['action'] === 'ulang' ? '#92400e' : '#15803d'); ?>
                     <tr>
                         <td><?= (int) $j['step_no'] ?>. <?= h($j['role_name'] ?: '-') ?></td>
                         <td style="color:<?= $w ?>;font-weight:700"><?= h($lbl) ?></td>
@@ -998,12 +1051,40 @@ function skp_form(PDO $pdo): void
                 <input name="approval_note" placeholder="Catatan (opsional)" style="width:230px;max-width:100%">
                 <button type="submit" onclick="return confirm('<?= $alurAkhir ? 'Setujui dokumen ini? Nomor akan terbit dan nilai dikunci.' : 'Paraf dokumen ini dan teruskan ke tahap berikutnya?' ?>')"><?= $alurAkhir ? '✓ Setujui' : '✓ Paraf & Teruskan' ?></button>
             </form>
+            <?php
+            // Tolak = TURUN SATU TAHAP. Dari tahap tengah berarti dikembalikan
+            // ke pemeriksa sebelumnya; dari tahap pertama berarti kembali ke PIC.
+            $lvlKini  = (int) ($skp['approval_level'] ?? 0);
+            $keBawah  = $lvlKini > 0 ? ($alur[$lvlKini - 1] ?? null) : null;
+            $labelTlk = $keBawah ? '↩ Kembalikan ke ' . $keBawah['label'] : '✗ Tolak & kembalikan ke PIC';
+            $konfTlk  = $keBawah
+                ? 'Kembalikan dokumen ini ke ' . $keBawah['label'] . ' untuk diperiksa ulang?\n\nNilai & transaksinya TIDAK diubah.'
+                : 'Kembalikan dokumen ini ke PIC untuk diperbaiki?\n\nAlokasi bulanannya dilepas dulu dari laporan sampai disetujui kembali. Kesepakatannya TIDAK dibatalkan.\n\nKalau hanya salah scan KTP/NPWP, tidak perlu ditolak — pakai Ganti Berkas Lampiran.';
+            ?>
             <form method="post" action="?r=skp_reject" style="display:inline-flex;gap:8px;align-items:center;margin-left:10px;flex-wrap:wrap">
                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$skp['id'] ?>">
-                <input name="reject_note" placeholder="Alasan penolakan" style="width:240px;max-width:100%" required>
-                <button type="submit" class="btn warn" onclick="return confirm('Tolak dokumen ini?\n\nDokumen dikembalikan ke sales dan harus menempuh alur persetujuan dari awal lagi.\n\nTransaksi yang sudah terbit ikut DIBATALKAN.\n\nKalau hanya salah scan KTP/NPWP, jangan ditolak — pakai Ganti Berkas Lampiran.')">✗ Tolak</button>
+                <input name="reject_note" placeholder="<?= $keBawah ? 'Apa yang perlu diperiksa ulang' : 'Apa yang perlu diperbaiki PIC' ?>" style="width:250px;max-width:100%" required>
+                <button type="submit" class="btn warn" onclick="return confirm('<?= $konfTlk ?>')"><?= $labelTlk ?></button>
             </form>
+            <p class="help" style="margin:8px 0 0">Menolak berarti <strong>menurunkan dokumen satu tahap</strong>, bukan membatalkan kesepakatan.
+               Urutannya PIC &rarr; <?= h(implode(' &rarr; ', array_column($alur, 'label'))) ?>. Hanya <strong>PIC</strong> yang bisa memperbaiki isinya.</p>
         </div>
+
+        <?php /* Membatalkan kesepakatan adalah tindakan tersendiri, wewenang
+                 tahap terakhir — supaya "tolak untuk revisi" tidak lagi
+                 mematikan transaksi yang sebenarnya masih berjalan. */ ?>
+        <?php if ($alurAkhir): ?>
+        <details class="panel" style="margin-top:10px;border:1px solid #fecaca;background:#fef2f2">
+            <summary style="cursor:pointer;font-weight:700;color:#991b1b">Kesepakatannya memang tidak jadi? &mdash; Batalkan</summary>
+            <p class="help" style="margin:8px 0;color:#991b1b">Berbeda dengan Tolak. Pembatalan <strong>mematikan transaksinya</strong>
+               dan menghapusnya dari laporan. Dipakai bila client memang mundur, bukan bila dokumennya perlu diperbaiki.</p>
+            <form method="post" action="?r=skp_cancel_deal" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$skp['id'] ?>">
+                <input name="cancel_note" placeholder="Alasan pembatalan (wajib)" style="width:260px;max-width:100%" required>
+                <button type="submit" class="btn warn" style="background:#991b1b" onclick="return confirm('Batalkan kesepakatan ini?\n\nTransaksinya DIHAPUS dari laporan dan tidak bisa dikembalikan sendiri.')">Batalkan Kesepakatan</button>
+            </form>
+        </details>
+        <?php endif; ?>
         <?php elseif ($skp && $skp['status'] === 'submitted'): ?>
         <div class="panel" style="margin-top:12px;color:var(--muted)"><?= h($alurKet ?: 'Menunggu persetujuan manager.') ?><?php
             if ($alurTunggu): ?> &mdash; <?= h(implode(', ', $alurTunggu)) ?><?php endif; ?></div>
@@ -1489,6 +1570,19 @@ function skp_save(PDO $pdo): void
     $trxId   = (int) post('transaction_id');
     $offerId = (int) post('offer_id');
     $docType = in_array(post('doc_type'), ['sks', 'fu'], true) ? (string) post('doc_type') : 'skp';
+    // Dokumen yang SUDAH ADA: sumber & jenisnya diambil dari barisnya sendiri,
+    // bukan dari formulir. Mempercayai POST di sini berarti satu pengiriman bisa
+    // menyuruh dokumen A membaca data transaksi/penawaran milik dokumen B —
+    // dan isinya tertulis ke dokumen yang salah.
+    if ($id) {
+        $asal = $pdo->prepare('SELECT offer_id, transaction_id, doc_type FROM skp_documents WHERE id = ? AND property_id = ?');
+        $asal->execute([$id, $pid]);
+        if ($asalRow = $asal->fetch()) {
+            $offerId = (int) ($asalRow['offer_id'] ?? 0);
+            $trxId   = (int) ($asalRow['transaction_id'] ?? 0);
+            $docType = in_array($asalRow['doc_type'] ?? '', ['sks', 'fu'], true) ? (string) $asalRow['doc_type'] : 'skp';
+        }
+    }
     // Dokumen Gudang/Media yang berdiri sendiri: sumbernya kolom dokumen ini.
     $standalone = post('standalone') === '1' && $docType !== 'skp';
     $modKind    = $standalone ? skp_doc_module($docType) : '';
@@ -1580,10 +1674,18 @@ function skp_save(PDO $pdo): void
     }
 
     if ($id) {
-        $cur = $pdo->prepare('SELECT status FROM skp_documents WHERE id = ? AND property_id = ?');
+        $cur = $pdo->prepare('SELECT status, pic_name, created_by FROM skp_documents WHERE id = ? AND property_id = ?');
         $cur->execute([$id, $pid]);
-        $st = $cur->fetchColumn();
+        $curRow = $cur->fetch() ?: [];
+        $st = $curRow['status'] ?? '';
         if (!in_array($st, ['draft', 'rejected'], true)) { flash('Sudah disubmit/disetujui — tidak bisa diubah.'); redirect_to('skp_form', ['id' => $id]); }
+        // Penjaga server: layar sudah menyembunyikan tombolnya, tapi izin
+        // manage_skp juga dipegang pemeriksa — jadi hak memperbaiki dipastikan
+        // di sini, bukan hanya di tampilan.
+        if (!_skp_pemilik($pdo, $pid, $curRow, $src)) {
+            flash('Hanya PIC dokumen ini yang bisa memperbaikinya. Sampaikan koreksi lewat catatan pengembalian.');
+            redirect_to('skp_form', ['id' => $id]);
+        }
         // Proses upload dulu agar validasi lampiran wajib akurat.
         _skp_handle_uploads($pdo, $id, $uname, $clientId);
         _skp_update_master($pdo, $clientId, $ktp, $npwp, $siup);
@@ -1782,6 +1884,7 @@ function skp_approve(PDO $pdo): void
     // dokumen dan transaksinya belum boleh terbit. Tanpa konfigurasi, bagian
     // ini dilewati seluruhnya dan alurnya persis seperti sebelumnya.
     require_once dirname(__DIR__) . '/ApprovalLine.php';
+    require_once dirname(__DIR__) . '/AllocationService.php';
     $alur = ApprovalLine::steps($pdo, $pid, (string) ($skp['doc_type'] ?? 'skp'));
     if ($alur) {
         $tahap = ApprovalLine::currentStep($skp, $alur);
@@ -1995,6 +2098,22 @@ function skp_approve(PDO $pdo): void
                 audit($pdo, 'create', 'transactions', (string) $newTrxId, ['from_skp' => $id, 'skp_no' => $skpNo]);
                 $trxMsg = ' Transaksi #' . $newTrxId . ' terbit & masuk laporan.';
             }
+        } elseif (!empty($skp['transaction_id'])) {
+            // Dokumen perpanjangan yang pernah DIKEMBALIKAN ke PIC: alokasinya
+            // dilepas saat ditolak supaya berhenti dihitung. Begitu disetujui
+            // kembali, alokasinya harus dibangun ulang — kalau tidak, kontraknya
+            // hidup tanpa satu pun angka di laporan dan tidak ada yang tahu.
+            $tid = (int) $skp['transaction_id'];
+            $cekAlok = $pdo->prepare('SELECT COUNT(*) FROM transaction_allocations WHERE transaction_id = ?');
+            $cekAlok->execute([$tid]);
+            if ((int) $cekAlok->fetchColumn() === 0) {
+                $tq = $pdo->prepare('SELECT * FROM transactions WHERE id = ? AND property_id = ? AND deleted_at IS NULL');
+                $tq->execute([$tid, $pid]);
+                if ($trxUlang = $tq->fetch()) {
+                    AllocationService::saveAllocations($pdo, $tid, $trxUlang);
+                    $trxMsg = ' Alokasi bulanan transaksi #' . $tid . ' dihitung ulang & kembali masuk laporan.';
+                }
+            }
         }
 
         $pdo->commit();
@@ -2025,7 +2144,7 @@ function skp_reject(PDO $pdo): void
     $pid = current_property_id();
     $id  = (int) post('id');
     $note = trim((string) post('reject_note')) ?: 'Tidak ada catatan.';
-    $st = $pdo->prepare('SELECT status, transaction_id, approval_level, doc_type FROM skp_documents WHERE id = ? AND property_id = ?');
+    $st = $pdo->prepare('SELECT status, transaction_id, approval_level, doc_type, pic_name, created_by FROM skp_documents WHERE id = ? AND property_id = ?');
     $st->execute([$id, $pid]);
     $cur = $st->fetch();
     if (!$cur || $cur['status'] !== 'submitted') { flash('SKP tidak dalam status menunggu approval.'); redirect_to('skp_form', ['id' => $id]); }
@@ -2040,12 +2159,124 @@ function skp_reject(PDO $pdo): void
         redirect_to('skp_form', ['id' => $id]);
     }
 
-    // Penolakan = kesepakatannya batal, bukan sekadar dokumen dikembalikan.
-    // Transaksi yang sudah terbit (Exhibition: lahir saat penawaran DEAL) ikut
-    // dibatalkan berikut alokasi bulanannya, supaya tidak terus masuk laporan.
-    // Salah scan TIDAK perlu ditolak — pakai "Ganti Berkas Lampiran".
+    // ── Tolak = TURUN SATU TAHAP, bukan langsung batal ─────────────────────
+    // Urutannya PIC → Asst. Manager → Manager. Manager yang menolak berarti
+    // mengembalikan ke Asst. Manager untuk diperiksa lagi, BUKAN membatalkan
+    // kesepakatannya. Baru ketika dokumen jatuh dari tahap pertama ia kembali
+    // ke PIC untuk diperbaiki — dan hanya PIC yang boleh memperbaikinya.
+    //
+    // Membatalkan kesepakatan adalah tindakan TERSENDIRI (skp_cancel_deal),
+    // supaya "tolak karena perlu revisi" tidak lagi mematikan transaksi yang
+    // sebenarnya masih berjalan.
+    $level = (int) ($cur['approval_level'] ?? 0);
     $trxId = (int) ($cur['transaction_id'] ?? 0);
-    $trx   = null;
+
+    if ($level > 0) {
+        $turun = $level - 1;
+        $tujuan = $alurTolak[$turun] ?? null;
+        $pdo->beginTransaction();
+        try {
+            $upd = $pdo->prepare('UPDATE skp_documents SET approval_level = ?, reject_note = ?
+                                   WHERE id = ? AND property_id = ? AND status = \'submitted\' AND approval_level = ?');
+            $upd->execute([$turun, $note, $id, $pid, $level]);
+            if ($upd->rowCount() === 0) {
+                $pdo->rollBack();
+                flash('Dokumen ini baru saja ditangani orang lain — silakan muat ulang halamannya.');
+                redirect_to('skp_form', ['id' => $id]);
+            }
+            ApprovalLine::record($pdo, $pid, $id, (int) ($tahapTolak['step_no'] ?? $level + 1),
+                (string) ($tahapTolak['role_name'] ?? ''), 'kembali', $note, true);
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $e;
+        }
+        audit($pdo, 'skp_kembali', 'skp_documents', (string) $id,
+            ['dari_tahap' => $level + 1, 'ke_tahap' => $turun + 1, 'catatan' => $note]);
+        flash('Dikembalikan ke ' . ($tujuan['label'] ?? 'tahap sebelumnya') . ' untuk diperiksa ulang. '
+            . 'Nilai & transaksinya tidak diubah.');
+        redirect_to('skp_form', ['id' => $id]);
+    }
+
+    // Tahap pertama ditolak → dokumen kembali ke PIC untuk diperbaiki.
+    // Transaksinya TIDAK dihapus — alokasinya saja yang dilepas supaya berhenti
+    // dihitung di laporan selama dokumen diperbaiki. Kalau transaksinya ikut
+    // di-soft-delete, _skp_source tidak bisa menemukannya lagi dan dokumennya
+    // justru tidak bisa diperbaiki maupun disetujui ulang.
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('UPDATE skp_documents SET status=\'rejected\', approval_level=0, reject_note=? WHERE id=? AND property_id=?')
+            ->execute([$note, $id, $pid]);
+        if ($trxId) {
+            $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ? AND property_id = ?')
+                ->execute([$trxId, $pid]);
+        }
+        ApprovalLine::record($pdo, $pid, $id, (int) ($tahapTolak['step_no'] ?? 1),
+            (string) ($tahapTolak['role_name'] ?? ''), 'tolak', $note, false);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+    audit($pdo, 'reject', 'skp_documents', (string) $id,
+        ['note' => $note, 'tahap' => $tahapTolak['step_no'] ?? null, 'alokasi_dilepas' => $trxId ?: null]);
+    // Nama PIC diambil dari transaksinya bila dokumen tidak menyimpannya sendiri
+    // (dokumen perpanjangan memang mewarisi PIC dari transaksi).
+    $picDok = trim((string) ($cur['pic_name'] ?? ''));
+    if ($picDok === '' && $trxId) {
+        $pq = $pdo->prepare('SELECT pic_name FROM transactions WHERE id = ?');
+        $pq->execute([$trxId]);
+        $picDok = trim((string) ($pq->fetchColumn() ?: ''));
+    }
+    if ($picDok === '') $picDok = trim((string) ($cur['created_by'] ?? '')) ?: 'sales';
+    flash('Dokumen dikembalikan ke PIC (' . h($picDok) . ') untuk diperbaiki.'
+        . ($trxId ? ' Alokasi bulanannya dilepas dulu dari laporan sampai disetujui kembali.' : ''));
+    redirect_to('skp_form', ['id' => $id]);
+}
+
+/**
+ * Batalkan kesepakatannya — tindakan TERSENDIRI, bukan efek samping dari tolak.
+ *
+ * Tolak berarti "kembalikan untuk diperbaiki"; yang ini berarti kesepakatannya
+ * memang tidak jadi. Transaksinya di-soft-delete berikut alokasi, pembagian
+ * income, dan jadwal harganya, supaya berhenti masuk laporan selamanya.
+ *
+ * Hanya boleh oleh orang yang berhak di tahap TERAKHIR rantai (pada umumnya
+ * Manager) — membatalkan kesepakatan bukan wewenang pemeriksa tahap antara.
+ */
+function skp_cancel_deal(PDO $pdo): void
+{
+    require_permission('approve_skp');
+    verify_csrf();
+    $pid  = current_property_id();
+    $id   = (int) post('id');
+    $note = trim((string) post('cancel_note'));
+    if ($note === '') { flash('Alasan pembatalan wajib diisi.'); redirect_to('skp_form', ['id' => $id]); }
+
+    $st = $pdo->prepare('SELECT * FROM skp_documents WHERE id = ? AND property_id = ?');
+    $st->execute([$id, $pid]);
+    $skp = $st->fetch();
+    if (!$skp || !in_array($skp['status'], ['submitted', 'rejected'], true)) {
+        flash('Pembatalan hanya untuk dokumen yang belum disetujui.');
+        redirect_to('skp_form', ['id' => $id]);
+    }
+
+    require_once dirname(__DIR__) . '/ApprovalLine.php';
+    $alur = ApprovalLine::steps($pdo, $pid, (string) ($skp['doc_type'] ?? 'skp'));
+    if ($alur) {
+        // Wewenang tahap terakhir: jabatan tahap paling atas, atau superadmin/admin.
+        $peran = current_role();
+        $akhir = $alur[count($alur) - 1];
+        $boleh = in_array($peran, ['superadmin', 'admin'], true)
+            || strcasecmp(ApprovalLine::jabatan($pdo, $pid), $akhir['role_name']) === 0;
+        if (!$boleh) {
+            flash('Membatalkan kesepakatan adalah wewenang ' . $akhir['label'] . '. Untuk meminta perbaikan, pakai tombol Kembalikan.');
+            redirect_to('skp_form', ['id' => $id]);
+        }
+    }
+
+    $trxId = (int) ($skp['transaction_id'] ?? 0);
+    $trx = null;
     if ($trxId) {
         $q = $pdo->prepare('SELECT * FROM transactions WHERE id = ? AND property_id = ? AND deleted_at IS NULL');
         $q->execute([$trxId, $pid]);
@@ -2053,33 +2284,24 @@ function skp_reject(PDO $pdo): void
     }
     $pdo->beginTransaction();
     try {
-        // approval_level dikembalikan ke 0: setelah diperbaiki sales, dokumen
-        // harus menempuh rantai dari tahap pertama lagi.
         $pdo->prepare('UPDATE skp_documents SET status=\'rejected\', approval_level=0, reject_note=? WHERE id=? AND property_id=?')
-            ->execute([$note, $id, $pid]);
+            ->execute(['DIBATALKAN: ' . $note, $id, $pid]);
         if ($trx) {
             $pdo->prepare('UPDATE transactions SET deleted_at = ?, deleted_by = ?, cancel_reason = ? WHERE id = ? AND property_id = ?')
                 ->execute([date('Y-m-d H:i:s'), $_SESSION['user']['email'] ?? 'system',
-                           'Dokumen ditolak: ' . $note, $trxId, $pid]);
-            $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ? AND property_id = ?')
-                ->execute([$trxId, $pid]);
-            // Pembagian income & jadwal harga milik transaksi yang dibatalkan
-            // ikut dibuang supaya tidak tertinggal yatim di tabel.
+                           'Kesepakatan dibatalkan: ' . $note, $trxId, $pid]);
+            $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ? AND property_id = ?')->execute([$trxId, $pid]);
             $pdo->prepare('DELETE FROM transaction_pic_splits WHERE transaction_id = ?')->execute([$trxId]);
             $pdo->prepare('DELETE FROM price_steps WHERE transaction_id = ?')->execute([$trxId]);
         }
+        ApprovalLine::record($pdo, $pid, $id, 0, null, 'batal', $note, false);
         $pdo->commit();
     } catch (Throwable $e) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) $pdo->rollBack();
         throw $e;
     }
-    if ($tahapTolak) {
-        ApprovalLine::record($pdo, $pid, $id, (int) $tahapTolak['step_no'], (string) $tahapTolak['role_name'], 'tolak', $note);
-    }
-    audit($pdo, 'reject', 'skp_documents', (string) $id, ['note' => $note, 'tahap' => $tahapTolak['step_no'] ?? null, 'transaksi_dibatalkan' => $trx ? $trxId : null], (array) ($trx ?: []));
-    flash($trx
-        ? 'SKP ditolak. Transaksi #' . $trxId . ' ikut dibatalkan & alokasi bulanannya dihapus.'
-        : 'SKP ditolak & dikembalikan ke sales.');
+    audit($pdo, 'skp_batal', 'skp_documents', (string) $id, ['alasan' => $note, 'transaksi' => $trx ? $trxId : null], (array) ($trx ?: []));
+    flash('Kesepakatan dibatalkan.' . ($trx ? ' Transaksi #' . $trxId . ' ikut dibatalkan & dihapus dari laporan.' : ''));
     redirect_to('skp_form', ['id' => $id]);
 }
 

@@ -302,18 +302,24 @@ final class ApprovalLine
                 break;
             }
         }
-        $out = [];
+        // Satu tahap bisa diparaf lebih dari sekali dalam putaran yang sama:
+        // Manager mengembalikan ke Asst. Manager, lalu Asst. Manager memaraf
+        // ulang. Yang dicetak di dokumen adalah paraf TERAKHIR tiap tahap —
+        // bukan dua baris untuk orang yang sama.
+        $perTahap = [];
         foreach ($jejak as $j) {
-            if (in_array($j['action'] ?? '', ['tolak', 'ulang'], true)) continue;
-            $out[] = [
+            $aksi = (string) ($j['action'] ?? '');
+            if (in_array($aksi, ['tolak', 'ulang', 'kembali', 'batal'], true)) continue;
+            $perTahap[(int) $j['step_no']] = [
                 'step_no'   => (int) $j['step_no'],
                 'role_name' => (string) ($j['role_name'] ?? ''),
-                'action'    => (string) $j['action'],
+                'action'    => $aksi,
                 'nama'      => (string) ($j['approver_name'] ?? ''),
                 'waktu'     => substr((string) ($j['created_at'] ?? ''), 0, 16),
             ];
         }
-        return $out;
+        ksort($perTahap);
+        return array_values($perTahap);
     }
     /**
      * Daftar nama orang yang sedang ditunggu parafnya — dipakai untuk memberi
