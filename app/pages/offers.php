@@ -1641,8 +1641,31 @@ function offer_form(PDO $pdo): void
                         cur.setMonth(cur.getMonth() + 1);
                     }
                     var bagian = Object.keys(rinci).map(function (k) { return rp(k) + ' × ' + rinci[k] + ' bulan'; });
-                    ringkas.innerHTML = bagian.join(' · ') + ' &rarr; <b>total ' + n + ' bulan = ' + rp(total) + '</b>';
+                    ringkas.innerHTML = bagian.join(' · ') + ' &rarr; <b>total ' + n + ' bulan = ' + rp(total) + '</b>' + syaratPesan();
                 }
+                // Mesin alokasi hanya mengikuti jadwal pada kontrak bulanan
+                // dengan pengakuan Spread per Bulan. Di luar itu jadwalnya tidak
+                // akan tersimpan — harus terbaca SEBELUM surat dikirim ke client,
+                // bukan setelahnya.
+                function syaratKurang() {
+                    var pt = (document.getElementById('pricing_type') || {}).value,
+                        bm = (document.getElementById('billing_method') || {}).value;
+                    var kurang = [];
+                    if (pt && pt !== 'monthly') kurang.push('Pricing Type harus <b>monthly</b> (sekarang ' + pt + ')');
+                    if (bm && bm !== 'spread') kurang.push('Pengakuan harus <b>Spread per Bulan</b>');
+                    return kurang;
+                }
+                function syaratPesan() {
+                    var kurang = syaratKurang();
+                    if (!kurang.length) return '';
+                    return '<div style="margin-top:6px;color:#b91c1c;font-weight:600">Jadwal ini TIDAK akan tersimpan: '
+                         + kurang.join(' &amp; ') + '. Perbaiki dulu, kalau tidak surat menjanjikan harga bertahap '
+                         + 'sementara sistem menagih rata setiap bulan.</div>';
+                }
+                ['pricing_type', 'billing_method'].forEach(function (id) {
+                    var el = document.getElementById(id);
+                    if (el) el.addEventListener('change', hitung);
+                });
                 tabel.addEventListener('input', function (e) {
                     if (e.target.classList.contains('tahap-nilai')) {
                         var raw = e.target.value.replace(/\D/g, '');
