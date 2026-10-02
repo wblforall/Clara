@@ -1803,12 +1803,19 @@ function offer_form(PDO $pdo): void
  * Tulis ulang jadwal harga milik satu penawaran dari isian formulir.
  * Replace-all seperti komponen paket: yang dikirim formulir adalah kebenarannya.
  */
-function _offer_write_steps(PDO $pdo, int $pid, int $offerId, string $uname): void
+/**
+ * Tulis ulang jadwal harga penawaran dari POST. Mengembalikan nilai kontrak
+ * yang DIHASILKAN jadwal sebelum ditulis ulang (0 bila sebelumnya tanpa jadwal)
+ * — dipakai untuk mengenali harga nego yang asalnya dari jadwal, supaya tidak
+ * tertinggal basi saat jadwalnya dihapus.
+ */
+function _offer_write_steps(PDO $pdo, int $pid, int $offerId, string $uname): float
 {
+    $tahapLama = _offer_step_total($pdo, $offerId);
     // Paket: nilainya dijumlah dari komponen, jadwal tidak dipakai sama sekali.
     if (!empty($_POST['is_bundle'])) {
         $pdo->prepare('DELETE FROM price_steps WHERE offer_id = ? AND transaction_id IS NULL')->execute([$offerId]);
-        return;
+        return $tahapLama;
     }
     $mulai = (array) ($_POST['tahap_mulai'] ?? []);
     $nilai = (array) ($_POST['tahap_nilai'] ?? []);
@@ -1821,7 +1828,7 @@ function _offer_write_steps(PDO $pdo, int $pid, int $offerId, string $uname): vo
         $baris[$tgl] = ['amount' => $n, 'label' => trim((string) ($label[$i] ?? '')) ?: null];
     }
     $pdo->prepare('DELETE FROM price_steps WHERE offer_id = ? AND transaction_id IS NULL')->execute([$offerId]);
-    if (!$baris) return;
+    if (!$baris) return $tahapLama;
     // Mesin alokasi hanya mengikuti jadwal pada kontrak bulanan + Spread per
     // Bulan. Nilainya dibaca dari baris yang SUDAH tersimpan supaya sama dengan
     // yang nanti dipakai saat kontrak terbit.
@@ -1830,11 +1837,28 @@ function _offer_write_steps(PDO $pdo, int $pid, int $offerId, string $uname): vo
     $o = $cek->fetch();
     if (!$o || ($o['pricing_type'] ?? '') !== 'monthly' || ($o['billing_method'] ?? '') !== 'spread') {
         flash('Jadwal Harga diabaikan: hanya berlaku untuk Pricing Type "monthly" dengan pengakuan Spread per Bulan.');
-        return;
+        return $tahapLama;
     }
     ksort($baris);
     $ins = $pdo->prepare('INSERT INTO price_steps (property_id, offer_id, effective_from, monthly_amount, label, created_by) VALUES (?,?,?,?,?,?)');
     foreach ($baris as $tgl => $b) $ins->execute([$pid, $offerId, $tgl, $b['amount'], $b['label'], $uname]);
+    return $tahapLama;
+}
+
+/** Nilai kontrak menurut jadwal harga penawaran ini (0 bila tanpa jadwal). */
+function _offer_step_total(PDO $pdo, int $offerId): float
+{
+    require_once dirname(__DIR__) . '/AllocationService.php';
+    $tahap = AllocationService::priceSteps($pdo, null, $offerId);
+    if (!$tahap) return 0.0;
+    $st = $pdo->prepare('SELECT start_date, end_date, cycle_recognition FROM offers WHERE id = ?');
+    $st->execute([$offerId]);
+    $o = $st->fetch();
+    if (!$o || !$o['start_date'] || !$o['end_date']) return 0.0;
+    return AllocationService::totalDariTahap([
+        'start_date' => $o['start_date'], 'end_date' => $o['end_date'],
+        'cycle_recognition' => $o['cycle_recognition'] ?: 'cycle_start',
+    ], $tahap);
 }
 
 /**
@@ -1842,22 +1866,27 @@ function _offer_write_steps(PDO $pdo, int $pid, int $offerId, string $uname): vo
  * tahap — bukan tarif × lama sewa. Disimpan ke kolomnya supaya surat, SKP,
  * dan transaksi memakai angka yang sama.
  */
-function _offer_sync_step_total(PDO $pdo, int $offerId): void
+function _offer_sync_step_total(PDO $pdo, int $offerId, float $calcMesin = 0.0, float $tahapLama = 0.0): void
 {
-    require_once dirname(__DIR__) . '/AllocationService.php';
-    $tahap = AllocationService::priceSteps($pdo, null, $offerId);
-    if (!$tahap) return;
-    $st = $pdo->prepare('SELECT start_date, end_date, cycle_recognition FROM offers WHERE id = ?');
+    $total = _offer_step_total($pdo, $offerId);
+    if ($total > 0) {
+        $pdo->prepare('UPDATE offers SET total_calculated = ?, override_amount = ? WHERE id = ?')
+            ->execute([$total, $total, $offerId]);
+        return;
+    }
+    // Jadwal baru saja dihapus. Harga nego yang nilainya persis sama dengan
+    // jadwal lama berarti bukan angka yang sales ketik sendiri — itu turunan
+    // jadwal, jadi dilepas supaya nilai kontrak kembali ke hitungan mesin
+    // (tarif x lama sewa) dan tidak diam-diam memakai angka jadwal yang sudah
+    // tidak ada lagi.
+    if ($tahapLama <= 0 || $calcMesin <= 0) return;
+    $st = $pdo->prepare('SELECT override_amount, contract_months FROM offers WHERE id = ?');
     $st->execute([$offerId]);
     $o = $st->fetch();
-    if (!$o || !$o['start_date'] || !$o['end_date']) return;
-    $total = AllocationService::totalDariTahap([
-        'start_date' => $o['start_date'], 'end_date' => $o['end_date'],
-        'cycle_recognition' => $o['cycle_recognition'] ?: 'cycle_start',
-    ], $tahap);
-    if ($total <= 0) return;
-    $pdo->prepare('UPDATE offers SET total_calculated = ?, override_amount = ? WHERE id = ?')
-        ->execute([$total, $total, $offerId]);
+    if (!$o || round((float) $o['override_amount']) !== round($tahapLama)) return;
+    $bulan = (int) ($o['contract_months'] ?? 0);
+    $pdo->prepare('UPDATE offers SET total_calculated = ?, override_amount = NULL, monthly_amount = ? WHERE id = ?')
+        ->execute([$calcMesin, $bulan > 0 ? round($calcMesin / $bulan) : $calcMesin, $offerId]);
 }
 
 function offer_save(PDO $pdo): void
@@ -2017,8 +2046,8 @@ function offer_save(PDO $pdo): void
         // tulis [] agar offer_items lama TERHAPUS (cegah orphan yg bisa meledak
         // jadi transaksi basi saat approve). Lihat review bundling.
         _offer_write_items($pdo, $id, $isBundle ? $bundleItems : []);
-        _offer_write_steps($pdo, $pid, $id, $uname);
-        _offer_sync_step_total($pdo, $id);
+        $tahapLama = _offer_write_steps($pdo, $pid, $id, $uname);
+        _offer_sync_step_total($pdo, $id, $calc, $tahapLama);
         audit($pdo, 'update', 'offers', (string) $id, $data);
         flash("Revisi #$newRev disimpan.");
         redirect_to('offer_view', ['id' => $id]);
@@ -2041,7 +2070,7 @@ function offer_save(PDO $pdo): void
     $newId = (int) $pdo->lastInsertId();
     if ($isBundle) _offer_write_items($pdo, $newId, $bundleItems);
     _offer_write_steps($pdo, $pid, $newId, $uname);
-    _offer_sync_step_total($pdo, $newId);
+    _offer_sync_step_total($pdo, $newId, $calc);
     $pdo->prepare('INSERT INTO offer_revisions (offer_id, rev_no, snapshot_json, note, created_by) VALUES (?,0,?,?,?)')
         ->execute([$newId, json_encode(array_intersect_key($data, array_flip(_offer_fields())), JSON_UNESCAPED_UNICODE), 'Penawaran awal', $uname]);
     audit($pdo, 'create', 'offers', (string) $newId, $data);
