@@ -66,3 +66,8 @@ scripts/build_laporan_gudang_media.php
 /Audit_*/
 /Panduan_*/
 *.numbers
+
+# Berkas rekonsiliasi berisi nama client, nilai & nomor invoice ASLI —
+# repo ini publik, jadi jangan pernah ikut ter-commit.
+/scripts/audit/
+/generate_pdf_report.php
