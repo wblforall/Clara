@@ -516,7 +516,9 @@ function print_exec(PDO $pdo): void
                 COALESCE(SUM(a.allocated_days),0) days_total
          FROM master_media m
          LEFT JOIN period_potentials pp ON pp.slot_id = m.id AND pp.segment = 'media' AND pp.period_key = ? AND pp.property_id = ?
-         LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='media' AND a.period_key=? AND a.property_id=?
+         LEFT JOIN (SELECT master_code, SUM(amount) amount, SUM(allocated_days) allocated_days
+                    FROM transaction_allocations WHERE module='media' AND period_key=? AND property_id=?
+                    GROUP BY master_code) a ON a.master_code=m.code
          WHERE m.property_id=?
          GROUP BY m.media_type ORDER BY m.media_type"
     );
@@ -872,17 +874,25 @@ function print_exec_summary(PDO $pdo): void
         // Floor occ (CL)
         $s = $pdo->prepare(
             "SELECT m.floor AS group_key, COUNT(*) unit_count,
-                    COALESCE(SUM(a.allocated_days),0) days_total,
-                    COALESCE(SUM(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.area_sqm ELSE 0 END),0) area_total,
+                    COALESCE(SUM(agg.days_total),0) days_total,
+                    COALESCE(SUM(CASE WHEN COALESCE(agg.days_total,0)>0 THEN m.area_sqm ELSE 0 END),0) area_total,
                     COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
-                    COALESCE(SUM(a.amount),0) actual_total,
-                    COALESCE(SUM(CASE WHEN " . recurring_match_sql('t') . " THEN a.amount ELSE 0 END),0) recurring_total,
-                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
-                             THEN a.amount/a.allocated_days/m.area_sqm ELSE NULL END) avg_rate
+                    COALESCE(SUM(agg.actual_total),0) actual_total,
+                    COALESCE(SUM(agg.recurring_total),0) recurring_total,
+                    AVG(CASE WHEN agg.days_total>0 AND agg.actual_total>0
+                             THEN agg.actual_total/agg.days_total/m.area_sqm ELSE NULL END) avg_rate
              FROM master_cl_units m
              LEFT JOIN period_potentials pp ON pp.slot_id = m.id AND pp.segment = 'exhibition' AND pp.period_key = ? AND pp.property_id = ?
-             LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='cl' AND a.period_key=? AND a.property_id=?
-             LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
+             LEFT JOIN (
+                 SELECT a.master_code,
+                        SUM(a.allocated_days) days_total,
+                        SUM(a.amount) actual_total,
+                        SUM(CASE WHEN " . recurring_match_sql('t') . " THEN a.amount ELSE 0 END) recurring_total
+                 FROM transaction_allocations a
+                 JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
+                 WHERE a.module='cl' AND a.period_key=? AND a.property_id=?
+                 GROUP BY a.master_code
+             ) agg ON agg.master_code=m.code
              WHERE m.property_id=? AND m.status='active' GROUP BY m.floor"
         );
         $s->execute([$period, $pid, $period, $pid, $pid]);
@@ -891,17 +901,25 @@ function print_exec_summary(PDO $pdo): void
         // Media occ
         $s = $pdo->prepare(
             "SELECT m.media_type AS group_key, COUNT(*) unit_count,
-                    COALESCE(SUM(a.allocated_days),0) days_total,
+                    COALESCE(SUM(agg.days_total),0) days_total,
                     0 AS area_total,
                     COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
-                    COALESCE(SUM(a.amount),0) actual_total,
-                    COALESCE(SUM(CASE WHEN " . recurring_match_sql('t') . " THEN a.amount ELSE 0 END),0) recurring_total,
-                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
-                             THEN a.amount/a.allocated_days ELSE NULL END) avg_rate
+                    COALESCE(SUM(agg.actual_total),0) actual_total,
+                    COALESCE(SUM(agg.recurring_total),0) recurring_total,
+                    AVG(CASE WHEN agg.days_total>0 AND agg.actual_total>0
+                             THEN agg.actual_total/agg.days_total ELSE NULL END) avg_rate
              FROM master_media m
              LEFT JOIN period_potentials pp ON pp.slot_id = m.id AND pp.segment = 'media' AND pp.period_key = ? AND pp.property_id = ?
-             LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='media' AND a.period_key=? AND a.property_id=?
-             LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
+             LEFT JOIN (
+                 SELECT a.master_code,
+                        SUM(a.allocated_days) days_total,
+                        SUM(a.amount) actual_total,
+                        SUM(CASE WHEN " . recurring_match_sql('t') . " THEN a.amount ELSE 0 END) recurring_total
+                 FROM transaction_allocations a
+                 JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
+                 WHERE a.module='media' AND a.period_key=? AND a.property_id=?
+                 GROUP BY a.master_code
+             ) agg ON agg.master_code=m.code
              WHERE m.property_id=? AND m.status='active' GROUP BY m.media_type ORDER BY m.media_type"
         );
         $s->execute([$period, $pid, $period, $pid, $pid]);
@@ -910,17 +928,25 @@ function print_exec_summary(PDO $pdo): void
         // Gudang occ
         $s = $pdo->prepare(
             "SELECT m.location AS group_key, COUNT(*) unit_count,
-                    COALESCE(SUM(a.allocated_days),0) days_total,
-                    COALESCE(SUM(CASE WHEN COALESCE(a.allocated_days,0)>0 THEN m.area_sqm ELSE 0 END),0) area_total,
+                    COALESCE(SUM(agg.days_total),0) days_total,
+                    COALESCE(SUM(CASE WHEN COALESCE(agg.days_total,0)>0 THEN m.area_sqm ELSE 0 END),0) area_total,
                     COALESCE(SUM(COALESCE(pp.potential_value, m.projection_monthly)),0) proj_total,
-                    COALESCE(SUM(a.amount),0) actual_total,
-                    COALESCE(SUM(CASE WHEN " . recurring_match_sql('t') . " THEN a.amount ELSE 0 END),0) recurring_total,
-                    AVG(CASE WHEN COALESCE(a.allocated_days,0)>0 AND COALESCE(a.amount,0)>0 AND t.id IS NOT NULL
-                             THEN a.amount/m.area_sqm ELSE NULL END) avg_rate
+                    COALESCE(SUM(agg.actual_total),0) actual_total,
+                    COALESCE(SUM(agg.recurring_total),0) recurring_total,
+                    AVG(CASE WHEN agg.days_total>0 AND agg.actual_total>0
+                             THEN agg.actual_total/m.area_sqm ELSE NULL END) avg_rate
              FROM master_gudang m
              LEFT JOIN period_potentials pp ON pp.slot_id = m.id AND pp.segment = 'gudang' AND pp.period_key = ? AND pp.property_id = ?
-             LEFT JOIN transaction_allocations a ON a.master_code=m.code AND a.module='gudang' AND a.period_key=? AND a.property_id=?
-             LEFT JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
+             LEFT JOIN (
+                 SELECT a.master_code,
+                        SUM(a.allocated_days) days_total,
+                        SUM(a.amount) actual_total,
+                        SUM(CASE WHEN " . recurring_match_sql('t') . " THEN a.amount ELSE 0 END) recurring_total
+                 FROM transaction_allocations a
+                 JOIN transactions t ON t.id=a.transaction_id AND t.deleted_at IS NULL
+                 WHERE a.module='gudang' AND a.period_key=? AND a.property_id=?
+                 GROUP BY a.master_code
+             ) agg ON agg.master_code=m.code
              WHERE m.property_id=? AND m.status='active' GROUP BY m.location ORDER BY m.location"
         );
         $s->execute([$period, $pid, $period, $pid, $pid]);
