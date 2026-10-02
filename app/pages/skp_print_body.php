@@ -271,6 +271,25 @@ $skpHasQr = !empty($skp['sign_token']);
         </td>
     </tr></table>
 
+    <?php /* Jejak pemeriksaan berjenjang: siapa memparaf sebelum disetujui.
+             Dicetak sebagai satu baris di bawah blok tanda tangan — BUKAN kolom
+             keempat — supaya lebar tabel tanda tangan dokumen yang sudah terbit
+             tidak berubah. Dokumen tanpa tahap paraf tidak mencetak apa pun. */ ?>
+    <?php $parafBeku = $d['paraf'] ?? []; ?>
+    <?php if ($parafBeku): ?>
+    <div style="margin-top:4mm;font-size:8.5px;color:#334155;line-height:1.5">
+        <strong>Diperiksa sebelum disetujui:</strong>
+        <?php $bagian = [];
+              foreach ($parafBeku as $pf) {
+                  if (($pf['action'] ?? '') !== 'paraf') continue;
+                  $bagian[] = $h($pf['nama'] ?: '-')
+                      . (($pf['role_name'] ?? '') !== '' ? ' (' . $h($pf['role_name']) . ')' : '')
+                      . (($pf['waktu'] ?? '') !== '' ? ' — ' . $h(date('d/m/Y H:i', strtotime((string) $pf['waktu']))) : '');
+              }
+              echo $bagian ? implode('; ', $bagian) : '—'; ?>
+    </div>
+    <?php endif; ?>
+
     <?php /* Form Utilities: blok CATATAN berada di bawah tanda tangan, mengikuti
              susunan formulir kertasnya. */ ?>
     <?php if ($skpDocType === 'fu' && !empty($skpTpl['terms'])): ?>
