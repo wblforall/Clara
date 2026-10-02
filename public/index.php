@@ -7,6 +7,7 @@ define('CSS_VER',    filemtime(__DIR__ . '/assets/app.css'));
 
 require_once __DIR__ . '/../app/helpers.php';
 require_once __DIR__ . '/../app/Database.php';
+require_once __DIR__ . '/../app/ViewAs.php';
 require_once __DIR__ . '/../app/AllocationService.php';
 require_once __DIR__ . '/../app/DashboardService.php';
 require_once __DIR__ . '/../app/pages/bootstrap.php';
@@ -53,6 +54,12 @@ if (!$isDisplayRoute && isset($_SESSION['user'])) {
     if (!isset($_SESSION['last_activity']) || (time() - $_SESSION['last_activity']) > 60) {
         $_SESSION['last_activity'] = time();
     }
+}
+
+// Mode "Lihat sebagai": koneksi dibuat baca-saja SEBELUM dipakai siapa pun,
+// supaya tidak ada satu pun jalur yang sempat menulis (lihat app/ViewAs.php).
+if (!empty($_SESSION['view_as'])) {
+    Database::bacaSaja();
 }
 
 try {
@@ -183,6 +190,12 @@ if (in_array($route, ['display', 'display_data'], true)) {
 }
 
 if ($route === 'logout') {
+    // Menekan Logout selagi meminjam sudut pandang orang lain hampir selalu
+    // berarti "sudahi modenya", bukan "keluarkan saya dari CLARA".
+    if (ViewAs::aktif()) {
+        ViewAs::selesai();
+        redirect_to('users');
+    }
     if (!$isDisplayRoute) {
         audit($pdo, 'logout', 'users', isset($_SESSION['user']['id']) ? (string)$_SESSION['user']['id'] : null, [], [], 'auth');
     }
@@ -268,6 +281,42 @@ if (in_array($route, ['offer_sign', 'offer_sign_save'], true)) {
 
 // ─── Authenticated area ───────────────────────────────────────────────────────
 require_login();
+
+// ─── Lihat sebagai: masuk & keluar ───────────────────────────────────────────
+// Diletakkan sebelum pemeriksaan izin rute: saat mode aktif, izin yang berlaku
+// adalah milik orang yang dilihat, dan dia tentu tidak punya izin untuk rute
+// ini — pintu keluarnya tidak boleh ikut terkunci.
+if ($route === 'view_as') {
+    verify_csrf();
+    $alasan = ViewAs::mulai($pdo, (int) post('user_id', getv('user_id', '0')));
+    if ($alasan !== '') {
+        flash($alasan);
+        redirect_to('users');
+    }
+    // Dicatat atas nama yang MEMINJAM, bukan yang dipinjam sudut pandangnya —
+    // audit() membaca sesi, dan sesinya sudah berganti pada titik ini. Tanpa
+    // penukaran sementara ini, log berbunyi "Yusri mulai melihat sebagai
+    // Yusri", yang justru menyembunyikan satu-satunya hal yang perlu dicatat.
+    $_dilihat = $_SESSION['user'];
+    $_SESSION['user'] = ViewAs::asli();
+    audit($pdo, 'view_as_start', 'users', (string) ($_dilihat['id'] ?? ''),
+        ['dilihat' => $_dilihat['name'] ?? '', 'role' => $_dilihat['role'] ?? ''], [], 'auth');
+    $_SESSION['user'] = $_dilihat;
+    unset($_dilihat);
+    flash('Mode lihat-sebagai aktif: ' . ViewAs::nama() . '. Tidak ada tindakan yang bisa dilakukan.');
+    redirect_to('dashboard');
+}
+if ($route === 'view_as_exit') {
+    if (ViewAs::aktif()) {
+        $_dilihat = $_SESSION['user'];
+        ViewAs::selesai();                    // kembalikan dulu, baru catat —
+        audit($pdo, 'view_as_end', 'users', (string) ($_dilihat['id'] ?? ''),
+            ['dilihat' => $_dilihat['name'] ?? ''], [], 'auth');
+        flash('Mode lihat-sebagai selesai.');
+        unset($_dilihat);
+    }
+    redirect_to('users');
+}
 
 if (!empty($_SESSION['_must_change_pw'])) {
     redirect_to('change_password');
@@ -418,7 +467,21 @@ $pageFiles = [
     'm_offers'                    => 'mobile.php',
     'm_skp'                       => 'mobile.php',
 ];
+// Gerbang pertama mode lihat-sebagai: apa pun yang bukan permintaan baca
+// ditolak dengan penjelasan, bukan dengan error. Gerbang keduanya ada di
+// koneksi database (PdoBacaSaja), untuk rute yang luput dari daftar ini.
+if (ViewAs::aktif()) {
+    if (!in_array($_SERVER['REQUEST_METHOD'] ?? 'GET', ['GET', 'HEAD'], true)) {
+        ViewAs::tolak('kiriman formulir ke ' . $route);
+    }
+    if (ViewAs::rutePengubah($route)) {
+        ViewAs::tolak($route);
+    }
+    ob_start();                       // supaya halaman separuh jadi tidak ikut tercetak
+}
+
 require_once APP_ROOT . '/app/pages/' . ($pageFiles[$route] ?? 'dashboard.php');
+try {
 match ($route) {
     'dashboard'                   => dashboard($pdo),
     'exec_dashboard'              => exec_dashboard($pdo),
@@ -527,3 +590,13 @@ match ($route) {
     'm_skp'                       => mobile_skp_page($pdo),
     default                       => dashboard($pdo),
 };
+} catch (ViewAsTulisDitolak $e) {
+    // Gerbang kedua mode lihat-sebagai berbunyi: ada jalur yang mencoba menulis
+    // walau rutenya tidak terdaftar sebagai pengubah. Halaman separuh jadi
+    // dibuang, lalu penjelasannya yang ditampilkan — bukan error 500.
+    while (ob_get_level() > 0) ob_end_clean();
+    ViewAs::tolak('perintah tulis ke database pada ' . $route);
+}
+if (ViewAs::aktif() && ob_get_level() > 0) {
+    ob_end_flush();
+}

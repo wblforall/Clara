@@ -26,7 +26,22 @@ function users_page(PDO $pdo): void
                         <td style="font-size:12px;color:var(--muted)"><?= !empty($userProps[$row['id']]) ? h(implode(', ', $userProps[$row['id']])) : '<em>—</em>' ?></td>
                         <td><?= $row['must_change_password'] ? '<span class="badge" style="background:#fef9c3;color:#92400e">Harus Ganti</span>' : '<span style="color:var(--muted);font-size:12px">OK</span>' ?></td>
                         <td><?= h($row['last_login_at'] ?? '-') ?></td>
-                        <td><a class="btn light" href="?r=user_form&id=<?= h((string) $row['id']) ?>">Edit</a></td>
+                        <td style="white-space:nowrap">
+                            <a class="btn light" href="?r=user_form&id=<?= h((string) $row['id']) ?>">Edit</a>
+                            <?php /* "Lihat sebagai": memastikan hak akses orang lain tanpa meminjam
+                                     akunnya. Tidak ditawarkan untuk Super Admin/Admin (tidak ada
+                                     gunanya untuk pengujian) maupun akun nonaktif. */ ?>
+                            <?php if (current_role() === 'superadmin'
+                                      && !in_array($row['role'], ['superadmin', 'admin'], true)
+                                      && ($row['status'] ?? '') === 'active'): ?>
+                            <form method="post" action="?r=view_as" style="display:inline">
+                                <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                                <input type="hidden" name="user_id" value="<?= h((string) $row['id']) ?>">
+                                <button type="submit" class="btn light" style="font-size:12px"
+                                        title="Lihat CLARA dari sudut pandang <?= h($row['name']) ?> &mdash; tanpa password, tanpa bisa mengubah apa pun">👁 Lihat sebagai</button>
+                            </form>
+                            <?php endif; ?>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>

@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
 
+// layout() memanggil ViewAs::banner(); dimuat di sini supaya halaman yang
+// menyertakan bootstrap tanpa lewat index.php tidak jatuh ke fatal error.
+require_once dirname(__DIR__) . '/ViewAs.php';
+
 /**
  * Daftar token TV Display yang sah dari nilai DISPLAY_TOKEN (boleh berisi
  * BEBERAPA token dipisah koma). Membuang nilai kosong & placeholder default.
@@ -273,6 +277,7 @@ function layout(string $title, callable $body, array $opts = []): void
         <?php endif; ?>
     </head>
     <body>
+    <?php ViewAs::banner(); ?>
     <?php $isMobile = mobile_view_active(); ?>
     <?php if ($isMobile): ?>
         <div class="m-shell">
