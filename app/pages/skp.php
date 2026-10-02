@@ -1299,6 +1299,15 @@ function _skp_bagi_dari_post(PDO $pdo = null, int $pid = 0): array
  */
 function _skp_simpan_bagi(PDO $pdo, int $pid, int $skpId, ?int $trxId, array $bagi, string $uname): void
 {
+    // Transaksi yang disentuh HARUS transaksi milik dokumen ini di properti ini.
+    // Tanpa ini, satu POST bisa menulis ulang alokasi transaksi mana pun.
+    if ($trxId) {
+        $cek = $pdo->prepare('SELECT t.id FROM transactions t
+                               JOIN skp_documents s ON s.transaction_id = t.id
+                              WHERE t.id = ? AND t.property_id = ? AND s.id = ? AND s.property_id = ?');
+        $cek->execute([$trxId, $pid, $skpId, $pid]);
+        if (!$cek->fetchColumn()) $trxId = null;
+    }
     $pdo->prepare('DELETE FROM transaction_pic_splits WHERE skp_id = ?')->execute([$skpId]);
     if ($trxId) $pdo->prepare('DELETE FROM transaction_pic_splits WHERE transaction_id = ? AND skp_id <> ?')->execute([$trxId, $skpId]);
     if ($bagi) {

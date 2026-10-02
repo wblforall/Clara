@@ -185,6 +185,15 @@ final class AllocationService
             $n = (float) $r['amount'];
             if ($n > 0 && trim((string) $r['pic_name']) !== '') $out[] = ['pic' => (string) $r['pic_name'], 'amount' => $n];
         }
+        if (!$out) return [];
+        // Pembagian hanya dipakai bila jumlahnya PAS dengan nilai kontrak.
+        // Bila tidak, nominalnya akan bekerja sebagai rasio dan memberi porsi
+        // yang sama sekali tidak diminta — lebih aman kembali ke satu PIC.
+        $tq = $pdo->prepare('SELECT final_amount, total_calculated FROM transactions WHERE id = ?');
+        $tq->execute([$transactionId]);
+        $t = $tq->fetch(PDO::FETCH_ASSOC);
+        $nilai = $t ? round((float) ($t['final_amount'] ?: $t['total_calculated'])) : 0;
+        if ($nilai > 0 && round(array_sum(array_column($out, 'amount'))) !== $nilai) return [];
         return $out;
     }
 
@@ -227,6 +236,13 @@ final class AllocationService
     public static function terapkanPembagian(PDO $pdo, int $transactionId, ?string $picUtama = null): int
     {
         if ($transactionId <= 0) return 0;
+        // Tanpa pembagian, income kembali ke PIC TRANSAKSI — bukan ke PIC yang
+        // kebetulan ada di baris alokasi pertama (itu bisa penerima pembagian lama).
+        if ($picUtama === null) {
+            $pq = $pdo->prepare('SELECT pic_name FROM transactions WHERE id = ?');
+            $pq->execute([$transactionId]);
+            $picUtama = (string) ($pq->fetchColumn() ?: '') ?: null;
+        }
         $st = $pdo->prepare('SELECT * FROM transaction_allocations WHERE transaction_id = ? ORDER BY id');
         $st->execute([$transactionId]);
         $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -264,7 +280,9 @@ final class AllocationService
                     $g['property_id'], $transactionId, $g['module'], $g['master_code'],
                     $g['period_key'], $g['allocation_start'], $g['allocation_end'],
                     $b['allocated_days'], $b['amount'], $b['capacity_days'],
-                    $b['pic_name'] ?? ($picUtama ?: $g['pic_name']),
+                    // Baris gabungan membawa pic_name lama; saat tidak dibagi,
+                    // yang menentukan adalah PIC transaksi.
+                    $splits ? ($b['pic_name'] ?? $g['pic_name']) : ($picUtama ?: $g['pic_name']),
                 ]);
                 $n++;
             }
