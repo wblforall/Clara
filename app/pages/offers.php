@@ -2327,6 +2327,19 @@ function offer_save(PDO $pdo): void
         $data['monthly_amount']   = array_sum(array_column($bundleItems, 'monthly_amount'));
         $data['total_calculated'] = array_sum(array_column($bundleItems, 'total_amount'));
         $data['override_amount']  = $data['total_calculated'];
+        if ($tierRows && $tierTotal > 0) {
+            // Luas & tarif penawaran diisi dari tingkatan harga. Tanpa ini
+            // keduanya tetap 0, dan SKP mencetak "Luas Area : 0,00 m²" tepat di
+            // atas blok yang menulis "Total Luas Area 80 m²" — dua angka yang
+            // bertentangan di satu halaman yang diserahkan ke client.
+            $luasTierTot = array_sum(array_column($tierRows, 'area_sqm'));
+            $data['area_sqm'] = $luasTierTot;
+            // Tarif rata-rata gabungan, dibuat supaya bisa dijumlah ulang:
+            // tarif × luas × hari = nilai paket. Rinciannya tetap yang dicetak.
+            $data['unit_rate'] = ($luasTierTot > 0 && $days > 0)
+                ? round($tierTotal / $luasTierTot / $days, 2) : 0;
+            $data['pricing_type'] = 'daily_area';
+        }
         $data['dp_amount']        = array_sum(array_column($bundleItems, 'dp_amount'));
         $data['deposit_amount']   = array_sum(array_column($bundleItems, 'deposit_amount'));
         $data['dp_months']        = 0;
