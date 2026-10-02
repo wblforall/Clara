@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+// Dimuat di tingkat berkas supaya tidak bergantung pada urutan pemanggilan fungsi.
+require_once dirname(__DIR__) . '/ApprovalLine.php';
+
 function dashboard(PDO $pdo): void
 {
     $period = getv('period', date('Y-m'));
@@ -10,8 +13,10 @@ function dashboard(PDO $pdo): void
     // Dokumen yang menunggu paraf/persetujuan ORANG INI. Sebelum ada ini,
     // pemeriksa tidak punya cara tahu ada yang menunggunya selain membuka
     // daftar SKP dan menebak — itulah sebab "sering miss".
-    require_once dirname(__DIR__) . '/ApprovalLine.php';
-    $antreanSaya = count(ApprovalLine::antreanSaya($pdo, $pid));
+    $antreanSaya = count(array_unique(array_merge(
+        ApprovalLine::antreanSaya($pdo, $pid),
+        ApprovalLine::antreanRevisiSaya($pdo, $pid)
+    )));
     $tgtStmt = $pdo->prepare("SELECT target_amount FROM targets_monthly WHERE period_key = ? AND property_id = ?");
     $tgtStmt->execute([$period, $pid]);
     $target = (float) ($tgtStmt->fetchColumn() ?: 0);

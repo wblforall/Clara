@@ -321,6 +321,130 @@ final class ApprovalLine
         ksort($perTahap);
         return array_values($perTahap);
     }
+    // ─── Permintaan revisi dokumen yang sudah disetujui ────────────────────
+    //
+    // Dokumen terkunci begitu disetujui — itu disengaja. Tetapi selama client
+    // BELUM menandatangani, koreksi yang baru ketahuan lebih masuk akal
+    // diperbaiki daripada dokumennya dibatalkan lalu dibuat ulang.
+
+    /** Jabatan yang berwenang menyetujui permintaan revisi di properti ini. */
+    public static function revisiTahap(PDO $pdo, int $pid, string $docType = 'skp'): ?array
+    {
+        try {
+            $st = $pdo->prepare("SELECT role_name, pic_name FROM skp_revision_flow
+                                  WHERE property_id = ? AND is_active = 1
+                                    AND (doc_type IS NULL OR doc_type = '' OR doc_type = ?)
+                                  ORDER BY (doc_type IS NULL) ASC, id ASC LIMIT 1");
+            $st->execute([$pid, $docType]);
+            $r = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+        } catch (Throwable $e) {
+            return null;                       // tabel belum ada
+        }
+        if ($r && trim((string) $r['role_name']) !== '') {
+            return [
+                'role_name' => trim((string) $r['role_name']),
+                'pic_name'  => trim((string) ($r['pic_name'] ?? '')) ?: null,
+                'label'     => trim((string) $r['role_name']),
+                'asal'      => 'diatur',
+            ];
+        }
+        // Belum diatur → jatuh ke tahap PERTAMA rantai persetujuan (umumnya
+        // Asst. Manager), sesuai permintaan: revisi masuk ke Asst. Manager.
+        $alur = self::steps($pdo, $pid, $docType);
+        if ($alur) {
+            return $alur[0] + ['asal' => 'tahap pertama alur persetujuan'];
+        }
+        return null;                           // tanpa rantai → pemegang approve_skp
+    }
+
+    /** Permintaan revisi yang masih menunggu keputusan untuk satu dokumen. */
+    public static function revisiPending(PDO $pdo, int $skpId): ?array
+    {
+        try {
+            $st = $pdo->prepare("SELECT * FROM skp_revision_requests
+                                  WHERE skp_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1");
+            $st->execute([$skpId]);
+            return $st->fetch(PDO::FETCH_ASSOC) ?: null;
+        } catch (Throwable $e) {
+            return null;
+        }
+    }
+
+    /** Riwayat permintaan revisi satu dokumen (terbaru dulu). */
+    public static function revisiRiwayat(PDO $pdo, int $skpId): array
+    {
+        try {
+            $st = $pdo->prepare('SELECT * FROM skp_revision_requests WHERE skp_id = ? ORDER BY id DESC');
+            $st->execute([$skpId]);
+            return $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Bolehkah dokumen ini diajukan revisi?
+     * Syaratnya: sudah disetujui, BELUM ditandatangani client, dan belum ada
+     * permintaan revisi yang menggantung.
+     */
+    public static function bolehAjukanRevisi(array $skp): bool
+    {
+        return ($skp['status'] ?? '') === 'approved';
+    }
+
+    /** Bolehkah user yang sedang masuk MEMUTUSKAN permintaan revisi di properti ini? */
+    public static function bolehPutusRevisi(PDO $pdo, int $pid, string $docType = 'skp', bool $persis = false): bool
+    {
+        if (!function_exists('can') || !can('approve_skp')) return false;
+        $peran = function_exists('current_role') ? current_role() : '';
+        if (in_array($peran, ['superadmin', 'admin'], true)) return !$persis;
+        $tahap = self::revisiTahap($pdo, $pid, $docType);
+        if (!$tahap) return true;              // tanpa pengaturan → perilaku lama
+        if ($tahap['pic_name'] !== null) {
+            return strcasecmp(self::namaPic($pdo, $pid), $tahap['pic_name']) === 0;
+        }
+        $jab = self::jabatan($pdo, $pid);
+        if ($jab === '') return false;
+        if (strcasecmp($jab, $tahap['role_name']) === 0) return true;
+        // $persis = daftar antrean: hanya jabatan yang ditunjuk yang dihitung,
+        // supaya angka "giliran saya" milik atasan tidak ikut membengkak.
+        if ($persis) return false;
+        // Atasan dalam rantai yang sama boleh mewakili, seperti pada paraf —
+        // supaya permintaan revisi tidak menggantung saat yang bersangkutan
+        // berhalangan.
+        $alur = self::steps($pdo, $pid, $docType);
+        $n = count($alur);
+        for ($i = 0; $i < $n; $i++) {
+            if (strcasecmp($alur[$i]['role_name'], $tahap['role_name']) !== 0) continue;
+            for ($k = $i + 1; $k < $n; $k++) {
+                if (strcasecmp($jab, $alur[$k]['role_name']) === 0) return true;
+            }
+            break;
+        }
+        return false;
+    }
+
+    /** Dokumen yang permintaan revisinya menunggu keputusan ORANG INI. */
+    public static function antreanRevisiSaya(PDO $pdo, int $pid): array
+    {
+        if (!function_exists('can') || !can('approve_skp')) return [];
+        try {
+            $st = $pdo->prepare("SELECT r.skp_id, d.doc_type
+                                   FROM skp_revision_requests r
+                                   JOIN skp_documents d ON d.id = r.skp_id
+                                  WHERE r.property_id = ? AND r.status = 'pending'");
+            $st->execute([$pid]);
+            $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (Throwable $e) {
+            return [];
+        }
+        $ids = [];
+        foreach ($rows as $r) {
+            if (self::bolehPutusRevisi($pdo, $pid, (string) ($r['doc_type'] ?? 'skp'), true)) $ids[] = (int) $r['skp_id'];
+        }
+        return $ids;
+    }
+
     /**
      * Daftar nama orang yang sedang ditunggu parafnya — dipakai untuk memberi
      * tahu siapa yang harus bertindak, memakai data Master PIC yang sudah ada.
