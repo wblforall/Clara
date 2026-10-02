@@ -71,20 +71,26 @@ function _pic_fetch_section(PDO $pdo, string $period, int $pid): array
     $picStmt->execute([$period, $pid, $pid, $pid]);
     $pics = $picStmt->fetchAll();
 
+    // Rincian dikelompokkan menurut PIC di BARIS ALOKASI, bukan PIC transaksi:
+    // satu kontrak yang income-nya dibagi akan tampil di tiap PIC sebesar
+    // porsinya saja, supaya rinciannya tetap berjumlah sama dengan totalnya.
     $trxStmt = $pdo->prepare(
         "SELECT t.id, t.module, t.master_code, t.billing_method,
                 (" . recurring_match_sql('t') . ") AS is_recurring,
                 COALESCE(c.company_name,'-') company_name,
                 COALESCE(c.brand_name,'') brand_name,
-                t.start_date, t.end_date, COALESCE(t.pic_name,'Tanpa PIC') pic_name,
-                t.invoice_no, COALESCE(SUM(a.amount),0) period_amount
+                t.start_date, t.end_date,
+                COALESCE(NULLIF(a.pic_name,''), t.pic_name, 'Tanpa PIC') pic_name,
+                t.invoice_no, COALESCE(SUM(a.amount),0) period_amount,
+                (SELECT COUNT(DISTINCT a2.pic_name) FROM transaction_allocations a2
+                  WHERE a2.transaction_id = t.id AND a2.property_id = t.property_id) > 1 AS porsi_bagi
          FROM transactions t
          LEFT JOIN master_clients c ON c.id=t.client_id
          JOIN transaction_allocations a ON a.transaction_id=t.id AND a.period_key=? AND a.property_id=?
          WHERE t.deleted_at IS NULL AND t.property_id=?
          GROUP BY t.id, t.module, t.master_code, t.billing_method, c.company_name, c.brand_name,
-                  t.start_date, t.end_date, t.pic_name, t.invoice_no
-         ORDER BY t.pic_name, period_amount DESC"
+                  t.start_date, t.end_date, COALESCE(NULLIF(a.pic_name,''), t.pic_name, 'Tanpa PIC'), t.invoice_no
+         ORDER BY COALESCE(NULLIF(a.pic_name,''), t.pic_name, 'Tanpa PIC'), period_amount DESC"
     );
     $trxStmt->execute([$period, $pid, $pid]);
     $trxByPic = [];
@@ -190,7 +196,7 @@ function _pic_render_section(array $sec, string $period, array $moduleLabel, str
                                 <td style="padding:5px 10px"><?= h($moduleLabel[$trx['module']] ?? $trx['module']) ?></td>
                                 <td style="padding:5px 10px;white-space:nowrap"><?= h($trx['start_date'] . ' s/d ' . $trx['end_date']) ?></td>
                                 <td style="padding:5px 10px;color:var(--muted)"><?= h($trx['invoice_no'] ?? '-') ?></td>
-                                <td style="padding:5px 10px;text-align:right;font-weight:600"><?= money($trx['period_amount']) ?></td>
+                                <td style="padding:5px 10px;text-align:right;font-weight:600"><?= money($trx['period_amount']) ?><?= !empty($trx['porsi_bagi']) ? ' <span class="badge" style="font-size:10px;background:#fef3c7;color:#92400e">porsi</span>' : '' ?></td>
                             </tr>
                             <?php endforeach; ?>
                             </tbody>
@@ -302,20 +308,26 @@ function pic_report_print(PDO $pdo): void
     $picStmt->execute([$period, $pid, $pid, $pid]);
     $pics = $picStmt->fetchAll();
 
+    // Rincian dikelompokkan menurut PIC di BARIS ALOKASI, bukan PIC transaksi:
+    // satu kontrak yang income-nya dibagi akan tampil di tiap PIC sebesar
+    // porsinya saja, supaya rinciannya tetap berjumlah sama dengan totalnya.
     $trxStmt = $pdo->prepare(
         "SELECT t.id, t.module, t.master_code, t.billing_method,
                 (" . recurring_match_sql('t') . ") AS is_recurring,
                 COALESCE(c.company_name,'-') company_name,
                 COALESCE(c.brand_name,'') brand_name,
-                t.start_date, t.end_date, COALESCE(t.pic_name,'Tanpa PIC') pic_name,
-                t.invoice_no, COALESCE(SUM(a.amount),0) period_amount
+                t.start_date, t.end_date,
+                COALESCE(NULLIF(a.pic_name,''), t.pic_name, 'Tanpa PIC') pic_name,
+                t.invoice_no, COALESCE(SUM(a.amount),0) period_amount,
+                (SELECT COUNT(DISTINCT a2.pic_name) FROM transaction_allocations a2
+                  WHERE a2.transaction_id = t.id AND a2.property_id = t.property_id) > 1 AS porsi_bagi
          FROM transactions t
          LEFT JOIN master_clients c ON c.id=t.client_id
          JOIN transaction_allocations a ON a.transaction_id=t.id AND a.period_key=? AND a.property_id=?
          WHERE t.deleted_at IS NULL AND t.property_id=?
          GROUP BY t.id, t.module, t.master_code, t.billing_method, c.company_name, c.brand_name,
-                  t.start_date, t.end_date, t.pic_name, t.invoice_no
-         ORDER BY t.pic_name, period_amount DESC"
+                  t.start_date, t.end_date, COALESCE(NULLIF(a.pic_name,''), t.pic_name, 'Tanpa PIC'), t.invoice_no
+         ORDER BY COALESCE(NULLIF(a.pic_name,''), t.pic_name, 'Tanpa PIC'), period_amount DESC"
     );
     $trxStmt->execute([$period, $pid, $pid]);
     $trxByPic = [];
@@ -506,7 +518,7 @@ td{padding:5px 8px;border:1px solid #E4E9F0;vertical-align:middle}
             <td><?= h($moduleLabel[$trx['module']] ?? $trx['module']) ?></td>
             <td style="white-space:nowrap"><?= h($trx['start_date'] . ' s/d ' . $trx['end_date']) ?></td>
             <td style="color:#64748B"><?= h($trx['invoice_no'] ?? '-') ?></td>
-            <td class="r" style="font-weight:700<?= $isRecurring ? ';color:#0369a1' : '' ?>"><?= money($trx['period_amount']) ?></td>
+            <td class="r" style="font-weight:700<?= $isRecurring ? ';color:#0369a1' : '' ?>"><?= money($trx['period_amount']) ?><?= !empty($trx['porsi_bagi']) ? ' <span style="font-size:9px;color:#92400e;font-weight:600">porsi</span>' : '' ?></td>
         </tr>
         <?php endforeach; ?>
         <tr style="font-weight:700;background:#F0FDF9">

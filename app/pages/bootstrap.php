@@ -583,7 +583,12 @@ function layout(string $title, callable $body, array $opts = []): void
         setTimeout(function(){overlay.style.display='flex';var secs=warnBefore;var tick=setInterval(function(){secs--;var el=document.getElementById('secs');if(el)el.textContent=secs;if(secs<=0)clearInterval(tick);},1000);},warnAt);
         setTimeout(function(){window.location.href='?r=logout';},logoutAt);
     })();
-    document.addEventListener('submit',function(e){var form=e.target;if(form.dataset.submitted){e.preventDefault();return;}form.dataset.submitted='1';form.querySelectorAll('button[type=submit]').forEach(function(btn){btn.disabled=true;btn.dataset.orig=btn.textContent;btn.textContent='Menyimpan...';});});
+    /* Anti klik-ganda. e.defaultPrevented wajib diperiksa: validasi milik
+       halaman (mis. "pembagian income belum pas") memanggil preventDefault di
+       listener form, dan event-nya tetap naik ke sini. Tanpa pemeriksaan ini
+       formnya ikut ditandai terkirim lalu tombolnya mati permanen — submit yang
+       sudah diperbaiki tidak pernah bisa dikirim sampai halaman dimuat ulang. */
+    document.addEventListener('submit',function(e){if(e.defaultPrevented)return;var form=e.target;if(form.dataset.submitted){e.preventDefault();return;}form.dataset.submitted='1';form.querySelectorAll('button[type=submit]').forEach(function(btn){btn.disabled=true;btn.dataset.orig=btn.textContent;btn.textContent='Menyimpan...';});});
     /* Salin teks ke clipboard dgn fallback. navigator.clipboard hanya ada di
        secure context (HTTPS/localhost); di PWA via IP LAN (HTTP) ia undefined,
        jadi tombol Salin "diam" tanpa fallback. Fallback: textarea + execCommand. */

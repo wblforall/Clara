@@ -578,12 +578,30 @@ function recurring_merge_execute(PDO $pdo): void
         $now = date('Y-m-d H:i:s');
         $actor = $_SESSION['user']['name'] ?? 'system';
 
+        // Pembagian income transaksi lama dijumlahkan per PIC supaya ikut pindah
+        // ke transaksi gabungan. Tanpa ini seluruh income jatuh ke satu nama dan
+        // barisnya tertinggal yatim tanpa jejak di UI mana pun.
+        $qBagi = $pdo->prepare('SELECT pic_name, SUM(amount) n FROM transaction_pic_splits
+                                WHERE transaction_id IN (' . implode(',', array_fill(0, count($oldIds), '?')) . ')
+                                GROUP BY pic_name');
+        $qBagi->execute($oldIds);
+        $bagiGabung = [];
+        foreach ($qBagi->fetchAll(PDO::FETCH_ASSOC) as $b) $bagiGabung[$b['pic_name']] = (float) $b['n'];
+        // Jadwal harga transaksi lama (anchor_cycle) tidak dibawa: pada transaksi
+        // gabungan yang spread, jadwal akan menimpa nominal per siklus yang justru
+        // sedang dipertahankan merge ini. Barisnya dibuang, bukan ditinggal yatim.
+        $qTahap = $pdo->prepare('SELECT COUNT(*) FROM price_steps WHERE transaction_id IN (' . implode(',', array_fill(0, count($oldIds), '?')) . ')');
+        $qTahap->execute($oldIds);
+        $tahapDibuang = (int) $qTahap->fetchColumn();
+
         // Soft-delete transaksi lama + hapus alokasinya
         foreach ($oldIds as $oldId) {
             $pdo->prepare('UPDATE transactions SET deleted_at=?, deleted_by=? WHERE id=?')
                 ->execute([$now, $actor, $oldId]);
             $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id=? AND property_id=?')
                 ->execute([$oldId, $propertyId]);
+            $pdo->prepare('DELETE FROM transaction_pic_splits WHERE transaction_id=?')->execute([$oldId]);
+            $pdo->prepare('DELETE FROM price_steps WHERE transaction_id=?')->execute([$oldId]);
         }
 
         // Buat transaksi baru
@@ -623,6 +641,23 @@ function recurring_merge_execute(PDO $pdo): void
         ]);
         $newId = (int) $pdo->lastInsertId();
 
+        // Pembagian income dipasang SEBELUM alokasi dihitung, supaya barisnya
+        // langsung terpecah per PIC. Jumlahnya diskalakan ke nilai gabungan agar
+        // tetap pas (sisa pembulatan ke PIC terakhir) — pembagian yang tidak pas
+        // akan diabaikan oleh mesin alokasi.
+        if ($bagiGabung) {
+            $totalBagi = array_sum($bagiGabung);
+            $insBagi = $pdo->prepare('INSERT INTO transaction_pic_splits (property_id, transaction_id, pic_name, amount, created_by) VALUES (?,?,?,?,?)');
+            $nama = array_keys($bagiGabung); $n = count($nama); $terpakai = 0.0;
+            foreach ($nama as $i => $pn) {
+                $porsi = $totalBagi > 0
+                    ? ($i === $n - 1 ? round($finalAmount - $terpakai, 2) : round($finalAmount * ($bagiGabung[$pn] / $totalBagi), 2))
+                    : 0.0;
+                $terpakai += $porsi;
+                if ($porsi > 0) $insBagi->execute([$propertyId, $newId, $pn, $porsi, $actor]);
+            }
+        }
+
         // Hitung alokasi — gunakan per-cycle amounts dari transaksi lama (bukan distribusi merata)
         if ($pricingType === 'monthly' && in_array($cycleRecognition, ['cycle_start', 'cycle_end'])) {
             _recurring_save_cycle_allocations($pdo, $newId, $trx, $cycleRecognition, $cycleAmounts);
@@ -638,6 +673,8 @@ function recurring_merge_execute(PDO $pdo): void
             'final_amount' => $finalAmount,
             'start_date'   => $startDate,
             'end_date'     => $endDate,
+            'bagi_pindah'  => $bagiGabung ?: null,
+            'tahap_dibuang' => $tahapDibuang ?: null,
         ]);
 
         $pdo->commit();
@@ -647,7 +684,9 @@ function recurring_merge_execute(PDO $pdo): void
         redirect_to('recurring_candidates');
     }
 
-    flash('Berhasil merge ' . count($oldIds) . ' transaksi → #' . $newId . ' (Recurring). Alokasi sudah dihitung ulang.');
+    flash('Berhasil merge ' . count($oldIds) . ' transaksi → #' . $newId . ' (Recurring). Alokasi sudah dihitung ulang.'
+        . ($bagiGabung ? ' Pembagian income ' . count($bagiGabung) . ' PIC ikut dipindahkan.' : '')
+        . ($tahapDibuang ? ' Jadwal harga transaksi lama (' . $tahapDibuang . ' tahap) tidak dibawa — periksa ulang bila masih diperlukan.' : ''));
     redirect_to('allocation_detail', ['id' => $newId]);
 }
 
