@@ -77,8 +77,10 @@ final class DashboardService
             $s = $pdo->prepare(
                 "SELECT COUNT(*) unit_count, COALESCE(SUM(a.allocated_days),0) days_total
                  FROM $tbl m
-                 LEFT JOIN transaction_allocations a
-                   ON a.master_code=m.code AND a.module=? AND a.period_key=? AND a.property_id=?
+                 LEFT JOIN (SELECT master_code, SUM(allocated_days) allocated_days
+                            FROM transaction_allocations
+                            WHERE module=? AND period_key=? AND property_id=?
+                            GROUP BY master_code) a ON a.master_code=m.code
                  WHERE m.property_id=? AND m.status='active'"
             );
             $s->execute([$mod, $period, $pid, $pid]);
