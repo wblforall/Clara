@@ -286,14 +286,22 @@ final class ApprovalLine
         foreach ($rows as $r) {
             $dt = (string) ($r['doc_type'] ?? 'skp');
             if (!array_key_exists($dt, $cacheAlur)) $cacheAlur[$dt] = self::steps($pdo, $pid, $dt);
-            // Tanpa rantai, TIDAK ada dokumen yang diklaim sebagai giliran
-            // siapa pun. Panel "perlu tindakan Anda" berarti "dokumen ini
-            // menunggu SAYA" — selama alurnya belum diatur, pernyataan itu
-            // tidak punya dasar dan muncul ke semua pemegang approve_skp,
-            // termasuk Super Admin yang sebenarnya tidak memaraf apa pun.
-            // Dokumennya tetap terlihat di daftar SKP seperti biasa; yang
-            // hilang hanya klaim bahwa itu giliran orang yang sedang membuka.
-            if (!$cacheAlur[$dt]) continue;
+            // Tanpa rantai, yang menunggu dokumen ini adalah PEMERIKSA-nya —
+            // orang yang benar-benar terdaftar di Master PIC dengan sebuah
+            // jabatan (Manager, Asst. Manager, ...). Bukan setiap pemegang izin
+            // approve_skp: akun Super Admin dan Admin memegang semua izin tanpa
+            // pernah memaraf apa pun, dan kalau ikut dihitung, panel "perlu
+            // tindakan Anda" muncul di layar orang yang tidak punya urusan
+            // dengan dokumen itu lalu berhenti dipercaya.
+            //
+            // Syaratnya sengaja TIDAK dibuat "harus ada rantai dulu": sebelum
+            // alurnya diatur pun Asst. Manager & Manager memang pemeriksanya,
+            // dan menyembunyikan antrean mereka sampai ada konfigurasi justru
+            // membuat dokumen menumpuk tanpa ada yang merasa ditunggu.
+            if (!$cacheAlur[$dt]) {
+                if (self::jabatan($pdo, $pid) !== '') $ids[] = (int) $r['id'];
+                continue;
+            }
             if (self::cocokJabatan($pdo, $pid, $r, $cacheAlur[$dt], true)) $ids[] = (int) $r['id'];
         }
         return $ids;
@@ -416,11 +424,11 @@ final class ApprovalLine
         $peran = function_exists('current_role') ? current_role() : '';
         if (in_array($peran, ['superadmin', 'admin'], true)) return !$persis;
         $tahap = self::revisiTahap($pdo, $pid, $docType);
-        // Tanpa pengaturan, WEWENANG-nya tetap seperti perilaku lama (pemegang
-        // approve_skp boleh memutuskan) supaya permintaan revisi tidak buntu.
-        // ANTREAN-nya tidak: $persis dipakai panel "perlu tindakan Anda", dan
-        // selama belum diatur tidak ada dasar menyebutnya giliran seseorang.
-        if (!$tahap) return !$persis;
+        // Tanpa pengaturan, WEWENANG-nya tetap seperti perilaku lama: pemegang
+        // approve_skp boleh memutuskan, supaya permintaan revisi tidak buntu.
+        // Untuk ANTREAN ($persis) syaratnya lebih ketat — harus pemeriksa yang
+        // terdaftar berjabatan di Master PIC, sejalan dengan antreanSaya().
+        if (!$tahap) return !$persis || self::jabatan($pdo, $pid) !== '';
         if ($tahap['pic_name'] !== null) {
             return strcasecmp(self::namaPic($pdo, $pid), $tahap['pic_name']) === 0;
         }
