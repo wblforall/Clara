@@ -96,6 +96,9 @@ final class AllocationService
                     $finalAmount,
                     $cycleRecognition
                 );
+                // Jadwal harga bertahap menggantikan pembagian rata bila ada.
+                $tahap = self::priceSteps($pdo, $transactionId);
+                if ($tahap) $allocations = self::terapkanTahap($allocations, $tahap);
                 if ($monthOverrides) {
                     $allocations = self::applyMonthOverrides($allocations, $monthOverrides);
                 }
@@ -268,6 +271,135 @@ final class AllocationService
         }
         return $n;
     }
+    /**
+     * Jadwal harga bertahap milik satu kontrak (kosong = harga tunggal).
+     * Dibaca dari price_steps; diurutkan menurut tanggal berlakunya.
+     */
+    public static function priceSteps(PDO $pdo, ?int $transactionId = null, ?int $offerId = null): array
+    {
+        if (!$transactionId && !$offerId) return [];
+        try {
+            if ($transactionId) {
+                $st = $pdo->prepare('SELECT effective_from, monthly_amount, label FROM price_steps WHERE transaction_id = ? ORDER BY effective_from, id');
+                $st->execute([$transactionId]);
+            } else {
+                $st = $pdo->prepare('SELECT effective_from, monthly_amount, label FROM price_steps WHERE offer_id = ? AND transaction_id IS NULL ORDER BY effective_from, id');
+                $st->execute([$offerId]);
+            }
+            $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (Throwable $e) {
+            return [];                       // tabel belum ada → perilaku lama
+        }
+        $out = [];
+        foreach ($rows as $r) {
+            if ((float) $r['monthly_amount'] <= 0 || !$r['effective_from']) continue;
+            $out[] = [
+                'from'   => (string) $r['effective_from'],
+                'amount' => (float) $r['monthly_amount'],
+                'label'  => (string) ($r['label'] ?? ''),
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Nilai satu siklus menurut jadwal: tahap yang berlaku adalah tahap dengan
+     * tanggal mulai TERAKHIR yang tidak melewati awal siklus. Siklus sebelum
+     * tahap pertama memakai tahap pertama.
+     */
+    private static function nilaiTahap(array $steps, string $mulaiSiklus): ?float
+    {
+        if (!$steps) return null;
+        $pakai = null;
+        foreach ($steps as $s) {
+            if ($s['from'] <= $mulaiSiklus) $pakai = $s;
+        }
+        if ($pakai === null) $pakai = $steps[0];
+        return (float) $pakai['amount'];
+    }
+
+    /**
+     * Terapkan jadwal harga ke daftar siklus bulanan: tiap siklus memakai
+     * nominal tahap yang berlaku, menggantikan pembagian rata.
+     */
+    public static function terapkanTahap(array $allocations, array $steps): array
+    {
+        if (!$steps) return $allocations;
+        foreach ($allocations as &$a) {
+            $n = self::nilaiTahap($steps, (string) $a['allocation_start']);
+            if ($n !== null) $a['amount'] = round($n);
+        }
+        unset($a);
+        return $allocations;
+    }
+
+    /**
+     * Total nilai kontrak bila memakai jadwal harga — dipakai agar
+     * transactions.final_amount tetap sama dengan jumlah alokasinya.
+     */
+    public static function totalDariTahap(array $trx, array $steps): float
+    {
+        if (!$steps) return 0.0;
+        $alok = self::monthlyCycleAllocations(
+            new DateTimeImmutable($trx['start_date']),
+            new DateTimeImmutable($trx['end_date']),
+            0.0,
+            $trx['cycle_recognition'] ?? 'cycle_start'
+        );
+        return (float) array_sum(array_column(self::terapkanTahap($alok, $steps), 'amount'));
+    }
+
+    /**
+     * Terapkan jadwal harga HANYA pada bulan yang belum lewat.
+     *
+     * Dipakai saat harga kontrak berjalan dinaikkan: baris alokasi bulan yang
+     * sudah ditutup tidak boleh berubah, jadi fungsi ini meng-UPDATE per baris
+     * (bukan menghapus-dan-menulis-ulang seperti saveAllocations). Mengembalikan
+     * jumlah baris yang berubah dan total kontrak yang baru.
+     */
+    public static function terapkanTahapKeDepan(PDO $pdo, int $transactionId, string $mulai): array
+    {
+        $steps = self::priceSteps($pdo, $transactionId);
+        if (!$steps || $transactionId <= 0) return ['diubah' => 0, 'total' => 0.0];
+
+        $st = $pdo->prepare('SELECT id, period_key, allocation_start, amount, pic_name FROM transaction_allocations WHERE transaction_id = ? ORDER BY allocation_start, id');
+        $st->execute([$transactionId]);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        if (!$rows) return ['diubah' => 0, 'total' => 0.0];
+
+        // Baris bisa terpecah per PIC (pembagian income) — nilainya dijumlah
+        // dulu per siklus, lalu dibagi lagi menurut porsi yang sama.
+        $perSiklus = [];
+        foreach ($rows as $r) $perSiklus[$r['allocation_start']][] = $r;
+
+        $upd = $pdo->prepare('UPDATE transaction_allocations SET amount = ? WHERE id = ?');
+        $diubah = 0; $total = 0.0;
+        foreach ($perSiklus as $mulaiSiklus => $baris) {
+            $lama = array_sum(array_map(fn($x) => (float) $x['amount'], $baris));
+            if ($mulaiSiklus < $mulai) { $total += $lama; continue; }   // bulan lewat: jangan disentuh
+            $baru = self::nilaiTahap($steps, (string) $mulaiSiklus);
+            if ($baru === null) { $total += $lama; continue; }
+            $baru = round($baru);
+            $total += $baru;
+            if (count($baris) === 1) {
+                if ((float) $baris[0]['amount'] !== (float) $baru) { $upd->execute([$baru, $baris[0]['id']]); $diubah++; }
+                continue;
+            }
+            // Beberapa PIC: porsi lama dipertahankan, sisa pembulatan ke baris terakhir.
+            $terpakai = 0.0; $n = count($baris);
+            foreach ($baris as $i => $b) {
+                $porsi = $lama > 0
+                    ? ($i === $n - 1 ? round($baru - $terpakai, 2) : round($baru * ((float) $b['amount'] / $lama), 2))
+                    : ($i === 0 ? $baru : 0);
+                $terpakai += $porsi;
+                if ((float) $b['amount'] !== (float) $porsi) { $upd->execute([$porsi, $b['id']]); $diubah++; }
+            }
+        }
+        // Nilai kontrak disamakan dengan jumlah alokasinya.
+        $pdo->prepare('UPDATE transactions SET final_amount = ?, override_amount = ? WHERE id = ?')
+            ->execute([$total, $total, $transactionId]);
+        return ['diubah' => $diubah, 'total' => $total];
+    }
     public static function totalCalculated(array $trx): float
     {
         return array_sum(array_column(self::preview($trx), 'amount'));
@@ -418,7 +550,7 @@ final class AllocationService
         return $allocations;
     }
 
-    private static function monthlyCycleAllocations(
+    public static function monthlyCycleAllocations(
         DateTimeImmutable $start,
         DateTimeImmutable $end,
         float $finalAmount,

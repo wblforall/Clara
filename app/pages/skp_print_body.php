@@ -194,6 +194,16 @@ $skpHasQr = !empty($skp['sign_token']);
             <td class="amt"<?= $depLunas ? ' style="color:#166534;font-weight:bold"' : '' ?>><?= $rp($a['deposit'] ?? 0) ?><?= $depLunas ? ' (Sudah Dibayarkan)' : '' ?></td></tr>
         <?php /* Service Charge ditagih per bulan — tercetak sebagai blok sendiri
                  (poin C) mengikuti format surat yang dipakai selama ini. */ ?>
+        <?php /* Jadwal harga bertahap: tiap tahap tercetak agar perubahan harga
+                 di tahun berikutnya tercantum sejak dokumen pertama. */ ?>
+        <?php $tahapDoc = $d['tahap_harga'] ?? []; ?>
+        <?php if ($tahapDoc): ?>
+        <tr><td class="lbl"><strong>Jadwal Harga</strong></td><td class="amt"></td></tr>
+        <?php foreach ($tahapDoc as $t): ?>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;Mulai <?= $h(date('d/m/Y', strtotime($t['from']))) ?><?= !empty($t['label']) ? ' <span class="muted">(' . $h($t['label']) . ')</span>' : '' ?></td>
+            <td class="amt"><?= $rp($t['amount']) ?> <span class="muted">/ bulan</span></td></tr>
+        <?php endforeach; ?>
+        <?php endif; ?>
         <?php $adaSc = (float) ($a['sc_bulanan'] ?? 0) > 0; ?>
         <?php if ($adaSc): $abjad = 0; ?>
         <tr><td class="lbl">C. Service Charge</td><td class="amt"></td></tr>

@@ -1826,6 +1826,68 @@ function transaction_update(PDO $pdo): void
     redirect_to('allocation_detail', ['id' => $id]);
 }
 
+/**
+ * Tambah satu tahap harga pada kontrak berjalan, lalu terapkan HANYA ke bulan
+ * yang belum lewat. Bulan yang sudah ditutup tidak boleh bergeser karena
+ * laporannya sudah dipakai & diaudit.
+ */
+function price_step_save(PDO $pdo): void
+{
+    require_permission('approve_skp');
+    verify_csrf();
+    $pid  = current_property_id();
+    $id   = (int) post('id');
+    $mulai = trim((string) post('effective_from'));
+    $nilai = (float) preg_replace('/\D/', '', (string) post('monthly_amount'));
+    $label = trim((string) post('label')) ?: null;
+    $kembali = ['allocation_detail', ['id' => $id]];
+
+    $st = $pdo->prepare('SELECT * FROM transactions WHERE id = ? AND property_id = ? AND deleted_at IS NULL');
+    $st->execute([$id, $pid]);
+    $trx = $st->fetch();
+    if (!$trx) { flash('Transaksi tidak ditemukan.'); redirect_to('transactions'); }
+
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $mulai)) { flash('Tanggal berlaku belum benar.'); redirect_to(...$kembali); }
+    if ($nilai <= 0) { flash('Harga per bulan harus diisi.'); redirect_to(...$kembali); }
+    if (($trx['billing_method'] ?? '') !== 'spread' || ($trx['pricing_type'] ?? '') !== 'monthly') {
+        flash('Jadwal harga hanya untuk kontrak bulanan dengan pengakuan Spread per Bulan.');
+        redirect_to(...$kembali);
+    }
+    if ($mulai < (string) $trx['start_date'] || $mulai > (string) $trx['end_date']) {
+        flash('Tanggal berlaku harus berada di dalam masa kontrak (' . $trx['start_date'] . ' s/d ' . $trx['end_date'] . ').');
+        redirect_to(...$kembali);
+    }
+
+    require_once dirname(__DIR__) . '/AllocationService.php';
+    $uname = $_SESSION['user']['name'] ?? 'system';
+    $pdo->beginTransaction();
+    try {
+        // Tahap pertama = harga yang berlaku sekarang, supaya bulan sebelum
+        // tanggal berlaku tetap punya acuan bila alokasinya dihitung ulang.
+        if (!AllocationService::priceSteps($pdo, $id)) {
+            $awal = $pdo->prepare('SELECT amount FROM transaction_allocations WHERE transaction_id = ? ORDER BY allocation_start LIMIT 1');
+            $awal->execute([$id]);
+            $lama = (float) ($awal->fetchColumn() ?: 0);
+            if ($lama > 0) {
+                $pdo->prepare('INSERT INTO price_steps (property_id, transaction_id, effective_from, monthly_amount, label, created_by) VALUES (?,?,?,?,?,?)')
+                    ->execute([$pid, $id, $trx['start_date'], $lama, 'Harga awal', $uname]);
+            }
+        }
+        $pdo->prepare('DELETE FROM price_steps WHERE transaction_id = ? AND effective_from = ?')->execute([$id, $mulai]);
+        $pdo->prepare('INSERT INTO price_steps (property_id, transaction_id, effective_from, monthly_amount, label, created_by) VALUES (?,?,?,?,?,?)')
+            ->execute([$pid, $id, $mulai, $nilai, $label, $uname]);
+        $hasil = AllocationService::terapkanTahapKeDepan($pdo, $id, $mulai);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+    audit($pdo, 'price_step', 'transactions', (string) $id, ['mulai' => $mulai, 'nilai' => $nilai, 'label' => $label]);
+    flash('Harga baru berlaku mulai ' . date('d/m/Y', strtotime($mulai)) . '. '
+        . $hasil['diubah'] . ' baris bulan disesuaikan; nilai kontrak kini ' . money($hasil['total']) . '.');
+    redirect_to(...$kembali);
+}
+
 function allocation_detail(PDO $pdo): void
 {
     $id = (int) getv('id');
@@ -1846,7 +1908,11 @@ function allocation_detail(PDO $pdo): void
     $alloc = $pdo->prepare('SELECT * FROM transaction_allocations WHERE transaction_id = ? AND property_id = ? ORDER BY period_key, allocation_start');
     $alloc->execute([$id, current_property_id()]);
     $lockSkp = _trx_locking_skp($pdo, $id, current_property_id());
-    layout('Detail Alokasi Transaksi #' . $id, function () use ($trx, $alloc, $lockSkp) {
+    // Jadwal harga bertahap kontrak ini (kosong = harga tunggal).
+    require_once dirname(__DIR__) . '/AllocationService.php';
+    $tahap = AllocationService::priceSteps($pdo, $id);
+    $bisaUbahHarga = can('approve_skp') && ($trx['billing_method'] ?? '') === 'spread' && ($trx['pricing_type'] ?? '') === 'monthly';
+    layout('Detail Alokasi Transaksi #' . $id, function () use ($trx, $alloc, $lockSkp, $tahap, $bisaUbahHarga) {
         ?>
         <div class="panel">
             <?php $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang']; ?>
@@ -1871,6 +1937,62 @@ function allocation_detail(PDO $pdo): void
                 </div>
             </div>
         </div>
+
+        <?php /* Jadwal harga bertahap: satu kontrak, harga berubah mulai bulan
+                 tertentu. Perubahan hanya menyentuh bulan yang BELUM lewat —
+                 bulan yang sudah ditutup tidak boleh bergeser. */ ?>
+        <?php if ($tahap || $bisaUbahHarga): ?>
+        <div class="panel" style="margin-top:14px">
+            <h2>Jadwal Harga</h2>
+            <?php if ($tahap): ?>
+            <div class="table-wrap">
+                <table style="max-width:640px">
+                    <thead><tr><th>Berlaku Mulai</th><th>Harga / Bulan</th><th>Keterangan</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($tahap as $t): ?>
+                    <tr>
+                        <td><?= h(date('d/m/Y', strtotime($t['from']))) ?></td>
+                        <td style="text-align:right;font-weight:700"><?= money($t['amount']) ?></td>
+                        <td><?= h($t['label'] ?: '—') ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php else: ?>
+            <p class="muted" style="margin-top:0">Kontrak ini memakai satu harga untuk seluruh periode.</p>
+            <?php endif; ?>
+
+            <?php if ($bisaUbahHarga): ?>
+            <form method="post" action="?r=price_step_save" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:12px;background:#f8fafc;border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:12px 14px"
+                  onsubmit="return confirm('Terapkan harga baru mulai bulan yang dipilih?\n\nBulan yang sudah lewat tidak akan berubah.')">
+                <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="id" value="<?= (int) $trx['id'] ?>">
+                <div>
+                    <label style="font-size:12px;font-weight:700;display:block;margin-bottom:3px">Berlaku Mulai</label>
+                    <input type="date" name="effective_from" required value="<?= h(date('Y-m-01', strtotime('+1 month'))) ?>" style="width:auto">
+                </div>
+                <div>
+                    <label style="font-size:12px;font-weight:700;display:block;margin-bottom:3px">Harga / Bulan</label>
+                    <div style="display:flex;align-items:stretch">
+                        <span style="display:flex;align-items:center;padding:0 9px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:12.5px;font-weight:700;color:#475569">Rp</span>
+                        <input type="text" inputmode="numeric" name="monthly_amount" required placeholder="0"
+                               style="border-top-left-radius:0;border-bottom-left-radius:0;width:150px;text-align:right">
+                    </div>
+                </div>
+                <div style="flex:1;min-width:180px">
+                    <label style="font-size:12px;font-weight:700;display:block;margin-bottom:3px">Keterangan</label>
+                    <input name="label" placeholder="mis. penyesuaian harga 2027" style="width:100%">
+                </div>
+                <button type="submit" class="btn" style="background:#0369a1">Terapkan</button>
+            </form>
+            <p class="help" style="margin-top:7px">Bulan sebelum tanggal berlaku tidak disentuh. Nilai kontrak ikut
+               disesuaikan menjadi jumlah seluruh bulannya. Surat yang sudah ditandatangani tidak berubah &mdash;
+               untuk itu terbitkan dokumen baru.</p>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+
         <div class="panel" style="margin-top:14px">
             <h2>Breakdown Bulanan</h2>
             <div class="table-wrap">

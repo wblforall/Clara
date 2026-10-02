@@ -867,6 +867,11 @@ function offer_form(PDO $pdo): void
     $editable = !$existing || !in_array($offer['status'], ['deal', 'cancelled'], true);
 
     $masters  = masterOptions($pdo, $module);
+    // Jadwal harga bertahap: kontrak panjang yang harganya berubah di tahun
+    // tertentu harus tercantum sejak surat penawaran — client tidak mau
+    // menerima dua surat.
+    require_once dirname(__DIR__) . '/AllocationService.php';
+    $tahapHarga = $id ? AllocationService::priceSteps($pdo, null, $id) : [];
     // Biaya listrik: penawaran baru tercentang otomatis dengan baseline dari
     // Template Penawaran; penawaran lama memakai apa yang tersimpan.
     $tplBaru    = offer_template_for($pdo, $pid, null, $module);
@@ -917,7 +922,7 @@ function offer_form(PDO $pdo): void
         }
     }
 
-    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $listrikTotal, $listrikUnit, $tplBaru) {
+    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $listrikTotal, $listrikUnit, $tplBaru, $tahapHarga) {
         $picSel = $offer['pic_name'] ?? $linkedPic;
         $disabled = $editable ? '' : 'disabled';
         ?>
@@ -1296,6 +1301,43 @@ function offer_form(PDO $pdo): void
             <?php endif; ?>
 
 
+            <?php /* Jadwal harga bertahap: satu kontrak, harga berbeda mulai
+                     tanggal tertentu (mis. 2 tahun pertama diskon 20%, tahun
+                     ke-3 diskon 10%). Kosong = satu harga untuk seluruh periode. */ ?>
+            <div id="tahap-box" class="single-price" style="margin-top:4px">
+                <h3 style="margin-bottom:4px">Jadwal Harga Bertahap <span style="font-weight:400;font-size:12px;color:var(--muted)">(opsional &mdash; isi bila harganya berubah di tengah kontrak)</span></h3>
+                <table class="data" id="tahap-tabel" style="width:100%;max-width:720px">
+                    <thead><tr>
+                        <th style="width:30%">Berlaku Mulai</th>
+                        <th style="width:34%">Harga / Bulan</th>
+                        <th style="width:28%">Keterangan</th>
+                        <th style="width:8%"></th>
+                    </tr></thead>
+                    <tbody>
+                    <?php $barisTahap = $tahapHarga ?: [['from' => '', 'amount' => '', 'label' => '']]; ?>
+                    <?php foreach ($barisTahap as $t): ?>
+                    <tr>
+                        <td><input type="date" name="tahap_mulai[]" value="<?= h($t['from'] ?? '') ?>" <?= $disabled ?>></td>
+                        <td>
+                            <div style="display:flex;align-items:stretch">
+                                <span style="display:flex;align-items:center;padding:0 9px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:12.5px;font-weight:700;color:#475569">Rp</span>
+                                <input type="text" inputmode="numeric" class="tahap-nilai" value="<?= (float) ($t['amount'] ?? 0) > 0 ? number_format((float) $t['amount'], 0, ',', '.') : '' ?>"
+                                       style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= $disabled ?>>
+                                <input type="hidden" name="tahap_nilai[]" value="<?= (int) ($t['amount'] ?? 0) ?>">
+                            </div>
+                        </td>
+                        <td><input name="tahap_label[]" value="<?= h($t['label'] ?? '') ?>" placeholder="mis. Tahun 1-2 (diskon 20%)" <?= $disabled ?>></td>
+                        <td style="text-align:center"><?php if ($editable): ?><button type="button" class="btn warn tahap-hapus" style="padding:4px 9px;font-size:12px">×</button><?php endif; ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php if ($editable): ?>
+                <p style="margin:8px 0 0"><button type="button" class="btn light" id="tahap-tambah" style="font-size:12.5px">+ Tambah Tahap</button></p>
+                <?php endif; ?>
+                <div id="tahap-ringkas" class="help" style="margin-top:7px"></div>
+            </div>
+
             <div id="single-pay" style="<?= $isBundle ? 'display:none' : '' ?>">
             <h3>Pembayaran <span style="font-weight:400;font-size:12px;color:var(--muted)">(DP & deposit dihitung dari harga/bulan; bisa di-override)</span></h3>
             <div id="tpl-note" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:9px 13px;margin-bottom:10px;font-size:12.5px;color:#075985"></div>
@@ -1565,6 +1607,71 @@ function offer_form(PDO $pdo): void
             bindMoney('dp_fmt', 'dp_amount');
             bindMoney('dep_fmt', 'deposit_amount');
             bindMoney('sc_fmt', 'sc_monthly', function () { gambarSc(); });
+            // ── Jadwal harga bertahap ───────────────────────────────────────
+            (function () {
+                var tabel = document.getElementById('tahap-tabel');
+                if (!tabel) return;
+                var ringkas = document.getElementById('tahap-ringkas');
+                function rp(x) { return 'Rp ' + Math.round(x || 0).toLocaleString('id-ID'); }
+                function hitung() {
+                    var tahap = [];
+                    tabel.querySelectorAll('tbody tr').forEach(function (tr) {
+                        // flatpickr mengubah input tanggal jadi text+readonly,
+                        // jadi dicari lewat name — bukan type.
+                        var d = tr.querySelector('input[name^="tahap_mulai"]'),
+                            n = tr.querySelector('.tahap-nilai'),
+                            h = tr.querySelector('input[type=hidden]');
+                        var nilai = parseInt((n.value || '').replace(/\D/g, ''), 10) || 0;
+                        if (h) h.value = nilai;
+                        if (d.value && nilai > 0) tahap.push({ from: d.value, amount: nilai });
+                    });
+                    if (!tahap.length) { ringkas.textContent = 'Kosong = satu harga untuk seluruh periode kontrak.'; return; }
+                    tahap.sort(function (a, b) { return a.from < b.from ? -1 : 1; });
+                    var s = (document.getElementById('start_date') || {}).value,
+                        e = (document.getElementById('end_date') || {}).value;
+                    if (!s || !e) { ringkas.textContent = 'Isi tanggal mulai & selesai dulu untuk melihat total kontraknya.'; return; }
+                    // Susun siklus bulanan dari tanggal mulai, lalu ambil tahap yang berlaku.
+                    var total = 0, n = 0, cur = new Date(s), akhir = new Date(e), rinci = {};
+                    while (cur <= akhir && n < 240) {
+                        var iso = cur.toISOString().slice(0, 10);
+                        var pakai = tahap[0];
+                        tahap.forEach(function (t) { if (t.from <= iso) pakai = t; });
+                        total += pakai.amount; n++;
+                        rinci[pakai.amount] = (rinci[pakai.amount] || 0) + 1;
+                        cur.setMonth(cur.getMonth() + 1);
+                    }
+                    var bagian = Object.keys(rinci).map(function (k) { return rp(k) + ' × ' + rinci[k] + ' bulan'; });
+                    ringkas.innerHTML = bagian.join(' · ') + ' &rarr; <b>total ' + n + ' bulan = ' + rp(total) + '</b>';
+                }
+                tabel.addEventListener('input', function (e) {
+                    if (e.target.classList.contains('tahap-nilai')) {
+                        var raw = e.target.value.replace(/\D/g, '');
+                        e.target.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                    }
+                    hitung();
+                });
+                tabel.addEventListener('change', hitung);
+                tabel.addEventListener('click', function (e) {
+                    if (!e.target.classList.contains('tahap-hapus')) return;
+                    var tr = e.target.closest('tr');
+                    if (tabel.querySelectorAll('tbody tr').length > 1) tr.remove();
+                    else tr.querySelectorAll('input').forEach(function (i) { i.value = ''; });
+                    hitung();
+                });
+                var tambah = document.getElementById('tahap-tambah');
+                if (tambah) tambah.addEventListener('click', function () {
+                    var tb = tabel.querySelector('tbody');
+                    var baru = tb.rows[0].cloneNode(true);
+                    baru.querySelectorAll('input').forEach(function (i) { i.value = ''; });
+                    tb.appendChild(baru);
+                    hitung();
+                });
+                ['start_date', 'end_date'].forEach(function (id) {
+                    var el = document.getElementById(id);
+                    if (el) el.addEventListener('change', hitung);
+                });
+                hitung();
+            })();
             // Ringkasan Service Charge: PPN per bulan & total untuk seluruh masa sewa.
             function gambarSc() {
                 var on = document.getElementById('sc_flag'), box = document.getElementById('sc_box'),
@@ -1692,6 +1799,52 @@ function offer_form(PDO $pdo): void
 }
 
 // ─── Simpan (insert/update + revisi) ─────────────────────────────────────────
+/**
+ * Tulis ulang jadwal harga milik satu penawaran dari isian formulir.
+ * Replace-all seperti komponen paket: yang dikirim formulir adalah kebenarannya.
+ */
+function _offer_write_steps(PDO $pdo, int $pid, int $offerId, string $uname): void
+{
+    $mulai = (array) ($_POST['tahap_mulai'] ?? []);
+    $nilai = (array) ($_POST['tahap_nilai'] ?? []);
+    $label = (array) ($_POST['tahap_label'] ?? []);
+    $baris = [];
+    foreach ($mulai as $i => $tgl) {
+        $tgl = trim((string) $tgl);
+        $n = (float) preg_replace('/\D/', '', (string) ($nilai[$i] ?? '0'));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $tgl) || $n <= 0) continue;
+        $baris[$tgl] = ['amount' => $n, 'label' => trim((string) ($label[$i] ?? '')) ?: null];
+    }
+    $pdo->prepare('DELETE FROM price_steps WHERE offer_id = ? AND transaction_id IS NULL')->execute([$offerId]);
+    if (!$baris) return;
+    ksort($baris);
+    $ins = $pdo->prepare('INSERT INTO price_steps (property_id, offer_id, effective_from, monthly_amount, label, created_by) VALUES (?,?,?,?,?,?)');
+    foreach ($baris as $tgl => $b) $ins->execute([$pid, $offerId, $tgl, $b['amount'], $b['label'], $uname]);
+}
+
+/**
+ * Bila penawaran memakai jadwal harga, nilai kontraknya adalah JUMLAH seluruh
+ * tahap — bukan tarif × lama sewa. Disimpan ke kolomnya supaya surat, SKP,
+ * dan transaksi memakai angka yang sama.
+ */
+function _offer_sync_step_total(PDO $pdo, int $offerId): void
+{
+    require_once dirname(__DIR__) . '/AllocationService.php';
+    $tahap = AllocationService::priceSteps($pdo, null, $offerId);
+    if (!$tahap) return;
+    $st = $pdo->prepare('SELECT start_date, end_date, cycle_recognition FROM offers WHERE id = ?');
+    $st->execute([$offerId]);
+    $o = $st->fetch();
+    if (!$o || !$o['start_date'] || !$o['end_date']) return;
+    $total = AllocationService::totalDariTahap([
+        'start_date' => $o['start_date'], 'end_date' => $o['end_date'],
+        'cycle_recognition' => $o['cycle_recognition'] ?: 'cycle_start',
+    ], $tahap);
+    if ($total <= 0) return;
+    $pdo->prepare('UPDATE offers SET total_calculated = ?, override_amount = ? WHERE id = ?')
+        ->execute([$total, $total, $offerId]);
+}
+
 function offer_save(PDO $pdo): void
 {
     require_permission('manage_offers');
@@ -1849,6 +2002,8 @@ function offer_save(PDO $pdo): void
         // tulis [] agar offer_items lama TERHAPUS (cegah orphan yg bisa meledak
         // jadi transaksi basi saat approve). Lihat review bundling.
         _offer_write_items($pdo, $id, $isBundle ? $bundleItems : []);
+        _offer_write_steps($pdo, $pid, $id, $uname);
+        _offer_sync_step_total($pdo, $id);
         audit($pdo, 'update', 'offers', (string) $id, $data);
         flash("Revisi #$newRev disimpan.");
         redirect_to('offer_view', ['id' => $id]);
@@ -1870,6 +2025,8 @@ function offer_save(PDO $pdo): void
                    VALUES (:pid, :no, \'draft\', :uname, ' . implode(', ', $place) . ')')->execute($vals);
     $newId = (int) $pdo->lastInsertId();
     if ($isBundle) _offer_write_items($pdo, $newId, $bundleItems);
+    _offer_write_steps($pdo, $pid, $newId, $uname);
+    _offer_sync_step_total($pdo, $newId);
     $pdo->prepare('INSERT INTO offer_revisions (offer_id, rev_no, snapshot_json, note, created_by) VALUES (?,0,?,?,?)')
         ->execute([$newId, json_encode(array_intersect_key($data, array_flip(_offer_fields())), JSON_UNESCAPED_UNICODE), 'Penawaran awal', $uname]);
     audit($pdo, 'create', 'offers', (string) $newId, $data);
@@ -1976,6 +2133,10 @@ function offer_print(PDO $pdo): void
     $prop = current_property();
     $letter = offer_letter($pdo, $o);   // isi surat per jenis booth (snapshot/template)
     $items = !empty($o['is_bundle']) ? offer_items($pdo, (int) $o['id']) : []; // komponen paket
+    // Jadwal harga bertahap ikut tercetak supaya perubahan harga di tahun
+    // berikutnya sudah tercantum sejak surat pertama.
+    require_once dirname(__DIR__) . '/AllocationService.php';
+    $tahapHarga = AllocationService::priceSteps($pdo, null, (int) $o['id']);
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
@@ -2234,6 +2395,10 @@ function offer_sign_page(PDO $pdo): void
     $a = $d['amounts'] ?? [];
     $letter = offer_letter($pdo, $o);   // isi surat per jenis booth (snapshot/template)
     $items = !empty($o['is_bundle']) ? offer_items($pdo, (int) $o['id']) : []; // komponen paket
+    // Jadwal harga bertahap ikut tercetak supaya perubahan harga di tahun
+    // berikutnya sudah tercantum sejak surat pertama.
+    require_once dirname(__DIR__) . '/AllocationService.php';
+    $tahapHarga = AllocationService::priceSteps($pdo, null, (int) $o['id']);
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
     include __DIR__ . '/offer_sign_template.php';
