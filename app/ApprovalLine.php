@@ -279,8 +279,16 @@ final class ApprovalLine
      */
     public static function jejakBeku(PDO $pdo, int $skpId): array
     {
+        $jejak = self::history($pdo, $skpId);
+        // Hanya SIKLUS TERAKHIR yang dibekukan. Dokumen yang pernah ditolak lalu
+        // diperbaiki menempuh alur dari awal lagi — paraf sebelum penolakan itu
+        // menilai dokumen versi lama, jadi tidak boleh ikut tercetak di surat
+        // yang diserahkan ke client seolah-olah memeriksa versi yang sekarang.
+        for ($i = count($jejak) - 1; $i >= 0; $i--) {
+            if (($jejak[$i]['action'] ?? '') === 'tolak') { $jejak = array_slice($jejak, $i + 1); break; }
+        }
         $out = [];
-        foreach (self::history($pdo, $skpId) as $j) {
+        foreach ($jejak as $j) {
             if (($j['action'] ?? '') === 'tolak') continue;   // yang batal tidak dicetak
             $out[] = [
                 'step_no'   => (int) $j['step_no'],
