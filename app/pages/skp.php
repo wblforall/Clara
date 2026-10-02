@@ -1496,6 +1496,23 @@ function _skp_tautkan_bagi(PDO $pdo, int $skpId, int $trxId): void
     }
 }
 
+/**
+ * Salin jadwal harga dari penawaran ke transaksi yang baru terbit, lalu hitung
+ * ulang alokasinya supaya tiap bulan memakai nominal tahapnya. Dipanggil
+ * SEBELUM transaksi dipakai laporan.
+ */
+function _skp_salin_tahap(PDO $pdo, int $pid, ?int $offerId, int $trxId): int
+{
+    if (!$offerId || !$trxId) return 0;
+    require_once dirname(__DIR__) . '/AllocationService.php';
+    $tahap = AllocationService::priceSteps($pdo, null, $offerId);
+    if (!$tahap) return 0;
+    $pdo->prepare('DELETE FROM price_steps WHERE transaction_id = ?')->execute([$trxId]);
+    $ins = $pdo->prepare('INSERT INTO price_steps (property_id, offer_id, transaction_id, effective_from, monthly_amount, label, created_by) VALUES (?,?,?,?,?,?,?)');
+    foreach ($tahap as $t) $ins->execute([$pid, $offerId, $trxId, $t['from'], $t['amount'], $t['label'] ?: null, 'skp_approve']);
+    return count($tahap);
+}
+
 function _skp_create_transaction(PDO $pdo, array $skp, array $src, int $pid, ?array $item = null): int
 {
     $start  = (string) $src['start_date'];
@@ -1627,6 +1644,8 @@ function skp_approve(PDO $pdo): void
         'status_sewa' => $skp['status_sewa'],
         'admin_siup' => (int)$skp['admin_siup'], 'admin_npwp' => (int)$skp['admin_npwp'], 'admin_ktp' => (int)$skp['admin_ktp'],
         'amounts' => $amt, 'sales' => $src['pic_name'], 'property_name' => $prop['name'] ?? '',
+        // Jadwal harga bertahap ikut dibekukan supaya cetakan ulang tidak berubah.
+        'tahap_harga' => AllocationService::priceSteps($pdo, (int) ($skp['transaction_id'] ?? 0), (int) ($skp['offer_id'] ?? 0)),
         // Referensi penawaran (offer-based) + daftar lampiran terunggah → tampil di PDF & TTD.
         'offer_no' => $src['offer_no'] ?? null,
         'attachments' => _skp_attachment_list($pdo, $id),
@@ -1691,6 +1710,20 @@ function skp_approve(PDO $pdo): void
             } else {
                 $newTrxId = _skp_create_transaction($pdo, $skpArg, $src, $pid);
                 $pdo->prepare('UPDATE transactions SET skp_id=? WHERE id=?')->execute([$id, $newTrxId]);
+                // Jadwal harga penawaran ikut turun; alokasi dihitung ulang
+                // supaya tiap bulan memakai nominal tahapnya.
+                if (_skp_salin_tahap($pdo, $pid, (int) $skp['offer_id'], $newTrxId)) {
+                    $tq = $pdo->prepare('SELECT * FROM transactions WHERE id = ?');
+                    $tq->execute([$newTrxId]);
+                    $trxBaru = $tq->fetch();
+                    $totalTahap = AllocationService::totalDariTahap($trxBaru, AllocationService::priceSteps($pdo, $newTrxId));
+                    if ($totalTahap > 0) {
+                        $pdo->prepare('UPDATE transactions SET final_amount = ?, override_amount = ? WHERE id = ?')
+                            ->execute([$totalTahap, $totalTahap, $newTrxId]);
+                        $trxBaru['final_amount'] = $totalTahap;
+                    }
+                    AllocationService::saveAllocations($pdo, $newTrxId, $trxBaru);
+                }
                 $pdo->prepare('UPDATE skp_documents SET transaction_id=? WHERE id=? AND property_id=?')->execute([$newTrxId, $id, $pid]);
                 _skp_tautkan_bagi($pdo, $id, $newTrxId);
                 audit($pdo, 'create', 'transactions', (string) $newTrxId, ['from_skp' => $id, 'skp_no' => $skpNo]);

@@ -35,6 +35,8 @@ $ppn        = $ppnSewa + $ppnListrik;
 $afterPpn   = $dasarPpn + $ppn;
 // Service Charge ditagih per bulan; PPN-nya dihitung per bulan lalu dikalikan
 // jumlah bulan sewa, supaya angka di surat bisa dijumlah ulang persis.
+// Jadwal harga bertahap, bila kontrak ini memakainya.
+$tahapHarga = $tahapHarga ?? [];
 $scBulanan = !empty($o['sc_flag']) ? (float) ($o['sc_monthly'] ?? 0) : 0.0;
 $scBulan   = 1;
 if ($o['start_date'] && $o['end_date']) {
@@ -247,6 +249,15 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
         <tr class="tot"><td class="lbl"><?= $kenaPpn ? 'Total setelah PPN' : 'Total Biaya Sewa' ?></td><td class="amt"><?= $rp($afterPpn) ?></td></tr>
         <?php if ($isBundle && $sumDp > 0): ?>
         <tr><td class="lbl">DP / Uang Muka (bagian dari total)</td><td class="amt"><?= $rp($sumDp) ?></td></tr>
+        <?php endif; ?>
+        <?php /* Harga berjenjang: tiap tahap tercetak agar perubahan harga di
+                 tahun berikutnya sudah diketahui client sejak awal. */ ?>
+        <?php if ($tahapHarga): ?>
+        <tr><td class="lbl"><strong>Jadwal Harga</strong></td><td class="amt"></td></tr>
+        <?php foreach ($tahapHarga as $t): ?>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;Mulai <?= $h(date('d/m/Y', strtotime($t['from']))) ?><?= $t['label'] ? ' <span class="muted" style="font-weight:400">(' . $h($t['label']) . ')</span>' : '' ?></td>
+            <td class="amt"><?= $rp($t['amount']) ?> <span class="muted" style="font-weight:400">/ bulan</span></td></tr>
+        <?php endforeach; ?>
         <?php endif; ?>
         <?php if ($scBulanan > 0): ?>
         <tr><td class="lbl"><strong>Service Charge</strong></td><td class="amt"></td></tr>
