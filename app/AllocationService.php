@@ -77,6 +77,10 @@ final class AllocationService
     {
         $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ?')->execute([$transactionId]);
         $allocations = self::preview($trx);
+        // Pembagian income ke beberapa PIC: baris alokasi dipecah menurut porsinya
+        // supaya laporan per PIC ikut benar tanpa satu query pun diubah.
+        $splits = self::picSplits($pdo, $transactionId);
+        $totalSplit = array_sum(array_column($splits, 'amount'));
 
         $finalAmount = (float) ($trx['final_amount'] ?? 0);
 
@@ -102,12 +106,14 @@ final class AllocationService
                     VALUES (?,?,?,?,?,?,?,?,?,?,?)'
                 );
                 foreach ($allocations as $a) {
-                    $stmt->execute([
-                        $propertyId, $transactionId, $trx['module'], $trx['master_code'],
-                        $a['period_key'], $a['allocation_start'], $a['allocation_end'],
-                        $a['allocated_days'], $a['amount'], $a['capacity_days'],
-                        $trx['pic_name'] ?? null,
-                    ]);
+                    foreach (self::pecahPerPic($a, $splits, $totalSplit) as $b) {
+                        $stmt->execute([
+                            $propertyId, $transactionId, $trx['module'], $trx['master_code'],
+                            $b['period_key'], $b['allocation_start'], $b['allocation_end'],
+                            $b['allocated_days'], $b['amount'], $b['capacity_days'],
+                            $b['pic_name'] ?? ($trx['pic_name'] ?? null),
+                        ]);
+                    }
                 }
                 return;
             }
@@ -138,22 +144,130 @@ final class AllocationService
         );
 
         foreach ($allocations as $allocation) {
-            $stmt->execute([
-                ':property_id'    => $propertyId,
-                ':transaction_id' => $transactionId,
-                ':module'         => $trx['module'],
-                ':master_code'    => $trx['master_code'],
-                ':period_key'     => $allocation['period_key'],
-                ':allocation_start' => $allocation['allocation_start'],
-                ':allocation_end'   => $allocation['allocation_end'],
-                ':allocated_days'   => $allocation['allocated_days'],
-                ':amount'         => $allocation['amount'],
-                ':capacity_days'  => $allocation['capacity_days'],
-                ':pic_name'       => $trx['pic_name'] ?? null,
-            ]);
+            foreach (self::pecahPerPic($allocation, $splits, $totalSplit) as $b) {
+                $stmt->execute([
+                    ':property_id'    => $propertyId,
+                    ':transaction_id' => $transactionId,
+                    ':module'         => $trx['module'],
+                    ':master_code'    => $trx['master_code'],
+                    ':period_key'     => $b['period_key'],
+                    ':allocation_start' => $b['allocation_start'],
+                    ':allocation_end'   => $b['allocation_end'],
+                    ':allocated_days'   => $b['allocated_days'],
+                    ':amount'         => $b['amount'],
+                    ':capacity_days'  => $b['capacity_days'],
+                    ':pic_name'       => $b['pic_name'] ?? ($trx['pic_name'] ?? null),
+                ]);
+            }
         }
     }
 
+    /**
+     * Pembagian income transaksi ini ke beberapa PIC (kosong = tidak dibagi).
+     * Dibaca dari transaction_pic_splits, bukan dari baris alokasi — alokasi
+     * selalu dihapus & ditulis ulang, jadi tidak bisa jadi tempat menyimpan niat.
+     */
+    public static function picSplits(PDO $pdo, int $transactionId): array
+    {
+        if ($transactionId <= 0) return [];
+        try {
+            $st = $pdo->prepare('SELECT pic_name, amount FROM transaction_pic_splits WHERE transaction_id = ? ORDER BY id');
+            $st->execute([$transactionId]);
+            $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (Throwable $e) {
+            return [];   // tabel belum ada (migrasi belum jalan) → perilaku lama
+        }
+        $out = [];
+        foreach ($rows as $r) {
+            $n = (float) $r['amount'];
+            if ($n > 0 && trim((string) $r['pic_name']) !== '') $out[] = ['pic' => (string) $r['pic_name'], 'amount' => $n];
+        }
+        return $out;
+    }
+
+    /**
+     * Pecah satu baris alokasi menjadi beberapa baris sesuai porsi tiap PIC.
+     *
+     * HARI hanya ditaruh di baris pertama (allocated_days & capacity_days = 0
+     * pada baris berikutnya) supaya occupancy dan tarif rata-rata — yang
+     * menjumlahkan hari — tidak ikut berganda. Sisa pembulatan dibuang ke baris
+     * terakhir, konvensi yang sama dengan adjustRounding().
+     */
+    private static function pecahPerPic(array $allocation, array $splits, float $totalSplit): array
+    {
+        if (!$splits || $totalSplit <= 0) return [$allocation];
+        $nilai = (float) $allocation['amount'];
+        $baris = [];
+        $terpakai = 0.0;
+        $n = count($splits);
+        foreach ($splits as $i => $s) {
+            $porsi = $i === $n - 1 ? round($nilai - $terpakai, 2) : round($nilai * ($s['amount'] / $totalSplit), 2);
+            $terpakai += $porsi;
+            $b = $allocation;
+            $b['amount']   = $porsi;
+            $b['pic_name'] = $s['pic'];
+            if ($i > 0) { $b['allocated_days'] = 0; $b['capacity_days'] = 0; }
+            $baris[] = $b;
+        }
+        return $baris;
+    }
+
+    /**
+     * Terapkan pembagian PIC pada alokasi yang SUDAH ada, tanpa menghitung ulang
+     * nominalnya. Dipakai saat pembagian diubah pada transaksi yang sudah
+     * berjalan: nilai per bulan dan jumlah hari dipertahankan apa adanya —
+     * yang berubah hanya kepada siapa bulan itu dicatat.
+     *
+     * Aman dijalankan berkali-kali: baris yang sudah terpecah dikumpulkan dulu
+     * per (periode, tanggal) sebelum dipecah ulang.
+     */
+    public static function terapkanPembagian(PDO $pdo, int $transactionId, ?string $picUtama = null): int
+    {
+        if ($transactionId <= 0) return 0;
+        $st = $pdo->prepare('SELECT * FROM transaction_allocations WHERE transaction_id = ? ORDER BY id');
+        $st->execute([$transactionId]);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        if (!$rows) return 0;
+
+        // Kumpulkan kembali baris yang mungkin sudah pernah dipecah.
+        $gabung = [];
+        foreach ($rows as $r) {
+            $k = $r['period_key'] . '|' . $r['allocation_start'] . '|' . $r['allocation_end'];
+            if (!isset($gabung[$k])) {
+                $gabung[$k] = $r;
+                $gabung[$k]['amount']         = 0.0;
+                $gabung[$k]['allocated_days'] = 0;
+                $gabung[$k]['capacity_days']  = 0;
+            }
+            $gabung[$k]['amount']         += (float) $r['amount'];
+            $gabung[$k]['allocated_days']  = max((int) $gabung[$k]['allocated_days'], (int) $r['allocated_days']);
+            $gabung[$k]['capacity_days']   = max((float) $gabung[$k]['capacity_days'], (float) $r['capacity_days']);
+        }
+
+        $splits = self::picSplits($pdo, $transactionId);
+        $totalSplit = array_sum(array_column($splits, 'amount'));
+
+        $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ?')->execute([$transactionId]);
+        $ins = $pdo->prepare(
+            'INSERT INTO transaction_allocations
+             (property_id, transaction_id, module, master_code, period_key,
+              allocation_start, allocation_end, allocated_days, amount, capacity_days, pic_name)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+        );
+        $n = 0;
+        foreach ($gabung as $g) {
+            foreach (self::pecahPerPic($g, $splits, $totalSplit) as $b) {
+                $ins->execute([
+                    $g['property_id'], $transactionId, $g['module'], $g['master_code'],
+                    $g['period_key'], $g['allocation_start'], $g['allocation_end'],
+                    $b['allocated_days'], $b['amount'], $b['capacity_days'],
+                    $b['pic_name'] ?? ($picUtama ?: $g['pic_name']),
+                ]);
+                $n++;
+            }
+        }
+        return $n;
+    }
     public static function totalCalculated(array $trx): float
     {
         return array_sum(array_column(self::preview($trx), 'amount'));
