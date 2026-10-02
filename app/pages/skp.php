@@ -516,9 +516,13 @@ function skp_form(PDO $pdo): void
     $val = fn(string $k, $def = '') => h((string) ($skp[$k] ?? $def));
     // Pembagian income ke beberapa PIC. Pilihan PIC dibatasi master_pic aktif
     // properti ini — nama di luar itu tidak akan muncul di tabel achievement.
-    $picAktif = $pdo->prepare("SELECT name FROM master_pic WHERE property_id = ? AND status = 'active' ORDER BY name");
+    // show_achievement=0 / target_share=0 dikecualikan dari Laporan PIC, jadi
+    // income yang dibagikan ke sana tidak akan muncul di tabel achievement.
+    // Tetap boleh dipilih (mis. akun unit), tapi diberi penanda terang.
+    $picAktif = $pdo->prepare("SELECT name, (show_achievement = 1 AND target_share > 0) AS di_laporan
+                               FROM master_pic WHERE property_id = ? AND status = 'active' ORDER BY name");
     $picAktif->execute([$pid]);
-    $picAktif = $picAktif->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    $picAktif = $picAktif->fetchAll(PDO::FETCH_ASSOC) ?: [];
     $bagi = [];
     if ($skp) {
         $bq = $pdo->prepare('SELECT pic_name, amount FROM transaction_pic_splits WHERE skp_id = ? ORDER BY id');
@@ -804,8 +808,8 @@ function skp_form(PDO $pdo): void
                         <td>
                             <select name="bagi_pic[]" <?= $editable ? '' : 'disabled' ?>>
                                 <option value="">— pilih PIC —</option>
-                                <?php foreach ($picAktif as $pn): ?>
-                                <option value="<?= h($pn) ?>" <?= ($b['pic_name'] ?? '') === $pn ? 'selected' : '' ?>><?= h($pn) ?></option>
+                                <?php foreach ($picAktif as $pRow): $pn = $pRow['name']; ?>
+                                <option value="<?= h($pn) ?>" data-lapor="<?= $pRow['di_laporan'] ? '1' : '' ?>" <?= ($b['pic_name'] ?? '') === $pn ? 'selected' : '' ?>><?= h($pn) ?><?= $pRow['di_laporan'] ? '' : ' — tidak tampil di Laporan PIC' ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </td>
@@ -1107,13 +1111,17 @@ function skp_form(PDO $pdo): void
             function angka(el) { return parseInt((el.value || '').replace(/\D/g, ''), 10) || 0; }
 
             function hitung() {
-                var total = 0, terisi = 0, pakai = [];
+                var total = 0, terisi = 0, pakai = [], luarLaporan = [];
                 tabel.querySelectorAll('tbody tr').forEach(function (tr) {
                     var pic = tr.querySelector('select'), nilai = tr.querySelector('.bagi-nilai'),
                         hid = tr.querySelector('input[type=hidden]');
                     var n = angka(nilai);
                     if (hid) hid.value = n;
-                    if (pic && pic.value && n > 0) { total += n; terisi++; pakai.push(pic.value); }
+                    if (pic && pic.value && n > 0) {
+                        total += n; terisi++; pakai.push(pic.value);
+                        var op = pic.options[pic.selectedIndex];
+                        if (op && !op.dataset.lapor) luarLaporan.push(pic.value);
+                    }
                 });
                 var selisih = ACUAN - total;
                 var ganda = pakai.length !== new Set(pakai).size;
@@ -1130,6 +1138,12 @@ function skp_form(PDO $pdo): void
                 } else {
                     pesan = '<span style="color:#b91c1c;font-weight:700">Lebih ' + rp(-selisih) + '</span>'
                           + ' <span class="muted">— terbagi ' + rp(total) + ' dari ' + rp(ACUAN) + '</span>';
+                }
+                // Bukan penghalang submit: PIC-nya sah, hanya memang tidak
+                // dihitung di tabel achievement. Tapi harus terlihat.
+                if (luarLaporan.length) {
+                    pesan += '<div style="margin-top:5px;color:#92400e">Catatan: <strong>' + luarLaporan.join(', ')
+                           + '</strong> tidak muncul di Laporan PIC (pengaturan master PIC). Nilainya tetap masuk pendapatan properti.</div>';
                 }
                 ringkas.innerHTML = pesan;
                 box.dataset.sah = (terisi === 0 || (selisih === 0 && !ganda)) ? '1' : '';
@@ -1308,18 +1322,36 @@ function _skp_simpan_bagi(PDO $pdo, int $pid, int $skpId, ?int $trxId, array $ba
         $cek->execute([$trxId, $pid, $skpId, $pid]);
         if (!$cek->fetchColumn()) $trxId = null;
     }
-    $pdo->prepare('DELETE FROM transaction_pic_splits WHERE skp_id = ?')->execute([$skpId]);
-    if ($trxId) $pdo->prepare('DELETE FROM transaction_pic_splits WHERE transaction_id = ? AND skp_id <> ?')->execute([$trxId, $skpId]);
-    if ($bagi) {
-        $ins = $pdo->prepare(
-            'INSERT INTO transaction_pic_splits (property_id, transaction_id, skp_id, pic_name, amount, created_by)
-             VALUES (?,?,?,?,?,?)'
-        );
-        foreach ($bagi as $b) $ins->execute([$pid, $trxId ?: null, $skpId, $b['pic'], $b['amount'], $uname]);
-    }
-    if ($trxId) {
-        require_once dirname(__DIR__) . '/AllocationService.php';
-        AllocationService::terapkanPembagian($pdo, $trxId);
+    // Tanpa pembagian dan sebelumnya juga tidak ada → tidak ada yang perlu
+    // disentuh. Penting: menyimpan draft berkali-kali tidak boleh menghapus &
+    // menulis ulang alokasi transaksi tanpa alasan.
+    $lama = $pdo->prepare('SELECT COUNT(*) FROM transaction_pic_splits WHERE skp_id = ?'
+        . ($trxId ? ' OR transaction_id = ?' : ''));
+    $lama->execute($trxId ? [$skpId, $trxId] : [$skpId]);
+    if (!$bagi && !(int) $lama->fetchColumn()) return;
+
+    // Hapus-lalu-tulis alokasi harus utuh: kalau gagal di tengah, transaksi
+    // bisa kehilangan seluruh alokasi bulanannya.
+    $sendiri = !$pdo->inTransaction();
+    if ($sendiri) $pdo->beginTransaction();
+    try {
+        $pdo->prepare('DELETE FROM transaction_pic_splits WHERE skp_id = ?')->execute([$skpId]);
+        if ($trxId) $pdo->prepare('DELETE FROM transaction_pic_splits WHERE transaction_id = ? AND skp_id <> ?')->execute([$trxId, $skpId]);
+        if ($bagi) {
+            $ins = $pdo->prepare(
+                'INSERT INTO transaction_pic_splits (property_id, transaction_id, skp_id, pic_name, amount, created_by)
+                 VALUES (?,?,?,?,?,?)'
+            );
+            foreach ($bagi as $b) $ins->execute([$pid, $trxId ?: null, $skpId, $b['pic'], $b['amount'], $uname]);
+        }
+        if ($trxId) {
+            require_once dirname(__DIR__) . '/AllocationService.php';
+            AllocationService::terapkanPembagian($pdo, $trxId);
+        }
+        if ($sendiri) $pdo->commit();
+    } catch (Throwable $e) {
+        if ($sendiri && $pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
     }
 }
 
@@ -1815,6 +1847,10 @@ function skp_reject(PDO $pdo): void
                            'Dokumen ditolak: ' . $note, $trxId, $pid]);
             $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ? AND property_id = ?')
                 ->execute([$trxId, $pid]);
+            // Pembagian income & jadwal harga milik transaksi yang dibatalkan
+            // ikut dibuang supaya tidak tertinggal yatim di tabel.
+            $pdo->prepare('DELETE FROM transaction_pic_splits WHERE transaction_id = ?')->execute([$trxId]);
+            $pdo->prepare('DELETE FROM price_steps WHERE transaction_id = ?')->execute([$trxId]);
         }
         $pdo->commit();
     } catch (Throwable $e) {

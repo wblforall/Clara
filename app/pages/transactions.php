@@ -267,6 +267,10 @@ function transaction_delete(PDO $pdo): void
         $pdo->prepare('UPDATE transactions SET deleted_at = ?, deleted_by = ? WHERE id = ? AND property_id = ?')
             ->execute([date('Y-m-d H:i:s'), $_SESSION['user']['email'] ?? 'system', $id, current_property_id()]);
         $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ? AND property_id = ?')->execute([$id, current_property_id()]);
+        // Pembagian income & jadwal harga ikut dibuang: tanpa ini barisnya
+        // tertinggal yatim dan bisa terpakai lagi bila transaksinya tersentuh.
+        $pdo->prepare('DELETE FROM transaction_pic_splits WHERE transaction_id = ?')->execute([$id]);
+        $pdo->prepare('DELETE FROM price_steps WHERE transaction_id = ?')->execute([$id]);
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();
@@ -315,6 +319,8 @@ function transaction_cancel(PDO $pdo): void
         $pdo->prepare('UPDATE transactions SET deleted_at = ?, deleted_by = ?, cancel_reason = ? WHERE id = ? AND property_id = ?')
             ->execute([date('Y-m-d H:i:s'), $_SESSION['user']['email'] ?? 'system', $reason, $id, $pid]);
         $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ? AND property_id = ?')->execute([$id, $pid]);
+        $pdo->prepare('DELETE FROM transaction_pic_splits WHERE transaction_id = ?')->execute([$id]);
+        $pdo->prepare('DELETE FROM price_steps WHERE transaction_id = ?')->execute([$id]);
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();
@@ -1114,11 +1120,14 @@ function _trx_locking_skp(PDO $pdo, int $trxId, int $pid): ?array
 function transaction_edit(PDO $pdo): void
 {
     $id = (int) getv('id');
-    $stmt = $pdo->prepare('SELECT * FROM transactions WHERE id = ? AND property_id = ?');
+    // deleted_at IS NULL: transaksi yang sudah dibatalkan jangan bisa diedit —
+    // menyimpannya akan menerbitkan ulang alokasinya & menghidupkan kembali
+    // pendapatan yang sudah dinyatakan batal.
+    $stmt = $pdo->prepare('SELECT * FROM transactions WHERE id = ? AND property_id = ? AND deleted_at IS NULL');
     $stmt->execute([$id, current_property_id()]);
     $trx = $stmt->fetch();
     if (!$trx) {
-        flash('Transaksi tidak ditemukan.');
+        flash('Transaksi tidak ditemukan atau sudah dibatalkan.');
         redirect_to('dashboard');
     }
 
@@ -1684,11 +1693,11 @@ function transaction_update(PDO $pdo): void
 {
     verify_csrf();
     $id = (int) post('id');
-    $stmt = $pdo->prepare('SELECT * FROM transactions WHERE id = ? AND property_id = ?');
+    $stmt = $pdo->prepare('SELECT * FROM transactions WHERE id = ? AND property_id = ? AND deleted_at IS NULL');
     $stmt->execute([$id, current_property_id()]);
     $existing = $stmt->fetch();
     if (!$existing) {
-        flash('Transaksi tidak ditemukan.');
+        flash('Transaksi tidak ditemukan atau sudah dibatalkan.');
         redirect_to('dashboard');
     }
 
@@ -1840,6 +1849,7 @@ function price_step_save(PDO $pdo): void
     $mulai = trim((string) post('effective_from'));
     $nilai = (float) preg_replace('/\D/', '', (string) post('monthly_amount'));
     $label = trim((string) post('label')) ?: null;
+    $alasan = trim((string) post('alasan'));
     $kembali = ['allocation_detail', ['id' => $id]];
 
     $st = $pdo->prepare('SELECT * FROM transactions WHERE id = ? AND property_id = ? AND deleted_at IS NULL');
@@ -1862,6 +1872,17 @@ function price_step_save(PDO $pdo): void
     }
     if ($mulai < (string) $trx['start_date'] || $mulai > (string) $trx['end_date']) {
         flash('Tanggal berlaku harus berada di dalam masa kontrak (' . $trx['start_date'] . ' s/d ' . $trx['end_date'] . ').');
+        redirect_to(...$kembali);
+    }
+
+    // Menaikkan harga kontrak yang surat/SKS-nya sudah bertanda tangan memang
+    // dibutuhkan (kasus kenaikan harga di tengah jalan), tapi nilainya jadi
+    // berbeda dari kertas yang dipegang client — jadi alasannya wajib dicatat
+    // dan nomor dokumennya ikut masuk audit, setara pembatalan transaksi.
+    $lockSkp = _trx_locking_skp($pdo, $id, $pid);
+    if ($lockSkp && $alasan === '') {
+        flash('Alasan perubahan wajib diisi: nilai kontrak akan berbeda dari '
+            . ($lockSkp['doc_type'] === 'sks' ? 'SKS' : 'SKP') . ' No. ' . $lockSkp['skp_no'] . '.');
         redirect_to(...$kembali);
     }
 
@@ -1892,9 +1913,96 @@ function price_step_save(PDO $pdo): void
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $e;
     }
-    audit($pdo, 'price_step', 'transactions', (string) $id, ['mulai' => $mulai, 'nilai' => $nilai, 'label' => $label]);
+    audit($pdo, 'price_step', 'transactions', (string) $id, [
+        'mulai' => $mulai, 'nilai' => $nilai, 'label' => $label,
+        'melampaui_dokumen' => $lockSkp['skp_no'] ?? null, 'alasan' => $alasan ?: null,
+        'total_baru' => $hasil['total'], 'baris_diubah' => $hasil['diubah'],
+    ]);
     flash('Harga baru berlaku mulai ' . date('d/m/Y', strtotime($mulai)) . '. '
         . $hasil['diubah'] . ' baris bulan disesuaikan; nilai kontrak kini ' . money($hasil['total']) . '.');
+    redirect_to(...$kembali);
+}
+
+/**
+ * Ubah pembagian income satu transaksi dari halaman Detail Alokasi.
+ *
+ * Form SKP terkunci begitu dokumen disubmit, padahal pembagian income kadang
+ * baru disepakati sesudahnya. Nominal per bulan TIDAK dihitung ulang di sini —
+ * hanya dipecah ulang menurut porsi baru, sehingga bulan yang sudah ditutup
+ * nilainya tetap. Aturannya sama dengan di SKP: jumlah pembagian wajib PAS
+ * dengan nilai kontrak; kosong = seluruh income kembali ke PIC transaksi.
+ */
+function pic_split_save(PDO $pdo): void
+{
+    require_permission('approve_skp');
+    verify_csrf();
+    $pid = current_property_id();
+    $id  = (int) post('id');
+    $kembali = ['allocation_detail', ['id' => $id]];
+
+    $st = $pdo->prepare('SELECT * FROM transactions WHERE id = ? AND property_id = ? AND deleted_at IS NULL');
+    $st->execute([$id, $pid]);
+    $trx = $st->fetch();
+    if (!$trx) { flash('Transaksi tidak ditemukan atau sudah dibatalkan.'); redirect_to('transactions'); }
+
+    // PIC ganda digabung; nama di luar master_pic aktif ditolak terang-terangan
+    // karena tidak akan pernah muncul di laporan per PIC.
+    $pic = (array) ($_POST['bagi_pic'] ?? []);
+    $rp  = (array) ($_POST['bagi_nominal'] ?? []);
+    $jml = [];
+    foreach ($pic as $i => $nama) {
+        $nama = trim((string) $nama);
+        $n = (float) preg_replace('/\D/', '', (string) ($rp[$i] ?? '0'));
+        if ($nama === '' || $n <= 0) continue;
+        $jml[$nama] = ($jml[$nama] ?? 0) + $n;
+    }
+    if ($jml) {
+        $sah = $pdo->prepare("SELECT name FROM master_pic WHERE property_id = ? AND status = 'active'");
+        $sah->execute([$pid]);
+        $sah = $sah->fetchAll(PDO::FETCH_COLUMN) ?: [];
+        $salah = array_diff(array_keys($jml), $sah);
+        if ($salah) {
+            flash('PIC tidak dikenal / tidak aktif: ' . implode(', ', $salah) . '. Pembagian tidak disimpan.');
+            redirect_to(...$kembali);
+        }
+        $acuan = round((float) ($trx['final_amount'] ?: $trx['total_calculated']));
+        $total = round(array_sum($jml));
+        if ($total !== $acuan) {
+            $selisih = $acuan - $total;
+            flash('Pembagian income ' . ($selisih > 0 ? 'kurang ' : 'lebih ') . money(abs($selisih))
+                . ' (terbagi ' . money($total) . ' dari ' . money($acuan) . '). Tidak disimpan.');
+            redirect_to(...$kembali);
+        }
+    }
+
+    $lama = $pdo->prepare('SELECT pic_name, amount FROM transaction_pic_splits WHERE transaction_id = ? ORDER BY id');
+    $lama->execute([$id]);
+    $lama = $lama->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    require_once dirname(__DIR__) . '/AllocationService.php';
+    $uname = $_SESSION['user']['name'] ?? 'system';
+    $skpId = $pdo->prepare('SELECT id FROM skp_documents WHERE transaction_id = ? AND property_id = ? ORDER BY id DESC LIMIT 1');
+    $skpId->execute([$id, $pid]);
+    $skpId = (int) ($skpId->fetchColumn() ?: 0);
+
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('DELETE FROM transaction_pic_splits WHERE transaction_id = ?')->execute([$id]);
+        if ($jml) {
+            $ins = $pdo->prepare('INSERT INTO transaction_pic_splits (property_id, transaction_id, skp_id, pic_name, amount, created_by) VALUES (?,?,?,?,?,?)');
+            foreach ($jml as $nama => $n) $ins->execute([$pid, $id, $skpId ?: null, $nama, $n, $uname]);
+        }
+        AllocationService::terapkanPembagian($pdo, $id, $trx['pic_name'] ?: null);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+    audit($pdo, 'pic_split', 'transactions', (string) $id,
+        ['bagi' => $jml], ['bagi' => array_column($lama, 'amount', 'pic_name')]);
+    flash($jml
+        ? 'Pembagian income disimpan untuk ' . count($jml) . ' PIC. Alokasi bulanan dipecah ulang.'
+        : 'Pembagian income dikosongkan — seluruh income kembali ke ' . ($trx['pic_name'] ?: 'PIC transaksi') . '.');
     redirect_to(...$kembali);
 }
 
@@ -1915,8 +2023,26 @@ function allocation_detail(PDO $pdo): void
         flash('Transaksi tidak ditemukan.');
         redirect_to('dashboard');
     }
-    $alloc = $pdo->prepare('SELECT * FROM transaction_allocations WHERE transaction_id = ? AND property_id = ? ORDER BY period_key, allocation_start');
+    $alloc = $pdo->prepare('SELECT * FROM transaction_allocations WHERE transaction_id = ? AND property_id = ? ORDER BY allocation_start, period_key, id');
     $alloc->execute([$id, current_property_id()]);
+    $allocRows = $alloc->fetchAll();
+    // Income yang dibagi ke beberapa PIC membuat satu bulan punya beberapa baris.
+    // Tanpa kolom PIC barisnya terlihat kembar; dengan kolom ini jelas baris mana
+    // milik siapa, dan subtotal per bulan menunjukkan nilai siklus seutuhnya.
+    $picBaris = array_values(array_unique(array_filter(array_column($allocRows, 'pic_name'))));
+    $adaBagi  = count($picBaris) > 1;
+    // Pembagian income tersimpan + daftar PIC untuk mengubahnya di sini.
+    // Form SKP terkunci begitu dokumen disubmit, jadi tanpa panel ini
+    // pembagian tidak bisa dilihat maupun dikoreksi lagi.
+    $bq = $pdo->prepare('SELECT pic_name, amount FROM transaction_pic_splits WHERE transaction_id = ? ORDER BY id');
+    $bq->execute([$id]);
+    $bagiTrx = $bq->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $pq = $pdo->prepare("SELECT name, (show_achievement = 1 AND target_share > 0) AS di_laporan
+                         FROM master_pic WHERE property_id = ? AND status = 'active' ORDER BY name");
+    $pq->execute([current_property_id()]);
+    $picPilihan = $pq->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $bisaUbahBagi = can('approve_skp');
+    $acuanBagiTrx = round((float) ($trx['final_amount'] ?: $trx['total_calculated']));
     $lockSkp = _trx_locking_skp($pdo, $id, current_property_id());
     // Jadwal harga bertahap kontrak ini (kosong = harga tunggal).
     require_once dirname(__DIR__) . '/AllocationService.php';
@@ -1926,7 +2052,7 @@ function allocation_detail(PDO $pdo): void
     // itu memang kebutuhannya — tapi harus terbaca jelas bahwa nilainya lalu
     // berbeda dari surat yang dipegang client.
     $bedaDariSurat = $lockSkp && $tahap;
-    layout('Detail Alokasi Transaksi #' . $id, function () use ($trx, $alloc, $lockSkp, $tahap, $bisaUbahHarga, $bedaDariSurat) {
+    layout('Detail Alokasi Transaksi #' . $id, function () use ($trx, $allocRows, $adaBagi, $lockSkp, $tahap, $bisaUbahHarga, $bedaDariSurat, $bagiTrx, $picPilihan, $bisaUbahBagi, $acuanBagiTrx) {
         ?>
         <div class="panel">
             <?php $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang']; ?>
@@ -2004,6 +2130,12 @@ function allocation_detail(PDO $pdo): void
                     <label style="font-size:12px;font-weight:700;display:block;margin-bottom:3px">Keterangan</label>
                     <input name="label" placeholder="mis. penyesuaian harga 2027" style="width:100%">
                 </div>
+                <?php if ($lockSkp): ?>
+                <div style="flex:1 1 100%;min-width:240px">
+                    <label style="font-size:12px;font-weight:700;display:block;margin-bottom:3px;color:#92400e">Alasan perubahan <span style="font-weight:400">(wajib &mdash; nilai kontrak akan berbeda dari <?= h($lockSkp['doc_type'] === 'sks' ? 'SKS' : 'SKP') ?> No. <?= h($lockSkp['skp_no']) ?>)</span></label>
+                    <input name="alasan" required placeholder="mis. kesepakatan kenaikan harga per telepon 1 Okt 2026 dengan PIC client" style="width:100%">
+                </div>
+                <?php endif; ?>
                 <button type="submit" class="btn" style="background:#0369a1">Terapkan</button>
             </form>
             <p class="help" style="margin-top:7px">Bulan sebelum tanggal berlaku tidak disentuh. Nilai kontrak ikut
@@ -2013,23 +2145,164 @@ function allocation_detail(PDO $pdo): void
         </div>
         <?php endif; ?>
 
+        <?php /* ── Pembagian Income per PIC ──────────────────────────────
+                 Form SKP terkunci setelah disubmit, jadi di sinilah pembagian
+                 bisa dilihat & dikoreksi manajer. Aturannya sama: jumlahnya
+                 WAJIB pas dengan nilai kontrak. */ ?>
+        <div class="panel" style="margin-top:14px">
+            <h2>Pembagian Income per PIC</h2>
+            <?php if (!$bagiTrx): ?>
+            <p class="muted" style="margin-top:0">Belum dibagi &mdash; seluruh nilai tercatat atas nama <strong><?= h($trx['pic_name'] ?: 'PIC transaksi') ?></strong>.</p>
+            <?php else: ?>
+            <div class="table-wrap">
+                <table style="max-width:560px">
+                    <thead><tr><th>PIC</th><th style="text-align:right">Nominal</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($bagiTrx as $b): ?>
+                    <tr><td><?= h($b['pic_name']) ?></td><td style="text-align:right;font-weight:700"><?= money($b['amount']) ?></td></tr>
+                    <?php endforeach; ?>
+                    <tr style="background:#f8fafc;font-weight:700">
+                        <td style="text-align:right">Jumlah</td>
+                        <td style="text-align:right"><?= money(array_sum(array_map(fn($x) => (float) $x['amount'], $bagiTrx))) ?></td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+
+            <?php if ($bisaUbahBagi): ?>
+            <form method="post" action="?r=pic_split_save" id="bagi-trx-form" style="margin-top:12px;background:#f8fafc;border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:12px 14px">
+                <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="id" value="<?= (int) $trx['id'] ?>">
+                <div id="bagi-box" data-acuan="<?= (int) $acuanBagiTrx ?>">
+                    <table class="data" id="bagi-tabel" style="width:100%;max-width:620px">
+                        <thead><tr><th style="width:54%">PIC Penerima</th><th style="width:36%">Nominal</th><th style="width:10%"></th></tr></thead>
+                        <tbody>
+                        <?php foreach (($bagiTrx ?: [['pic_name' => '', 'amount' => '']]) as $b): ?>
+                        <tr>
+                            <td>
+                                <select name="bagi_pic[]">
+                                    <option value="">&mdash; pilih PIC &mdash;</option>
+                                    <?php foreach ($picPilihan as $pRow): ?>
+                                    <option value="<?= h($pRow['name']) ?>" data-lapor="<?= $pRow['di_laporan'] ? '1' : '' ?>" <?= ($b['pic_name'] ?? '') === $pRow['name'] ? 'selected' : '' ?>><?= h($pRow['name']) ?><?= $pRow['di_laporan'] ? '' : ' — tidak tampil di Laporan PIC' ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                            <td>
+                                <div style="display:flex;align-items:stretch">
+                                    <span style="display:flex;align-items:center;padding:0 9px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:12.5px;font-weight:700;color:#475569">Rp</span>
+                                    <input type="text" inputmode="numeric" class="bagi-nilai" value="<?= (float) ($b['amount'] ?? 0) > 0 ? number_format((float) $b['amount'], 0, ',', '.') : '' ?>"
+                                           style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right">
+                                    <input type="hidden" name="bagi_nominal[]" value="<?= (int) ($b['amount'] ?? 0) ?>">
+                                </div>
+                            </td>
+                            <td style="text-align:center"><button type="button" class="btn warn bagi-hapus" style="padding:4px 9px;font-size:12px">&times;</button></td>
+                        </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <p style="margin:8px 0 0"><button type="button" class="btn light" id="bagi-tambah" style="font-size:12.5px">+ Tambah PIC</button></p>
+                    <div id="bagi-ringkas" style="margin-top:9px;font-size:13px"></div>
+                </div>
+                <p style="margin:10px 0 0;display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+                    <button type="submit" class="btn" style="background:#0369a1">Simpan Pembagian</button>
+                    <span class="muted" style="font-size:12px">Nominal per bulan tidak dihitung ulang &mdash; hanya dipecah menurut porsi ini. Kosongkan semua baris untuk mengembalikan seluruh income ke PIC transaksi.</span>
+                </p>
+            </form>
+            <script>
+            (function () {
+                var box = document.getElementById('bagi-box');
+                if (!box) return;
+                var ACUAN = parseInt(box.dataset.acuan, 10) || 0;
+                var tabel = document.getElementById('bagi-tabel');
+                var ringkas = document.getElementById('bagi-ringkas');
+                function rp(x) { return 'Rp ' + Math.round(x || 0).toLocaleString('id-ID'); }
+                function hitung() {
+                    var total = 0, terisi = 0, pakai = [], luar = [];
+                    tabel.querySelectorAll('tbody tr').forEach(function (tr) {
+                        var pic = tr.querySelector('select'), nilai = tr.querySelector('.bagi-nilai'),
+                            hid = tr.querySelector('input[type=hidden]');
+                        var n = parseInt((nilai.value || '').replace(/\D/g, ''), 10) || 0;
+                        if (hid) hid.value = n;
+                        if (pic && pic.value && n > 0) {
+                            total += n; terisi++; pakai.push(pic.value);
+                            var op = pic.options[pic.selectedIndex];
+                            if (op && !op.dataset.lapor) luar.push(pic.value);
+                        }
+                    });
+                    var selisih = ACUAN - total, ganda = pakai.length !== new Set(pakai).size, pesan;
+                    if (terisi === 0) pesan = '<span class="muted">Kosong &mdash; seluruh income kembali ke PIC transaksi.</span>';
+                    else if (ganda) pesan = '<span style="color:#b91c1c;font-weight:700">Ada PIC yang dipilih dua kali.</span>';
+                    else if (selisih === 0) pesan = '<span style="color:#15803d;font-weight:700">&#10003; Pas: ' + rp(total) + ' dari ' + rp(ACUAN) + '</span>';
+                    else if (selisih > 0) pesan = '<span style="color:#b45309;font-weight:700">Kurang ' + rp(selisih) + '</span> <span class="muted">&mdash; terbagi ' + rp(total) + ' dari ' + rp(ACUAN) + '</span>';
+                    else pesan = '<span style="color:#b91c1c;font-weight:700">Lebih ' + rp(-selisih) + '</span> <span class="muted">&mdash; terbagi ' + rp(total) + ' dari ' + rp(ACUAN) + '</span>';
+                    if (luar.length) pesan += '<div style="margin-top:5px;color:#92400e">Catatan: <strong>' + luar.join(', ') + '</strong> tidak muncul di Laporan PIC (pengaturan master PIC).</div>';
+                    ringkas.innerHTML = pesan;
+                    box.dataset.sah = (terisi === 0 || (selisih === 0 && !ganda)) ? '1' : '';
+                    return box.dataset.sah === '1';
+                }
+                tabel.addEventListener('input', function (e) {
+                    if (e.target.classList.contains('bagi-nilai')) {
+                        var raw = e.target.value.replace(/\D/g, '');
+                        e.target.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                    }
+                    hitung();
+                });
+                tabel.addEventListener('change', hitung);
+                tabel.addEventListener('click', function (e) {
+                    if (!e.target.classList.contains('bagi-hapus')) return;
+                    var rows = tabel.querySelectorAll('tbody tr');
+                    if (rows.length > 1) e.target.closest('tr').remove();
+                    else {
+                        e.target.closest('tr').querySelector('select').value = '';
+                        e.target.closest('tr').querySelector('.bagi-nilai').value = '';
+                    }
+                    hitung();
+                });
+                document.getElementById('bagi-tambah').addEventListener('click', function () {
+                    var tr = tabel.querySelector('tbody tr').cloneNode(true);
+                    tr.querySelector('select').value = '';
+                    tr.querySelector('.bagi-nilai').value = '';
+                    tr.querySelector('input[type=hidden]').value = '0';
+                    tabel.querySelector('tbody').appendChild(tr);
+                    hitung();
+                });
+                document.getElementById('bagi-trx-form').addEventListener('submit', function (e) {
+                    if (!hitung()) { e.preventDefault(); alert('Pembagian income belum pas dengan nilai kontrak ' + rp(ACUAN) + '.'); }
+                });
+                hitung();
+            })();
+            </script>
+            <?php endif; ?>
+        </div>
+
         <div class="panel" style="margin-top:14px">
             <h2>Breakdown Bulanan</h2>
             <div class="table-wrap">
                 <table>
                     <thead><tr>
-                        <th>Bulan</th><th>Periode Alokasi</th><th>Hari</th><th>Capacity-days</th><th>Aktual</th>
+                        <th>Bulan</th><th>Periode Alokasi</th><?php if ($adaBagi): ?><th>PIC</th><?php endif; ?><th>Hari</th><th>Capacity-days</th><th>Aktual</th>
                         <?php if (($trx['billing_method'] ?? '') === 'spread' && can('manage_transactions')): ?><th></th><?php endif; ?>
                     </tr></thead>
                     <tbody>
                     <?php
                     $isSpreadEditable = ($trx['billing_method'] ?? '') === 'spread' && can('manage_transactions') && !$lockSkp;
                     $csrfToken = csrf_token();
-                    foreach ($alloc->fetchAll() as $row):
+                    $kolom = $adaBagi ? 7 : 6;
+                    // Subtotal dicetak setiap kali siklusnya berganti.
+                    $perSiklus = [];
+                    foreach ($allocRows as $r) $perSiklus[$r['allocation_start']][] = $r;
+                    $siklusKe = 0;
+                    foreach ($allocRows as $i => $row):
+                        $barisSiklus = $perSiklus[$row['allocation_start']];
+                        $awalSiklus  = $barisSiklus[0]['id'] === $row['id'];
+                        $akhirSiklus = $barisSiklus[count($barisSiklus) - 1]['id'] === $row['id'];
+                        if ($awalSiklus) $siklusKe++;
                     ?>
                         <tr id="row-<?= (int)$row['id'] ?>">
-                            <td><?= h(period_label($row['period_key'])) ?></td>
-                            <td><?= h($row['allocation_start'] . ' s/d ' . $row['allocation_end']) ?></td>
+                            <td><?= $awalSiklus ? h(period_label($row['period_key'])) : '' ?></td>
+                            <td><?= $awalSiklus ? h($row['allocation_start'] . ' s/d ' . $row['allocation_end']) : '' ?></td>
+                            <?php if ($adaBagi): ?><td><?= h($row['pic_name'] ?: '—') ?></td><?php endif; ?>
                             <td><?= h((string) $row['allocated_days']) ?></td>
                             <td><?= h((string) $row['capacity_days']) ?></td>
                             <td id="amt-<?= (int)$row['id'] ?>"><?= money($row['amount']) ?></td>
@@ -2041,12 +2314,12 @@ function allocation_detail(PDO $pdo): void
                         </tr>
                         <?php if ($isSpreadEditable): ?>
                         <tr id="edit-<?= (int)$row['id'] ?>" style="display:none;background:#f0f9ff">
-                            <td colspan="6" style="padding:8px 12px">
+                            <td colspan="<?= $kolom ?>" style="padding:8px 12px">
                                 <form method="post" action="?r=allocation_amount_override" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                                     <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
                                     <input type="hidden" name="alloc_id" value="<?= (int)$row['id'] ?>">
                                     <input type="hidden" name="transaction_id" value="<?= (int)$trx['id'] ?>">
-                                    <label style="font-size:12px;font-weight:600;color:#0369a1"><?= h(period_label($row['period_key'])) ?> — Special Price:</label>
+                                    <label style="font-size:12px;font-weight:600;color:#0369a1"><?= h(period_label($row['period_key'])) ?><?= $adaBagi ? ' · porsi ' . h($row['pic_name'] ?: '—') : '' ?> — Special Price:</label>
                                     <input type="text" inputmode="numeric" id="edit-fmt-<?= (int)$row['id'] ?>"
                                         style="width:150px;font-size:13px"
                                         value="<?= number_format((int)$row['amount'], 0, ',', '.') ?>"
@@ -2059,10 +2332,21 @@ function allocation_detail(PDO $pdo): void
                             </td>
                         </tr>
                         <?php endif; ?>
+                        <?php if ($adaBagi && $akhirSiklus && count($barisSiklus) > 1): ?>
+                        <tr style="background:#f8fafc;font-weight:700">
+                            <td colspan="<?= $adaBagi ? 3 : 2 ?>" style="text-align:right;font-size:12px;color:#475569">Jumlah <?= h(period_label($row['period_key'])) ?></td>
+                            <td colspan="2"></td>
+                            <td><?= money(array_sum(array_map(fn($x) => (float) $x['amount'], $barisSiklus))) ?></td>
+                            <?php if ($isSpreadEditable): ?><td></td><?php endif; ?>
+                        </tr>
+                        <?php endif; ?>
                     <?php endforeach; ?>
                     </tbody>
                 </table>
             </div>
+            <?php if ($adaBagi): ?>
+            <p class="help" style="margin-top:7px">Income kontrak ini dibagi ke <strong><?= count(array_unique(array_filter(array_column($allocRows, 'pic_name')))) ?> PIC</strong>, jadi tiap bulan punya satu baris per PIC. <strong>Special Price</strong> mengubah porsi satu PIC saja &mdash; nominal pembagiannya ikut disesuaikan otomatis.</p>
+            <?php endif; ?>
         </div>
         <?php if (($trx['billing_method'] ?? '') === 'spread' && can('manage_transactions')): ?>
         <script>
@@ -2134,8 +2418,25 @@ function allocation_amount_override(PDO $pdo): void
         $sumStmt->execute([$trxId, $pid]);
         $newFinal = (float) ($sumStmt->fetchColumn() ?: 0);
 
-        $pdo->prepare('UPDATE transactions SET final_amount = ?, updated_by = ?, updated_at = NOW() WHERE id = ?')
-            ->execute([$newFinal, $_SESSION['user']['name'] ?? 'system', $trxId]);
+        $pdo->prepare('UPDATE transactions SET final_amount = ?, override_amount = ?, updated_by = ?, updated_at = NOW() WHERE id = ?')
+            ->execute([$newFinal, $newFinal, $_SESSION['user']['name'] ?? 'system', $trxId]);
+
+        // Bila income transaksi ini dibagi ke beberapa PIC, nominal pembagiannya
+        // ikut disamakan dengan alokasi yang baru. Tanpa ini jumlah pembagian
+        // tidak lagi sama dengan nilai kontrak, dan pembagiannya akan diabaikan
+        // (lalu hilang) pada perhitungan ulang berikutnya.
+        $bagiAda = $pdo->prepare('SELECT COUNT(*) FROM transaction_pic_splits WHERE transaction_id = ?');
+        $bagiAda->execute([$trxId]);
+        if ((int) $bagiAda->fetchColumn() > 0) {
+            $perPic = $pdo->prepare("SELECT pic_name, SUM(amount) n FROM transaction_allocations
+                                     WHERE transaction_id = ? AND property_id = ? AND COALESCE(pic_name,'') <> ''
+                                     GROUP BY pic_name");
+            $perPic->execute([$trxId, $pid]);
+            $updBagi = $pdo->prepare('UPDATE transaction_pic_splits SET amount = ? WHERE transaction_id = ? AND pic_name = ?');
+            foreach ($perPic->fetchAll(PDO::FETCH_ASSOC) as $b) {
+                $updBagi->execute([(float) $b['n'], $trxId, $b['pic_name']]);
+            }
+        }
 
         audit($pdo, 'allocation_override', 'transaction_allocations', (string) $allocId, [
             'transaction_id' => $trxId,
