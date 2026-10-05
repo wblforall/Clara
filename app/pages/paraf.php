@@ -159,34 +159,54 @@ function my_paraf_page(PDO $pdo): void
                                  paraf dengan QR terlihat tanpa membuka dokumen. */ ?>
                         <div id="pratinjau-auto">
                             <div style="font-size:12px;font-weight:700;margin-bottom:6px">Hasilnya di blok tanda tangan</div>
-                            <div style="width:430px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:16px 14px">
-                                <div style="display:flex;gap:10px;text-align:center">
-                                    <div style="flex:1">
-                                        <div style="font-size:11px;margin-bottom:6px">Dibuat Oleh,</div>
-                                        <div style="width:48px;height:48px;margin:0 auto;background:repeating-conic-gradient(#111 0 25%, #fff 0 50%) 0 0/9px 9px"></div>
-                                        <div style="font-size:8px;color:#94a3b8;margin-top:2px">Scan untuk validasi</div>
-                                        <div style="font-size:11px;font-weight:700;margin-top:3px">Sales</div>
-                                    </div>
-                                    <div style="flex:1.3">
-                                        <div style="font-size:11px;margin-bottom:6px">Mengetahui,</div>
-                                        <div style="display:flex;gap:7px;justify-content:center;align-items:flex-start">
-                                            <div>
-                                                <div style="width:48px;height:48px;background:repeating-conic-gradient(#111 0 25%, #fff 0 50%) 0 0/9px 9px"></div>
-                                                <div style="font-size:8px;color:#94a3b8;margin-top:2px">Scan untuk validasi</div>
+                            <?php
+                            /* Tiruan ini memakai PROPORSI DOKUMEN yang sebenarnya: lebar isi
+                               A4 178mm dipetakan ke 430px, QR 18mm di tengah kolom, paraf
+                               mulai Paraf::OTO_GESER mm dari tepi kiri kolom. Angkanya
+                               diturunkan dari konstanta yang sama dengan yang dipakai saat
+                               mencetak, jadi tiruan ini tidak bisa menyimpang dari hasil asli. */
+                            $PX   = 560 / 178;                       // px per mm
+                            $qrPx = round(18 * $PX);                 // QR 18mm
+                            $sigPx = round(20.64 * $PX);             // tinggi area tanda tangan (78px di dokumen)
+                            $kiri = round(Paraf::OTO_GESER * $PX);   // awal paraf dari tepi kolom
+                            $pad  = round(1.5875 * $PX, 1);          // padding kolom (6px di dokumen)
+                            ?>
+                            <div style="width:560px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:16px 0">
+                                <table style="width:560px;table-layout:fixed;border-collapse:collapse">
+                                    <tr>
+                                        <td style="width:33.33%;text-align:center;vertical-align:top;padding:0 <?= $pad ?>px">
+                                            <div style="font-size:11px;margin-bottom:5px">Dibuat Oleh,</div>
+                                            <div style="height:<?= $sigPx ?>px">
+                                                <div style="width:<?= $qrPx ?>px;height:<?= $qrPx ?>px;margin:0 auto;background:repeating-conic-gradient(#111 0 25%, #fff 0 50%) 0 0/8px 8px"></div>
+                                                <div style="font-size:7.5px;color:#94a3b8;margin-top:2px">Scan untuk validasi</div>
                                             </div>
-                                            <div id="auto-paraf" style="text-align:left;padding-top:1px"></div>
-                                        </div>
-                                        <div style="font-size:11px;font-weight:700;margin-top:3px">Manager</div>
-                                    </div>
-                                    <div style="flex:1">
-                                        <div style="font-size:11px;margin-bottom:6px">Menyetujui,</div>
-                                        <div style="height:48px;border-bottom:1px solid #111;margin:0 6px"></div>
-                                        <div style="font-size:11px;font-weight:700;margin-top:5px">Client</div>
-                                    </div>
-                                </div>
+                                            <div style="font-size:11px;font-weight:700">Sales</div>
+                                        </td>
+                                        <td style="width:33.33%;text-align:center;vertical-align:top;padding:0 <?= $pad ?>px">
+                                            <div style="font-size:11px;margin-bottom:5px">Mengetahui,</div>
+                                            <?php /* position:relative hanya pembungkus — paraf melayang di
+                                                     atasnya dan TIDAK ikut menghitung tinggi, persis seperti
+                                                     di dokumen. QR tetap di tengah kolom. */ ?>
+                                            <div style="position:relative">
+                                                <div style="height:<?= $sigPx ?>px">
+                                                    <div style="width:<?= $qrPx ?>px;height:<?= $qrPx ?>px;margin:0 auto;background:repeating-conic-gradient(#111 0 25%, #fff 0 50%) 0 0/8px 8px"></div>
+                                                    <div style="font-size:7.5px;color:#94a3b8;margin-top:2px">Scan untuk validasi</div>
+                                                </div>
+                                                <div id="auto-paraf" style="position:absolute;left:<?= $kiri ?>px;top:-1px;text-align:left"></div>
+                                            </div>
+                                            <div style="font-size:11px;font-weight:700">Manager</div>
+                                        </td>
+                                        <td style="width:33.33%;text-align:center;vertical-align:top;padding:0 <?= $pad ?>px">
+                                            <div style="font-size:11px;margin-bottom:5px">Menyetujui,</div>
+                                            <div style="height:<?= $sigPx ?>px"><div style="height:<?= $sigPx - 6 ?>px;border-bottom:1px solid #111"></div></div>
+                                            <div style="font-size:11px;font-weight:700">Client</div>
+                                        </td>
+                                    </tr>
+                                </table>
                             </div>
-                            <div class="help" style="margin-top:5px">Paraf Anda duduk di kanan atas QR Manager &mdash; dekat, tidak menimpa,
-                                dan sama di semua jenis surat.</div>
+                            <div class="help" style="margin-top:5px">Paraf Anda <strong>menindih</strong> ruang kosong di kanan atas QR
+                                &mdash; seperti gambar di-depan-teks pada Word. QR dan nama di bawahnya <strong>tidak bergeser
+                                sedikit pun</strong>, dan posisinya sama di semua jenis surat.</div>
                         </div>
 
                         <div id="pratinjau-manual" style="display:none">
@@ -313,6 +333,7 @@ function my_paraf_page(PDO $pdo): void
             var NAMA = <?= json_encode(trim($nama . ($jabatan !== '' ? ' · ' . $jabatan : '')), JSON_UNESCAPED_UNICODE) ?>;
             var GBR  = <?= json_encode(!empty($set['gambar_path']) ? upload_url((string) $set['gambar_path']) : '', JSON_UNESCAPED_UNICODE) ?>;
             var MAKS_AUTO = <?= Paraf::LEBAR_OTOMATIS_MAKS ?>;
+            var PX = 560 / 178;   // skala tiruan blok tanda tangan (px per mm)
             var gbrBaru = '';
 
             function mode()   { var r = document.querySelector('input[name=mode]:checked');   return r ? r.value : 'otomatis'; }
@@ -394,17 +415,22 @@ function my_paraf_page(PDO $pdo): void
                 if (bentuk() === 'inisial') {
                     var t = (it && it.value ? it.value : '').trim() || 'YY';
                     html = '<div style="font-style:italic;font-weight:700;color:#1e3a8a;line-height:1.1;font-size:'
-                         + Math.max(10, lebarMm * 0.42 * 1.33) + 'px">' + t.replace(/[<>&]/g, '') + '</div>';
+                         + (Math.max(9, lebarMm * 0.42) * 25.4 / 72 * pxPerMm) + 'px">' + t.replace(/[<>&]/g, '') + '</div>';
                 } else {
                     var src = gbrBaru || GBR;
                     html = src
                         ? '<img src="' + src + '" style="width:' + (lebarMm * pxPerMm) + 'px;display:block">'
-                        : '<div style="font-size:10px;color:#94a3b8;text-align:center;padding:7px 2px;border:1px dashed #cbd5e1">belum ada gambar</div>';
+                        : '<div style="height:' + Math.round(lebarMm * pxPerMm * 0.5) + 'px;border:1px dashed #cbd5e1;'
+                          + 'border-radius:3px;background:rgba(148,163,184,.08)" title="belum ada gambar"></div>';
                 }
                 var ket = [];
                 if (inm.checked) ket.push(NAMA);
                 if (iw.checked)  ket.push('05/10/2026 09:15');
-                if (ket.length) html += '<div style="font-size:8px;color:#475569;line-height:1.25;margin-top:1px">' + ket.join('<br>') + '</div>';
+                // 6pt — ukuran yang dipakai Paraf::html() saat mencetak, diubah ke piksel
+                // menurut skala tiruan, supaya baris yang membungkus di sini juga
+                // membungkus di dokumen.
+                if (ket.length) html += '<div style="font-size:' + (6 * 25.4 / 72 * pxPerMm) + 'px;color:#475569;'
+                                      + 'line-height:1.25;margin-top:' + (0.6 * pxPerMm) + 'px">' + ket.join('<br>') + '</div>';
                 return html;
             }
 
@@ -429,7 +455,11 @@ function my_paraf_page(PDO $pdo): void
                 document.getElementById('blok-gambar').style.display  = bentuk() === 'gambar'  ? '' : 'none';
                 document.getElementById('blok-inisial').style.display = bentuk() === 'inisial' ? '' : 'none';
 
-                if (otomatis) { auto.innerHTML = potonganParaf(lebar, 2.2); return; }
+                if (otomatis) {
+                    auto.style.width = (lebar * PX) + 'px';
+                    auto.innerHTML = potonganParaf(lebar, PX);
+                    return;
+                }
 
                 var x = jepit(parseFloat(ix.value) || 0, 0, 210 - lebar);
                 var y = jepit(parseFloat(iy.value) || 0, 0, 297 - 8);
