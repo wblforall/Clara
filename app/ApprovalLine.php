@@ -391,13 +391,15 @@ final class ApprovalLine
                 $set = Paraf::ambil($pdo, $uidParaf, $docType);
                 if (Paraf::siap($set)) {
                     $baris['paraf'] = [
-                        'bentuk'      => $set['bentuk'],
-                        'gambar_path' => $set['gambar_path'],
-                        'teks'        => $set['teks'],
-                        'pos_x'       => $set['pos_x'],
-                        'pos_y'       => $set['pos_y'],
-                        'lebar'       => $set['lebar'],
-                        'tampil_nama' => $set['tampil_nama'],
+                        'mode'         => $set['mode'] ?? 'otomatis',
+                        'bentuk'       => $set['bentuk'],
+                        'gambar_path'  => $set['gambar_path'],
+                        'teks'         => $set['teks'],
+                        'pos_x'        => $set['pos_x'],
+                        'pos_y'        => $set['pos_y'],
+                        'lebar'        => $set['lebar'],
+                        'tampil_nama'  => $set['tampil_nama'],
+                        'tampil_waktu' => $set['tampil_waktu'] ?? 0,
                     ];
                 }
             }

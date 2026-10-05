@@ -29,26 +29,43 @@ final class Paraf
     public const LEBAR_KERTAS = 210.0;
     public const TINGGI_KERTAS = 297.0;
 
+    /** Jenis dokumen + baris bersama yang berlaku untuk semuanya. */
+    public const SEMUA = 'all';
+
+    /** Lebar maksimum paraf dalam mode otomatis — ruang di samping QR terbatas. */
+    public const LEBAR_OTOMATIS_MAKS = 24.0;
+
     public static function bawaan(): array
     {
         return [
-            'bentuk'      => 'gambar',
-            'gambar_path' => null,
-            'teks'        => null,
-            'pos_x'       => 150.0,
-            'pos_y'       => 232.0,
-            'lebar'       => 30.0,
-            'tampil_nama' => 1,
+            'mode'         => 'otomatis',
+            'bentuk'       => 'gambar',
+            'gambar_path'  => null,
+            'teks'         => null,
+            'pos_x'        => 150.0,
+            'pos_y'        => 232.0,
+            'lebar'        => 20.0,
+            'tampil_nama'  => 1,
+            'tampil_waktu' => 0,
         ];
     }
 
-    /** Pengaturan paraf milik satu orang untuk satu jenis dokumen. */
+    /**
+     * Pengaturan paraf milik satu orang untuk satu jenis dokumen.
+     *
+     * Baris khusus jenis dokumen didahulukan; kalau tidak ada, dipakai baris
+     * bersama ('all') yang berlaku untuk semua surat. Begitulah mode otomatis
+     * bisa diatur sekali dan langsung berlaku di SKP, SKS, maupun Form
+     * Utilities tanpa disetel satu per satu.
+     */
     public static function ambil(PDO $pdo, int $uid, string $docType = 'skp'): ?array
     {
         if ($uid <= 0) return null;
         try {
-            $st = $pdo->prepare('SELECT * FROM paraf_settings WHERE user_id = ? AND doc_type = ? LIMIT 1');
-            $st->execute([$uid, $docType]);
+            $st = $pdo->prepare('SELECT * FROM paraf_settings
+                                  WHERE user_id = ? AND doc_type IN (?, ?)
+                                  ORDER BY (doc_type = ?) DESC LIMIT 1');
+            $st->execute([$uid, $docType, self::SEMUA, $docType]);
             $r = $st->fetch(PDO::FETCH_ASSOC) ?: null;
         } catch (Throwable $e) {
             return null;                        // tabel belum ada (migrasi belum jalan)
@@ -57,7 +74,30 @@ final class Paraf
         $r['pos_x'] = (float) $r['pos_x'];
         $r['pos_y'] = (float) $r['pos_y'];
         $r['lebar'] = (float) $r['lebar'];
-        $r['tampil_nama'] = (int) $r['tampil_nama'];
+        $r['tampil_nama']  = (int) $r['tampil_nama'];
+        $r['tampil_waktu'] = (int) ($r['tampil_waktu'] ?? 0);
+        $r['mode'] = ($r['mode'] ?? 'otomatis') === 'manual' ? 'manual' : 'otomatis';
+        return $r;
+    }
+
+    /** Baris persis untuk satu jenis dokumen (tanpa jatuh ke baris bersama). */
+    public static function ambilPersis(PDO $pdo, int $uid, string $docType): ?array
+    {
+        if ($uid <= 0) return null;
+        try {
+            $st = $pdo->prepare('SELECT * FROM paraf_settings WHERE user_id = ? AND doc_type = ? LIMIT 1');
+            $st->execute([$uid, $docType]);
+            $r = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+        } catch (Throwable $e) {
+            return null;
+        }
+        if (!$r) return null;
+        $r['pos_x'] = (float) $r['pos_x'];
+        $r['pos_y'] = (float) $r['pos_y'];
+        $r['lebar'] = (float) $r['lebar'];
+        $r['tampil_nama']  = (int) $r['tampil_nama'];
+        $r['tampil_waktu'] = (int) ($r['tampil_waktu'] ?? 0);
+        $r['mode'] = ($r['mode'] ?? 'otomatis') === 'manual' ? 'manual' : 'otomatis';
         return $r;
     }
 
@@ -86,26 +126,35 @@ final class Paraf
     public static function simpan(PDO $pdo, int $uid, string $docType, array $d): void
     {
         $jepit = fn($v, $min, $max) => max($min, min($max, (float) $v));
-        $lebar = $jepit($d['lebar'] ?? 30, 10, 80);
+        $mode  = ($d['mode'] ?? 'otomatis') === 'manual' ? 'manual' : 'otomatis';
+        // Mode otomatis menumpang di sel yang sama dengan QR Manager, dan sel
+        // itu hanya selebar sepertiga halaman. Paraf yang lebih lebar dari ini
+        // akan mendorong QR-nya turun dan merusak blok tanda tangan.
+        $lebar = $mode === 'otomatis'
+            ? $jepit($d['lebar'] ?? 20, 10, self::LEBAR_OTOMATIS_MAKS)
+            : $jepit($d['lebar'] ?? 30, 10, 80);
         // Dijepit supaya parafnya tidak bisa disimpan di luar kertas — tanpa ini
         // satu salah ketik membuat paraf hilang dari dokumen tanpa pesan apa pun.
         $x = $jepit($d['pos_x'] ?? 150, 0, self::LEBAR_KERTAS - $lebar);
         $y = $jepit($d['pos_y'] ?? 232, 0, self::TINGGI_KERTAS - 10);
 
         $pdo->prepare(
-            'INSERT INTO paraf_settings (user_id, doc_type, bentuk, gambar_path, teks, pos_x, pos_y, lebar, tampil_nama)
-             VALUES (?,?,?,?,?,?,?,?,?)
-             ON DUPLICATE KEY UPDATE bentuk=VALUES(bentuk), gambar_path=VALUES(gambar_path), teks=VALUES(teks),
-                                     pos_x=VALUES(pos_x), pos_y=VALUES(pos_y), lebar=VALUES(lebar),
-                                     tampil_nama=VALUES(tampil_nama)'
+            'INSERT INTO paraf_settings (user_id, doc_type, mode, bentuk, gambar_path, teks, pos_x, pos_y, lebar, tampil_nama, tampil_waktu)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?)
+             ON DUPLICATE KEY UPDATE mode=VALUES(mode), bentuk=VALUES(bentuk), gambar_path=VALUES(gambar_path),
+                                     teks=VALUES(teks), pos_x=VALUES(pos_x), pos_y=VALUES(pos_y),
+                                     lebar=VALUES(lebar), tampil_nama=VALUES(tampil_nama),
+                                     tampil_waktu=VALUES(tampil_waktu)'
         )->execute([
             $uid,
             $docType,
+            $mode,
             ($d['bentuk'] ?? 'gambar') === 'inisial' ? 'inisial' : 'gambar',
             ($d['gambar_path'] ?? '') !== '' ? $d['gambar_path'] : null,
             trim((string) ($d['teks'] ?? '')) !== '' ? mb_substr(trim((string) $d['teks']), 0, 40) : null,
             $x, $y, $lebar,
             !empty($d['tampil_nama']) ? 1 : 0,
+            !empty($d['tampil_waktu']) ? 1 : 0,
         ]);
     }
 
@@ -145,14 +194,19 @@ final class Paraf
             $isi = '<img src="' . $h($url) . '" style="width:' . round($lebar, 1) . 'mm">';
         }
 
-        $ket = '';
+        // Nama dan waktu dua hal terpisah: paraf di kertas memang tidak pernah
+        // mencantumkan jam, jadi keduanya bisa dimatikan sendiri-sendiri.
+        $baris = [];
         if (!empty($p['tampil_nama'])) {
-            $baris = array_filter([$nama, $jabatan]);
-            $ket = '<div style="font-family:Helvetica,Arial,sans-serif;font-size:6pt;color:#475569;line-height:1.25;margin-top:0.6mm">'
-                 . $h(implode(' · ', $baris))
-                 . ($waktu !== '' ? '<br>' . $h($waktu) : '')
-                 . '</div>';
+            $baris[] = $h(implode(' · ', array_filter([$nama, $jabatan])));
         }
+        if (!empty($p['tampil_waktu']) && $waktu !== '') {
+            $baris[] = $h($waktu);
+        }
+        $ket = $baris
+            ? '<div style="font-family:Helvetica,Arial,sans-serif;font-size:6pt;color:#475569;line-height:1.25;margin-top:0.6mm">'
+              . implode('<br>', $baris) . '</div>'
+            : '';
         return '<div style="width:' . round($lebar, 1) . 'mm">' . $isi . $ket . '</div>';
     }
 }
