@@ -61,11 +61,16 @@ final class Paraf
     public const OTO_SISA = 0.18;
 
     /**
-     * Batas tinggi gambar paraf dalam mode otomatis. Tanpa ini, paraf yang
-     * bentuknya tinggi-ramping bisa membuat sel penindih ikut memanjang —
-     * dan begitu selnya lebih tinggi dari tarikannya, QR pun ikut terdorong.
+     * Batas mutlak tinggi paraf dalam mode otomatis.
+     *
+     * Paraf yang bentuknya tinggi-ramping (huruf "Y", misalnya) kalau diatur
+     * lewat LEBAR akan menjulur ke bawah sepanjang QR — bukan tanda kecil di
+     * pojok lagi, melainkan blok di sampingnya. Karena itu di mode otomatis
+     * angka pengaturannya dibaca sebagai SISI TERPANJANG, dan apa pun bentuk
+     * coretannya tetap tidak boleh lebih tinggi dari ini. Selain soal tampilan,
+     * sel penindih yang kelewat tinggi akan mendorong QR-nya turun.
      */
-    public const OTO_TINGGI_GAMBAR = 11.0;
+    public const OTO_TINGGI_GAMBAR = 12.0;
 
     /** Lebar maksimum paraf dalam mode otomatis — ruang di samping QR terbatas. */
     public const LEBAR_OTOMATIS_MAKS = self::OTO_LEBAR;
@@ -266,6 +271,16 @@ final class Paraf
         // baris yang membuat paraf terlihat besar.
         $lebarBlok = $lebarBlokMm > 0 ? max($lebarBlokMm, $lebar) : $lebar;
         return '<div style="width:' . round($lebarBlok, 1) . 'mm">' . $isi . $ket . '</div>';
+    }
+
+    /**
+     * Batas tinggi untuk mode otomatis: angka yang diatur orangnya dibaca
+     * sebagai sisi terpanjang, lalu dipotong batas mutlaknya. Dipakai bersama
+     * oleh dokumen dan tiruan di halaman pengaturan supaya keduanya sama.
+     */
+    public static function maksTinggiOtomatis(float $ukuranMm): float
+    {
+        return min($ukuranMm, self::OTO_TINGGI_GAMBAR);
     }
 
     /**

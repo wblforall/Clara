@@ -278,7 +278,7 @@ function my_paraf_page(PDO $pdo): void
                                    value="<?= h((string) ($set['teks'] ?? '')) ?>" style="margin:6px 0 12px">
                         </div>
 
-                        <label style="font-size:12px;font-weight:700">Lebar paraf: <span id="lbl-lebar"></span> mm</label>
+                        <label style="font-size:12px;font-weight:700"><span id="lbl-judul">Ukuran paraf</span>: <span id="lbl-lebar"></span> mm</label>
                         <input type="range" name="lebar" id="inp-lebar" min="10" max="80" step="1"
                                value="<?= (int) round((float) ($set['lebar'] ?? 12)) ?>" style="width:100%;margin:6px 0 12px">
 
@@ -333,8 +333,22 @@ function my_paraf_page(PDO $pdo): void
             var NAMA = <?= json_encode(trim($nama . ($jabatan !== '' ? ' · ' . $jabatan : '')), JSON_UNESCAPED_UNICODE) ?>;
             var GBR  = <?= json_encode(!empty($set['gambar_path']) ? upload_url((string) $set['gambar_path']) : '', JSON_UNESCAPED_UNICODE) ?>;
             var MAKS_AUTO = <?= Paraf::LEBAR_OTOMATIS_MAKS ?>;
+            var MAKS_TINGGI = <?= Paraf::OTO_TINGGI_GAMBAR ?>;
             var PX = 560 / 178;   // skala tiruan blok tanda tangan (px per mm)
             var gbrBaru = '';
+            // Perbandingan tinggi:lebar gambar paraf. Dibutuhkan karena di mode
+            // otomatis angka pengaturannya adalah SISI TERPANJANG — paraf yang
+            // bentuknya tinggi harus dikecilkan supaya tetap jadi tanda di pojok
+            // QR, bukan blok yang menjulur ke bawah di sampingnya.
+            var aspek = 0;
+
+            function pakaiAspek(src) {
+                if (!src) { aspek = 0; gambarUlang(); return; }
+                var g = new Image();
+                g.onload  = function () { aspek = g.naturalWidth ? g.naturalHeight / g.naturalWidth : 0; gambarUlang(); };
+                g.onerror = function () { aspek = 0; gambarUlang(); };
+                g.src = src;
+            }
 
             function mode()   { var r = document.querySelector('input[name=mode]:checked');   return r ? r.value : 'otomatis'; }
             function bentuk() { var r = document.querySelector('input[name=bentuk]:checked'); return r ? r.value : 'gambar'; }
@@ -364,7 +378,7 @@ function my_paraf_page(PDO $pdo): void
             function henti() {
                 if (!menggambar) return;
                 menggambar = false;
-                if (adaCoretan) { gbrBaru = potongKanvas(); idata.value = gbrBaru; gambarUlang(); }
+                if (adaCoretan) { gbrBaru = potongKanvas(); idata.value = gbrBaru; pakaiAspek(gbrBaru); }
             }
             kv.addEventListener('mousedown', mulai);  kv.addEventListener('touchstart', mulai, { passive: false });
             kv.addEventListener('mousemove', tarik);  kv.addEventListener('touchmove', tarik, { passive: false });
@@ -397,7 +411,7 @@ function my_paraf_page(PDO $pdo): void
             }
             document.getElementById('kanvas-hapus').addEventListener('click', function () {
                 ctx.clearRect(0, 0, kv.width, kv.height);
-                adaCoretan = false; gbrBaru = ''; idata.value = ''; gambarUlang();
+                adaCoretan = false; gbrBaru = ''; idata.value = ''; pakaiAspek(GBR);
             });
 
             function caraGambar(c) {
@@ -418,8 +432,14 @@ function my_paraf_page(PDO $pdo): void
                          + (Math.max(9, lebarMm * 0.42) * 25.4 / 72 * pxPerMm) + 'px">' + t.replace(/[<>&]/g, '') + '</div>';
                 } else {
                     var src = gbrBaru || GBR;
+                    // Aturan yang sama dengan Paraf::maksTinggiOtomatis() di server.
+                    var lebarGbr = lebarMm;
+                    if (mode() === 'otomatis' && aspek > 0) {
+                        var maks = Math.min(lebarMm, MAKS_TINGGI), tinggi = lebarMm * aspek;
+                        if (tinggi > maks) lebarGbr = lebarMm * maks / tinggi;
+                    }
                     html = src
-                        ? '<img src="' + src + '" style="width:' + (lebarMm * pxPerMm) + 'px;display:block">'
+                        ? '<img src="' + src + '" style="width:' + (lebarGbr * pxPerMm) + 'px;display:block">'
                         : '<div style="height:' + Math.round(lebarMm * pxPerMm * 0.5) + 'px;border:1px dashed #cbd5e1;'
                           + 'border-radius:3px;background:rgba(148,163,184,.08)" title="belum ada gambar"></div>';
                 }
@@ -447,6 +467,7 @@ function my_paraf_page(PDO $pdo): void
                 });
 
                 // Mode otomatis: ruang di samping QR terbatas, lebarnya dibatasi.
+                document.getElementById('lbl-judul').textContent = otomatis ? 'Ukuran paraf (sisi terpanjang)' : 'Lebar paraf';
                 il.max = otomatis ? MAKS_AUTO : 80;
                 if (otomatis && parseFloat(il.value) > MAKS_AUTO) il.value = MAKS_AUTO;
                 var lebar = parseFloat(il.value) || 20;
@@ -497,10 +518,10 @@ function my_paraf_page(PDO $pdo): void
 
             if (ig) ig.addEventListener('change', function () {
                 var f = ig.files && ig.files[0];
-                if (!f) { gbrBaru = ''; gambarUlang(); return; }
+                if (!f) { gbrBaru = ''; pakaiAspek(GBR); return; }
                 idata.value = '';                     // berkas menang atas coretan
                 var fr = new FileReader();
-                fr.onload = function () { gbrBaru = fr.result; gambarUlang(); };
+                fr.onload = function () { gbrBaru = fr.result; pakaiAspek(gbrBaru); };
                 fr.readAsDataURL(f);
             });
 
@@ -509,6 +530,7 @@ function my_paraf_page(PDO $pdo): void
                 document.querySelectorAll('input[name=bentuk],input[name=mode]').forEach(function (el) { el.addEventListener(ev, gambarUlang); });
             });
             gambarUlang();
+            pakaiAspek(GBR);   // bentuk paraf tersimpan → tiruan bisa membatasi tingginya
         })();
         </script>
         <?php
