@@ -3516,8 +3516,13 @@ function offer_template_form(PDO $pdo): void
                 </select>
                 <button type="button" class="btn light" id="pv-tab" style="padding:3px 8px;font-size:11px" title="Buka di tab baru">&#8599;</button>
                 <span class="st" id="pv-st"></span></div>
-            <div class="box" id="pv-box"><iframe id="pv-bingkai" title="Pratinjau surat"></iframe></div>
+            <div class="box" id="pv-box"><iframe id="pv-bingkai" name="pv_bingkai" title="Pratinjau surat"></iframe></div>
         </aside>
+        <?php /* Pratinjau dikirim lewat formulir biasa yang menembak ke bingkai di
+                 atas, BUKAN fetch+blob. Aturan keamanan halaman (CSP) memakai
+                 default-src 'self' sehingga alamat blob: ditolak peramban; cara
+                 ini tetap satu asal, jadi lolos tanpa melonggarkan CSP. */ ?>
+        <form id="pv-form" method="post" action="?r=offer_template_preview" target="pv_bingkai" style="display:none"></form>
         </div>
 
         <script>
@@ -3558,47 +3563,52 @@ function offer_template_form(PDO $pdo): void
 
             // ── Pratinjau: PDF sungguhan, halamannya terpisah seperti nanti dicetak ──
             var bingkai = document.getElementById('pv-bingkai'), st = document.getElementById('pv-st');
-            var selZoom = document.getElementById('pv-zoom');
-            var alamat = null;   // blob URL PDF yang sedang ditampilkan
+            var selZoom = document.getElementById('pv-zoom'), pvForm = document.getElementById('pv-form');
 
-            function potongan() {
-                var z = selZoom.value;
-                // Penampil PDF peramban membaca pecahan alamat: FitH untuk lebar
-                // penuh, zoom=NN untuk persentase.
-                return (z === 'page-width' ? '#view=FitH' : '#zoom=' + z) + '&toolbar=0&navpanes=0';
+            /* Zoom ditentukan lewat penunjuk di belakang alamat (#zoom= / #view=),
+               yang dibaca pembaca PDF bawaan peramban. Nilai yang sama juga
+               dikirim ke server sebagai cadangan untuk pembaca lain. */
+            function alamat() {
+                var v = selZoom.value;
+                return '?r=offer_template_preview#' + (v === 'page-width' ? 'view=FitH' : 'zoom=' + v);
             }
-            function tampilkan() { if (alamat) bingkai.src = alamat + potongan(); }
-            selZoom.addEventListener('change', function () {
-                // Alamat harus dikosongkan dulu; penampil PDF tidak membaca ulang
-                // pecahan alamat kalau berkasnya dianggap sama.
-                bingkai.src = 'about:blank';
-                setTimeout(tampilkan, 30);
-            });
-            document.getElementById('pv-tab').addEventListener('click', function () {
-                if (alamat) window.open(alamat + potongan(), '_blank');
-            });
 
-            var jeda = null, sedang = false;
+            /** Salin seluruh isian formulir utama ke formulir pratinjau. */
+            function isiUlang() {
+                pvForm.action = alamat();
+                pvForm.innerHTML = '';
+                var data = new FormData(form);
+                data.append('zoom', selZoom.value === 'page-width' ? 'fullwidth' : selZoom.value);
+                data.forEach(function (nilai, nama) {
+                    if (typeof nilai !== 'string') return;      // lewati berkas
+                    var i = document.createElement('input');
+                    i.type = 'hidden'; i.name = nama; i.value = nilai;
+                    pvForm.appendChild(i);
+                });
+            }
+
+            var jeda = null;
             function gambar() {
-                if (sedang) return;
-                sedang = true; st.textContent = 'menggambar…';
-                fetch('?r=offer_template_preview', { method: 'POST', body: new FormData(form), cache: 'no-store' })
-                    .then(function (r) { return r.blob(); })
-                    .then(function (blob) {
-                        var lama = alamat;
-                        alamat = URL.createObjectURL(blob);
-                        tampilkan();
-                        if (lama) URL.revokeObjectURL(lama);   // jangan menumpuk di memori
-                        st.textContent = 'diperbarui ' + new Date().toLocaleTimeString('id-ID');
-                    })
-                    .catch(function () { st.textContent = 'gagal memuat'; })
-                    .finally(function () { sedang = false; });
+                st.textContent = 'menggambar…';
+                isiUlang();
+                pvForm.submit();
             }
+            bingkai.addEventListener('load', function () {
+                if (st.textContent === 'menggambar…') {
+                    st.textContent = 'diperbarui ' + new Date().toLocaleTimeString('id-ID');
+                }
+            });
             // Jeda sedikit lebih panjang: tiap gambar berarti satu PDF dibuat ulang.
             function nanti() { clearTimeout(jeda); jeda = setTimeout(gambar, 900); }
             form.addEventListener('input', nanti);
             form.addEventListener('change', nanti);
+            selZoom.addEventListener('change', gambar);
             document.getElementById('pv-segar').addEventListener('click', gambar);
+            document.getElementById('pv-tab').addEventListener('click', function () {
+                // Tab baru: formulir yang sama, hanya sasarannya diganti.
+                isiUlang();
+                pvForm.target = '_blank'; pvForm.submit(); pvForm.target = 'pv_bingkai';
+            });
             gambar();
         })();
         </script>
@@ -3734,15 +3744,28 @@ function offer_template_preview(PDO $pdo): void
 
     // PDF SUNGGUHAN, bukan tiruan HTML. Dua alasan: halamannya terpisah persis
     // seperti nanti dicetak (versi HTML menyambung ke bawah tanpa batas kertas),
-    // dan peramban menyediakan zoom-nya sendiri. Yang terlihat di pratinjau
-    // benar-benar berkas yang akan diterima client.
+    // dan yang terlihat benar-benar berkas yang akan diterima client.
     require_once dirname(__DIR__) . '/pdf.php';
     $PDF_MODE = true;
     ob_start();
     include __DIR__ . '/offer_print_template.php';
     $html = ob_get_clean();
     try {
-        clara_render_letterhead_pdf($html, 'Pratinjau Template');   // memanggil exit()
+        // Zoom ditanam juga di dalam berkas PDF-nya sebagai cadangan. Chrome
+        // mengabaikan ini dan memakai pecahan alamat (#zoom=) yang dipasang di
+        // sisi halaman; penampil lain yang membaca /OpenAction tetap kebagian.
+        $z = (string) post('zoom', 'fullwidth');
+        $zoom = is_numeric($z) ? max(25, min(400, (int) $z)) : 'fullwidth';
+        $mpdf = clara_letterhead_mpdf();
+        $mpdf->SetDisplayMode($zoom, 'continuous');
+        $mpdf->WriteHTML($html);
+        $pdf = $mpdf->Output('', \Mpdf\Output\Destination::STRING_RETURN);
+        while (ob_get_level() > 0) ob_end_clean();
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="pratinjau-template.pdf"');
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Content-Length: ' . strlen($pdf));
+        echo $pdf;
     } catch (Throwable $e) {
         // Pratinjau tidak boleh menjatuhkan halaman pengaturan — tampilkan sebabnya.
         while (ob_get_level() > 0) ob_end_clean();
