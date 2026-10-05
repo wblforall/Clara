@@ -30,16 +30,28 @@ foreach (($d['paraf'] ?? []) as $pf) {
     $set = $pf['paraf'] ?? null;
     if (!$set || !in_array($pf['action'] ?? '', ['paraf', 'approve'], true)) continue;
     $kapan = ($pf['waktu'] ?? '') !== '' ? date('d/m/Y H:i', strtotime((string) $pf['waktu'])) : '';
+
+    // Mode otomatis tidak memakai koordinat sama sekali: parafnya MENINDIH ruang
+    // kosong di kanan atas QR Manager — dekat, tidak bertabrakan, dan tidak
+    // menggeser QR maupun nama di bawahnya. Berlaku di jenis surat mana pun
+    // tanpa perlu diatur ulang.
+    //
+    // Snapshot lama belum punya kunci 'mode' — dan pada masanya mode otomatis
+    // memang belum ada, jadi semuanya manual. Default 'manual' di sini membuat
+    // dokumen yang sudah terbit tetap tercetak persis seperti aslinya.
+    $otomatis = ($set['mode'] ?? 'manual') !== 'manual';
+    if ($otomatis) {
+        // Ruang di samping QR terbatas. Dokumen lama bisa menyimpan lebar yang
+        // melebihi batas sekarang, jadi dijepit di sini juga — kalau tidak,
+        // tabel penindihnya diciutkan mPDF dan parafnya meleset.
+        $set['lebar'] = min((float) $set['lebar'], Paraf::LEBAR_OTOMATIS_MAKS);
+    }
     $isi = Paraf::html($set, (string) ($pf['nama'] ?? ''), (string) ($pf['role_name'] ?? ''), $kapan,
-                       !empty($PDF_MODE) ? 'file' : 'web');
+                       !empty($PDF_MODE) ? 'file' : 'web',
+                       $otomatis ? Paraf::OTO_TINGGI_GAMBAR : 0.0);
     if ($isi === '') continue;
 
-    // Mode otomatis tidak memakai koordinat sama sekali: parafnya dicetak di
-    // sel yang sama dengan QR Manager, kolom sebelah kanan, rata atas. Dengan
-    // begitu ia selalu berada di kanan-atas barcode, dekat tetapi tidak pernah
-    // bertabrakan — berapa pun panjang isi dokumennya dan di jenis surat mana
-    // pun, tanpa perlu diatur ulang.
-    if (($set['mode'] ?? 'otomatis') !== 'manual') {
+    if ($otomatis) {
         $PARAF_QR .= $isi;
         continue;
     }
@@ -286,22 +298,12 @@ $skpHasQr = !empty($skp['sign_token']);
             <div class="name"<?= $skpHasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($d['sales'] ?? '-') ?><br><span <?= $skpJab ?>>Sales Executive</span></div>
         </td>
         <td class="col"><div class="role"><?= $skpDocType === 'sks' ? 'Menyetujui,' : 'Mengetahui,' ?></div>
-            <?php /* Paraf mode otomatis duduk di kolom kanan sel ini, rata atas —
-                     itulah "kanan atas barcode". Dipakai tabel, bukan posisi
-                     absolut, supaya mPDF dan browser menempatkannya sama persis
-                     dan tidak pernah menimpa QR. */ ?>
-            <?php if ($PARAF_QR !== ''): ?>
-            <table style="border-collapse:collapse;margin:0 auto"><tr>
-                <?php /* Sel kosong selebar sel paraf: tanpa ini, QR terdorong ke kiri
-                         sebanyak setengah lebar paraf dan blok tanda tangan terlihat
-                         miring dibanding kolom Sales & Client. */ ?>
-                <td style="width:26mm;padding:0;font-size:1pt">&nbsp;</td>
-                <td style="padding:0;vertical-align:top"><div class="sigarea" style="margin:0"><?php if ($skpHasQr): ?><?php if (!empty($PDF_MODE)): ?><div class="qrbox"><?= clara_qr_img($skpVerifyUrl, 18) ?></div><?php else: ?><div class="qrbox" data-qr="<?= $h($skpVerifyUrl) ?>"></div><?php endif; ?><div class="qrhint">Scan untuk validasi</div><?php endif; ?></div></td>
-                <td style="width:26mm;padding:0 0 0 2mm;vertical-align:top"><?= $PARAF_QR ?></td>
-            </tr></table>
-            <?php else: ?>
             <div class="sigarea"><?php if ($skpHasQr): ?><?php if (!empty($PDF_MODE)): ?><div class="qrbox"><?= clara_qr_img($skpVerifyUrl, 18) ?></div><?php else: ?><div class="qrbox" data-qr="<?= $h($skpVerifyUrl) ?>"></div><?php endif; ?><div class="qrhint">Scan untuk validasi</div><?php endif; ?></div>
-            <?php endif; ?>
+            <?php /* Paraf mode otomatis MENINDIH ruang kosong di kanan atas QR —
+                     seperti gambar di-depan-teks pada Word. Area QR di atas tidak
+                     disentuh sama sekali, jadi QR dan nama di bawahnya tetap di
+                     tempatnya. Lihat Paraf::overlay(). */ ?>
+            <?= Paraf::overlay($PARAF_QR) ?>
             <div class="name"<?= $skpHasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($skpManager) ?><br><span <?= $skpJab ?>>Casual Leasing Manager</span></div>
         </td>
         <td class="col"><div class="role"><?= $skpDocType === 'sks' ? 'Pihak Penyewa,' : ($skpDocType === 'fu' ? 'Pemohon,' : 'Menyetujui,') ?></div>
