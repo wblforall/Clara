@@ -83,7 +83,11 @@ final class Paraf
             // membesarkan selalu bisa menggeser sendiri. Kebalikannya tidak —
             // paraf kebesaran baru ketahuan setelah suratnya terbit.
             'lebar'        => 12.0,
-            'tampil_nama'  => 1,
+            // Tanpa nama secara bawaan. Paraf di kertas memang cuma coretan, dan
+            // nama pemeriksanya sudah tercatat di jejak approval. Keterangan yang
+            // menjuntai di bawah paraf justru membuatnya terbaca sebagai blok
+            // besar di samping QR, bukan tanda kecil di pojoknya.
+            'tampil_nama'  => 0,
             'tampil_waktu' => 0,
         ];
     }
@@ -209,7 +213,7 @@ final class Paraf
      * membaca berkas langsung dari disk.
      */
     public static function html(array $p, string $nama, string $jabatan, string $waktu, string $src = 'web',
-                                float $maksTinggiMm = 0.0): string
+                                float $maksTinggiMm = 0.0, float $lebarBlokMm = 0.0): string
     {
         $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
         $lebar = (float) ($p['lebar'] ?? 30);
@@ -257,7 +261,11 @@ final class Paraf
             ? '<div style="font-family:Helvetica,Arial,sans-serif;font-size:6pt;color:#475569;line-height:1.25;margin-top:0.6mm">'
               . implode('<br>', $baris) . '</div>'
             : '';
-        return '<div style="width:' . round($lebar, 1) . 'mm">' . $isi . $ket . '</div>';
+        // Kotaknya boleh lebih lebar dari gambarnya: gambar tetap sekecil setelan,
+        // tetapi keterangannya punya ruang supaya tidak membungkus jadi tumpukan
+        // baris yang membuat paraf terlihat besar.
+        $lebarBlok = $lebarBlokMm > 0 ? max($lebarBlokMm, $lebar) : $lebar;
+        return '<div style="width:' . round($lebarBlok, 1) . 'mm">' . $isi . $ket . '</div>';
     }
 
     /**
