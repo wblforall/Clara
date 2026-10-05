@@ -60,6 +60,28 @@ $kolom = [
     // Surat kertas memakai bullet untuk Cara Pembayaran & Ketentuan; aplikasi
     // menomorinya. Bawaannya tetap bernomor supaya surat lama tak berubah.
     'gaya_daftar'   => "ADD COLUMN `gaya_daftar` VARCHAR(10) NOT NULL DEFAULT 'nomor' AFTER `layout`",
+    // Judul bagian: 'aplikasi' = hijau tanpa nomor (tampilan CLARA selama ini);
+    // 'romawi' = hitam tebal bernomor I, II, III — seperti surat kertas.
+    'gaya_judul'    => "ADD COLUMN `gaya_judul` VARCHAR(10) NOT NULL DEFAULT 'aplikasi' AFTER `gaya_daftar`",
+    // Blok rekening: 'kotak' = kotak abu-abu tersendiri; 'menyatu' = menempel
+    // sebagai butir terakhir Cara Pembayaran, apa adanya seperti di kertas.
+    'gaya_bank'     => "ADD COLUMN `gaya_bank` VARCHAR(10) NOT NULL DEFAULT 'kotak' AFTER `gaya_judul`",
+    // Kalimat "Demikian surat penawaran ini kami buat..." dulu dipaku di kode,
+    // padahal tiap surat kertas menulisnya sedikit berbeda.
+    'penutup_akhir' => "ADD COLUMN `penutup_akhir` TEXT NULL AFTER `penutup`",
+    // Sebutan di kolom tanda tangan kanan ("Calon Penyewa" di aplikasi; surat
+    // kertas langsung kosong lalu nama penanggung jawabnya).
+    'ttd_kanan'     => "ADD COLUMN `ttd_kanan` VARCHAR(80) NULL AFTER `penutup_akhir`",
+    // Kotak "Penawaran ini berlaku s/d ..." dan QR validasi pada tanda tangan
+    // sales: dua-duanya buatan aplikasi, tidak ada di surat kertas. Bawaannya
+    // tetap MENYALA supaya surat yang sudah terbit tidak berubah.
+    'tampil_berlaku' => "ADD COLUMN `tampil_berlaku` TINYINT(1) NOT NULL DEFAULT 1 AFTER `ttd_kanan`",
+    'tampil_qr'      => "ADD COLUMN `tampil_qr` TINYINT(1) NOT NULL DEFAULT 1 AFTER `tampil_berlaku`",
+    // Penulisan rupiah: 'polos' = Rp 7.000.000 (gaya aplikasi selama ini);
+    // 'kertas' = Rp. 7.000.000,- seperti yang diketik di surat Word. Ini penting
+    // karena butir Cara Pembayaran di template memang ditulis gaya kertas, jadi
+    // satu surat bisa memuat dua gaya sekaligus kalau tidak diseragamkan.
+    'gaya_uang'      => "ADD COLUMN `gaya_uang` VARCHAR(10) NOT NULL DEFAULT 'polos' AFTER `tampil_qr`",
 ];
 foreach ($kolom as $nama => $sql) {
     $ada = $pdo->query("SHOW COLUMNS FROM `offer_templates` LIKE " . $pdo->quote($nama))->fetchColumn();
@@ -83,3 +105,9 @@ $pdo->exec("UPDATE `offer_templates` SET `is_default` = 1 WHERE `unit_type` = ''
 // pilihan yang sama saat penawaran dibuka kembali.
 $ada = $pdo->query("SHOW COLUMNS FROM `offers` LIKE 'template_id'")->fetchColumn();
 if (!$ada) $pdo->exec("ALTER TABLE `offers` ADD COLUMN `template_id` INT(10) UNSIGNED NULL AFTER `module`");
+
+// Ukuran apa adanya, mis. "2x3 m2". Surat kertas menulis UKURAN unitnya, bukan
+// hasil kali luasnya — dan 2x3 lebih bisa dibayangkan client daripada 6,00 m².
+// Kosong = tetap cetak luas seperti sekarang.
+$ada = $pdo->query("SHOW COLUMNS FROM `offers` LIKE 'ukuran'")->fetchColumn();
+if (!$ada) $pdo->exec("ALTER TABLE `offers` ADD COLUMN `ukuran` VARCHAR(40) NULL AFTER `area_sqm`");

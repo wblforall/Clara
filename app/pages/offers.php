@@ -82,6 +82,12 @@ function offer_judul_bawaan(): array
 {
     return [
         'rincian_biaya' => 'Rincian Biaya',
+        // Judul kolom tabel penawaran. Surat kertas menulisnya lebih pendek:
+        // "Lokasi | Luas | Harga Sewa Per Bulan | Keterangan".
+        'kolom_lokasi'  => 'Lokasi / Titik',
+        'kolom_luas'    => 'Luasan',
+        'kolom_harga'   => 'Harga Sewa / Periode',
+        'kolom_ket'     => 'Keterangan',
         'fasilitas'     => 'Fasilitas',
         'media'         => 'Media Promosi',
         'pembayaran'    => 'Cara Pembayaran',
@@ -110,6 +116,12 @@ function offer_penutup_bawaan(): string
     return 'Untuk keterangan lebih lanjut dapat menghubungi **{PIC}** ({WA}) atau kantor kami **{KANTOR}**.';
 }
 
+/** Kalimat penutup terakhir. Bawaannya persis yang dulu dipaku di template cetak. */
+function offer_penutup_akhir_bawaan(): string
+{
+    return 'Demikian surat penawaran ini kami buat. Atas perhatian dan kerjasamanya kami ucapkan terima kasih.';
+}
+
 function _offer_template_norm(array $t): array
 {
     $judul = json_decode((string) ($t['judul_json'] ?? '{}'), true) ?: [];
@@ -123,6 +135,13 @@ function _offer_template_norm(array $t): array
         // tabel = keluarga Exhibition; rincian = keluarga Foodcourt (daftar bernomor).
         'layout'            => ((string) ($t['layout'] ?? 'tabel')) === 'rincian' ? 'rincian' : 'tabel',
         'gaya_daftar'       => ((string) ($t['gaya_daftar'] ?? 'nomor')) === 'bullet' ? 'bullet' : 'nomor',
+        'gaya_judul'        => ((string) ($t['gaya_judul'] ?? 'aplikasi')) === 'romawi' ? 'romawi' : 'aplikasi',
+        'gaya_bank'         => ((string) ($t['gaya_bank'] ?? 'kotak')) === 'menyatu' ? 'menyatu' : 'kotak',
+        'penutup_akhir'     => trim((string) ($t['penutup_akhir'] ?? '')) !== '' ? (string) $t['penutup_akhir'] : offer_penutup_akhir_bawaan(),
+        'ttd_kanan'         => array_key_exists('ttd_kanan', $t) && $t['ttd_kanan'] !== null ? (string) $t['ttd_kanan'] : 'Calon Penyewa',
+        'tampil_berlaku'    => (int) ($t['tampil_berlaku'] ?? 1),
+        'tampil_qr'         => (int) ($t['tampil_qr'] ?? 1),
+        'gaya_uang'         => ((string) ($t['gaya_uang'] ?? 'polos')) === 'kertas' ? 'kertas' : 'polos',
         'perihal'           => (string) ($t['perihal'] ?? ''),
         'intro'             => (string) ($t['intro'] ?? ''),
         'fasilitas'         => json_decode((string) ($t['fasilitas_json'] ?? '[]'), true) ?: [],
@@ -287,8 +306,11 @@ function offer_template_for(PDO $pdo, int $propertyId, ?string $unitType, string
             'Apabila tidak terjadi kerusakan setelah masa sewa berakhir, Security Deposit dikembalikan 100%.',
         ],
         'terms' => offer_terms(), 'notes' => [], 'extra' => [],
-        'id' => 0, 'is_default' => 1, 'layout' => 'tabel', 'gaya_daftar' => 'nomor', 'media' => [], 'ket' => [], 'rincian' => [],
+        'id' => 0, 'is_default' => 1, 'layout' => 'tabel', 'gaya_daftar' => 'nomor',
+        'gaya_judul' => 'aplikasi', 'gaya_bank' => 'kotak', 'media' => [], 'ket' => [], 'rincian' => [],
         'judul' => offer_judul_bawaan(), 'bank' => offer_bank_bawaan(), 'penutup' => offer_penutup_bawaan(),
+        'penutup_akhir' => offer_penutup_akhir_bawaan(), 'ttd_kanan' => 'Calon Penyewa',
+        'tampil_berlaku' => 1, 'tampil_qr' => 1, 'gaya_uang' => 'polos',
         'ppn_persen' => 12.0, 'ppn_rumus' => 1, 'ppn_catatan' => '', 'rincian_biaya' => 1,
         'dp_required' => 1, 'dp_months_default' => 2, 'electricity_default' => 150000,
     ];
@@ -309,13 +331,40 @@ function offer_letter_fill(string $text, array $a): string
     // kalimat baku template bisa menyebut angka penawaran tanpa diketik ulang.
     // Huruf besar maupun kecil sama-sama diterima — orang yang menyunting template
     // menulis {PIC}, dan menolak diam-diam hanya menyisakan kurung kurawal di surat.
-    foreach (['hari', 'periode', 'lokasi', 'luas', 'harga', 'ppn_persen',
+    foreach (['hari', 'periode', 'periode_panjang', 'lokasi', 'luas', 'harga', 'ppn_persen',
               'pic', 'pic_besar', 'wa', 'email', 'kantor'] as $k) {
         if (!array_key_exists($k, $a)) continue;
         $ganti['{' . $k . '}'] = (string) $a[$k];
         $ganti['{' . strtoupper($k) . '}'] = (string) $a[$k];
     }
     return strtr($text, $ganti);
+}
+
+/** Rupiah menurut gaya template: 'Rp 7.000.000' atau 'Rp. 7.000.000,-'. */
+function offer_rupiah(float $v, string $gaya = 'polos'): string
+{
+    $n = number_format($v, 0, ',', '.');
+    return $gaya === 'kertas' ? 'Rp. ' . $n . ',-' : 'Rp ' . $n;
+}
+
+/**
+ * Periode gaya surat kertas: "1-31 Mei 2026" bila sebulan, "21 September –
+ * 4 Oktober 2026" bila beda bulan, "1 September 2026 – 31 Agustus 2027" bila
+ * beda tahun. Format lama (01/05/2026 s/d 31/05/2026) tetap tersedia sebagai
+ * {periode}, jadi surat yang sudah terbit tidak berubah.
+ */
+function offer_periode_panjang(?string $mulai, ?string $akhir): string
+{
+    if (!$mulai || !$akhir) return '-';
+    $bln = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+            'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    $a = strtotime($mulai); $b = strtotime($akhir);
+    $ha = (int) date('j', $a); $hb = (int) date('j', $b);
+    $ba = (int) date('n', $a); $bb = (int) date('n', $b);
+    $ta = date('Y', $a);       $tb = date('Y', $b);
+    if ($ta === $tb && $ba === $bb) return $ha . '-' . $hb . ' ' . $bln[$bb] . ' ' . $tb;
+    if ($ta === $tb)              return $ha . ' ' . $bln[$ba] . ' – ' . $hb . ' ' . $bln[$bb] . ' ' . $tb;
+    return $ha . ' ' . $bln[$ba] . ' ' . $ta . ' – ' . $hb . ' ' . $bln[$bb] . ' ' . $tb;
 }
 
 /**
@@ -349,8 +398,10 @@ function offer_letter_bawaan(): array
     return [
         'perihal' => '', 'intro' => '', 'fasilitas' => [], 'payment' => [], 'terms' => [],
         'notes' => [], 'extra' => [], 'media' => [], 'ket' => [], 'rincian' => [],
-        'layout' => 'tabel', 'gaya_daftar' => 'nomor', 'judul' => offer_judul_bawaan(), 'bank' => offer_bank_bawaan(),
-        'penutup' => offer_penutup_bawaan(),
+        'layout' => 'tabel', 'gaya_daftar' => 'nomor', 'gaya_judul' => 'aplikasi', 'gaya_bank' => 'kotak',
+        'judul' => offer_judul_bawaan(), 'bank' => offer_bank_bawaan(),
+        'penutup' => offer_penutup_bawaan(), 'penutup_akhir' => offer_penutup_akhir_bawaan(),
+        'ttd_kanan' => 'Calon Penyewa', 'tampil_berlaku' => 1, 'tampil_qr' => 1, 'gaya_uang' => 'polos',
         'ppn_persen' => 12.0, 'ppn_rumus' => 1, 'ppn_catatan' => '', 'rincian_biaya' => 1,
     ];
 }
@@ -380,6 +431,13 @@ function offer_letter_dari_template(array $t): array
         'template_id' => (int) ($t['id'] ?? 0),
         'layout'     => $t['layout'] ?? 'tabel',
         'gaya_daftar' => $t['gaya_daftar'] ?? 'nomor',
+        'gaya_judul'  => $t['gaya_judul'] ?? 'aplikasi',
+        'gaya_bank'   => $t['gaya_bank'] ?? 'kotak',
+        'penutup_akhir' => $t['penutup_akhir'] ?? offer_penutup_akhir_bawaan(),
+        'ttd_kanan'   => $t['ttd_kanan'] ?? 'Calon Penyewa',
+        'tampil_berlaku' => (int) ($t['tampil_berlaku'] ?? 1),
+        'tampil_qr'   => (int) ($t['tampil_qr'] ?? 1),
+        'gaya_uang'   => $t['gaya_uang'] ?? 'polos',
         'perihal'    => $t['perihal'] ?? '', 'intro' => $t['intro'] ?? '',
         'fasilitas'  => $t['fasilitas'] ?? [], 'media' => $t['media'] ?? [],
         'ket'        => $t['ket'] ?? [], 'rincian' => $t['rincian'] ?? [],
@@ -490,7 +548,7 @@ function _offer_calc_total(string $pricing, float $rate, float $area, float $slo
 function _offer_fields(): array
 {
     return ['module', 'template_id', 'client_id', 'contact_id', 'pic_name', 'referrer_name', 'master_code', 'keterangan',
-            'pricing_type', 'unit_rate', 'area_sqm', 'quantity', 'slots',
+            'pricing_type', 'unit_rate', 'area_sqm', 'ukuran', 'quantity', 'slots',
             'start_date', 'end_date', 'contract_months', 'monthly_amount', 'total_calculated', 'override_amount',
             'billing_method', 'recurring_flag', 'cycle_recognition',
             'dp_months', 'dp_amount', 'deposit_months', 'deposit_amount', 'deposit_paid', 'ppn_flag', 'sc_flag', 'sc_monthly',
@@ -1502,6 +1560,12 @@ function offer_form(PDO $pdo): void
                 <?php else: ?>
                 <input type="hidden" name="slots" value="1">
                 <?php endif; ?>
+                <?php /* Ukuran apa adanya (mis. 2x3 m2) — surat kertas menulis ukuran
+                         unitnya, bukan hasil kali luasnya. */ ?>
+                <div><label>Ukuran <span class="muted" style="font-weight:400">(opsional)</span></label>
+                    <input name="ukuran" value="<?= h((string) ($offer['ukuran'] ?? '')) ?>" placeholder="mis. 2x3 m2" <?= $disabled ?>>
+                    <div class="help">Kalau diisi, inilah yang tercetak di kolom Luas. Kosong = pakai luas m&sup2;.</div>
+                </div>
                 <div><label>Pricing Type</label>
                     <select name="pricing_type" id="pricing_type" <?= $disabled ?>>
                         <?php foreach (['daily_area', 'daily_slot', 'daily_point', 'monthly', 'fixed'] as $o): ?><option <?= ($offer['pricing_type'] ?? '') === $o ? 'selected' : '' ?>><?= $o ?></option><?php endforeach; ?>
@@ -2511,6 +2575,7 @@ function offer_save(PDO $pdo): void
         'pricing_type'    => $pricing,
         'unit_rate'       => $rate,
         'area_sqm'        => $area,
+        'ukuran'          => trim((string) post('ukuran')) ?: null,
         'quantity'        => 1,
         'slots'           => $slots,
         'start_date'      => $start,
@@ -2766,7 +2831,7 @@ function offer_print(PDO $pdo): void
         "SELECT o.*, c.company_name, c.brand_name, c.address, c.city,
                 ct.name cp_name,
                 u.location_name, u.floor,
-                p.email pic_email, p.phone pic_phone, p.signature_path pic_signature
+                p.email pic_email, p.phone pic_phone, p.signature_path pic_signature, p.role_name pic_role
          FROM offers o
          LEFT JOIN master_clients c ON c.id = o.client_id
          LEFT JOIN master_client_contacts ct ON ct.id = o.contact_id
@@ -3280,6 +3345,31 @@ function offer_template_form(PDO $pdo): void
                 </div>
             </div>
 
+            <div class="form-grid" style="margin-top:10px">
+                <div>
+                    <label style="font-weight:700">Gaya Judul Bagian</label>
+                    <div style="margin-top:5px">
+                        <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer">
+                            <input type="radio" name="gaya_judul" value="aplikasi" <?= ($t['gaya_judul'] ?? 'aplikasi') !== 'romawi' ? 'checked' : '' ?>> Hijau tanpa nomor (tampilan CLARA)
+                        </label>
+                        <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer;margin-top:3px">
+                            <input type="radio" name="gaya_judul" value="romawi" <?= ($t['gaya_judul'] ?? '') === 'romawi' ? 'checked' : '' ?>> Hitam bernomor I, II, III &mdash; seperti surat kertas
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <label style="font-weight:700">Letak Blok Rekening</label>
+                    <div style="margin-top:5px">
+                        <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer">
+                            <input type="radio" name="gaya_bank" value="kotak" <?= ($t['gaya_bank'] ?? 'kotak') !== 'menyatu' ? 'checked' : '' ?>> Kotak tersendiri
+                        </label>
+                        <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer;margin-top:3px">
+                            <input type="radio" name="gaya_bank" value="menyatu" <?= ($t['gaya_bank'] ?? '') === 'menyatu' ? 'checked' : '' ?>> Menyatu di Cara Pembayaran &mdash; seperti surat kertas
+                        </label>
+                    </div>
+                </div>
+            </div>
+
             <?php /* ── PPN ──────────────────────────────────────────────────────── */ ?>
             <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:11px 14px;margin-top:12px">
                 <label style="font-weight:700">PPN</label>
@@ -3339,6 +3429,26 @@ function offer_template_form(PDO $pdo): void
                     <div><label style="font-size:12px">Cara Pembayaran</label><input name="judul_pembayaran" value="<?= h($judul['pembayaran']) ?>"></div>
                     <div><label style="font-size:12px">Ketentuan</label><input name="judul_ketentuan" value="<?= h($judul['ketentuan']) ?>"></div>
                 </div>
+                <div class="help" style="margin-top:8px">Judul kolom tabel penawaran:</div>
+                <div class="form-grid" style="margin-top:4px">
+                    <div><label style="font-size:12px">Kolom 1 (lokasi)</label><input name="judul_kolom_lokasi" value="<?= h($judul['kolom_lokasi']) ?>"></div>
+                    <div><label style="font-size:12px">Kolom 2 (luas)</label><input name="judul_kolom_luas" value="<?= h($judul['kolom_luas']) ?>"></div>
+                    <div><label style="font-size:12px">Kolom 3 (harga)</label><input name="judul_kolom_harga" value="<?= h($judul['kolom_harga']) ?>"></div>
+                    <div><label style="font-size:12px">Kolom 4 (keterangan)</label><input name="judul_kolom_ket" value="<?= h($judul['kolom_ket']) ?>"></div>
+                </div>
+            </div>
+
+            <div style="margin-top:10px">
+                <label style="font-weight:700">Penulisan Rupiah</label>
+                <div style="display:flex;gap:18px;margin-top:5px;flex-wrap:wrap">
+                    <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer">
+                        <input type="radio" name="gaya_uang" value="polos" <?= ($t['gaya_uang'] ?? 'polos') !== 'kertas' ? 'checked' : '' ?>> Rp 7.000.000
+                    </label>
+                    <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer">
+                        <input type="radio" name="gaya_uang" value="kertas" <?= ($t['gaya_uang'] ?? '') === 'kertas' ? 'checked' : '' ?>> Rp. 7.000.000,- &mdash; seperti surat kertas
+                    </label>
+                </div>
+                <div class="help">Butir Cara Pembayaran di template biasanya sudah ditulis gaya kertas, jadi pilihan ini membuat satu surat tidak memuat dua gaya sekaligus.</div>
             </div>
 
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:11px 14px;margin-top:12px">
@@ -3354,6 +3464,27 @@ function offer_template_form(PDO $pdo): void
 
             <div style="margin-top:12px"><label>Kalimat Penutup <span class="muted" style="font-weight:400">(<code>{PIC}</code> <code>{PIC_BESAR}</code> <code>{WA}</code> <code>{EMAIL}</code> <code>{KANTOR}</code> diisi otomatis dari Master PIC sales)</span></label><textarea name="penutup" rows="2" style="width:100%" placeholder="Untuk keterangan lebih lanjut dapat menghubungi kantor kami {KANTOR} atau whatsapp ke {PIC_BESAR} di nomor {WA}."><?= $val('penutup') ?></textarea>
                 <div class="help">Nama dan nomor WhatsApp mengikuti sales yang membuat penawaran &mdash; bukan satu nomor untuk semua orang.</div></div>
+
+            <div style="margin-top:10px"><label>Kalimat Penutup Terakhir</label>
+                <input name="penutup_akhir" value="<?= $val('penutup_akhir') ?>" style="width:100%"
+                       placeholder="<?= h(offer_penutup_akhir_bawaan()) ?>">
+                <div class="help">Kosongkan untuk memakai kalimat bawaan.</div></div>
+
+            <div class="form-grid" style="margin-top:10px">
+                <div><label>Sebutan Kolom Tanda Tangan Kanan</label>
+                    <input name="ttd_kanan" value="<?= h((string) ($t['ttd_kanan'] ?? 'Calon Penyewa')) ?>" placeholder="Calon Penyewa">
+                    <div class="help">Kosongkan bila di bawah "Menyetujui," langsung nama penanggung jawabnya &mdash; seperti surat kertas.</div></div>
+                <div>
+                    <label>Tambahan Buatan Aplikasi</label>
+                    <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer;margin-top:5px">
+                        <input type="checkbox" name="tampil_berlaku" value="1" <?= !$t || !empty($t['tampil_berlaku']) ? 'checked' : '' ?>>
+                        <span style="font-size:13px">Cetak kotak "Penawaran ini berlaku s/d &hellip;"</span></label>
+                    <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer;margin-top:3px">
+                        <input type="checkbox" name="tampil_qr" value="1" <?= !$t || !empty($t['tampil_qr']) ? 'checked' : '' ?>>
+                        <span style="font-size:13px">Cetak QR "Scan untuk validasi" di tanda tangan sales</span></label>
+                    <div class="help">Dua-duanya tidak ada di surat kertas. QR dipakai client untuk memastikan suratnya asli &mdash; sebaiknya tetap menyala.</div>
+                </div>
+            </div>
 
             <div style="display:flex;gap:10px;align-items:flex-start;background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:11px 14px;margin-top:12px">
                 <input type="checkbox" name="is_default" id="is_default" value="1" style="width:18px;height:18px;margin-top:1px" <?= !empty($t['is_default']) ? 'checked' : '' ?>>
@@ -3431,6 +3562,13 @@ function offer_template_save(PDO $pdo): void
         'is_default'        => post('is_default') ? 1 : 0,
         'layout'            => post('layout') === 'rincian' ? 'rincian' : 'tabel',
         'gaya_daftar'       => post('gaya_daftar') === 'bullet' ? 'bullet' : 'nomor',
+        'gaya_judul'        => post('gaya_judul') === 'romawi' ? 'romawi' : 'aplikasi',
+        'gaya_bank'         => post('gaya_bank') === 'menyatu' ? 'menyatu' : 'kotak',
+        'penutup_akhir'     => trim((string) post('penutup_akhir', '')),
+        'ttd_kanan'         => trim((string) post('ttd_kanan', '')),
+        'tampil_berlaku'    => post('tampil_berlaku') ? 1 : 0,
+        'tampil_qr'         => post('tampil_qr') ? 1 : 0,
+        'gaya_uang'         => post('gaya_uang') === 'kertas' ? 'kertas' : 'polos',
         'ppn_persen'        => max(0, min(100, (float) post('ppn_persen', 12))),
         'ppn_rumus'         => post('ppn_rumus') ? 1 : 0,
         'ppn_catatan'       => trim((string) post('ppn_catatan', '')),
@@ -3441,6 +3579,10 @@ function offer_template_save(PDO $pdo): void
         'rincian_json'      => $J(offer_rincian_parse((string) post('rincian', ''))),
         'judul_json'        => $J(array_filter([
             'rincian_biaya' => trim((string) post('judul_rincian_biaya', '')),
+            'kolom_lokasi'  => trim((string) post('judul_kolom_lokasi', '')),
+            'kolom_luas'    => trim((string) post('judul_kolom_luas', '')),
+            'kolom_harga'   => trim((string) post('judul_kolom_harga', '')),
+            'kolom_ket'     => trim((string) post('judul_kolom_ket', '')),
             'fasilitas'     => trim((string) post('judul_fasilitas', '')),
             'media'         => trim((string) post('judul_media', '')),
             'pembayaran'    => trim((string) post('judul_pembayaran', '')),
