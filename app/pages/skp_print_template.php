@@ -22,7 +22,7 @@ body { font-family: Helvetica, Arial, sans-serif; font-size: 11px; color: #111; 
 /* Header: thead tabel → berulang di ATAS tiap halaman.
    Footer: elemen FIXED → menempel di DASAR tiap halaman (ruang via margin bawah). */
 @page { size: A4 portrait; margin: 0; }
-table.paper { width: 100%; border-collapse: collapse; }
+table.paper { width: 100%; border-collapse: collapse; position: relative; } /* jangkar paraf absolut */
 table.paper > thead > tr > td, table.paper > tfoot > tr > td, table.paper > tbody > tr > td { padding: 0; }
 .sp-top { height: 30mm; background: url('assets/letterhead-a4.jpg') no-repeat top center; background-size: 100% auto; }
 .sp-bot { height: 36mm; } /* tfoot kosong: pesan ruang footer tiap halaman (anti-tabrak) */
@@ -68,6 +68,12 @@ table.paper > thead > tr > td, table.paper > tfoot > tr > td, table.paper > tbod
 <tfoot><tr><td><div class="sp-bot"></div></td></tr></tfoot>
 <tbody><tr><td>
 <div class="sheet"><?php include __DIR__ . '/skp_print_body.php'; ?></div>
+<?php /* Paraf bergambar: milimeter dari pojok kiri-atas kertas, sama persis
+         dengan angka yang dipakai PDF. table.paper berposisi relative, jadi
+         inilah jangkarnya. */ ?>
+<?php foreach (($PARAF_OVERLAY ?? []) as $po): ?>
+<div style="position:absolute;left:<?= $po['x'] ?>mm;top:<?= $po['y'] ?>mm;width:<?= $po['w'] ?>mm"><?= $po['html'] ?></div>
+<?php endforeach; ?>
 </td></tr></tbody>
 </table>
 <script src="assets/qrcode.min.js"></script>

@@ -276,7 +276,7 @@ function skp_list_page(PDO $pdo): void
     foreach ($rows as $i => $r) {
         $dt = (string) ($r['doc_type'] ?? 'skp');
         if (!array_key_exists($dt, $alurCache)) $alurCache[$dt] = ApprovalLine::steps($pdo, $pid, $dt);
-        $rows[$i]['_alur_ket'] = ApprovalLine::keterangan($r, $alurCache[$dt]);
+        $rows[$i]['_alur_ket'] = ApprovalLine::keteranganNama($pdo, $pid, $r, $alurCache[$dt]);
         $rows[$i]['_alur_n']   = count($alurCache[$dt]);
         $rows[$i]['_revisi']   = ($r['status'] === 'approved' && ApprovalLine::revisiPending($pdo, (int) $r['id'])) ? 1 : 0;
     }
@@ -618,7 +618,7 @@ function skp_form(PDO $pdo): void
     require_once dirname(__DIR__) . '/ApprovalLine.php';
     $alur      = $skp ? ApprovalLine::steps($pdo, $pid, (string) ($skp['doc_type'] ?? 'skp')) : [];
     $alurTahap = ($skp && $alur) ? ApprovalLine::currentStep($skp, $alur) : null;
-    $alurKet   = $skp ? ApprovalLine::keterangan($skp, $alur) : '';
+    $alurKet   = $skp ? ApprovalLine::keteranganNama($pdo, $pid, $skp, $alur) : '';
     $alurJejak = $skp ? ApprovalLine::history($pdo, (int) $skp['id']) : [];
     $alurBoleh = ($skp && $skp['status'] === 'submitted') ? ApprovalLine::canAct($pdo, $pid, $skp, $alur) : false;
     $alurWakil = ($skp && $alur && $alurBoleh) ? ApprovalLine::mewakili($pdo, $pid, $skp, $alur) : false;
@@ -1130,9 +1130,12 @@ function skp_form(PDO $pdo): void
                 <?php endforeach; ?>
             </div>
             <?php endif; ?>
+            <?php /* Keteranganannya sudah menyebut nama orangnya (keteranganNama),
+                     jadi tidak perlu ditambah daftar nama lagi di belakangnya. */ ?>
             <?php if ($skp['status'] === 'submitted' && $alurKet): ?>
-            <p style="margin:0 0 6px"><strong><?= h($alurKet) ?></strong><?php
-                if ($alurTunggu): ?> &mdash; <span class="muted"><?= h(implode(', ', $alurTunggu)) ?></span><?php endif; ?></p>
+            <p style="margin:0 0 6px;padding:9px 12px;border-radius:8px;background:#fffbeb;border:1px solid #fde68a;color:#92400e">
+                <strong>&#9203; <?= h($alurKet) ?></strong>
+            </p>
             <?php endif; ?>
             <?php if ($alurJejak): ?>
             <div class="table-wrap" style="margin-top:4px">
@@ -1209,8 +1212,9 @@ function skp_form(PDO $pdo): void
         </details>
         <?php endif; ?>
         <?php elseif ($skp && $skp['status'] === 'submitted'): ?>
-        <div class="panel" style="margin-top:12px;color:var(--muted)"><?= h($alurKet ?: 'Menunggu persetujuan manager.') ?><?php
-            if ($alurTunggu): ?> &mdash; <?= h(implode(', ', $alurTunggu)) ?><?php endif; ?></div>
+        <div class="panel" style="margin-top:12px;background:#fffbeb;border:1px solid #fde68a;color:#92400e">
+            <strong>&#9203; <?= h($alurKet ?: 'Masih menunggu persetujuan Manager.') ?></strong>
+        </div>
         <?php elseif ($skp && in_array($skp['status'], ['approved', 'signed'], true)):
             $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
             $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
@@ -2119,7 +2123,7 @@ function skp_approve(PDO $pdo): void
         // dokumen yang diserahkan ke client menyebut siapa yang memeriksanya —
         // dan tetap menyebut nama yang sama walau alurnya nanti diubah.
         // Dokumen lama tidak punya kunci ini, jadi cetakannya tidak berubah.
-        'paraf' => ApprovalLine::jejakBeku($pdo, $id),
+        'paraf' => ApprovalLine::jejakBeku($pdo, $id, (string) ($skp['doc_type'] ?? 'skp')),
         // Tarif bertingkat per m² (paket) ikut dibekukan supaya cetakan ulang
         // tetap memperlihatkan asal angkanya walau penawarannya diubah.
         'tier_harga' => (!empty($skp['offer_id']) && function_exists('offer_area_tiers'))
@@ -2263,6 +2267,16 @@ function skp_approve(PDO $pdo): void
             'approve', trim((string) post('approval_note')) . ($wakilAkhir ?? ''));
         $pdo->prepare('UPDATE skp_documents SET approval_level = ? WHERE id = ? AND property_id = ?')
             ->execute([count($alur), $id, $pid]);
+
+        // Jejak tahap TERAKHIR baru ditulis sesudah dokumennya disetujui, jadi
+        // ia belum ikut terbawa saat snapshot di atas dibuat. Bagian jejaknya
+        // disegarkan sekali di sini — kalau tidak, paraf yang sudah disiapkan
+        // penyetuju akhir tidak pernah tercetak, padahal halaman "Paraf Saya"
+        // menjanjikan sebaliknya. Hanya kunci 'paraf' yang berubah; angka-angka
+        // dokumen tetap seperti saat disetujui.
+        $snapshot['paraf'] = ApprovalLine::jejakBeku($pdo, $id, (string) ($skp['doc_type'] ?? 'skp'));
+        $pdo->prepare('UPDATE skp_documents SET snapshot_json = ? WHERE id = ? AND property_id = ?')
+            ->execute([json_encode($snapshot, JSON_UNESCAPED_UNICODE), $id, $pid]);
     }
     audit($pdo, 'approve', 'skp_documents', (string) $id, ['skp_no' => $skpNo]);
     $revKe = (int) ($skp['revisi_ke'] ?? 0);
@@ -2750,10 +2764,11 @@ function skp_print(PDO $pdo): void
     require_once dirname(__DIR__) . '/pdf.php';
     $docTitle = skp_doc_title((string) ($skp['doc_type'] ?? 'skp'));
     $PDF_MODE = true;
+    $PARAF_OVERLAY = [];
     ob_start();
     include __DIR__ . '/skp_print_body.php';
     $html = ob_get_clean();
-    clara_render_letterhead_pdf($html, ($skp['skp_no'] ?: 'SKP') . ' - ' . $docTitle);
+    clara_render_letterhead_pdf($html, ($skp['skp_no'] ?: 'SKP') . ' - ' . $docTitle, $PARAF_OVERLAY);
 }
 
 // ─── Tanda tangan customer (PUBLIK, tanpa login — akses via sign_token) ───────

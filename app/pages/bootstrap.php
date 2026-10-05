@@ -159,6 +159,7 @@ function layout(string $title, callable $body, array $opts = []): void
         ['', 'audit', 'Activity Log', 'view_logs'],
         ['', 'deleted_transactions', 'Transaksi Dihapus', 'manage_deleted'],
         ['Akun', 'my_signature', 'Tanda Tangan Saya', 'view_dashboard'],
+        ['', 'my_paraf', 'Paraf Saya', 'approve_skp'],
     ];
 
     $currentProp  = current_property();
@@ -304,6 +305,7 @@ function layout(string $title, callable $body, array $opts = []): void
                     <div class="m-acct-menu">
                         <div class="hd"><b><?= h($_uName) ?></b><small><?= h($_uRole) ?></small></div>
                         <a href="?r=my_signature"><?= _m_icon('offer') ?> Tanda Tangan Saya</a>
+                        <?php if (can('approve_skp')): ?><a href="?r=my_paraf"><?= _m_icon('offer') ?> Paraf Saya</a><?php endif; ?>
                         <a href="?r=change_password">🔑 Ganti Password</a>
                         <a href="?view=desktop"><?= _m_icon('desktop') ?> Tampilan Desktop</a>
                         <a class="danger" href="?r=logout">↩ Logout</a>

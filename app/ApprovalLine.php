@@ -1,5 +1,9 @@
 <?php
 
+// jejakBeku() membekukan bentuk & posisi paraf ke dalam dokumen, jadi kelas
+// Paraf harus sudah ada saat itu — bukan baru dimuat ketika dokumen dicetak.
+require_once __DIR__ . '/Paraf.php';
+
 /**
  * Rantai persetujuan dokumen (SKP / SKS / Form Utilities).
  *
@@ -232,7 +236,7 @@ final class ApprovalLine
     public static function history(PDO $pdo, int $skpId): array
     {
         try {
-            $st = $pdo->prepare('SELECT step_no, role_name, action, approver_name, note, created_at
+            $st = $pdo->prepare('SELECT step_no, role_name, action, approver_user_id, approver_name, note, created_at
                                    FROM skp_approvals WHERE skp_id = ? ORDER BY id ASC');
             $st->execute([$skpId]);
             return $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -257,6 +261,41 @@ final class ApprovalLine
         $ke = min((int) ($skp['approval_level'] ?? 0) + 1, $dari);
         $kata = $ke === $dari ? 'persetujuan akhir' : 'paraf';
         return 'Menunggu ' . $kata . ' ' . $tahap['label'] . ' (tahap ' . $ke . ' dari ' . $dari . ')';
+    }
+
+    /**
+     * Keterangan yang MENYEBUT NAMA orangnya, bukan hanya jabatannya.
+     *
+     * "Menunggu paraf Asst. Manager" masih menyisakan pertanyaan: siapa Asst.
+     * Manager-nya, dan apakah dia tahu. "Masih menunggu paraf dari Asst.
+     * Manager — Yusri Yusuf" langsung menunjuk orang yang harus dihubungi.
+     * Kalau jabatan itu dipegang beberapa orang, semuanya disebut; kalau tidak
+     * ada seorang pun, itu justru keadaan yang harus diteriakkan, bukan
+     * disembunyikan di balik nama jabatan.
+     */
+    public static function keteranganNama(PDO $pdo, int $pid, array $skp, array $steps): string
+    {
+        if (($skp['status'] ?? '') !== 'submitted') return '';
+        if (!$steps) {
+            return 'Masih menunggu persetujuan Manager.';
+        }
+        $tahap = self::currentStep($skp, $steps);
+        if (!$tahap) return 'Masih menunggu persetujuan akhir.';
+
+        $dari = count($steps);
+        $ke   = min((int) ($skp['approval_level'] ?? 0) + 1, $dari);
+        $kata = $ke === $dari ? 'persetujuan' : 'paraf';
+
+        $nama = self::penungguNama($pdo, $pid, $skp, $steps);
+        $siapa = $nama
+            ? ' — ' . implode(' atau ', $nama)
+            : ' — belum ada orang aktif berjabatan ini di Master PIC';
+
+        // Dipakai role_name, bukan label: kalimatnya menyebut SIAPA yang
+        // ditunggu, dan label buatan admin ("Verifikasi Asst. Manager") membuat
+        // kalimatnya berbunyi "paraf dari Verifikasi Asst. Manager".
+        return 'Masih menunggu ' . $kata . ' dari ' . $tahap['role_name'] . $siapa
+             . ' (tahap ' . $ke . ' dari ' . $dari . ').';
     }
 
     /**
@@ -312,7 +351,7 @@ final class ApprovalLine
      * cetakan & halaman validasi QR tetap menyebut pemaraf yang sama walaupun
      * konfigurasi alurnya kemudian diubah.
      */
-    public static function jejakBeku(PDO $pdo, int $skpId): array
+    public static function jejakBeku(PDO $pdo, int $skpId, string $docType = 'skp'): array
     {
         $jejak = self::history($pdo, $skpId);
         // Hanya SIKLUS TERAKHIR yang dibekukan. Dokumen yang pernah ditolak lalu
@@ -335,13 +374,34 @@ final class ApprovalLine
         foreach ($jejak as $j) {
             $aksi = (string) ($j['action'] ?? '');
             if (in_array($aksi, ['tolak', 'ulang', 'kembali', 'batal'], true)) continue;
-            $perTahap[(int) $j['step_no']] = [
+            $baris = [
                 'step_no'   => (int) $j['step_no'],
                 'role_name' => (string) ($j['role_name'] ?? ''),
                 'action'    => $aksi,
                 'nama'      => (string) ($j['approver_name'] ?? ''),
                 'waktu'     => substr((string) ($j['created_at'] ?? ''), 0, 16),
             ];
+            // Bentuk & posisi paraf IKUT DIBEKUKAN, bukan dibaca ulang saat
+            // dokumen dicetak. Kalau dibaca ulang, pemeriksa yang menggeser
+            // parafnya hari ini akan ikut menggeser paraf di semua dokumen yang
+            // sudah terlanjur diserahkan ke client — padahal dokumen itu sudah
+            // jadi dan tidak boleh berubah lagi.
+            $uidParaf = (int) ($j['approver_user_id'] ?? 0);
+            if ($uidParaf > 0 && class_exists('Paraf')) {
+                $set = Paraf::ambil($pdo, $uidParaf, $docType);
+                if (Paraf::siap($set)) {
+                    $baris['paraf'] = [
+                        'bentuk'      => $set['bentuk'],
+                        'gambar_path' => $set['gambar_path'],
+                        'teks'        => $set['teks'],
+                        'pos_x'       => $set['pos_x'],
+                        'pos_y'       => $set['pos_y'],
+                        'lebar'       => $set['lebar'],
+                        'tampil_nama' => $set['tampil_nama'],
+                    ];
+                }
+            }
+            $perTahap[(int) $j['step_no']] = $baris;
         }
         ksort($perTahap);
         return array_values($perTahap);
@@ -484,11 +544,20 @@ final class ApprovalLine
         if (!$tahap) return [];
         if ($tahap['pic_name'] !== null) return [$tahap['pic_name']];
         try {
-            $st = $pdo->prepare("SELECT name FROM master_pic
-                                  WHERE property_id = ? AND status = 'active' AND role_name = ?
-                                  ORDER BY name");
-            $st->execute([$pid, $tahap['role_name']]);
-            return $st->fetchAll(PDO::FETCH_COLUMN) ?: [];
+            // Lintas properti, sejalan dengan jabatan(): Manager & Asst. Manager
+            // Casual Leasing sama untuk e-Walk dan Pentacity, tetapi di Master
+            // PIC hanya terdaftar di salah satunya. Dibatasi per properti,
+            // keterangan "menunggu paraf" jadi tanpa nama di mal yang lain.
+            // Diingat per request: daftar SKP memanggil ini sekali per baris,
+            // dan jabatan yang ditanyakan hampir selalu itu-itu juga.
+            static $ingat = [];
+            $kunci = $pid . '/' . $tahap['role_name'];
+            if (array_key_exists($kunci, $ingat)) return $ingat[$kunci];
+            $st = $pdo->prepare("SELECT DISTINCT name FROM master_pic
+                                  WHERE status = 'active' AND role_name = ?
+                                  ORDER BY (property_id = ?) DESC, name");
+            $st->execute([$tahap['role_name'], $pid]);
+            return $ingat[$kunci] = ($st->fetchAll(PDO::FETCH_COLUMN) ?: []);
         } catch (Throwable $e) {
             return [];
         }

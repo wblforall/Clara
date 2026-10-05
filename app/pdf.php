@@ -95,10 +95,25 @@ function clara_letterhead_mpdf(): \Mpdf\Mpdf
  * INLINE → tampil di viewer PDF (preview + bisa simpan/bagikan) di HP & PC.
  * Memanggil exit().
  */
-function clara_render_letterhead_pdf(string $html, string $filename): void
+function clara_render_letterhead_pdf(string $html, string $filename, array $overlay = []): void
 {
     $mpdf = clara_letterhead_mpdf();
     $mpdf->WriteHTML($html);
+    // Paraf yang posisinya dikunci dalam milimeter. WriteFixedPosHTML menaruh
+    // potongan HTML pada koordinat halaman apa adanya — berbeda dari CSS
+    // position:absolute yang dukungannya di mPDF terbatas dan mudah meleset.
+    // Ditulis SETELAH isi dokumen supaya berada di lapisan paling atas.
+    foreach ($overlay as $po) {
+        try {
+            $mpdf->WriteFixedPosHTML(
+                (string) $po['html'],
+                (float) $po['x'], (float) $po['y'],
+                (float) $po['w'], 24.0, 'visible'
+            );
+        } catch (\Throwable $e) {
+            error_log('paraf gagal ditempel di PDF: ' . $e->getMessage());
+        }
+    }
     $pdf  = $mpdf->Output('', \Mpdf\Output\Destination::STRING_RETURN);
     $safe = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $filename) ?: 'dokumen';
     while (ob_get_level() > 0) ob_end_clean();

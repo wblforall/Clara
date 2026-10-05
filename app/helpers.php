@@ -543,6 +543,7 @@ function permission_for_route(string $route): string
         'contract_requests', 'contract_request_form', 'contract_request_save', 'contract_request_print' => 'manage_skp',
         'skp_approve', 'skp_reject', 'skp_cancel_deal', 'skp_revision_decide' => 'approve_skp',
         'skp_revision_request' => 'manage_skp',
+        'my_paraf', 'my_paraf_save', 'my_paraf_reset' => 'approve_skp',
         'offers', 'offer_view', 'offer_form', 'offer_save', 'offer_status', 'offer_print', 'offer_template_rule' => 'manage_offers',
         'offer_templates', 'offer_template_form', 'offer_template_save' => 'manage_master',
         'm_home' => 'view_dashboard',

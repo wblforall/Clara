@@ -10,6 +10,35 @@ $h = $h ?? fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 // skp.php → pastikan helper ketentuan tersedia.
 if (!function_exists('skp_terms')) require_once __DIR__ . '/skp.php';
 if (!function_exists('skp_doc_title')) require_once __DIR__ . '/skp_modules.php';
+require_once dirname(__DIR__) . '/Paraf.php';
+
+/**
+ * Paraf bergambar yang ditempel di posisi tetap pada halaman.
+ *
+ * Bentuk & koordinatnya TIDAK dibaca dari pengaturan yang berlaku sekarang,
+ * melainkan dari yang sudah dikunci ke dokumen ini saat orangnya memaraf —
+ * supaya dokumen yang sudah diserahkan ke client tidak ikut berubah ketika
+ * pemeriksanya menggeser parafnya untuk dokumen berikutnya.
+ *
+ * Dipakai dua kali dengan cara berbeda: pratinjau HTML menempelkannya sebagai
+ * elemen absolut di dalam kertas, sedangkan PDF memakai WriteFixedPosHTML
+ * milik mPDF. Keduanya membaca milimeter yang sama persis.
+ */
+$PARAF_OVERLAY = [];
+foreach (($d['paraf'] ?? []) as $pf) {
+    $set = $pf['paraf'] ?? null;
+    if (!$set || !in_array($pf['action'] ?? '', ['paraf', 'approve'], true)) continue;
+    $kapan = ($pf['waktu'] ?? '') !== '' ? date('d/m/Y H:i', strtotime((string) $pf['waktu'])) : '';
+    $isi = Paraf::html($set, (string) ($pf['nama'] ?? ''), (string) ($pf['role_name'] ?? ''), $kapan,
+                       !empty($PDF_MODE) ? 'file' : 'web');
+    if ($isi === '') continue;
+    $PARAF_OVERLAY[] = [
+        'html' => $isi,
+        'x'    => (float) $set['pos_x'],
+        'y'    => (float) $set['pos_y'],
+        'w'    => (float) $set['lebar'],
+    ];
+}
 $skpNotes = skp_terms();
 // Nama di blok "Mengetahui": manajer yang tercatat di pengaturan
 // (doc_manager_name). Tanpa itu, dipakai nama yang menekan tombol Setujui —
