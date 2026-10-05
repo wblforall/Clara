@@ -3275,7 +3275,7 @@ function offer_template_form(PDO $pdo): void
         /* Tata letak dua panel: isian di kiri, pratinjau menempel di kanan. */
         .tpl-layout { display:flex; gap:16px; align-items:flex-start; margin-top:12px }
         .tpl-isian  { flex:1; min-width:0 }
-        .tpl-pv     { width:400px; flex:none; position:sticky; top:12px }
+        .tpl-pv     { width:430px; flex:none; position:sticky; top:12px }
         @media (max-width:1180px){ .tpl-layout{flex-wrap:wrap} .tpl-pv{width:100%;position:static} }
 
         .tpl-tab { display:flex; gap:2px; border-bottom:2px solid var(--line,#e2e8f0); margin:0 0 16px }
@@ -3298,13 +3298,12 @@ function offer_template_form(PDO $pdo): void
         .tpl-cek input { width:16px;height:16px;flex:none;margin:0 }
         .tpl-aksi { display:flex;gap:9px;align-items:center;margin-top:20px;padding-top:14px;border-top:1px solid var(--line,#e2e8f0) }
 
-        .tpl-pv .kep { display:flex;align-items:center;gap:8px;margin-bottom:7px }
-        .tpl-pv .kep b { font-size:12.5px;color:#334155 }
-        .tpl-pv .kep .st { font-size:11px;color:#94a3b8;margin-left:auto }
-        .tpl-pv .box { border:1px solid var(--line,#e2e8f0);border-radius:9px;overflow:auto;background:#eef2f7;
+        .tpl-pv .kep { display:flex;align-items:center;gap:6px;margin-bottom:7px;flex-wrap:nowrap }
+        .tpl-pv .kep b { font-size:12.5px;color:#334155;white-space:nowrap }
+        .tpl-pv .kep .st { font-size:10.5px;color:#94a3b8;margin-left:auto;white-space:nowrap }
+        .tpl-pv .box { border:1px solid var(--line,#e2e8f0);border-radius:9px;overflow:hidden;background:#eef2f7;
                        height:calc(100vh - 165px); min-height:430px }
-        .tpl-pv .skala { transform-origin:top left }
-        .tpl-pv iframe { width:794px;height:2800px;border:0;background:#fff;display:block }
+        .tpl-pv iframe { width:100%;height:100%;border:0;background:#eef2f7;display:block }
         </style>
 
         <div class="toolbar" style="gap:8px">
@@ -3504,10 +3503,20 @@ function offer_template_form(PDO $pdo): void
         </div>
 
         <aside class="tpl-pv">
-            <div class="kep"><b>Pratinjau surat</b>
-                <button type="button" class="btn light" id="pv-segar" style="padding:3px 9px;font-size:11.5px">Segarkan</button>
+            <div class="kep"><b>Pratinjau</b>
+                <button type="button" class="btn light" id="pv-segar" style="padding:3px 8px;font-size:11px">Segarkan</button>
+                <select id="pv-zoom" style="width:auto;padding:3px 5px;font-size:11px;margin:0">
+                    <option value="page-width" selected>Lebar penuh</option>
+                    <option value="50">50%</option>
+                    <option value="75">75%</option>
+                    <option value="100">100%</option>
+                    <option value="125">125%</option>
+                    <option value="150">150%</option>
+                    <option value="200">200%</option>
+                </select>
+                <button type="button" class="btn light" id="pv-tab" style="padding:3px 8px;font-size:11px" title="Buka di tab baru">&#8599;</button>
                 <span class="st" id="pv-st"></span></div>
-            <div class="box" id="pv-box"><div class="skala" id="pv-skala"><iframe id="pv-bingkai"></iframe></div></div>
+            <div class="box" id="pv-box"><iframe id="pv-bingkai" title="Pratinjau surat"></iframe></div>
         </aside>
         </div>
 
@@ -3547,37 +3556,50 @@ function offer_template_form(PDO $pdo): void
                 });
             });
 
-            // ── Pratinjau ─────────────────────────────────────────────────────
-            var box = document.getElementById('pv-box'), skala = document.getElementById('pv-skala');
+            // ── Pratinjau: PDF sungguhan, halamannya terpisah seperti nanti dicetak ──
             var bingkai = document.getElementById('pv-bingkai'), st = document.getElementById('pv-st');
-            var LEBAR = 794, TINGGI = 2800;
-            function pasKan() {
-                var s = Math.max(0.2, (box.clientWidth - 2) / LEBAR);
-                skala.style.transform = 'scale(' + s + ')';
-                skala.style.width  = (LEBAR * s) + 'px';
-                skala.style.height = (TINGGI * s) + 'px';
+            var selZoom = document.getElementById('pv-zoom');
+            var alamat = null;   // blob URL PDF yang sedang ditampilkan
+
+            function potongan() {
+                var z = selZoom.value;
+                // Penampil PDF peramban membaca pecahan alamat: FitH untuk lebar
+                // penuh, zoom=NN untuk persentase.
+                return (z === 'page-width' ? '#view=FitH' : '#zoom=' + z) + '&toolbar=0&navpanes=0';
             }
-            window.addEventListener('resize', pasKan);
+            function tampilkan() { if (alamat) bingkai.src = alamat + potongan(); }
+            selZoom.addEventListener('change', function () {
+                // Alamat harus dikosongkan dulu; penampil PDF tidak membaca ulang
+                // pecahan alamat kalau berkasnya dianggap sama.
+                bingkai.src = 'about:blank';
+                setTimeout(tampilkan, 30);
+            });
+            document.getElementById('pv-tab').addEventListener('click', function () {
+                if (alamat) window.open(alamat + potongan(), '_blank');
+            });
 
             var jeda = null, sedang = false;
             function gambar() {
                 if (sedang) return;
                 sedang = true; st.textContent = 'menggambar…';
                 fetch('?r=offer_template_preview', { method: 'POST', body: new FormData(form), cache: 'no-store' })
-                    .then(function (r) { return r.text(); })
-                    .then(function (html) {
-                        bingkai.srcdoc = html;
+                    .then(function (r) { return r.blob(); })
+                    .then(function (blob) {
+                        var lama = alamat;
+                        alamat = URL.createObjectURL(blob);
+                        tampilkan();
+                        if (lama) URL.revokeObjectURL(lama);   // jangan menumpuk di memori
                         st.textContent = 'diperbarui ' + new Date().toLocaleTimeString('id-ID');
                     })
                     .catch(function () { st.textContent = 'gagal memuat'; })
                     .finally(function () { sedang = false; });
             }
-            function nanti() { clearTimeout(jeda); jeda = setTimeout(gambar, 700); }
+            // Jeda sedikit lebih panjang: tiap gambar berarti satu PDF dibuat ulang.
+            function nanti() { clearTimeout(jeda); jeda = setTimeout(gambar, 900); }
             form.addEventListener('input', nanti);
             form.addEventListener('change', nanti);
             document.getElementById('pv-segar').addEventListener('click', gambar);
-            bingkai.addEventListener('load', pasKan);
-            pasKan(); gambar();
+            gambar();
         })();
         </script>
         <?php
@@ -3710,9 +3732,25 @@ function offer_template_preview(PDO $pdo): void
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
     $PRATINJAU = true;   // sembunyikan tombol cetak & petunjuk layar kecil
 
-    header('Content-Type: text/html; charset=utf-8');
-    header('X-Frame-Options: SAMEORIGIN');
+    // PDF SUNGGUHAN, bukan tiruan HTML. Dua alasan: halamannya terpisah persis
+    // seperti nanti dicetak (versi HTML menyambung ke bawah tanpa batas kertas),
+    // dan peramban menyediakan zoom-nya sendiri. Yang terlihat di pratinjau
+    // benar-benar berkas yang akan diterima client.
+    require_once dirname(__DIR__) . '/pdf.php';
+    $PDF_MODE = true;
+    ob_start();
     include __DIR__ . '/offer_print_template.php';
+    $html = ob_get_clean();
+    try {
+        clara_render_letterhead_pdf($html, 'Pratinjau Template');   // memanggil exit()
+    } catch (Throwable $e) {
+        // Pratinjau tidak boleh menjatuhkan halaman pengaturan — tampilkan sebabnya.
+        while (ob_get_level() > 0) ob_end_clean();
+        http_response_code(200);
+        header('Content-Type: text/html; charset=utf-8');
+        echo '<!doctype html><meta charset="utf-8"><div style="font:13px sans-serif;padding:16px;color:#b91c1c">'
+           . 'Pratinjau gagal dibuat: ' . $h($e->getMessage()) . '</div>';
+    }
     exit;
 }
 
