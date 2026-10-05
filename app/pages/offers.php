@@ -3256,289 +3256,343 @@ function offer_template_form(PDO $pdo): void
     $judul = array_merge(offer_judul_bawaan(), json_decode((string) ($t['judul_json'] ?? '{}'), true) ?: []);
     $bank  = array_merge(offer_bank_bawaan(),  json_decode((string) ($t['bank_json'] ?? '{}'), true) ?: []);
     $rinci = h(offer_rincian_text(json_decode((string) ($t['rincian_json'] ?? '[]'), true) ?: []));
-    $layout = ((string) ($t['layout'] ?? 'tabel')) === 'rincian' ? 'rincian' : 'tabel';
 
-    layout(($t ? 'Edit' : 'Tambah') . ' Template Dokumen', function () use ($t, $id, $module, $unitTypes, $val, $lines, $xl, $judul, $bank, $rinci, $layout) {
+    /** Satu select dua-pilihan — dipakai untuk semua setelan gaya. */
+    $pilih = function (string $nama, string $nilai, array $opsi) {
+        $o = '';
+        foreach ($opsi as $k => $label) {
+            $o .= '<option value="' . h((string) $k) . '"' . ($nilai === (string) $k ? ' selected' : '') . '>' . h($label) . '</option>';
+        }
+        return '<select name="' . h($nama) . '">' . $o . '</select>';
+    };
+
+    layout(($t ? 'Edit' : 'Tambah') . ' Template Dokumen',
+      function () use ($t, $id, $module, $unitTypes, $val, $lines, $xl, $judul, $bank, $rinci, $pilih) {
         $isCl = $module === 'cl';
+        $g = fn(string $k, string $d) => (string) ($t[$k] ?? $d);
         ?>
-        <div class="toolbar"><a class="btn light" href="?r=offer_templates&module=<?= h($module) ?>">← Daftar Template</a>
-            <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h(_tpl_modules()[$module]) ?></span></div>
-        <form class="panel" method="post" action="?r=offer_template_save" style="margin-top:12px">
+        <style>
+        /* Tata letak dua panel: isian di kiri, pratinjau menempel di kanan. */
+        .tpl-layout { display:flex; gap:16px; align-items:flex-start; margin-top:12px }
+        .tpl-isian  { flex:1; min-width:0 }
+        .tpl-pv     { width:400px; flex:none; position:sticky; top:12px }
+        @media (max-width:1180px){ .tpl-layout{flex-wrap:wrap} .tpl-pv{width:100%;position:static} }
+
+        .tpl-tab { display:flex; gap:2px; border-bottom:2px solid var(--line,#e2e8f0); margin:0 0 16px }
+        .tpl-tab button { appearance:none;border:0;background:none;padding:9px 15px;font-size:13px;font-weight:600;
+                          color:#64748b;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px }
+        .tpl-tab button.on { color:#0d9488; border-bottom-color:#0d9488 }
+
+        .tpl-sek { font-size:11.5px;font-weight:700;color:#0f766e;letter-spacing:.05em;text-transform:uppercase;
+                   margin:20px 0 9px;padding-bottom:4px;border-bottom:1px solid var(--line,#e2e8f0) }
+        .tpl-sek:first-child { margin-top:0 }
+        .tpl-row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:11px 14px; margin-bottom:13px }
+        .tpl-row.dua { grid-template-columns:repeat(2,minmax(0,1fr)) }
+        .tpl-row .lebar { grid-column:1/-1 }
+        .tpl-f > label { display:block;font-size:12px;font-weight:600;color:#334155;margin:0 0 4px }
+        .tpl-f input, .tpl-f select, .tpl-f textarea { width:100%; margin:0 }
+        .tpl-f .ket { font-size:11px;color:#94a3b8;margin-top:4px;line-height:1.4 }
+        .tpl-f .ket code { background:#f1f5f9;padding:0 3px;border-radius:3px }
+        .tpl-cek { display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;
+                   border:1px solid var(--line,#e2e8f0);border-radius:7px;padding:9px 11px;background:#f8fafc }
+        .tpl-cek input { width:16px;height:16px;flex:none;margin:0 }
+        .tpl-aksi { display:flex;gap:9px;align-items:center;margin-top:20px;padding-top:14px;border-top:1px solid var(--line,#e2e8f0) }
+
+        .tpl-pv .kep { display:flex;align-items:center;gap:8px;margin-bottom:7px }
+        .tpl-pv .kep b { font-size:12.5px;color:#334155 }
+        .tpl-pv .kep .st { font-size:11px;color:#94a3b8;margin-left:auto }
+        .tpl-pv .box { border:1px solid var(--line,#e2e8f0);border-radius:9px;overflow:auto;background:#eef2f7;
+                       height:calc(100vh - 165px); min-height:430px }
+        .tpl-pv .skala { transform-origin:top left }
+        .tpl-pv iframe { width:794px;height:2800px;border:0;background:#fff;display:block }
+        </style>
+
+        <div class="toolbar" style="gap:8px">
+            <a class="btn light" href="?r=offer_templates&module=<?= h($module) ?>">&larr; Daftar Template</a>
+            <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h(_tpl_modules()[$module]) ?></span>
+        </div>
+
+        <div class="tpl-layout">
+        <div class="tpl-isian">
+        <form class="panel" id="tpl-form" method="post" action="?r=offer_template_save" style="margin:0">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="id" value="<?= (int)$id ?>">
-            <div class="form-grid">
-                <div><label>Nama Template</label><input name="name" required value="<?= $val('name') ?>" placeholder="<?= $isCl ? 'mis. Fashion Booth' : 'mis. Sewa Gudang (default)' ?>"></div>
-                <div>
-                    <label>Modul</label>
-                    <select name="module" <?= $t ? 'disabled' : '' ?>>
-                        <?php foreach (_tpl_modules() as $mk => $ml): ?><option value="<?= h($mk) ?>" <?= $mk === $module ? 'selected' : '' ?>><?= h($ml) ?></option><?php endforeach; ?>
-                    </select>
-                    <?php if ($t): ?><input type="hidden" name="module" value="<?= h($module) ?>"><div class="help">Modul tidak bisa dipindah setelah template dibuat.</div>
-                    <?php else: ?><div class="help">Exhibition memakai tipe unit; Media &amp; Gudang satu template untuk semua unit.</div><?php endif; ?>
+            <?php if ($t): ?><input type="hidden" name="module" value="<?= h($module) ?>"><?php endif; ?>
+            <?php if (!$isCl): ?><input type="hidden" name="unit_type" value="<?= h((string)($t['unit_type'] ?? '')) ?>"><?php endif; ?>
+
+            <nav class="tpl-tab">
+                <button type="button" class="on" data-p="dasar">Dasar</button>
+                <button type="button" data-p="bentuk">Bentuk &amp; Gaya</button>
+                <button type="button" data-p="isi">Isi Surat</button>
+                <button type="button" data-p="kata">Judul &amp; Penutup</button>
+            </nav>
+
+            <!-- ══ DASAR ══ -->
+            <section data-p="dasar">
+                <div class="tpl-row">
+                    <div class="tpl-f"><label>Nama Template</label>
+                        <input name="name" required value="<?= $val('name') ?>" placeholder="mis. Pushcart"></div>
+                    <?php if (!$t): ?>
+                    <div class="tpl-f"><label>Modul</label>
+                        <select name="module"><?php foreach (_tpl_modules() as $mk => $ml): ?>
+                            <option value="<?= h($mk) ?>" <?= $mk === $module ? 'selected' : '' ?>><?= h($ml) ?></option>
+                        <?php endforeach; ?></select></div>
+                    <?php endif; ?>
+                    <div class="tpl-f"><label>Status</label>
+                        <?= $pilih('status', $g('status', 'active'), ['active' => 'Aktif', 'inactive' => 'Nonaktif']) ?></div>
+                    <?php if ($isCl): ?>
+                    <div class="tpl-f"><label>Tipe Unit</label>
+                        <select name="unit_type">
+                            <option value="">Semua tipe</option>
+                            <?php foreach ($unitTypes as $ut): ?><option value="<?= h($ut) ?>" <?= ($t['unit_type'] ?? null) === $ut ? 'selected' : '' ?>><?= h($ut) ?></option><?php endforeach; ?>
+                            <?php $utc = (string)($t['unit_type'] ?? ''); if ($utc !== '' && !in_array($utc, $unitTypes, true)): ?><option value="<?= h($utc) ?>" selected><?= h($utc) ?></option><?php endif; ?>
+                        </select>
+                        <div class="ket">Sekadar usulan awal &mdash; sales tetap bisa memilih template mana pun.</div></div>
+                    <?php endif; ?>
+                    <div class="tpl-f lebar"><label>Judul Dokumen / Perihal</label>
+                        <input name="perihal" value="<?= $val('perihal') ?>" placeholder="Penawaran Harga Sewa Pushcart"></div>
+                    <div class="tpl-f lebar"><label>Paragraf Pembuka</label>
+                        <textarea name="intro" rows="2" placeholder="Bersama ini kami Manajemen e-Walk dan Pentacity Mall Balikpapan menawarkan &hellip;"><?= $val('intro') ?></textarea></div>
+                    <div class="lebar">
+                        <label class="tpl-cek"><input type="checkbox" name="is_default" value="1" <?= !empty($t['is_default']) ? 'checked' : '' ?>>
+                            <span>Jadikan template bawaan &mdash; otomatis terpilih saat sales membuat penawaran</span></label>
+                    </div>
                 </div>
+            </section>
+
+            <!-- ══ BENTUK & GAYA ══ -->
+            <section data-p="bentuk" hidden>
+                <div class="tpl-sek">Bentuk surat</div>
+                <div class="tpl-row">
+                    <div class="tpl-f"><label>Bentuk</label>
+                        <?= $pilih('layout', $g('layout', 'tabel'), ['tabel' => 'Tabel harga', 'rincian' => 'Daftar bernomor']) ?>
+                        <div class="ket">Tabel: Pushcart, Snack Corner, Atrium. Bernomor: Foodcourt.</div></div>
+                    <div class="tpl-f"><label>Judul bagian</label>
+                        <?= $pilih('gaya_judul', $g('gaya_judul', 'aplikasi'), ['aplikasi' => 'Hijau polos', 'romawi' => 'Hitam I, II, III']) ?></div>
+                    <div class="tpl-f"><label>Gaya daftar</label>
+                        <?= $pilih('gaya_daftar', $g('gaya_daftar', 'nomor'), ['nomor' => 'Bernomor 1. 2. 3.', 'bullet' => 'Bullet']) ?></div>
+                    <div class="tpl-f"><label>Letak rekening</label>
+                        <?= $pilih('gaya_bank', $g('gaya_bank', 'kotak'), ['kotak' => 'Kotak tersendiri', 'menyatu' => 'Menyatu di Cara Pembayaran']) ?></div>
+                    <div class="tpl-f"><label>Penulisan rupiah</label>
+                        <?= $pilih('gaya_uang', $g('gaya_uang', 'polos'), ['polos' => 'Rp 7.000.000', 'kertas' => 'Rp. 7.000.000,-']) ?></div>
+                    <div class="tpl-f"><label>Sebutan TTD kanan</label>
+                        <input name="ttd_kanan" value="<?= h((string) ($t['ttd_kanan'] ?? 'Calon Penyewa')) ?>" placeholder="Calon Penyewa">
+                        <div class="ket">Kosongkan = langsung nama penanggung jawab.</div></div>
+                </div>
+
+                <div class="tpl-sek">PPN</div>
+                <div class="tpl-row">
+                    <div class="tpl-f"><label>Persen</label>
+                        <input type="number" step="0.5" min="0" max="100" name="ppn_persen" value="<?= $val('ppn_persen', '12') ?>"></div>
+                    <div class="tpl-f"><label>Rumus PMK</label>
+                        <?= $pilih('ppn_rumus', (!$t || !empty($t['ppn_rumus'])) ? '1' : '0', ['1' => 'Pakai (Nilai × 11/12 × tarif)', '0' => 'Tidak']) ?></div>
+                    <div class="tpl-f"><label>Tabel Rincian Biaya</label>
+                        <?= $pilih('rincian_biaya', (!$t || !empty($t['rincian_biaya'])) ? '1' : '0', ['1' => 'Dicetak', '0' => 'Tidak dicetak']) ?></div>
+                    <div class="tpl-f lebar"><label>Catatan PPN</label>
+                        <input name="ppn_catatan" value="<?= $val('ppn_catatan') ?>" placeholder="*PPN 12% Sesuai PMK Nomor 131 Tahun 2024 dengan perhitungan (NILAI SEWA x 11/12 x 12%)">
+                        <div class="ket">Mengubah kalimat saja. 12% + rumus PMK = 11% polos, nilainya sama persis.</div></div>
+                </div>
+
+                <div class="tpl-sek">Tambahan buatan aplikasi</div>
+                <div class="tpl-row dua">
+                    <div class="tpl-f"><label>Kotak "Penawaran berlaku s/d"</label>
+                        <?= $pilih('tampil_berlaku', (!$t || !empty($t['tampil_berlaku'])) ? '1' : '0', ['1' => 'Dicetak', '0' => 'Tidak dicetak']) ?></div>
+                    <div class="tpl-f"><label>QR "Scan untuk validasi"</label>
+                        <?= $pilih('tampil_qr', (!$t || !empty($t['tampil_qr'])) ? '1' : '0', ['1' => 'Dicetak', '0' => 'Tidak dicetak']) ?>
+                        <div class="ket">Dipakai client memastikan surat asli &mdash; sebaiknya tetap dicetak.</div></div>
+                </div>
+
                 <?php if ($isCl): ?>
-                <div>
-                    <label>Tipe Unit</label>
-                    <select name="unit_type">
-                        <option value="">(default — semua tipe lain)</option>
-                        <?php foreach ($unitTypes as $ut): ?><option value="<?= h($ut) ?>" <?= ($t['unit_type'] ?? null) === $ut ? 'selected' : '' ?>><?= h($ut) ?></option><?php endforeach; ?>
-                        <?php $utc = (string)($t['unit_type'] ?? ''); if ($utc !== '' && !in_array($utc, $unitTypes, true)): ?><option value="<?= h($utc) ?>" selected><?= h($utc) ?></option><?php endif; ?>
-                    </select>
-                    <div class="help">Satu template per tipe unit. "(default)" dipakai utk tipe tanpa template khusus.</div>
+                <div class="tpl-sek">Isian awal penawaran</div>
+                <div class="tpl-row">
+                    <div class="tpl-f"><label>DP</label>
+                        <?= $pilih('dp_required', (!$t || !empty($t['dp_required'])) ? '1' : '0', ['1' => 'Wajib', '0' => 'Tanpa DP (deposit saja)']) ?></div>
+                    <div class="tpl-f"><label>Default DP (bulan)</label>
+                        <input type="number" step="0.5" min="0" name="dp_months_default" value="<?= $val('dp_months_default', '2') ?>"></div>
+                    <div class="tpl-f"><label>Listrik per bulan (Rp)</label>
+                        <input type="number" min="0" step="1000" name="electricity_default" value="<?= $val('electricity_default', '150000') ?>"></div>
                 </div>
-                <?php else: ?>
-                <input type="hidden" name="unit_type" value="<?= h((string)($t['unit_type'] ?? '')) ?>">
                 <?php endif; ?>
-                <div><label>Judul Dokumen / Perihal</label><input name="perihal" value="<?= $val('perihal') ?>" placeholder="<?= $isCl ? 'Surat Penawaran Sewa ...' : ($module === 'gudang' ? 'Surat Konfirmasi Sewa Gudang' : 'Form Utilities Casual Leasing') ?>"></div>
-                <div>
-                    <label>Status</label>
-                    <select name="status"><option value="active" <?= ($t['status'] ?? 'active') === 'active' ? 'selected' : '' ?>>Aktif</option><option value="inactive" <?= ($t['status'] ?? '') === 'inactive' ? 'selected' : '' ?>>Nonaktif</option></select>
+            </section>
+
+            <!-- ══ ISI SURAT ══ -->
+            <section data-p="isi" hidden>
+                <?php if ($isCl): ?>
+                <div class="tpl-row">
+                    <div class="tpl-f lebar"><label>Bullet kolom "Keterangan"</label>
+                        <textarea name="ket" rows="4" placeholder="Masa sewa {hari} hari&#10;Periode sewa {periode_panjang}&#10;Harga belum termasuk PPN {ppn_persen}"><?= $lines('ket_json') ?></textarea>
+                        <div class="ket">1 baris = 1 bullet &middot; <code>{hari}</code> <code>{periode_panjang}</code> <code>{ppn_persen}</code> <code>{luas}</code> <code>{harga}</code></div></div>
+                    <div class="tpl-f lebar" id="blok-rincian"><label>Daftar Bernomor</label>
+                        <textarea name="rincian" rows="9" placeholder="Lokasi :: BSB Foodcourt, Pentacity Shopping Avenue&#10;Alamat :: Jl Jend. Sudirman, Balikpapan&#10;Area &amp; Ukuran :: {luas}"><?= $rinci ?></textarea>
+                        <div class="ket">Tulis <code>Label :: isi</code>. Baris lanjutan menempel ke baris di atasnya.</div></div>
                 </div>
+                <div class="tpl-row dua">
+                    <div class="tpl-f"><label>Fasilitas</label>
+                        <textarea name="fasilitas" rows="4"><?= $lines('fasilitas_json') ?></textarea></div>
+                    <div class="tpl-f"><label>Media Promosi</label>
+                        <textarea name="media" rows="4"><?= $lines('media_json') ?></textarea></div>
+                    <div class="tpl-f lebar"><label>Cara Pembayaran</label>
+                        <textarea name="payment" rows="5"><?= $lines('payment_json') ?></textarea>
+                        <div class="ket">1 baris = 1 poin &middot; <code>{dp}</code> <code>{deposit}</code> <code>{total}</code> <code>{grand}</code></div></div>
+                </div>
+                <?php endif; ?>
+
+                <?php if ($module === 'gudang'): ?>
+                <div class="tpl-row"><div class="tpl-f lebar"><label>Bullet Kolom "Keterangan"</label>
+                    <textarea name="x_keterangan" rows="3"><?= $xl('keterangan_default') ?></textarea>
+                    <div class="ket"><code>{periode}</code> <code>{deposit}</code></div></div></div>
+                <?php elseif ($module === 'media'): ?>
+                <div class="tpl-row dua">
+                    <div class="tpl-f"><label>Daftar Utilities</label><textarea name="x_utilities" rows="4"><?= $xl('utilities') ?></textarea></div>
+                    <div class="tpl-f"><label>Daftar Media Promo</label><textarea name="x_media_promo" rows="4"><?= $xl('media_promo') ?></textarea></div>
+                    <div class="tpl-f lebar"><label>Pilihan Parkir Kendaraan</label><textarea name="x_parkir" rows="2"><?= $xl('parkir') ?></textarea></div>
+                </div>
+                <?php endif; ?>
+
+                <div class="tpl-row">
+                    <div class="tpl-f lebar"><label><?= $module === 'gudang' ? 'Peraturan Sewa' : ($module === 'media' ? 'Catatan Formulir' : 'Ketentuan &amp; Persyaratan') ?></label>
+                        <textarea name="terms" rows="9"><?= $lines('terms_json') ?></textarea></div>
+                    <div class="tpl-f lebar"><label>Catatan Kaki</label>
+                        <textarea name="notes" rows="2"><?= $lines('notes_json') ?></textarea></div>
+                </div>
+            </section>
+
+            <!-- ══ JUDUL & PENUTUP ══ -->
+            <section data-p="kata" hidden>
+                <div class="tpl-sek">Judul tiap bagian</div>
+                <div class="tpl-row">
+                    <div class="tpl-f"><label>Rincian Biaya</label><input name="judul_rincian_biaya" value="<?= h($judul['rincian_biaya']) ?>"></div>
+                    <div class="tpl-f"><label>Fasilitas</label><input name="judul_fasilitas" value="<?= h($judul['fasilitas']) ?>"></div>
+                    <div class="tpl-f"><label>Media Promosi</label><input name="judul_media" value="<?= h($judul['media']) ?>"></div>
+                    <div class="tpl-f"><label>Cara Pembayaran</label><input name="judul_pembayaran" value="<?= h($judul['pembayaran']) ?>"></div>
+                    <div class="tpl-f"><label>Ketentuan</label><input name="judul_ketentuan" value="<?= h($judul['ketentuan']) ?>"></div>
+                </div>
+
+                <div class="tpl-sek">Judul kolom tabel</div>
+                <div class="tpl-row">
+                    <div class="tpl-f"><label>Kolom 1 &mdash; lokasi</label><input name="judul_kolom_lokasi" value="<?= h($judul['kolom_lokasi']) ?>"></div>
+                    <div class="tpl-f"><label>Kolom 2 &mdash; luas</label><input name="judul_kolom_luas" value="<?= h($judul['kolom_luas']) ?>"></div>
+                    <div class="tpl-f"><label>Kolom 3 &mdash; harga</label><input name="judul_kolom_harga" value="<?= h($judul['kolom_harga']) ?>"></div>
+                    <div class="tpl-f"><label>Kolom 4 &mdash; keterangan</label><input name="judul_kolom_ket" value="<?= h($judul['kolom_ket']) ?>"></div>
+                </div>
+
+                <div class="tpl-sek">Rekening pembayaran</div>
+                <div class="tpl-row">
+                    <div class="tpl-f"><label>Kalimat pembuka</label><input name="bank_kalimat" value="<?= h($bank['kalimat']) ?>"></div>
+                    <div class="tpl-f"><label>Atas nama</label><input name="bank_atas_nama" value="<?= h($bank['atas_nama']) ?>"></div>
+                    <div class="tpl-f"><label>Bank</label><input name="bank_bank" value="<?= h($bank['bank']) ?>"></div>
+                    <div class="tpl-f lebar"><label>Nomor rekening</label><input name="bank_rekening" value="<?= h($bank['rekening']) ?>">
+                        <div class="ket">Kosongkan bila blok rekening tidak perlu dicetak.</div></div>
+                </div>
+
+                <div class="tpl-sek">Kalimat penutup</div>
+                <div class="tpl-row">
+                    <div class="tpl-f lebar"><label>Kalimat kontak</label>
+                        <textarea name="penutup" rows="2" placeholder="Untuk keterangan lebih lanjut dapat menghubungi kantor kami {KANTOR} atau whatsapp ke {PIC_BESAR} di nomor {WA}."><?= $val('penutup') ?></textarea>
+                        <div class="ket"><code>{PIC}</code> <code>{PIC_BESAR}</code> <code>{WA}</code> <code>{EMAIL}</code> <code>{KANTOR}</code> &mdash; diisi dari Master PIC sales pembuat.</div></div>
+                    <div class="tpl-f lebar"><label>Kalimat terakhir</label>
+                        <input name="penutup_akhir" value="<?= $val('penutup_akhir') ?>" placeholder="<?= h(offer_penutup_akhir_bawaan()) ?>"></div>
+                </div>
+            </section>
+
+            <div class="tpl-aksi">
+                <button type="submit">&#128190; Simpan Template</button>
+                <a class="btn secondary" href="?r=offer_templates&module=<?= h($module) ?>">Batal</a>
+                <span class="help" style="margin-left:auto">Ctrl+B di kotak isian = <strong>tebal</strong></span>
             </div>
-            <div style="margin-top:10px"><label>Paragraf Pembuka (intro)</label><textarea name="intro" rows="2" style="width:100%"><?= $val('intro') ?></textarea></div>
-
-            <?php if ($isCl): ?>
-            <div style="display:flex;gap:10px;align-items:flex-start;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:11px 14px;margin-top:12px">
-                <input type="checkbox" name="dp_required" id="dp_required" value="1" style="width:18px;height:18px;margin-top:1px" <?= !$t || !empty($t['dp_required']) ? 'checked' : '' ?>>
-                <div>
-                    <label for="dp_required" style="font-weight:700">Wajib DP (Down Payment)</label>
-                    <div class="help" style="margin-top:2px">Centang = penawaran tipe ini perlu DP. Kosongkan utk booth <strong>deposit-only</strong> (mis. Fashion/Food Stall) — validasi DP min 2 bln dilewati.</div>
-                    <div style="margin-top:6px"><label style="font-size:12px">Default DP (bulan)</label> <input type="number" step="0.5" min="0" name="dp_months_default" value="<?= $val('dp_months_default', '2') ?>" style="width:90px"></div>
-                </div>
-            </div>
-            <?php /* Baseline biaya listrik — dipakai sebagai isian awal penawaran baru. */ ?>
-            <div style="display:flex;gap:10px;align-items:flex-start;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:11px 14px;margin-top:12px">
-                <div>
-                    <label style="font-weight:700">Biaya Listrik Per Bulan (default)</label>
-                    <div class="help" style="margin-top:2px">Nominal yang otomatis terisi saat sales membuat penawaran baru dengan tipe ini. Di penawarannya masih bisa diubah atau dilepas centangnya.</div>
-                    <div style="margin-top:6px;display:flex;align-items:stretch;max-width:220px">
-                        <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
-                        <input type="number" min="0" step="1000" name="electricity_default" value="<?= $val('electricity_default', '150000') ?>" style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right">
-                    </div>
-                </div>
-            </div>
-            <?php /* ── Bentuk surat ─────────────────────────────────────────────── */ ?>
-            <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:11px 14px;margin-top:12px">
-                <label style="font-weight:700">Bentuk Surat</label>
-                <div class="help" style="margin-top:2px">Dua bentuk yang dipakai di kertas selama ini. Pilih yang sesuai &mdash; isian di bawah menyesuaikan sendiri.</div>
-                <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:7px">
-                    <label style="font-weight:400;display:flex;gap:7px;align-items:flex-start;cursor:pointer;max-width:330px">
-                        <input type="radio" name="layout" value="tabel" <?= $layout === 'tabel' ? 'checked' : '' ?> style="margin-top:3px">
-                        <span><strong>Tabel harga</strong><br><span class="help">Lokasi / Luas / Harga Sewa / Keterangan &mdash; dipakai Pushcart, Snack Corner, Atrium, pameran.</span></span>
-                    </label>
-                    <label style="font-weight:400;display:flex;gap:7px;align-items:flex-start;cursor:pointer;max-width:330px">
-                        <input type="radio" name="layout" value="rincian" <?= $layout === 'rincian' ? 'checked' : '' ?> style="margin-top:3px">
-                        <span><strong>Daftar bernomor</strong><br><span class="help">1. Lokasi, 2. Alamat, 3. Area &amp; Ukuran, &hellip; &mdash; dipakai Foodcourt / sewa jangka panjang.</span></span>
-                    </label>
-                </div>
-            </div>
-
-            <div style="margin-top:10px">
-                <label style="font-weight:700">Gaya Daftar (Cara Pembayaran &amp; Ketentuan)</label>
-                <div style="display:flex;gap:18px;margin-top:5px">
-                    <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer">
-                        <input type="radio" name="gaya_daftar" value="nomor" <?= ($t['gaya_daftar'] ?? 'nomor') !== 'bullet' ? 'checked' : '' ?>> Bernomor (1. 2. 3.)
-                    </label>
-                    <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer">
-                        <input type="radio" name="gaya_daftar" value="bullet" <?= ($t['gaya_daftar'] ?? '') === 'bullet' ? 'checked' : '' ?>> Bullet (&bull;) &mdash; seperti surat kertas
-                    </label>
-                </div>
-            </div>
-
-            <div class="form-grid" style="margin-top:10px">
-                <div>
-                    <label style="font-weight:700">Gaya Judul Bagian</label>
-                    <div style="margin-top:5px">
-                        <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer">
-                            <input type="radio" name="gaya_judul" value="aplikasi" <?= ($t['gaya_judul'] ?? 'aplikasi') !== 'romawi' ? 'checked' : '' ?>> Hijau tanpa nomor (tampilan CLARA)
-                        </label>
-                        <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer;margin-top:3px">
-                            <input type="radio" name="gaya_judul" value="romawi" <?= ($t['gaya_judul'] ?? '') === 'romawi' ? 'checked' : '' ?>> Hitam bernomor I, II, III &mdash; seperti surat kertas
-                        </label>
-                    </div>
-                </div>
-                <div>
-                    <label style="font-weight:700">Letak Blok Rekening</label>
-                    <div style="margin-top:5px">
-                        <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer">
-                            <input type="radio" name="gaya_bank" value="kotak" <?= ($t['gaya_bank'] ?? 'kotak') !== 'menyatu' ? 'checked' : '' ?>> Kotak tersendiri
-                        </label>
-                        <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer;margin-top:3px">
-                            <input type="radio" name="gaya_bank" value="menyatu" <?= ($t['gaya_bank'] ?? '') === 'menyatu' ? 'checked' : '' ?>> Menyatu di Cara Pembayaran &mdash; seperti surat kertas
-                        </label>
-                    </div>
-                </div>
-            </div>
-
-            <?php /* ── PPN ──────────────────────────────────────────────────────── */ ?>
-            <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:11px 14px;margin-top:12px">
-                <label style="font-weight:700">PPN</label>
-                <div class="help" style="margin-top:2px">Hanya mengubah <strong>kalimat</strong> di surat, bukan aturan uangnya.
-                    PPN 12% dengan rumus PMK menghasilkan tarif efektif yang sama persis dengan 11% polos
-                    (12% &times; 11/12 = 11%). Dikenakan atau tidaknya tetap ditentukan centang PPN di penawaran.</div>
-                <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
-                    <div><label style="font-size:12px">Persen</label>
-                        <input type="number" step="0.5" min="0" max="100" name="ppn_persen" value="<?= $val('ppn_persen', '12') ?>" style="width:90px"></div>
-                    <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer;padding-bottom:9px">
-                        <input type="checkbox" name="ppn_rumus" value="1" <?= !$t || !empty($t['ppn_rumus']) ? 'checked' : '' ?>>
-                        <span style="font-size:13px">Pakai rumus PMK (Nilai &times; 11/12 &times; tarif)</span>
-                    </label>
-                </div>
-                <div style="margin-top:8px"><label style="font-size:12px">Catatan PPN (tercetak kecil di bawah kolom Keterangan)</label>
-                    <input name="ppn_catatan" value="<?= $val('ppn_catatan') ?>" placeholder="*PPN 12% Sesuai PMK Nomor 131 Tahun 2024 dengan perhitungan (NILAI SEWA x 11/12 x 12%)" style="width:100%"></div>
-            </div>
-
-            <div style="display:flex;gap:10px;align-items:flex-start;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:11px 14px;margin-top:12px">
-                <input type="checkbox" name="rincian_biaya" id="rincian_biaya" value="1" style="width:18px;height:18px;margin-top:1px" <?= !$t || !empty($t['rincian_biaya']) ? 'checked' : '' ?>>
-                <div>
-                    <label for="rincian_biaya" style="font-weight:700">Cetak tabel "Rincian Biaya"</label>
-                    <div class="help" style="margin-top:2px">Tabel hitungan baris demi baris (subtotal, PPN, deposit, grand total) buatan aplikasi.
-                        Surat kertas yang selama ini dipakai <strong>tidak</strong> memuatnya &mdash; lepas centang bila ingin sama persis.</div>
-                </div>
-            </div>
-
-            <div style="margin-top:12px"><label>Bullet kolom "Keterangan" <span class="muted" style="font-weight:400">(1 baris = 1 bullet &middot; <code>{hari}</code> <code>{periode}</code> <code>{ppn_persen}</code> <code>{luas}</code> <code>{harga}</code>)</span></label><textarea name="ket" rows="4" style="width:100%" placeholder="Masa sewa {hari} hari&#10;Periode sewa {periode}&#10;Harga belum termasuk PPN {ppn_persen}&#10;Harga belum termasuk biaya Listrik"><?= $lines('ket_json') ?></textarea></div>
-
-            <div style="margin-top:10px"><label>Daftar Bernomor <span class="muted" style="font-weight:400">(hanya untuk bentuk "Daftar bernomor" &middot; tulis <code>Label :: isi</code>, baris lanjutannya menempel)</span></label><textarea name="rincian" rows="10" style="width:100%" placeholder="Lokasi :: BSB Foodcourt, Pentacity Shopping Avenue&#10;@Balikpapan Superblock&#10;Alamat :: Jl Jend. Sudirman, Balikpapan&#10;Area &amp; Ukuran :: {luas}&#10;Periode Sewa :: {periode}"><?= $rinci ?></textarea></div>
-
-            <div style="margin-top:12px"><label>Fasilitas <span class="muted" style="font-weight:400">(1 baris = 1 poin)</span></label><textarea name="fasilitas" rows="3" style="width:100%"><?= $lines('fasilitas_json') ?></textarea></div>
-            <div style="margin-top:10px"><label>Media Promosi <span class="muted" style="font-weight:400">(1 baris = 1 poin &middot; bagian tersendiri di surat)</span></label><textarea name="media" rows="3" style="width:100%"><?= $lines('media_json') ?></textarea></div>
-            <div style="margin-top:10px"><label>Cara Pembayaran <span class="muted" style="font-weight:400">(1 baris = 1 poin · placeholder: <code>{dp}</code> <code>{deposit}</code> <code>{total}</code> <code>{ppn}</code> <code>{grand}</code>)</span></label><textarea name="payment" rows="4" style="width:100%"><?= $lines('payment_json') ?></textarea></div>
-            <?php endif; ?>
-
-            <?php if ($module === 'gudang'): ?>
-            <div style="margin-top:12px"><label>Bullet Kolom "Keterangan" <span class="muted" style="font-weight:400">(1 baris = 1 bullet · placeholder: <code>{periode}</code> <code>{deposit}</code>)</span></label><textarea name="x_keterangan" rows="3" style="width:100%"><?= $xl('keterangan_default') ?></textarea>
-                <div class="help">Dipakai sebagai isi awal kolom Keterangan pada tabel harga sewa gudang — masih bisa diubah per dokumen.</div></div>
-            <?php elseif ($module === 'media'): ?>
-            <div style="margin-top:12px"><label>Daftar Utilities <span class="muted" style="font-weight:400">(1 baris = 1 item)</span></label><textarea name="x_utilities" rows="4" style="width:100%"><?= $xl('utilities') ?></textarea></div>
-            <div style="margin-top:10px"><label>Daftar Media Promo <span class="muted" style="font-weight:400">(1 baris = 1 item)</span></label><textarea name="x_media_promo" rows="5" style="width:100%"><?= $xl('media_promo') ?></textarea></div>
-            <div style="margin-top:10px"><label>Pilihan Parkir Kendaraan <span class="muted" style="font-weight:400">(1 baris = 1 item)</span></label><textarea name="x_parkir" rows="2" style="width:100%"><?= $xl('parkir') ?></textarea></div>
-            <?php endif; ?>
-
-            <div style="margin-top:10px"><label><?= $module === 'gudang' ? 'Peraturan Sewa' : ($module === 'media' ? 'Catatan Formulir' : 'Ketentuan &amp; Persyaratan') ?> <span class="muted" style="font-weight:400">(1 baris = 1 poin)</span></label><textarea name="terms" rows="8" style="width:100%"><?= $lines('terms_json') ?></textarea></div>
-            <div style="margin-top:10px"><label>Catatan Kaki <span class="muted" style="font-weight:400">(1 baris = 1 poin · mis. catatan PPN &amp; nomor rekening)</span></label><textarea name="notes" rows="3" style="width:100%"><?= $lines('notes_json') ?></textarea></div>
-
-            <?php /* ── Judul bagian: supaya bunyi surat bisa disamakan dengan kertas ── */ ?>
-            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:11px 14px;margin-top:12px">
-                <label style="font-weight:700">Judul Bagian</label>
-                <div class="help" style="margin-top:2px">Kata persis yang tercetak sebagai judul tiap bagian. Kosongkan untuk memakai bawaannya.</div>
-                <div class="form-grid" style="margin-top:8px">
-                    <div><label style="font-size:12px">Rincian Biaya</label><input name="judul_rincian_biaya" value="<?= h($judul['rincian_biaya']) ?>"></div>
-                    <div><label style="font-size:12px">Fasilitas</label><input name="judul_fasilitas" value="<?= h($judul['fasilitas']) ?>"></div>
-                    <div><label style="font-size:12px">Media Promosi</label><input name="judul_media" value="<?= h($judul['media']) ?>"></div>
-                    <div><label style="font-size:12px">Cara Pembayaran</label><input name="judul_pembayaran" value="<?= h($judul['pembayaran']) ?>"></div>
-                    <div><label style="font-size:12px">Ketentuan</label><input name="judul_ketentuan" value="<?= h($judul['ketentuan']) ?>"></div>
-                </div>
-                <div class="help" style="margin-top:8px">Judul kolom tabel penawaran:</div>
-                <div class="form-grid" style="margin-top:4px">
-                    <div><label style="font-size:12px">Kolom 1 (lokasi)</label><input name="judul_kolom_lokasi" value="<?= h($judul['kolom_lokasi']) ?>"></div>
-                    <div><label style="font-size:12px">Kolom 2 (luas)</label><input name="judul_kolom_luas" value="<?= h($judul['kolom_luas']) ?>"></div>
-                    <div><label style="font-size:12px">Kolom 3 (harga)</label><input name="judul_kolom_harga" value="<?= h($judul['kolom_harga']) ?>"></div>
-                    <div><label style="font-size:12px">Kolom 4 (keterangan)</label><input name="judul_kolom_ket" value="<?= h($judul['kolom_ket']) ?>"></div>
-                </div>
-            </div>
-
-            <div style="margin-top:10px">
-                <label style="font-weight:700">Penulisan Rupiah</label>
-                <div style="display:flex;gap:18px;margin-top:5px;flex-wrap:wrap">
-                    <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer">
-                        <input type="radio" name="gaya_uang" value="polos" <?= ($t['gaya_uang'] ?? 'polos') !== 'kertas' ? 'checked' : '' ?>> Rp 7.000.000
-                    </label>
-                    <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer">
-                        <input type="radio" name="gaya_uang" value="kertas" <?= ($t['gaya_uang'] ?? '') === 'kertas' ? 'checked' : '' ?>> Rp. 7.000.000,- &mdash; seperti surat kertas
-                    </label>
-                </div>
-                <div class="help">Butir Cara Pembayaran di template biasanya sudah ditulis gaya kertas, jadi pilihan ini membuat satu surat tidak memuat dua gaya sekaligus.</div>
-            </div>
-
-            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:11px 14px;margin-top:12px">
-                <label style="font-weight:700">Rekening Pembayaran</label>
-                <div class="help" style="margin-top:2px">Kosongkan nomor rekening bila blok ini tidak perlu dicetak.</div>
-                <div class="form-grid" style="margin-top:8px">
-                    <div><label style="font-size:12px">Kalimat pembuka</label><input name="bank_kalimat" value="<?= h($bank['kalimat']) ?>"></div>
-                    <div><label style="font-size:12px">Atas nama</label><input name="bank_atas_nama" value="<?= h($bank['atas_nama']) ?>"></div>
-                    <div><label style="font-size:12px">Bank</label><input name="bank_bank" value="<?= h($bank['bank']) ?>"></div>
-                    <div><label style="font-size:12px">Nomor rekening</label><input name="bank_rekening" value="<?= h($bank['rekening']) ?>"></div>
-                </div>
-            </div>
-
-            <div style="margin-top:12px"><label>Kalimat Penutup <span class="muted" style="font-weight:400">(<code>{PIC}</code> <code>{PIC_BESAR}</code> <code>{WA}</code> <code>{EMAIL}</code> <code>{KANTOR}</code> diisi otomatis dari Master PIC sales)</span></label><textarea name="penutup" rows="2" style="width:100%" placeholder="Untuk keterangan lebih lanjut dapat menghubungi kantor kami {KANTOR} atau whatsapp ke {PIC_BESAR} di nomor {WA}."><?= $val('penutup') ?></textarea>
-                <div class="help">Nama dan nomor WhatsApp mengikuti sales yang membuat penawaran &mdash; bukan satu nomor untuk semua orang.</div></div>
-
-            <div style="margin-top:10px"><label>Kalimat Penutup Terakhir</label>
-                <input name="penutup_akhir" value="<?= $val('penutup_akhir') ?>" style="width:100%"
-                       placeholder="<?= h(offer_penutup_akhir_bawaan()) ?>">
-                <div class="help">Kosongkan untuk memakai kalimat bawaan.</div></div>
-
-            <div class="form-grid" style="margin-top:10px">
-                <div><label>Sebutan Kolom Tanda Tangan Kanan</label>
-                    <input name="ttd_kanan" value="<?= h((string) ($t['ttd_kanan'] ?? 'Calon Penyewa')) ?>" placeholder="Calon Penyewa">
-                    <div class="help">Kosongkan bila di bawah "Menyetujui," langsung nama penanggung jawabnya &mdash; seperti surat kertas.</div></div>
-                <div>
-                    <label>Tambahan Buatan Aplikasi</label>
-                    <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer;margin-top:5px">
-                        <input type="checkbox" name="tampil_berlaku" value="1" <?= !$t || !empty($t['tampil_berlaku']) ? 'checked' : '' ?>>
-                        <span style="font-size:13px">Cetak kotak "Penawaran ini berlaku s/d &hellip;"</span></label>
-                    <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer;margin-top:3px">
-                        <input type="checkbox" name="tampil_qr" value="1" <?= !$t || !empty($t['tampil_qr']) ? 'checked' : '' ?>>
-                        <span style="font-size:13px">Cetak QR "Scan untuk validasi" di tanda tangan sales</span></label>
-                    <div class="help">Dua-duanya tidak ada di surat kertas. QR dipakai client untuk memastikan suratnya asli &mdash; sebaiknya tetap menyala.</div>
-                </div>
-            </div>
-
-            <div style="display:flex;gap:10px;align-items:flex-start;background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:11px 14px;margin-top:12px">
-                <input type="checkbox" name="is_default" id="is_default" value="1" style="width:18px;height:18px;margin-top:1px" <?= !empty($t['is_default']) ? 'checked' : '' ?>>
-                <div>
-                    <label for="is_default" style="font-weight:700">Jadikan template bawaan</label>
-                    <div class="help" style="margin-top:2px">Yang otomatis terpilih saat sales membuat penawaran baru. Hanya satu per modul &mdash;
-                        mencentang di sini otomatis melepas centang di template lain.</div>
-                </div>
-            </div>
-
-            <p class="form-actions" style="margin-top:16px"><button type="submit">💾 Simpan Template</button> <a class="btn secondary" href="?r=offer_templates&module=<?= h($module) ?>">Batal</a></p>
         </form>
+        </div>
+
+        <aside class="tpl-pv">
+            <div class="kep"><b>Pratinjau surat</b>
+                <button type="button" class="btn light" id="pv-segar" style="padding:3px 9px;font-size:11.5px">Segarkan</button>
+                <span class="st" id="pv-st"></span></div>
+            <div class="box" id="pv-box"><div class="skala" id="pv-skala"><iframe id="pv-bingkai"></iframe></div></div>
+        </aside>
+        </div>
+
         <script>
-        document.querySelectorAll('textarea').forEach(function(tx) {
-            tx.addEventListener('keydown', function(e) {
-                if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
-                    e.preventDefault();
-                    var start = this.selectionStart;
-                    var end = this.selectionEnd;
-                    var val = this.value;
-                    var selected = val.substring(start, end);
-                    var replacement = '**' + selected + '**';
-                    this.value = val.substring(0, start) + replacement + val.substring(end);
-                    this.selectionStart = start + 2;
-                    this.selectionEnd = start + 2 + selected.length;
-                }
+        (function () {
+            var form = document.getElementById('tpl-form');
+
+            // ── Tab ───────────────────────────────────────────────────────────
+            var tombol = form.querySelectorAll('.tpl-tab button');
+            tombol.forEach(function (b) {
+                b.addEventListener('click', function () {
+                    tombol.forEach(function (x) { x.classList.toggle('on', x === b); });
+                    form.querySelectorAll('section[data-p]').forEach(function (s) {
+                        s.hidden = s.getAttribute('data-p') !== b.getAttribute('data-p');
+                    });
+                });
             });
-        });
+
+            // Daftar bernomor hanya relevan untuk bentuk "Daftar bernomor".
+            var selLayout = form.querySelector('select[name=layout]');
+            var blokRin = document.getElementById('blok-rincian');
+            function aturRincian() {
+                if (blokRin && selLayout) blokRin.style.display = selLayout.value === 'rincian' ? '' : 'none';
+            }
+            if (selLayout) selLayout.addEventListener('change', aturRincian);
+            aturRincian();
+
+            // ── Ctrl+B = tebal ────────────────────────────────────────────────
+            form.querySelectorAll('textarea').forEach(function (tx) {
+                tx.addEventListener('keydown', function (e) {
+                    if (!(e.ctrlKey || e.metaKey) || (e.key !== 'b' && e.key !== 'B')) return;
+                    e.preventDefault();
+                    var a = this.selectionStart, b = this.selectionEnd, v = this.value, p = v.substring(a, b);
+                    this.value = v.substring(0, a) + '**' + p + '**' + v.substring(b);
+                    this.selectionStart = a + 2; this.selectionEnd = a + 2 + p.length;
+                    this.dispatchEvent(new Event('input', { bubbles: true }));
+                });
+            });
+
+            // ── Pratinjau ─────────────────────────────────────────────────────
+            var box = document.getElementById('pv-box'), skala = document.getElementById('pv-skala');
+            var bingkai = document.getElementById('pv-bingkai'), st = document.getElementById('pv-st');
+            var LEBAR = 794, TINGGI = 2800;
+            function pasKan() {
+                var s = Math.max(0.2, (box.clientWidth - 2) / LEBAR);
+                skala.style.transform = 'scale(' + s + ')';
+                skala.style.width  = (LEBAR * s) + 'px';
+                skala.style.height = (TINGGI * s) + 'px';
+            }
+            window.addEventListener('resize', pasKan);
+
+            var jeda = null, sedang = false;
+            function gambar() {
+                if (sedang) return;
+                sedang = true; st.textContent = 'menggambar…';
+                fetch('?r=offer_template_preview', { method: 'POST', body: new FormData(form), cache: 'no-store' })
+                    .then(function (r) { return r.text(); })
+                    .then(function (html) {
+                        bingkai.srcdoc = html;
+                        st.textContent = 'diperbarui ' + new Date().toLocaleTimeString('id-ID');
+                    })
+                    .catch(function () { st.textContent = 'gagal memuat'; })
+                    .finally(function () { sedang = false; });
+            }
+            function nanti() { clearTimeout(jeda); jeda = setTimeout(gambar, 700); }
+            form.addEventListener('input', nanti);
+            form.addEventListener('change', nanti);
+            document.getElementById('pv-segar').addEventListener('click', gambar);
+            bingkai.addEventListener('load', pasKan);
+            pasKan(); gambar();
+        })();
         </script>
         <?php
     });
 }
 
-function offer_template_save(PDO $pdo): void
+/**
+ * Satu baris template dari isian formulir — TANPA menyimpan apa pun.
+ *
+ * Dipakai dua kali: oleh penyimpan, dan oleh pratinjau yang menggambar surat
+ * dari isian yang belum disimpan. Karena keduanya memakai fungsi yang sama,
+ * apa yang terlihat di pratinjau pasti sama dengan yang nanti tersimpan.
+ */
+function _offer_template_dari_post(int $pid, string $module, string $unitType, string $name): array
 {
-    require_permission('manage_master');
-    verify_csrf();
-    $pid = current_property_id();
-    $id  = (int) post('id');
-    $module   = _tpl_module((string) post('module', 'cl'));
-    $unitType = $module === 'cl' ? trim((string) post('unit_type', '')) : '';
-    $name = trim((string) post('name', ''));
-    if ($name === '') { flash('Nama template wajib diisi.'); redirect_to('offer_template_form', $id ? ['id' => $id] : ['module' => $module]); }
-    // Nama template harus khas — itu yang dibaca sales di dropdown. Tipe unit
-    // tidak lagi dibatasi satu template: sejak template bisa DIPILIH sendiri,
-    // beberapa template untuk tipe yang sama justru memang dibutuhkan (mis.
-    // Pushcart dan Snack Corner sama-sama Island).
-    $dup = $pdo->prepare("SELECT id FROM offer_templates WHERE property_id=? AND module=? AND name=? AND id<>? LIMIT 1");
-    $dup->execute([$pid, $module, $name, $id]);
-    if ($dup->fetchColumn()) {
-        flash('Sudah ada template bernama "' . $name . '" di modul ini. Pakai nama lain supaya tidak tertukar saat dipilih.');
-        redirect_to('offer_template_form', $id ? ['id' => $id] : ['module' => $module]);
-    }
-
     // Blok khusus modul — daftar yang bisa disusun sendiri oleh user.
     $extra = [];
     if ($module === 'media') {
@@ -3552,7 +3606,7 @@ function offer_template_save(PDO $pdo): void
     }
 
     $J = fn($a) => json_encode($a, JSON_UNESCAPED_UNICODE);
-    $data = [
+    return [
         'property_id'       => $pid,
         'module'            => $module,
         'unit_type'         => $unitType,
@@ -3604,6 +3658,87 @@ function offer_template_save(PDO $pdo): void
         'electricity_default' => $module === 'cl' ? max(0, (float) post('electricity_default', 150000)) : 0,
         'status'            => post('status') === 'inactive' ? 'inactive' : 'active',
     ];
+}
+
+/**
+ * Pratinjau surat dari isian formulir yang BELUM disimpan.
+ *
+ * Menggambar surat memakai template hasil _offer_template_dari_post() dan satu
+ * penawaran contoh, lalu mengembalikan HTML-nya untuk ditampilkan di bingkai
+ * sebelah formulir. Tidak menyentuh basis data sama sekali.
+ */
+function offer_template_preview(PDO $pdo): void
+{
+    require_permission('manage_master');
+    verify_csrf();
+    $pid    = current_property_id();
+    $module = _tpl_module((string) post('module', 'cl'));
+    $tplRow = _offer_template_dari_post($pid, $module, (string) post('unit_type', ''), (string) post('name', 'Template'));
+    $letter = offer_letter_dari_template(_offer_template_norm($tplRow));
+
+    // PIC asli properti ini supaya {PIC} / {WA} / {EMAIL} terlihat terisi.
+    $pic = $pdo->prepare("SELECT name, phone, email, role_name FROM master_pic
+                           WHERE property_id = ? AND status = 'active' AND phone IS NOT NULL
+                           ORDER BY (role_name LIKE 'Sales%') DESC, name LIMIT 1");
+    $pic->execute([$pid]);
+    $pic = $pic->fetch(PDO::FETCH_ASSOC) ?: ['name' => 'Nama Sales', 'phone' => '081200000000', 'email' => '', 'role_name' => 'Sales Executive'];
+
+    $prop = current_property();
+    $mulai = date('Y-m-01', strtotime('+1 month'));
+    $akhir = date('Y-m-t', strtotime('+1 month'));
+    $o = [
+        'id' => 0, 'property_id' => $pid, 'module' => $module, 'is_bundle' => 0,
+        'offer_no'   => '000/QT-CL/' . strtoupper((string) ($prop['key'] ?? 'PSV')) . '/BSB-BPN/' . _offer_roman((int) date('n')) . '/' . date('Y'),
+        'offer_date' => date('Y-m-d'), 'perihal' => $letter['perihal'],
+        'company_name' => 'PT. CONTOH PENYEWA', 'brand_name' => '', 'cp_name' => 'Bapak/Ibu Penanggung Jawab',
+        'city' => '', 'address' => '',
+        'location_name' => 'Contoh Lokasi', 'floor' => '', 'master_code' => 'CONTOH-01',
+        'area_sqm' => 6, 'ukuran' => '2x3 m2', 'keterangan' => '',
+        'pricing_type' => 'monthly', 'unit_rate' => 7000000, 'quantity' => 1, 'slots' => 1,
+        'start_date' => $mulai, 'end_date' => $akhir, 'contract_months' => 1,
+        'total_calculated' => 7000000, 'monthly_amount' => 7000000, 'override_amount' => null,
+        'dp_months' => 1, 'dp_amount' => 2100000, 'deposit_months' => 1, 'deposit_amount' => 1000000,
+        'deposit_paid' => 0, 'ppn_flag' => 1, 'sc_flag' => 0, 'sc_monthly' => 0,
+        'electricity_flag' => 0, 'electricity_monthly' => 0, 'electricity_units' => 0, 'electricity_amount' => 0,
+        'sign_token' => str_repeat('0', 40), 'signed_at' => null, 'signature_data' => null,
+        'sign_name' => null, 'sign_method' => 'online',
+        'pic_name' => $pic['name'], 'pic_phone' => $pic['phone'], 'pic_email' => $pic['email'],
+        'pic_role' => $pic['role_name'], 'pic_signature' => null,
+    ];
+    $items = []; $tahapHarga = []; $tierHarga = [];
+    $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
+    $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+    $PRATINJAU = true;   // sembunyikan tombol cetak & petunjuk layar kecil
+
+    header('Content-Type: text/html; charset=utf-8');
+    header('X-Frame-Options: SAMEORIGIN');
+    include __DIR__ . '/offer_print_template.php';
+    exit;
+}
+
+function offer_template_save(PDO $pdo): void
+{
+    require_permission('manage_master');
+    verify_csrf();
+    $pid = current_property_id();
+    $id  = (int) post('id');
+    $module   = _tpl_module((string) post('module', 'cl'));
+    $unitType = $module === 'cl' ? trim((string) post('unit_type', '')) : '';
+    $name = trim((string) post('name', ''));
+    if ($name === '') { flash('Nama template wajib diisi.'); redirect_to('offer_template_form', $id ? ['id' => $id] : ['module' => $module]); }
+    // Nama template harus khas — itu yang dibaca sales di dropdown. Tipe unit
+    // tidak lagi dibatasi satu template: sejak template bisa DIPILIH sendiri,
+    // beberapa template untuk tipe yang sama justru memang dibutuhkan (mis.
+    // Pushcart dan Snack Corner sama-sama Island).
+    $dup = $pdo->prepare("SELECT id FROM offer_templates WHERE property_id=? AND module=? AND name=? AND id<>? LIMIT 1");
+    $dup->execute([$pid, $module, $name, $id]);
+    if ($dup->fetchColumn()) {
+        flash('Sudah ada template bernama "' . $name . '" di modul ini. Pakai nama lain supaya tidak tertukar saat dipilih.');
+        redirect_to('offer_template_form', $id ? ['id' => $id] : ['module' => $module]);
+    }
+
+    $data = _offer_template_dari_post($pid, $module, $unitType, $name);
+
     if ($id) {
         $updateData = $data;
         unset($updateData['property_id']);

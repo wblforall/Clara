@@ -545,7 +545,7 @@ function permission_for_route(string $route): string
         'skp_revision_request' => 'manage_skp',
         'my_paraf', 'my_paraf_save', 'my_paraf_reset' => 'approve_skp',
         'offers', 'offer_view', 'offer_form', 'offer_save', 'offer_status', 'offer_print', 'offer_template_rule' => 'manage_offers',
-        'offer_templates', 'offer_template_form', 'offer_template_save' => 'manage_master',
+        'offer_templates', 'offer_template_form', 'offer_template_save', 'offer_template_preview' => 'manage_master',
         'm_home' => 'view_dashboard',
         'm_transactions' => 'view_transactions',
         'm_exec' => 'view_exec_summary',

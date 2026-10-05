@@ -204,11 +204,15 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
 <?php if (!$PDF_MODE): ?>
 </head>
 <body>
+<?php /* Mode pratinjau (di dalam bingkai halaman Template): tombol cetak dan
+         petunjuk layar kecil tidak relevan, jadi tidak dicetak. */ ?>
+<?php if (empty($PRATINJAU)): ?>
 <div class="no-print">
     <button class="btn-print" onclick="window.print()" title="Di HP: pilih 'Simpan sebagai PDF' di dialog cetak">🖨 Simpan PDF / Cetak</button>
     <button class="btn-close" onclick="window.close()">✕ Tutup</button>
 </div>
 <div class="pdf-hint">📄 Ketuk <b>Simpan PDF / Cetak</b> di atas, lalu pilih <b>“Simpan sebagai PDF”</b> sebagai tujuan pada dialog cetak.</div>
+<?php endif; ?>
 <table class="paper">
 <thead><tr><td><div class="sp-top"></div></td></tr></thead>
 <tfoot><tr><td><div class="sp-bot"></div></td></tr></tfoot>
