@@ -184,6 +184,29 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
     var canvas=document.getElementById('pad'),ctx=canvas.getContext('2d'),drawing=false,dirty=false,last=null;
     function resize(){var r=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;canvas.width=r.width*dpr;canvas.height=r.height*dpr;ctx.scale(dpr,dpr);ctx.lineWidth=2.2;ctx.lineCap='round';ctx.strokeStyle='#0f172a';}
     resize();window.addEventListener('resize',function(){var img=canvas.toDataURL();resize();});
+    // Kanvas diekspor UTUH akan membawa serta ruang kosong di sekelilingnya, dan
+    // ukuran kanvas itu sendiri mengikuti lebar layar penandatangan. Akibatnya
+    // tanda tangan yang sama tampil besar di satu dokumen dan kecil di dokumen
+    // lain, tergantung alat yang dipakai saat menandatangani. Dipangkas sampai
+    // batas coretannya supaya tingginya seragam di semua dokumen.
+    function potong(){
+        var w=canvas.width,h=canvas.height;
+        var d;
+        try{ d=ctx.getImageData(0,0,w,h).data; }catch(err){ return canvas.toDataURL('image/png'); }
+        var x1=w,y1=h,x2=0,y2=0,ada=false;
+        for(var y=0;y<h;y++)for(var x=0;x<w;x++){
+            if(d[(y*w+x)*4+3]>8){ ada=true;
+                if(x<x1)x1=x; if(x>x2)x2=x; if(y<y1)y1=y; if(y>y2)y2=y; }
+        }
+        if(!ada) return canvas.toDataURL('image/png');
+        var m=Math.round(Math.max(6,h*0.04));
+        x1=Math.max(0,x1-m); y1=Math.max(0,y1-m);
+        x2=Math.min(w-1,x2+m); y2=Math.min(h-1,y2+m);
+        var c=document.createElement('canvas');
+        c.width=x2-x1+1; c.height=y2-y1+1;
+        c.getContext('2d').drawImage(canvas,x1,y1,c.width,c.height,0,0,c.width,c.height);
+        return c.toDataURL('image/png');
+    }
     function pos(e){var r=canvas.getBoundingClientRect();var t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top};}
     function start(e){drawing=true;last=pos(e);e.preventDefault();}
     function move(e){if(!drawing)return;var p=pos(e);ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;dirty=true;e.preventDefault();}
@@ -194,7 +217,7 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
     document.getElementById('sign-form').addEventListener('submit',function(e){
         if(!dirty){e.preventDefault();alert('Mohon bubuhkan tanda tangan terlebih dahulu.');return;}
         if(!document.getElementById('sign-name').value.trim()){e.preventDefault();alert('Mohon isi nama.');return;}
-        document.getElementById('sig-data').value=canvas.toDataURL('image/png');
+        document.getElementById('sig-data').value=potong();
     });
 })();
 </script>

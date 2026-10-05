@@ -276,7 +276,7 @@ function skp_list_page(PDO $pdo): void
     foreach ($rows as $i => $r) {
         $dt = (string) ($r['doc_type'] ?? 'skp');
         if (!array_key_exists($dt, $alurCache)) $alurCache[$dt] = ApprovalLine::steps($pdo, $pid, $dt);
-        $rows[$i]['_alur_ket'] = ApprovalLine::keteranganNama($pdo, $pid, $r, $alurCache[$dt]);
+        $rows[$i]['_alur_ket'] = ApprovalLine::penungguRingkas($pdo, $pid, $r, $alurCache[$dt]);
         $rows[$i]['_alur_n']   = count($alurCache[$dt]);
         $rows[$i]['_revisi']   = ($r['status'] === 'approved' && ApprovalLine::revisiPending($pdo, (int) $r['id'])) ? 1 : 0;
     }
@@ -353,8 +353,11 @@ function skp_list_page(PDO $pdo): void
                             <td><?= h($r['company_name'] ?? '-') ?></td>
                             <td style="white-space:nowrap;font-size:11.5px"><?= $r['start_date'] ? h(date('d/m/y', strtotime($r['start_date'])) . '–' . date('d/m/y', strtotime($r['end_date']))) : '—' ?></td>
                             <td><span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span><?php
-                                if ($r['status'] === 'submitted' && (int) ($r['_alur_n'] ?? 0) > 1): ?>
-                                <div style="font-size:11px;color:#92400e;margin-top:3px"><?= h(str_replace('Menunggu ', '', (string) $r['_alur_ket'])) ?></div>
+                                /* Giliran siapa sekarang — dicetak sebesar tulisan tabel, bukan
+                                   catatan kaki. Yang dicari orang di daftar cuma ini; rincian
+                                   tahapannya ada di halaman dokumennya. */
+                                if (($r['_alur_ket'] ?? '') !== ''): ?>
+                                <div style="font-size:12.5px;font-weight:700;color:#92400e;margin-top:3px;line-height:1.3"><?= h((string) $r['_alur_ket']) ?></div>
                                 <?php endif; ?>
                                 <?php if (!empty($r['_revisi'])): ?>
                                 <div style="font-size:11px;color:#5b21b6;margin-top:3px;font-weight:700">menunggu keputusan revisi</div>
@@ -528,6 +531,19 @@ function skp_form(PDO $pdo): void
     $src = $standalone
         ? skp_standalone_src($pdo, $pid, $modKind, $skp)
         : ($offerId ? _skp_source_from_offer($pdo, $offerId, $pid) : _skp_source($pdo, $trxId, $pid));
+
+    // Dokumen yang SUDAH ADA tidak boleh ikut hilang ketika sumbernya hilang.
+    // Transaksi atau penawaran asalnya bisa saja sudah dihapus, sementara
+    // dokumennya masih menunggu paraf di antrean seseorang. Dulu pemeriksa yang
+    // menekan "Lihat" dari antreannya dilempar ke halaman Transaksi dengan pesan
+    // "belum DEAL" — pesan yang tidak ada hubungannya, dan dokumennya jadi tidak
+    // bisa diparaf sama sekali. Isi dokumen sendiri sudah lengkap, jadi dipakai
+    // itu, dan kehilangan sumbernya diberitahukan terang-terangan.
+    $sumberHilang = false;
+    if (!$src && $skp) {
+        $sumberHilang = true;
+        $src = skp_standalone_src($pdo, $pid, skp_doc_module((string) ($skp['doc_type'] ?? 'skp')), $skp);
+    }
     if (!$src) { flash('Sumber (penawaran/transaksi) tidak ditemukan / belum DEAL.'); redirect_to($offerId ? 'offers' : 'transactions'); }
     // Pembatasan per-sales: hanya boleh akses SKP miliknya (PIC sumber / PIC
     // yang tercatat di dokumen) atau yang ia buat sendiri.
@@ -645,10 +661,25 @@ function skp_form(PDO $pdo): void
     // Acuan jumlah: nilai kontrak dokumen ini, bukan angka yang diketik ulang.
     $nilaiAcuan = (float) ($src['final_amount'] ?: $src['total_calculated']);
 
-    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir, $revTahap, $revPending, $revRiwayat, $revBolehAjukan, $revBolehPutus, $dibatalkan) {
+    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir, $revTahap, $revPending, $revRiwayat, $revBolehAjukan, $revBolehPutus, $dibatalkan, $sumberHilang) {
         $statusSewaDefault = ($isRenew || (!empty($src['renewal_status']) && $src['renewal_status'] !== 'none')) ? 'Perpanjangan' : 'Baru';
         ?>
-        <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=<?= $standalone ? 'skp' : ($offerId ? 'offer_form&id=' . (int)$offerId : 'allocation_detail&id=' . (int)$trxId) ?>">← <?= $standalone ? 'Daftar Dokumen' : ($offerId ? 'Penawaran' : 'Detail Alokasi') ?></a><a class="btn light" href="?r=skp">Daftar Dokumen</a> <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h($docLabel) ?></span></div>
+        <?php /* Sumbernya hilang → tombol kembali ke sumber ikut buntu, jadi
+                 diarahkan ke daftar dokumen saja. */ ?>
+        <?php $kembaliDaftar = $standalone || $sumberHilang; ?>
+        <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=<?= $kembaliDaftar ? 'skp' : ($offerId ? 'offer_form&id=' . (int)$offerId : 'allocation_detail&id=' . (int)$trxId) ?>">← <?= $kembaliDaftar ? 'Daftar Dokumen' : ($offerId ? 'Penawaran' : 'Detail Alokasi') ?></a><a class="btn light" href="?r=skp">Daftar Dokumen</a> <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h($docLabel) ?></span></div>
+
+        <?php /* Transaksi/penawaran asalnya sudah tidak ada. Dokumennya tetap bisa
+                 dibaca dan diparaf dari datanya sendiri, tetapi orang harus tahu —
+                 kalau disembunyikan, angka yang tampil terlihat seperti hasil
+                 hitung ulang dari sumber padahal bukan. */ ?>
+        <?php if ($sumberHilang): ?>
+        <div class="panel" style="margin-top:10px;background:#fffbeb;border:1px solid #fde68a">
+            <strong style="color:#92400e">Transaksi/penawaran asal dokumen ini sudah tidak ada.</strong><br>
+            <span style="color:#78350f">Isinya ditampilkan apa adanya dari dokumen ini sendiri, jadi tetap bisa dibaca,
+            diparaf, dan dicetak. Yang tidak bisa hanya menghitung ulang dari sumbernya.</span>
+        </div>
+        <?php endif; ?>
 
         <?php /* Dokumen yang dibuka kembali karena revisi disetujui: PIC perlu
                  tahu sebabnya, karena statusnya 'draft' (bukan 'rejected') dan
