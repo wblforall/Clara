@@ -65,7 +65,12 @@ function _af_orang(PDO $pdo, int $pid): array
     // Pentacity akunnya tetap harus diberi akses ke Pentacity.
     $ids = _af_properti();
     $in  = implode(',', array_fill(0, count($ids), '?'));
-    $st = $pdo->prepare("SELECT p.role_name, p.name, p.user_id, p.property_id,
+    // Baris PIC yang NONAKTIF ikut diambil. Dulu ia dibuang oleh WHERE, sehingga
+    // orangnya lenyap sama sekali dari halaman ini — tidak di daftar "Dipegang",
+    // tidak pula di "Terkendala". Padahal justru itu keadaan yang paling sering
+    // ditanyakan ("akunnya sudah saya daftarkan, kenapa tidak ada?"). Sekarang ia
+    // tetap muncul, tidak bisa dipilih, dan sebabnya disebutkan.
+    $st = $pdo->prepare("SELECT p.role_name, p.name, p.user_id, p.property_id, p.status AS pic_status,
                                 u.id AS akun, u.status AS akun_status, u.role AS akun_role,
                                 (up.user_id IS NOT NULL) AS boleh_properti,
                                 (u.role IN ('superadmin','admin') OR rp.role IS NOT NULL) AS boleh_approve
@@ -73,9 +78,9 @@ function _af_orang(PDO $pdo, int $pid): array
                            LEFT JOIN users u ON u.id = p.user_id
                            LEFT JOIN user_properties up ON up.user_id = p.user_id AND up.property_id = ?
                            LEFT JOIN role_permissions rp ON rp.role = u.role AND rp.permission = 'approve_skp'
-                          WHERE p.property_id IN ($in) AND p.status = 'active'
+                          WHERE p.property_id IN ($in) AND p.status <> 'archived'
                             AND COALESCE(p.role_name,'') <> ''
-                          ORDER BY p.role_name, (p.property_id = ?) DESC, p.name");
+                          ORDER BY p.role_name, (p.status = 'active') DESC, (p.property_id = ?) DESC, p.name");
     $st->execute(array_merge([$pid], $ids, [$pid]));
     $out = [];
     // Satu orang bisa punya baris PIC di dua properti dengan jabatan sama —
@@ -91,17 +96,32 @@ function _af_orang(PDO $pdo, int $pid): array
 }
 
 /** Orang pada jabatan ini yang benar-benar siap memparaf di properti ini. */
+/**
+ * Satu kendala yang membuat orang ini belum bisa memaraf — '' bila sudah siap.
+ *
+ * Diperiksa berurutan dari sebab yang paling awal, dan kalimatnya menyebut DI
+ * MANA memperbaikinya. Nama yang hilang dari daftar hampir selalu berhenti di
+ * salah satu dari lima baris ini.
+ */
+function _af_kendala(array $o): string
+{
+    if (($o['pic_status'] ?? 'active') !== 'active') return 'nonaktif di Master PIC';
+    if (!$o['akun'])                                 return 'belum ditautkan ke akun login di Master PIC';
+    if (($o['akun_status'] ?? '') !== 'active')       return 'akun nonaktif';
+    if (!$o['boleh_properti'])                        return 'akunnya belum diberi akses properti ini';
+    // Tanpa izin Approve SKP, tombol parafnya tidak akan pernah muncul
+    // (ApprovalLine::canAct mensyaratkannya) — jadi dia belum "siap".
+    if (!$o['boleh_approve'])                         return 'role "' . ($o['akun_role'] ?: '-') . '" belum punya izin Approve SKP';
+    return '';
+}
+
 function _af_siap(array $orang, string $jabatan): array
 {
     $siap = []; $kendala = [];
     foreach ($orang[$jabatan] ?? [] as $o) {
-        if (!$o['akun'])                       { $kendala[] = $o['name'] . ' (belum punya akun)'; continue; }
-        if (($o['akun_status'] ?? '') !== 'active') { $kendala[] = $o['name'] . ' (akun nonaktif)'; continue; }
-        if (!$o['boleh_properti'])             { $kendala[] = $o['name'] . ' (akunnya belum diberi akses properti ini)'; continue; }
-        // Tanpa izin Approve SKP, tombol parafnya tidak akan pernah muncul
-        // (ApprovalLine::canAct mensyaratkannya) — jadi dia belum "siap".
-        if (!$o['boleh_approve'])              { $kendala[] = $o['name'] . ' (role "' . ($o['akun_role'] ?: '-') . '" belum punya izin Approve SKP)'; continue; }
-        $siap[] = $o['name'];
+        $k = _af_kendala($o);
+        if ($k === '') $siap[] = $o['name'];
+        else           $kendala[] = $o['name'] . ' (' . $k . ')';
     }
     return ['siap' => $siap, 'kendala' => $kendala];
 }
@@ -175,6 +195,13 @@ function approval_flow_page(PDO $pdo): void
             <p class="help" style="margin-top:0">Menentukan <strong>siapa memeriksa dokumen secara berurutan</strong> sebelum nomornya terbit.
                Alurnya ditulis dengan <strong>jabatan</strong>, bukan nama orang &mdash; jadi saat orangnya berganti, alur ini tidak perlu diubah.
                Berlaku untuk properti <strong><?= h($prop['name'] ?? '-') ?></strong>.</p>
+            <?php /* Nama pada daftar ini berasal dari Master PIC, bukan dari daftar akun.
+                     Mendaftarkan akun saja tidak membuat seseorang muncul di sini, dan itu
+                     pertanyaan yang berulang kali timbul — jadi disebutkan di muka. */ ?>
+            <p class="help" style="margin-top:6px">Nama yang bisa dipilih diambil dari <a href="?r=master&amp;type=pic">Master PIC</a>,
+               bukan dari daftar akun. Kalau seseorang tidak muncul atau tampil kelabu, buka Master PIC: pastikan barisnya
+               <strong>aktif</strong>, <strong>jabatannya terisi</strong>, dan <strong>sudah ditautkan ke akun login</strong>-nya.
+               Akunnya juga harus diberi akses ke properti ini di <a href="?r=users">Users &amp; Role</a>.</p>
 
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">
                 <?php foreach ($label as $k => $l): ?>
@@ -259,8 +286,15 @@ function approval_flow_page(PDO $pdo): void
                         <td>
                             <select name="flow_pic[]">
                                 <option value="">semua yang berjabatan itu</option>
-                                <?php foreach ($orang as $jn => $list): foreach ($list as $o): ?>
-                                <option value="<?= h($o['name']) ?>" <?= ($b['pic_name'] ?? '') === $o['name'] ? 'selected' : '' ?>><?= h($o['name']) ?> &mdash; <?= h($jn) ?></option>
+                                <?php /* Yang belum siap tetap ditampilkan — kelabu dan tidak bisa
+                                         dipilih — berikut sebabnya. Menyembunyikannya hanya membuat
+                                         orang bertanya-tanya kenapa namanya tidak ada. */ ?>
+                                <?php foreach ($orang as $jn => $list): foreach ($list as $o):
+                                    $kdl = _af_kendala($o);
+                                    $dipilih = ($b['pic_name'] ?? '') === $o['name']; ?>
+                                <option value="<?= h($o['name']) ?>" <?= $dipilih ? 'selected' : '' ?>
+                                        <?= ($kdl !== '' && !$dipilih) ? 'disabled' : '' ?>><?= h($o['name']) ?> &mdash; <?= h($jn) ?><?php
+                                    if ($kdl !== ''): ?> (belum bisa: <?= h($kdl) ?>)<?php endif; ?></option>
                                 <?php endforeach; endforeach; ?>
                             </select>
                         </td>
