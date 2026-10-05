@@ -48,7 +48,8 @@ foreach (($d['paraf'] ?? []) as $pf) {
     }
     $isi = Paraf::html($set, (string) ($pf['nama'] ?? ''), (string) ($pf['role_name'] ?? ''), $kapan,
                        !empty($PDF_MODE) ? 'file' : 'web',
-                       $otomatis ? Paraf::OTO_TINGGI_GAMBAR : 0.0);
+                       $otomatis ? Paraf::OTO_TINGGI_GAMBAR : 0.0,
+                       $otomatis ? Paraf::OTO_LEBAR : 0.0);
     if ($isi === '') continue;
 
     if ($otomatis) {
