@@ -22,7 +22,7 @@
 
 $TEMPLATE = [
     [
-        'name' => 'Pushcart — contoh surat kertas',
+        'name' => 'Pushcart',
         'layout' => 'tabel',
         'gaya_daftar' => 'bullet',
         'gaya_judul' => 'romawi',
@@ -94,7 +94,7 @@ $TEMPLATE = [
         'penutup' => 'Untuk keterangan lebih lanjut dapat menghubungi kantor kami {KANTOR} atau whatsapp ke {PIC_BESAR} di nomor {WA}.',
     ],
     [
-        'name' => 'Snack Corner — contoh surat kertas',
+        'name' => 'Snack Corner',
         'layout' => 'tabel',
         'gaya_daftar' => 'bullet',
         'gaya_judul' => 'romawi',
@@ -170,7 +170,7 @@ $TEMPLATE = [
         'penutup' => 'Untuk keterangan lebih lanjut dapat menghubungi kantor kami {KANTOR} atau whatsapp ke {PIC_BESAR} di nomor {WA}.',
     ],
     [
-        'name' => 'Atrium — contoh surat kertas',
+        'name' => 'Atrium',
         'layout' => 'tabel',
         'gaya_daftar' => 'bullet',
         'gaya_judul' => 'romawi',
@@ -250,7 +250,7 @@ $TEMPLATE = [
         'penutup' => 'Untuk keterangan lebih lanjut dapat menghubungi kantor kami {KANTOR} atau whatsapp ke {PIC_BESAR} di nomor {WA}.',
     ],
     [
-        'name' => 'FuniFun! — contoh surat kertas',
+        'name' => 'FuniFun!',
         'layout' => 'tabel',
         'gaya_daftar' => 'bullet',
         'gaya_judul' => 'romawi',
@@ -325,7 +325,7 @@ $TEMPLATE = [
         'penutup' => 'Untuk keterangan lebih lanjut dapat menghubungi kantor kami {KANTOR} atau whatsapp ke {WA}.',
     ],
     [
-        'name' => 'Foodcourt — contoh surat kertas',
+        'name' => 'Foodcourt',
         'layout' => 'rincian',
         'gaya_daftar' => 'bullet',
         'gaya_judul' => 'romawi',
@@ -455,6 +455,16 @@ $bank = ['kalimat' => 'Untuk pembayaran dapat ditransfer ke rekening',
          'atas_nama' => 'PT. Wulandari Bangun Laksana',
          'bank' => 'BRI (Bank Rakyat Indonesia)',
          'rekening' => '2078-01-000560-30-4'];
+
+// Nama template adalah yang dibaca sales di dropdown, jadi harus bersih.
+// Dua pembersihan: akhiran "— contoh surat kertas" yang sempat terpakai, dan
+// "(default)" yang kini mubazir karena sudah ada penanda bawaan tersendiri.
+$pdo->exec("UPDATE offer_templates
+               SET name = TRIM(REPLACE(name, '— contoh surat kertas', ''))
+             WHERE module = 'cl' AND name LIKE '%— contoh surat kertas'");
+$pdo->exec("UPDATE offer_templates
+               SET name = TRIM(REPLACE(name, '(default)', ''))
+             WHERE name LIKE '%(default)'");
 
 $dibuat = 0;
 foreach ($prop as $pid) {
