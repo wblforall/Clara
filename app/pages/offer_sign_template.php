@@ -2,6 +2,14 @@
 /** Halaman publik tanda tangan customer (Surat Penawaran).
  *  Vars: $o, $d, $a, $signed, $rp, $h, $token. */
 if (!isset($o)) { http_response_code(400); exit('Konteks tidak valid.'); }
+// PPN mengikuti template yang dibekukan di surat ini, supaya halaman tanda
+// tangan berbunyi sama dengan PDF suratnya. Bawaan = perilaku lama (12% + PMK).
+$letter = $letter ?? [];
+$PPN_PERSEN = (float) ($letter['ppn_persen'] ?? 12);
+$PPN_RUMUS  = !isset($letter['ppn_rumus']) || !empty($letter['ppn_rumus']);
+$PPN_TARIF  = $PPN_RUMUS ? ($PPN_PERSEN / 100) * 11 / 12 : ($PPN_PERSEN / 100);
+$PPN_LABEL  = 'PPN ' . rtrim(rtrim(number_format($PPN_PERSEN, 2, ',', '.'), '0'), ',') . '%';
+$PPN_HINT   = $PPN_RUMUS ? ' <span class="muted" style="font-weight:400">(Nilai × 11/12 × ' . $PPN_PERSEN . '%)</span>' : '';
 ?>
 <!doctype html>
 <html lang="id">
@@ -79,7 +87,7 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
 
         <?php
         $total   = (float)$o['total_calculated'];
-        $ppn     = round($total * 11 / 12 * 0.12);
+        $ppn     = round($total * $PPN_TARIF);
         $afterPpn = $total + $ppn;
         $deposit = (float)$o['deposit_amount'];
         $grand   = $afterPpn + $deposit;
@@ -91,7 +99,7 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
             <tr><td><?= $h($it['name_snapshot'] ?: $it['master_code']) ?> <span class="muted">(<?= $h($segLabels[$it['segment']] ?? $it['segment']) ?>)</span></td><td class="amt"><?= $rp($it['total_amount'] ?? 0) ?></td></tr>
             <?php endforeach; ?>
             <tr><td>Subtotal sewa paket</td><td class="amt"><?= $rp($total) ?></td></tr>
-            <tr><td>PPN 12% <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppn) ?></td></tr>
+            <tr><td><?= $PPN_LABEL ?><?= $PPN_HINT ?></td><td class="amt"><?= $rp($ppn) ?></td></tr>
             <tr><td>Total setelah PPN</td><td class="amt"><?= $rp($afterPpn) ?></td></tr>
             <?php if ($sumDp > 0): ?>
             <tr><td>DP / Uang Muka</td><td class="amt"><?= $rp($sumDp) ?></td></tr>
@@ -111,13 +119,13 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
         <table class="pay">
             <?php if (($a['listrik'] ?? 0) > 0): ?>
             <tr><td>Nilai Sewa</td><td class="amt"><?= $rp($a['sewa'] ?? 0) ?></td></tr>
-            <tr><td>PPN 12% Sewa <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn_sewa'] ?? 0) ?></td></tr>
+            <tr><td><?= $PPN_LABEL ?> Sewa<?= $PPN_HINT ?></td><td class="amt"><?= $rp($a['ppn_sewa'] ?? 0) ?></td></tr>
             <tr><td>Biaya Listrik<?= !empty($a['listrik_hari']) ? ' <span class="muted" style="font-weight:400">(' . (int) $a['listrik_hari'] . ' hari)</span>' : '' ?></td><td class="amt"><?= $rp($a['listrik']) ?></td></tr>
-            <tr><td>PPN 12% Listrik <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn_listrik'] ?? 0) ?></td></tr>
+            <tr><td><?= $PPN_LABEL ?> Listrik<?= $PPN_HINT ?></td><td class="amt"><?= $rp($a['ppn_listrik'] ?? 0) ?></td></tr>
             <tr><td>Total Biaya Sewa + PPN</td><td class="amt"><?= $rp(($a['total'] ?? 0) + ($a['ppn'] ?? 0)) ?></td></tr>
             <?php else: ?>
             <tr><td>Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
-            <tr><td>PPN 12% <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn'] ?? 0) ?></td></tr>
+            <tr><td><?= $PPN_LABEL ?><?= $PPN_HINT ?></td><td class="amt"><?= $rp($a['ppn'] ?? 0) ?></td></tr>
             <?php endif; ?>
             <tr><td>DP <span class="muted">(<?= $h($a['dp_bln'] ?? '0') ?> bln)</span></td><td class="amt"><?= $rp($a['dp'] ?? 0) ?></td></tr>
             <tr><td>Deposit / Jaminan <span class="muted">(<?= $h($a['dep_bln'] ?? '0') ?> bln)</span></td><td class="amt"><?= $rp($a['deposit'] ?? 0) ?></td></tr>

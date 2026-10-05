@@ -1,8 +1,26 @@
 <?php
 /** Template cetak Surat Penawaran. Vars: $o (offer+join), $prop, $rp, $h, $letter. */
 if (!isset($o)) { http_response_code(400); exit('Konteks tidak valid.'); }
-$letter = $letter ?? ['perihal' => '', 'intro' => '', 'fasilitas' => [], 'payment' => [], 'terms' => []];
+$letter = $letter ?? [];
+$letter += function_exists('offer_letter_bawaan') ? offer_letter_bawaan() : ['perihal' => '', 'intro' => '', 'fasilitas' => [], 'payment' => [], 'terms' => []];
 $OFFICE_PHONE = '0542-8520555';   // nomor kantor (satu untuk semua properti)
+// Isi surat yang bisa disetel per template. Semua punya nilai bawaan yang sama
+// persis dengan yang dulu dipaku di berkas ini, jadi surat lama tak berubah.
+$JUDUL   = ($letter['judul'] ?? []) + (function_exists('offer_judul_bawaan') ? offer_judul_bawaan() : []);
+$BANK    = ($letter['bank'] ?? []) + (function_exists('offer_bank_bawaan') ? offer_bank_bawaan() : []);
+$LAYOUT  = ($letter['layout'] ?? 'tabel') === 'rincian' ? 'rincian' : 'tabel';
+$PPN_PERSEN  = (float) ($letter['ppn_persen'] ?? 12);
+$PPN_RUMUS   = !empty($letter['ppn_rumus']);
+$PPN_CATATAN = trim((string) ($letter['ppn_catatan'] ?? ''));
+$PAKAI_RINCIAN_BIAYA = !isset($letter['rincian_biaya']) || !empty($letter['rincian_biaya']);
+// Surat kertas memakai bullet untuk Cara Pembayaran & Ketentuan; aplikasi selama
+// ini menomorinya. Keduanya disediakan — bawaannya tetap bernomor.
+$TAG_LIST = ($letter['gaya_daftar'] ?? 'nomor') === 'bullet' ? 'ul' : 'ol';
+// Tarif efektif. 12% dengan rumus PMK 131/2024 = 11% polos — angkanya memang
+// sama; yang berbeda cuma kalimat di surat.
+$PPN_TARIF = $PPN_RUMUS ? ($PPN_PERSEN / 100) * 11 / 12 : ($PPN_PERSEN / 100);
+$PPN_LABEL = 'PPN ' . rtrim(rtrim(number_format($PPN_PERSEN, 2, ',', '.'), '0'), ',') . '%';
+$PPN_HINT  = $PPN_RUMUS ? ' <span class="muted" style="font-weight:400">(Nilai × 11/12 × ' . $PPN_PERSEN . '%)</span>' : '';
 $propShort = ($prop['key'] ?? '') === 'pentacity' ? 'Pentacity' : 'e-Walk';
 $months = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 $od = $o['offer_date'] ? strtotime($o['offer_date']) : time();
@@ -29,8 +47,8 @@ $dasarPpn = $total + $listrik;
 // sebagai PPN total agar penjumlahan di kertas selalu pas.
 // Penyewa berharga bersih: PPN tidak dikenakan & barisnya tidak dicetak.
 $kenaPpn    = !isset($o['ppn_flag']) || !empty($o['ppn_flag']);
-$ppnSewa    = $kenaPpn ? round($total * 11 / 12 * 0.12) : 0.0;
-$ppnListrik = $kenaPpn ? round($listrik * 11 / 12 * 0.12) : 0.0;
+$ppnSewa    = $kenaPpn ? round($total * $PPN_TARIF) : 0.0;
+$ppnListrik = $kenaPpn ? round($listrik * $PPN_TARIF) : 0.0;
 $ppn        = $ppnSewa + $ppnListrik;
 $afterPpn   = $dasarPpn + $ppn;
 // Service Charge ditagih per bulan; PPN-nya dihitung per bulan lalu dikalikan
@@ -47,7 +65,7 @@ if ($o['start_date'] && $o['end_date']) {
              + ((int) $mb->format('j') >= (int) $ma->format('j') ? 1 : 0);
     $scBulan = max(1, $scBulan);
 }
-$scPpnBulan = $kenaPpn ? round($scBulanan * 11 / 12 * 0.12) : 0.0;
+$scPpnBulan = $kenaPpn ? round($scBulanan * $PPN_TARIF) : 0.0;
 $scPerBulan = $scBulanan + $scPpnBulan;
 $scTotal    = $scBulanan > 0 ? $scPerBulan * $scBulan : 0.0;
 $deposit  = (float) $o['deposit_amount'];
@@ -61,7 +79,11 @@ $depBulan = rtrim(rtrim(number_format((float) $o['deposit_months'], 1, ',', ''),
 $validTs  = strtotime(($o['offer_date'] ?: date('Y-m-d')) . ' +7 days');
 $berlaku  = (int) date('d', $validTs) . ' ' . $months[(int) date('n', $validTs)] . ' ' . date('Y', $validTs);
 // Kontak pembayaran: fallback ke kantor bila PIC kosong
-$payWa    = $o['pic_phone'] ?: $OFFICE_PHONE;
+// Dirapikan jadi 0852-4850-7437 seperti di surat kertas; kalau PIC belum punya
+// nomor, dipakai nomor kantor.
+$payWa    = function_exists('offer_telp_rapi') && $o['pic_phone']
+          ? offer_telp_rapi((string) $o['pic_phone'])
+          : ($o['pic_phone'] ?: $OFFICE_PHONE);
 $ketentuan = ($letter['terms'] ?? []) ?: offer_terms();
 ?>
 <?php $PDF_MODE = !empty($PDF_MODE); /* diset oleh offer_print() utk jalur mPDF */ ?>
@@ -118,6 +140,11 @@ body{font-family:Helvetica, Arial, sans-serif;font-size:11px;color:#111}
 table.obj{width:100%;border-collapse:collapse;margin:10px 0}
 table.obj th,table.obj td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left;font-size:11px}
 table.obj th{background:#f1f5f9}
+table.rinci{width:100%;border-collapse:collapse;margin:10px 0}
+table.rinci td{border:1px solid #334155;padding:4px 7px;font-size:10.5px;vertical-align:top;line-height:1.4}
+table.rinci td.no{width:7%;text-align:center;font-weight:700}
+table.rinci td.lbl{width:24%}
+table.rinci td.sep{width:3%;text-align:center}
 table.cost{width:100%;border-collapse:collapse;margin:8px 0}
 table.cost td{border:1px solid #e5e7eb;padding:5px 10px;font-size:11px}
 table.cost td.lbl{width:62%;color:#374151}
@@ -126,7 +153,7 @@ table.cost tr.sub td{background:#f8fafc}
 table.cost tr.tot td{background:#f1f5f9;font-weight:700}
 table.cost tr.grand td{background:#f0fdfa;color:#0f766e;font-weight:800;font-size:11px}
 .validbox{display:inline-block;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:600;margin-top:4px}
-.sec{font-weight:800;margin:14px 0 5px;color:#0D9488;text-transform:uppercase;font-size:11px;letter-spacing:.03em;page-break-after:avoid}
+.sec{font-weight:800;margin:14px 0 5px;color:#0D9488;font-size:11px;letter-spacing:.02em;page-break-after:avoid}
 ul,ol{margin:0 0 0 18px}
 li{margin-bottom:3px;line-height:1.45;text-align:justify}
 .intro,.closing{text-align:justify}
@@ -157,7 +184,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
 <tbody><tr><td>
 <?php endif; ?>
 <div class="sheet">
-    <div style="text-align:right;margin-bottom:8px">Balikpapan, <?= $h($tanggal) ?></div>
+    <div style="margin-bottom:8px">Balikpapan, <?= $h($tanggal) ?></div>
     <div class="meta">
         <div><b>Nomor</b>: <?= $h($o['offer_no']) ?></div>
         <div><b>Perihal</b>: <?= $h($perihal) ?></div>
@@ -173,14 +200,59 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
         Kepada Yth,<br>
         <strong><?= $h($addrName) ?></strong><?= $addrBrand && strcasecmp($addrBrand, $addrName) !== 0 ? ' — ' . $h($addrBrand) : '' ?><br>
         <?= $showUp ? 'Up. ' . $h($addrCp) . '<br>' : '' ?>
-        Di Tempat
+        <?php /* Kota client dipakai bila terisi; "Di Tempat" hanya untuk yang sekota. */ ?>
+        Di <?= trim((string) ($o['city'] ?? '')) !== '' ? '&ndash; ' . $h($o['city']) : 'Tempat' ?>
     </div>
 
     <p class="intro" style="margin:8px 0">Dengan hormat,<br><?= clara_format_bold($letter['intro'] ?: 'Bersama ini kami Management e-Walk dan Pentacity Mall Balikpapan menawarkan space exhibition sebagai berikut:') ?></p>
 
+<?php
+    /* Nilai yang boleh disebut kalimat baku template, supaya bullet seperti
+       "Masa sewa {hari} hari" tidak perlu diketik ulang tiap surat. */
+    $picNama = (string) ($o['pic_name'] ?: '');
+    $picWa   = function_exists('offer_telp_rapi') ? offer_telp_rapi($o['pic_phone'] ?? '') : (string) ($o['pic_phone'] ?? '');
+    $amtsAwal = ['dp' => $o['dp_amount'] ?: 0, 'deposit' => $deposit, 'total' => $dasarPpn, 'ppn' => $ppn, 'grand' => $grand];
+    $isiKet = [
+        'hari'       => (string) $days,
+        'periode'    => $periode,
+        'lokasi'     => (string) (($o['location_name'] ?: $o['master_code']) ?? ''),
+        'luas'       => $o['area_sqm'] ? rtrim(rtrim(number_format((float) $o['area_sqm'], 2, ',', '.'), '0'), ',') . ' m²' : '',
+        'harga'      => $rp($total),
+        'ppn_persen' => rtrim(rtrim(number_format($PPN_PERSEN, 2, ',', '.'), '0'), ',') . '%',
+        'pic'        => $picNama,
+        'pic_besar'  => mb_strtoupper($picNama, 'UTF-8'),
+        'wa'         => $picWa ?: $OFFICE_PHONE,
+        'email'      => (string) ($o['pic_email'] ?? ''),
+        'kantor'     => $OFFICE_PHONE,
+    ];
+?>
 <?php $isBundle = !empty($o['is_bundle']) && !empty($items);
     $segLbl = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
     $sumDp = $isBundle ? array_sum(array_column($items, 'dp_amount')) : (float) $o['dp_amount']; ?>
+    <?php if ($LAYOUT === 'rincian'): ?>
+    <?php /* Keluarga Foodcourt: bukan tabel harga, melainkan daftar bernomor
+             (Lokasi, Alamat, Area & Ukuran, Periode Sewa, Biaya Sewa, Service
+             Charge, Biaya Utilities, Security Deposit, Term of Payment, Jam
+             Operasional, Serah Terima, Facilities, Fit Out Periode, Schedule).
+             Isi tiap baris milik template; yang berisi {…} diisi data penawaran. */ ?>
+    <table class="rinci">
+        <?php $noR = 0; foreach (($letter['rincian'] ?? []) as $r):
+            $lbl = trim((string) ($r['label'] ?? ''));
+            if ($lbl === '') continue;
+            $noR++;
+            $isi = offer_letter_fill((string) ($r['isi'] ?? ''), $amtsAwal + $isiKet); ?>
+        <tr>
+            <td class="no"><?= $noR ?>.</td>
+            <td class="lbl"><strong><?= $h($lbl) ?></strong></td>
+            <td class="sep">:</td>
+            <td class="isi"><?= nl2br(clara_format_bold($isi)) ?></td>
+        </tr>
+        <?php endforeach; ?>
+    </table>
+    <?php if ($PPN_CATATAN !== '' && $kenaPpn): ?>
+    <div style="margin-top:6px;font-size:10px"><?= $h(offer_letter_fill($PPN_CATATAN, $isiKet)) ?></div>
+    <?php endif; ?>
+    <?php else: ?>
     <table class="obj">
         <?php $adaLuasItem = $isBundle && array_sum(array_map(fn($x) => (float) ($x['area_sqm'] ?? 0), $items)) > 0; ?>
         <thead><tr><th>Lokasi / Titik</th><th><?= ($isBundle && $adaLuasItem) ? 'Luasan / Jenis' : ($isBundle ? 'Jenis' : 'Luasan') ?></th><th>Harga Sewa / Periode</th><th>Keterangan</th></tr></thead>
@@ -199,20 +271,51 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             </tr>
             <?php endforeach; ?>
         <?php else: ?>
+            <?php
+            /* Kolom Keterangan di surat kertas berisi bullet baku milik template
+               (masa sewa, periode, status PPN, status listrik) — bukan catatan
+               bebas. Catatan bebas penawaran tetap ikut tercetak di bawahnya
+               supaya tidak ada isian yang hilang. */
+            $ketBullet = [];
+            foreach (($letter['ket'] ?? []) as $kb) {
+                $kb = trim(offer_letter_fill((string) $kb, $isiKet));
+                if ($kb !== '') $ketBullet[] = $kb;
+            }
+            $ketBebas = trim((string) ($o['keterangan'] ?? ''));
+            ?>
             <tr>
                 <td><?= $h(($o['location_name'] ?: $o['master_code']) . ($o['floor'] ? ' (Lt. ' . $o['floor'] . ')' : '')) ?></td>
                 <td><?= $o['area_sqm'] ? number_format((float)$o['area_sqm'], 2, ',', '.') . ' m²' : '-' ?></td>
                 <td><?= $rp($total) ?></td>
-                <td><?= $h($o['keterangan'] ?? '-') ?></td>
+                <td>
+                    <?php if ($ketBullet): ?>
+                        <?php foreach ($ketBullet as $kb): ?><div style="line-height:1.45">&#9679; <?= clara_format_bold($kb) ?></div><?php endforeach; ?>
+                        <?php if ($ketBebas !== ''): ?><div style="line-height:1.45">&#9679; <?= $h($ketBebas) ?></div><?php endif; ?>
+                        <?php if ($PPN_CATATAN !== '' && $kenaPpn): ?>
+                        <div style="font-size:8px;font-style:italic;color:#475569;margin-top:2px"><?= $h(offer_letter_fill($PPN_CATATAN, $isiKet)) ?></div>
+                        <?php endif; ?>
+                    <?php else: ?>
+                        <?= $h($ketBebas !== '' ? $ketBebas : '-') ?>
+                    <?php endif; ?>
+                </td>
             </tr>
         <?php endif; ?>
         </tbody>
     </table>
+    <?php /* Kalau bullet Keterangan sudah menyebut masa & periode (seperti surat
+             kertas), baris ini cuma pengulangan. */ ?>
+    <?php if (!$ketBullet): ?>
     <div style="line-height:1.7;margin-top:4px">
         Masa sewa: <strong><?= $h($durasi) ?></strong> &nbsp;·&nbsp; Periode: <strong><?= $h($periode) ?></strong>
     </div>
+    <?php endif; ?>
+    <?php endif; ?>
 
-    <div class="sec">Rincian Biaya</div>
+    <?php /* Surat kertas yang selama ini dipakai tidak memuat tabel rincian ini —
+             angkanya cukup di kolom harga. Dibiarkan menyala secara bawaan supaya
+             surat yang sudah terbit tidak berubah; template bisa mematikannya. */ ?>
+    <?php if ($PAKAI_RINCIAN_BIAYA): ?>
+    <div class="sec"><?= $h($JUDUL['rincian_biaya']) ?></div>
     <?php $tierHarga = $tierHarga ?? []; ?>
     <table class="cost">
         <?php if ($isBundle && $tierHarga && $days > 0): ?>
@@ -244,7 +347,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             <?php /* Dirinci per komponen: sewa dan listrik masing-masing dengan
                      PPN-nya sendiri, supaya customer tahu asal tiap angka. */ ?>
             <?php if ($kenaPpn): ?>
-            <tr><td class="lbl">PPN 12% Sewa <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppnSewa) ?></td></tr>
+            <tr><td class="lbl"><?= $PPN_LABEL ?> Sewa<?= $PPN_HINT ?></td><td class="amt"><?= $rp($ppnSewa) ?></td></tr>
             <tr class="sub"><td class="lbl">Subtotal Sewa + PPN</td><td class="amt"><?= $rp($total + $ppnSewa) ?></td></tr>
             <?php endif; ?>
             <?php if ((float) ($o['electricity_amount'] ?? 0) > 0): ?>
@@ -261,11 +364,11 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                 <?php endif; ?>
             <?php endif; ?>
             <?php if ($kenaPpn): ?>
-            <tr><td class="lbl">PPN 12% Listrik <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppnListrik) ?></td></tr>
+            <tr><td class="lbl"><?= $PPN_LABEL ?> Listrik<?= $PPN_HINT ?></td><td class="amt"><?= $rp($ppnListrik) ?></td></tr>
             <tr class="sub"><td class="lbl">Subtotal Listrik + PPN</td><td class="amt"><?= $rp($listrik + $ppnListrik) ?></td></tr>
             <?php endif; ?>
         <?php elseif ($kenaPpn): ?>
-            <tr><td class="lbl">PPN 12% <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($ppn) ?></td></tr>
+            <tr><td class="lbl"><?= $PPN_LABEL ?><?= $PPN_HINT ?></td><td class="amt"><?= $rp($ppn) ?></td></tr>
         <?php endif; ?>
         <tr class="tot"><td class="lbl"><?= $kenaPpn ? 'Total setelah PPN' : 'Total Biaya Sewa' ?></td><td class="amt"><?= $rp($afterPpn) ?></td></tr>
         <?php if ($isBundle && $sumDp > 0): ?>
@@ -284,7 +387,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
         <tr><td class="lbl"><strong>Service Charge</strong></td><td class="amt"></td></tr>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;Biaya SC / bulan</td><td class="amt"><?= $rp($scBulanan) ?></td></tr>
         <?php if ($kenaPpn): ?>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;PPN 12% <span class="muted" style="font-weight:400">(Nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($scPpnBulan) ?></td></tr>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $PPN_LABEL ?><?= $PPN_HINT ?></td><td class="amt"><?= $rp($scPpnBulan) ?></td></tr>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;Total SC + PPN / bulan</td><td class="amt"><?= $rp($scPerBulan) ?></td></tr>
         <?php endif; ?>
         <tr class="sub"><td class="lbl">&nbsp;&nbsp;&nbsp;Total Biaya SC <?= (int) $scBulan ?> bulan<?= $kenaPpn ? ' + PPN' : '' ?></td><td class="amt"><?= $rp($scTotal) ?></td></tr>
@@ -293,30 +396,46 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             <td class="amt"<?= $depLunas ? ' style="color:#166534;font-weight:bold"' : '' ?>><?= $rp($deposit) ?><?= $depLunas ? ' (Sudah Dibayarkan)' : '' ?></td></tr>
         <tr class="grand"><td class="lbl">Grand Total<?= $scBulanan > 0 ? ' (Sewa + Service Charge)' : '' ?> <?= $depLunas ? '(di luar Security Deposit)' : '(pembayaran awal + deposit)' ?></td><td class="amt"><?= $rp($grand) ?></td></tr>
     </table>
+    <?php endif; ?>
 
     <?php
     $facil = $letter['fasilitas'] ?: offer_facilities();
     $payList = $letter['payment'] ?: [];
     $amts = ['dp' => $o['dp_amount'] ?: 0, 'deposit' => $deposit, 'total' => $dasarPpn, 'ppn' => $ppn, 'grand' => $grand];
     ?>
-    <div class="sec">Fasilitas</div>
+    <?php if ($facil): ?>
+    <div class="sec"><?= $h($JUDUL['fasilitas']) ?></div>
     <ul><?php foreach ($facil as $f): ?><li><?= clara_format_bold($f) ?></li><?php endforeach; ?></ul>
+    <?php endif; ?>
+
+    <?php /* "Media promosi yang dapat digunakan" adalah bagian tersendiri di surat
+             kertas, bukan salah satu butir Fasilitas. */ ?>
+    <?php $mediaList = $letter['media'] ?? []; if ($mediaList): ?>
+    <div class="sec"><?= $h($JUDUL['media']) ?></div>
+    <ul><?php foreach ($mediaList as $m): ?><li><?= clara_format_bold((string) $m) ?></li><?php endforeach; ?></ul>
+    <?php endif; ?>
 
     <?php if ($payList): ?>
-    <div class="sec">Cara Pembayaran</div>
-    <ol class="pay"><?php foreach ($payList as $p): ?><li><?= clara_format_bold(offer_letter_fill((string) $p, $amts)) ?></li><?php endforeach; ?></ol>
+    <div class="sec"><?= $h($JUDUL['pembayaran']) ?></div>
+    <<?= $TAG_LIST ?> class="pay"><?php foreach ($payList as $p): ?><li><?= clara_format_bold(offer_letter_fill((string) $p, $amts + $isiKet)) ?></li><?php endforeach; ?></<?= $TAG_LIST ?>>
     <?php endif; ?>
+    <?php if (trim((string) ($BANK['rekening'] ?? '')) !== ''): ?>
     <div class="rek">
-        Pembayaran ditransfer ke rekening:<br>
-        <strong>PT. Wulandari Bangun Laksana</strong> · Bank Rakyat Indonesia (BRI) · No. Rek <strong>2078-01-000560-30-4</strong><br>
+        <?= $h($BANK['kalimat']) ?><br>
+        <strong><?= $h($BANK['atas_nama']) ?></strong> · <?= $h($BANK['bank']) ?> · No. Rek <strong><?= $h($BANK['rekening']) ?></strong><br>
         Bukti pembayaran dikirim via WhatsApp ke <strong><?= $h($payWa) ?></strong><?= $o['pic_email'] ? ' atau email <strong>' . $h($o['pic_email']) . '</strong>' : '' ?>.
     </div>
+    <?php endif; ?>
 
-    <div class="sec">Ketentuan &amp; Persyaratan</div>
-    <ol class="tnc"><?php foreach ($ketentuan as $t): ?><li><?= clara_format_bold($t) ?></li><?php endforeach; ?></ol>
+    <?php if ($ketentuan): ?>
+    <div class="sec"><?= $h($JUDUL['ketentuan']) ?></div>
+    <<?= $TAG_LIST ?> class="tnc"><?php foreach ($ketentuan as $t): ?><li><?= clara_format_bold(offer_letter_fill((string) $t, $amts + $isiKet)) ?></li><?php endforeach; ?></<?= $TAG_LIST ?>>
+    <?php endif; ?>
     <div class="validbox" style="margin-top:8px">Penawaran ini berlaku s/d <?= $h($berlaku) ?></div>
 
-    <p style="margin-top:12px">Untuk keterangan lebih lanjut dapat menghubungi <strong><?= $h($o['pic_name'] ?: 'tim Casual Leasing') ?></strong><?= $o['pic_phone'] ? ' (' . $h($o['pic_phone']) . ')' : '' ?> atau kantor kami <strong><?= $h($OFFICE_PHONE) ?></strong>.</p>
+    <?php /* Nama & nomor WhatsApp diambil dari Master PIC sales yang bersangkutan,
+             bukan satu nomor untuk semua orang. Kalimatnya sendiri milik template. */ ?>
+    <p style="margin-top:12px"><?= clara_format_bold(offer_letter_fill((string) ($letter['penutup'] ?: offer_penutup_bawaan()), $isiKet)) ?></p>
     <p class="closing" style="margin-top:6px">Demikian surat penawaran ini kami buat. Atas perhatian dan kerjasamanya kami ucapkan terima kasih.</p>
 
     <?php

@@ -74,24 +74,148 @@ function offer_facilities(): array
 }
 
 /** Decode satu baris offer_templates → struktur isi surat. */
-function _offer_template_norm(array $t): array
+/**
+ * Judul tiap bagian surat. Nilai bawaannya SAMA PERSIS dengan yang dulu dipaku
+ * di template cetak, jadi surat yang sudah ada tidak berubah bunyinya.
+ */
+function offer_judul_bawaan(): array
 {
     return [
+        'rincian_biaya' => 'Rincian Biaya',
+        'fasilitas'     => 'Fasilitas',
+        'media'         => 'Media Promosi',
+        'pembayaran'    => 'Cara Pembayaran',
+        'ketentuan'     => 'Ketentuan & Persyaratan',
+    ];
+}
+
+/** Blok rekening. Bawaannya persis nomor yang selama ini tercetak. */
+function offer_bank_bawaan(): array
+{
+    return [
+        'kalimat'   => 'Pembayaran ditransfer ke rekening:',
+        'atas_nama' => 'PT. Wulandari Bangun Laksana',
+        'bank'      => 'Bank Rakyat Indonesia (BRI)',
+        'rekening'  => '2078-01-000560-30-4',
+    ];
+}
+
+/**
+ * Kalimat penutup. {PIC} {WA} {EMAIL} {KANTOR} diganti saat surat dicetak,
+ * sehingga nama dan nomor WhatsApp selalu milik sales yang bersangkutan —
+ * bukan satu nomor yang sama untuk semua orang.
+ */
+function offer_penutup_bawaan(): string
+{
+    return 'Untuk keterangan lebih lanjut dapat menghubungi **{PIC}** ({WA}) atau kantor kami **{KANTOR}**.';
+}
+
+function _offer_template_norm(array $t): array
+{
+    $judul = json_decode((string) ($t['judul_json'] ?? '{}'), true) ?: [];
+    $bank  = json_decode((string) ($t['bank_json'] ?? '{}'), true) ?: [];
+    return [
+        'id'                => (int) ($t['id'] ?? 0),
         'name'              => (string) ($t['name'] ?? ''),
         'module'            => (string) ($t['module'] ?? 'cl'),
         'unit_type'         => (string) ($t['unit_type'] ?? ''),
+        'is_default'        => (int) ($t['is_default'] ?? 0),
+        // tabel = keluarga Exhibition; rincian = keluarga Foodcourt (daftar bernomor).
+        'layout'            => ((string) ($t['layout'] ?? 'tabel')) === 'rincian' ? 'rincian' : 'tabel',
+        'gaya_daftar'       => ((string) ($t['gaya_daftar'] ?? 'nomor')) === 'bullet' ? 'bullet' : 'nomor',
         'perihal'           => (string) ($t['perihal'] ?? ''),
         'intro'             => (string) ($t['intro'] ?? ''),
         'fasilitas'         => json_decode((string) ($t['fasilitas_json'] ?? '[]'), true) ?: [],
+        'media'             => json_decode((string) ($t['media_json'] ?? '[]'), true) ?: [],
+        'ket'               => json_decode((string) ($t['ket_json'] ?? '[]'), true) ?: [],
+        'rincian'           => json_decode((string) ($t['rincian_json'] ?? '[]'), true) ?: [],
         'payment'           => json_decode((string) ($t['payment_json'] ?? '[]'), true) ?: [],
         'terms'             => json_decode((string) ($t['terms_json'] ?? '[]'), true) ?: [],
         'notes'             => json_decode((string) ($t['notes_json'] ?? '[]'), true) ?: [],
         'extra'             => json_decode((string) ($t['extra_json'] ?? '{}'), true) ?: [],
+        'judul'             => array_merge(offer_judul_bawaan(), is_array($judul) ? $judul : []),
+        'bank'              => array_merge(offer_bank_bawaan(), is_array($bank) ? $bank : []),
+        'penutup'           => trim((string) ($t['penutup'] ?? '')) !== '' ? (string) $t['penutup'] : offer_penutup_bawaan(),
+        // PPN: 12% dengan rumus PMK 131/2024 menghasilkan tarif efektif yang
+        // sama persis dengan 11% polos (12% x 11/12 = 11%). Jadi dua template
+        // boleh berbeda KALIMATNYA tanpa berbeda sepeser pun uangnya.
+        'ppn_persen'        => (float) ($t['ppn_persen'] ?? 12),
+        'ppn_rumus'         => (int) ($t['ppn_rumus'] ?? 1),
+        'ppn_catatan'       => (string) ($t['ppn_catatan'] ?? ''),
+        'rincian_biaya'     => (int) ($t['rincian_biaya'] ?? 1),
         'dp_required'       => (int) ($t['dp_required'] ?? 1),
         'dp_months_default' => (float) ($t['dp_months_default'] ?? 2),
         // Baseline biaya listrik per bulan — dipakai saat membuat penawaran baru.
         'electricity_default' => (float) ($t['electricity_default'] ?? 150000),
     ];
+}
+
+/**
+ * Daftar bernomor (keluarga Foodcourt) ditulis sebagai teks biasa supaya bisa
+ * disunting di satu kotak, bukan lewat belasan isian terpisah:
+ *
+ *     Lokasi :: BSB Foodcourt, Pentacity Shopping Avenue
+ *     @Balikpapan Superblock
+ *     Alamat :: Jl Jend. Sudirman, Balikpapan
+ *
+ * Baris yang memuat " :: " memulai baris baru; baris lain menempel pada baris
+ * di atasnya. Dengan begitu isi bertingkat (mis. rincian Service Charge) tetap
+ * bisa ditulis apa adanya.
+ */
+function offer_rincian_parse(string $teks): array
+{
+    $out = [];
+    foreach (preg_split('/\r\n|\r|\n/', $teks) as $baris) {
+        if (strpos($baris, '::') !== false && preg_match('/^\s*([^:]{1,60}?)\s*::\s*(.*)$/u', $baris, $m)) {
+            $out[] = ['label' => trim($m[1]), 'isi' => $m[2]];
+            continue;
+        }
+        if (!$out) { if (trim($baris) !== '') $out[] = ['label' => '', 'isi' => $baris]; continue; }
+        $out[count($out) - 1]['isi'] .= "\n" . $baris;
+    }
+    foreach ($out as $i => $r) $out[$i]['isi'] = rtrim($r['isi']);
+    return array_values(array_filter($out, fn($r) => $r['label'] !== '' || trim($r['isi']) !== ''));
+}
+
+/** Kebalikan offer_rincian_parse() — untuk ditampilkan kembali di kotak isian. */
+function offer_rincian_text(array $rincian): string
+{
+    $b = [];
+    foreach ($rincian as $r) {
+        $b[] = trim((string) ($r['label'] ?? '')) . ' :: ' . (string) ($r['isi'] ?? '');
+    }
+    return implode("\n", $b);
+}
+
+/** Tarif PPN efektif sebuah template, dalam pecahan (0.11 = 11%). */
+function offer_ppn_tarif(array $tpl): float
+{
+    $p = (float) ($tpl['ppn_persen'] ?? 12) / 100;
+    return !empty($tpl['ppn_rumus']) ? $p * 11 / 12 : $p;
+}
+
+/**
+ * Semua template satu modul, berurut ABJAD — untuk dropdown di formulir.
+ * Yang ditandai bawaan tetap dikenali lewat kunci 'is_default', bukan lewat
+ * urutan, supaya daftarnya enak dibaca sekaligus pilihannya tetap benar.
+ */
+function offer_template_list(PDO $pdo, int $propertyId, string $module = 'cl'): array
+{
+    $st = $pdo->prepare("SELECT * FROM offer_templates
+                          WHERE property_id = ? AND module = ? AND status = 'active'
+                          ORDER BY name ASC, id ASC");
+    $st->execute([$propertyId, _tpl_module($module)]);
+    return array_map('_offer_template_norm', $st->fetchAll(PDO::FETCH_ASSOC) ?: []);
+}
+
+/** Satu template menurut id — dipakai saat sales memilih sendiri dari dropdown. */
+function offer_template_by_id(PDO $pdo, int $propertyId, int $id): ?array
+{
+    if ($id <= 0) return null;
+    $st = $pdo->prepare("SELECT * FROM offer_templates WHERE id = ? AND property_id = ? AND status = 'active' LIMIT 1");
+    $st->execute([$id, $propertyId]);
+    $t = $st->fetch(PDO::FETCH_ASSOC);
+    return $t ? _offer_template_norm($t) : null;
 }
 
 /** Daftar modul yang punya template sendiri. */
@@ -111,7 +235,7 @@ function _tpl_module_help(string $module): string
     return match ($module) {
         'gudang' => 'Isi <strong>Surat Konfirmasi Sewa Gudang</strong>: intro, peraturan sewa, catatan kaki (PPN &amp; rekening), dan contoh bullet kolom Keterangan. Semua bisa diubah di sini — dokumen yang sudah terbit tidak ikut berubah.',
         'media'  => 'Isi <strong>Form Utilities</strong>: daftar utilities, daftar media promo, pilihan parkir kendaraan, catatan kaki, dan catatan bawah formulir. Semua bisa diubah di sini — dokumen yang sudah terbit tidak ikut berubah.',
-        default  => 'Isi Surat Penawaran (perihal, intro, fasilitas, cara pembayaran, ketentuan) &amp; aturan DP berbeda per <strong>jenis booth (Tipe Unit)</strong>. Template <strong>(default)</strong> dipakai bila tipe unit belum punya template khusus. Saat penawaran disimpan, isinya di-<em>snapshot</em> sehingga surat terbit tak berubah walau template diedit.',
+        default  => 'Isi <strong>Surat Penawaran</strong>: bentuk surat, PPN, bagian-bagiannya, rekening, dan kalimat penutup. Sales <strong>memilih sendiri</strong> templatenya lewat dropdown saat membuat penawaran &mdash; yang bertanda <strong>bawaan</strong> terpilih otomatis. Saat penawaran disimpan, isinya di-<em>snapshot</em> sehingga surat yang sudah terbit tak berubah walau templatenya diedit.',
     };
 }
 
@@ -120,10 +244,27 @@ function _tpl_module_help(string $module): string
  * default) → (properti, cl, default) → fallback kode. Tipe unit hanya dipakai
  * modul Exhibition; Media &amp; Gudang cukup template default modulnya.
  */
-function offer_template_for(PDO $pdo, int $propertyId, ?string $unitType, string $module = 'cl'): array
+/**
+ * Template yang dipakai sebuah penawaran.
+ *
+ * Urutannya sengaja: PILIHAN ORANG dulu, baru tebakan mesin.
+ *   1. $templateId — template yang dipilih sendiri di formulir; ini mutlak.
+ *   2. template yang ditandai BAWAAN untuk modul ini.
+ *   3. tebakan lama menurut tipe unit (dipertahankan supaya penawaran yang
+ *      dibuat sebelum pembaruan ini tetap mendapat isi surat yang sama).
+ *   4. baris default (tipe unit kosong), lalu fallback kode.
+ */
+function offer_template_for(PDO $pdo, int $propertyId, ?string $unitType, string $module = 'cl', int $templateId = 0): array
 {
     $module = _tpl_module($module);
-    $st = $pdo->prepare("SELECT * FROM offer_templates WHERE property_id=? AND module=? AND unit_type=? AND status='active' LIMIT 1");
+    if ($templateId > 0 && ($t = offer_template_by_id($pdo, $propertyId, $templateId))) {
+        if ($t['module'] === $module) return $t;
+    }
+    $st = $pdo->prepare("SELECT * FROM offer_templates WHERE property_id=? AND module=? AND is_default=1 AND status='active' ORDER BY name ASC LIMIT 1");
+    $st->execute([$propertyId, $module]);
+    if ($t = $st->fetch()) return _offer_template_norm($t);
+
+    $st = $pdo->prepare("SELECT * FROM offer_templates WHERE property_id=? AND module=? AND unit_type=? AND status='active' ORDER BY name ASC, id ASC LIMIT 1");
     if ($unitType !== null && $unitType !== '') {
         $st->execute([$propertyId, $module, $unitType]);
         if ($t = $st->fetch()) return _offer_template_norm($t);
@@ -146,6 +287,9 @@ function offer_template_for(PDO $pdo, int $propertyId, ?string $unitType, string
             'Apabila tidak terjadi kerusakan setelah masa sewa berakhir, Security Deposit dikembalikan 100%.',
         ],
         'terms' => offer_terms(), 'notes' => [], 'extra' => [],
+        'id' => 0, 'is_default' => 1, 'layout' => 'tabel', 'gaya_daftar' => 'nomor', 'media' => [], 'ket' => [], 'rincian' => [],
+        'judul' => offer_judul_bawaan(), 'bank' => offer_bank_bawaan(), 'penutup' => offer_penutup_bawaan(),
+        'ppn_persen' => 12.0, 'ppn_rumus' => 1, 'ppn_catatan' => '', 'rincian_biaya' => 1,
         'dp_required' => 1, 'dp_months_default' => 2, 'electricity_default' => 150000,
     ];
 }
@@ -154,34 +298,101 @@ function offer_template_for(PDO $pdo, int $propertyId, ?string $unitType, string
 function offer_letter_fill(string $text, array $a): string
 {
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
-    return strtr($text, [
+    $ganti = [
         '{dp}'      => $rp($a['dp'] ?? 0),
         '{deposit}' => $rp($a['deposit'] ?? 0),
         '{total}'   => $rp($a['total'] ?? 0),
         '{ppn}'     => $rp($a['ppn'] ?? 0),
         '{grand}'   => $rp($a['grand'] ?? 0),
-    ]);
+    ];
+    // Nilai bukan-uang: dipakai bullet kolom Keterangan & kalimat penutup, supaya
+    // kalimat baku template bisa menyebut angka penawaran tanpa diketik ulang.
+    // Huruf besar maupun kecil sama-sama diterima — orang yang menyunting template
+    // menulis {PIC}, dan menolak diam-diam hanya menyisakan kurung kurawal di surat.
+    foreach (['hari', 'periode', 'lokasi', 'luas', 'harga', 'ppn_persen',
+              'pic', 'pic_besar', 'wa', 'email', 'kantor'] as $k) {
+        if (!array_key_exists($k, $a)) continue;
+        $ganti['{' . $k . '}'] = (string) $a[$k];
+        $ganti['{' . strtoupper($k) . '}'] = (string) $a[$k];
+    }
+    return strtr($text, $ganti);
+}
+
+/**
+ * Nomor telepon dirapikan jadi kelompok empat angka — 08xxxxxxxxxx jadi
+ * 08xx-xxxx-xxxx, bentuk yang dipakai di surat-surat kertas selama ini.
+ * Nomor yang sudah ada pemisahnya dibiarkan apa adanya.
+ */
+function offer_telp_rapi(?string $no): string
+{
+    $no = trim((string) $no);
+    if ($no === '') return '';
+    if (preg_match('/[^0-9]/', $no)) return $no;       // sudah ditulis dengan gaya sendiri
+    return trim(implode('-', str_split($no, 4)), '-');
 }
 
 /**
  * Isi surat untuk sebuah penawaran: dari snapshot letter_json (terkunci saat
  * simpan) bila ada; jika tidak (penawaran lama), resolve template live.
  */
+/**
+ * Isi surat yang dipakai satu penawaran.
+ *
+ * Yang sudah tersimpan di letter_json DIPAKAI APA ADANYA — itulah sebabnya
+ * mengubah atau menambah template tidak pernah mengubah surat yang sudah
+ * terbit. Kunci baru (tata letak, PPN, judul bagian, rekening, penutup) diberi
+ * nilai bawaan yang sama persis dengan perilaku lama, sehingga surat lama yang
+ * belum menyimpan kunci itu tetap tercetak seperti semula.
+ */
+function offer_letter_bawaan(): array
+{
+    return [
+        'perihal' => '', 'intro' => '', 'fasilitas' => [], 'payment' => [], 'terms' => [],
+        'notes' => [], 'extra' => [], 'media' => [], 'ket' => [], 'rincian' => [],
+        'layout' => 'tabel', 'gaya_daftar' => 'nomor', 'judul' => offer_judul_bawaan(), 'bank' => offer_bank_bawaan(),
+        'penutup' => offer_penutup_bawaan(),
+        'ppn_persen' => 12.0, 'ppn_rumus' => 1, 'ppn_catatan' => '', 'rincian_biaya' => 1,
+    ];
+}
+
 function offer_letter(PDO $pdo, array $o): array
 {
     if (!empty($o['letter_json'])) {
         $l = json_decode((string) $o['letter_json'], true);
         if (is_array($l)) {
-            return $l + ['perihal' => '', 'intro' => '', 'fasilitas' => [], 'payment' => [], 'terms' => [], 'notes' => [], 'extra' => []];
+            $l += offer_letter_bawaan();
+            $l['judul'] = array_merge(offer_judul_bawaan(), is_array($l['judul'] ?? null) ? $l['judul'] : []);
+            $l['bank']  = array_merge(offer_bank_bawaan(),  is_array($l['bank'] ?? null)  ? $l['bank']  : []);
+            return $l;
         }
     }
     $mod = _tpl_module((string) ($o['module'] ?? 'cl'));
     $ut  = $mod === 'cl' ? offer_unit_type($pdo, (int) $o['property_id'], $o['master_code'] ?? null) : '';
-    $t   = offer_template_for($pdo, (int) $o['property_id'], $ut, $mod);
+    $t   = offer_template_for($pdo, (int) $o['property_id'], $ut, $mod, (int) ($o['template_id'] ?? 0));
+    return offer_letter_dari_template($t);
+}
+
+/** Satu tempat yang mengubah template jadi isi surat — dipakai saat menyimpan & mencetak. */
+function offer_letter_dari_template(array $t): array
+{
     return [
-        'perihal' => $t['perihal'], 'intro' => $t['intro'],
-        'fasilitas' => $t['fasilitas'], 'payment' => $t['payment'], 'terms' => $t['terms'],
-        'notes' => $t['notes'], 'extra' => $t['extra'],
+        'template'   => $t['name'] ?? '',
+        'template_id' => (int) ($t['id'] ?? 0),
+        'layout'     => $t['layout'] ?? 'tabel',
+        'gaya_daftar' => $t['gaya_daftar'] ?? 'nomor',
+        'perihal'    => $t['perihal'] ?? '', 'intro' => $t['intro'] ?? '',
+        'fasilitas'  => $t['fasilitas'] ?? [], 'media' => $t['media'] ?? [],
+        'ket'        => $t['ket'] ?? [], 'rincian' => $t['rincian'] ?? [],
+        'payment'    => $t['payment'] ?? [], 'terms' => $t['terms'] ?? [],
+        'notes'      => $t['notes'] ?? [], 'extra' => $t['extra'] ?? [],
+        'judul'      => $t['judul'] ?? offer_judul_bawaan(),
+        'bank'       => $t['bank'] ?? offer_bank_bawaan(),
+        'penutup'    => $t['penutup'] ?? offer_penutup_bawaan(),
+        'ppn_persen' => (float) ($t['ppn_persen'] ?? 12),
+        'ppn_rumus'  => (int) ($t['ppn_rumus'] ?? 1),
+        'ppn_catatan' => (string) ($t['ppn_catatan'] ?? ''),
+        'rincian_biaya' => (int) ($t['rincian_biaya'] ?? 1),
+        'dp_required' => (int) ($t['dp_required'] ?? 1),
     ];
 }
 
@@ -278,7 +489,7 @@ function _offer_calc_total(string $pricing, float $rate, float $area, float $slo
 /** Field ekonomi yang di-snapshot tiap revisi. */
 function _offer_fields(): array
 {
-    return ['module', 'client_id', 'contact_id', 'pic_name', 'referrer_name', 'master_code', 'keterangan',
+    return ['module', 'template_id', 'client_id', 'contact_id', 'pic_name', 'referrer_name', 'master_code', 'keterangan',
             'pricing_type', 'unit_rate', 'area_sqm', 'quantity', 'slots',
             'start_date', 'end_date', 'contract_months', 'monthly_amount', 'total_calculated', 'override_amount',
             'billing_method', 'recurring_flag', 'cycle_recognition',
@@ -1072,7 +1283,16 @@ function offer_form(PDO $pdo): void
     // Tingkatan tarif per m² milik penawaran ini (kosong = tidak memakainya).
     $tierRows = $existing ? offer_area_tiers($pdo, (int) $offer['id']) : [];
 
-    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $listrikTotal, $listrikUnit, $tplBaru, $tahapHarga, $tierRows) {
+    // Daftar template untuk dipilih sendiri — berurut abjad supaya gampang dicari.
+    // Yang terpilih: template penawaran ini bila sedang diedit, selain itu yang
+    // ditandai bawaan.
+    $tplList = offer_template_list($pdo, $pid, $module);
+    $tplSel  = (int) ($offer['template_id'] ?? 0);
+    if ($tplSel <= 0) {
+        foreach ($tplList as $tt) { if (!empty($tt['is_default'])) { $tplSel = (int) $tt['id']; break; } }
+    }
+
+    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $listrikTotal, $listrikUnit, $tplBaru, $tahapHarga, $tierRows, $tplList, $tplSel) {
         $picSel = $offer['pic_name'] ?? $linkedPic;
         $disabled = $editable ? '' : 'disabled';
         ?>
@@ -1120,6 +1340,21 @@ function offer_form(PDO $pdo): void
                 <div>
                     <label>Up. (Contact Person)</label>
                     <select name="contact_id" id="contact_id" <?= $disabled ?>><option value="">- Pilih -</option></select>
+                </div>
+                <?php /* Template menentukan BUNYI surat (bagian, ketentuan, PPN), bukan
+                         angkanya. Jadi mengganti pilihan di sini tidak mengubah
+                         perhitungan, item, maupun tahap harga penawaran. */ ?>
+                <div>
+                    <label>Template Surat</label>
+                    <select name="template_id" <?= $disabled ?>>
+                        <?php if (!$tplList): ?><option value="0">(belum ada template)</option><?php endif; ?>
+                        <?php foreach ($tplList as $tt): ?>
+                        <option value="<?= (int) $tt['id'] ?>" <?= (int) $tt['id'] === $tplSel ? 'selected' : '' ?>>
+                            <?= h($tt['name']) ?><?= !empty($tt['is_default']) ? ' — bawaan' : '' ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="help">Menentukan isi baku surat. Isinya dikunci saat penawaran disimpan, jadi
+                        mengubah template kemudian tidak mengubah surat ini.</div>
                 </div>
                 <div>
                     <label>PIC Sales (pembuat)</label>
@@ -1763,9 +1998,22 @@ function offer_form(PDO $pdo): void
                 applyTemplateRule(code);
             }
             // Template per jenis booth: tampilkan & atur aturan DP saat unit dipilih.
+            // Ganti template di dropdown → aturan DP & baseline listrik ikut
+            // menyesuaikan, supaya isian formulir tidak bertentangan dengan surat
+            // yang akan terbit. Angka yang sudah diketik sales tidak ditimpa.
+            (function () {
+                var selTpl = document.querySelector('select[name=template_id]');
+                if (!selTpl) return;
+                selTpl.addEventListener('change', function () {
+                    var mc = document.querySelector('[name=master_code]');
+                    applyTemplateRule(mc ? (mc.value || '-') : '-');
+                });
+            })();
             function applyTemplateRule(code) {
                 var note = document.getElementById('tpl-note'); if (!note || !code) return;
-                fetch('?r=offer_template_rule&master_code=' + encodeURIComponent(code), { cache: 'no-store' })
+                var selTpl = document.querySelector('select[name=template_id]');
+                var idTpl  = selTpl ? (selTpl.value || 0) : 0;
+                fetch('?r=offer_template_rule&master_code=' + encodeURIComponent(code) + '&template_id=' + encodeURIComponent(idTpl), { cache: 'no-store' })
                     .then(function (r) { return r.json(); })
                     .then(function (d) {
                         var dpm = document.getElementById('dp_months');
@@ -2228,10 +2476,13 @@ function offer_save(PDO $pdo): void
     // pakai jalur netral (unit_type null) agar istilah booth pameran tidak ikut
     // ter-bake ke surat media/gudang.
     $unitType = $module === 'cl' ? offer_unit_type($pdo, $pid, trim((string) post('master_code')) ?: null) : '';
-    $tpl      = offer_template_for($pdo, $pid, $module === 'cl' ? $unitType : null, $module);
+    // Template yang DIPILIH sales di formulir menang atas tebakan tipe unit.
+    // Kosong = biarkan aturan lama yang memilih (bawaan modul, lalu tipe unit).
+    $tplId    = (int) post('template_id', 0);
+    $tpl      = offer_template_for($pdo, $pid, $module === 'cl' ? $unitType : null, $module, $tplId);
     // #4 — sinyal non-silent bila unit_type ada tapi template jatuh ke default
     // (unit_type hasil kosong) → terbitnya surat dgn istilah salah bisa dilacak.
-    if ($unitType !== '' && ($tpl['unit_type'] ?? '') === '') {
+    if ($tplId <= 0 && $unitType !== '' && ($tpl['unit_type'] ?? '') === '') {
         error_log("offer template miss: property=$pid unit_type='$unitType' -> default");
     }
     $dpReq    = $tpl['dp_required'] == 1;
@@ -2240,21 +2491,17 @@ function offer_save(PDO $pdo): void
     // #5 — DP deposit-only (dp_required=0) WAJIB 0 agar surat tidak kontradiktif
     // (0 bulan tapi nominal DP > 0). Parse via helper rupiah.
     $dpAmount = $dpReq ? parse_rupiah(post('dp_amount', '0')) : 0.0;
-    $letterJson = json_encode([
-        'template'    => $tpl['name'],
-        'unit_type'   => $unitType,
-        'perihal'     => $tpl['perihal'],
-        'intro'       => $tpl['intro'],
-        'fasilitas'   => $tpl['fasilitas'],
-        'payment'     => $tpl['payment'],
-        'terms'       => $tpl['terms'],
-        'notes'       => $tpl['notes'],
-        'extra'       => $tpl['extra'],
-        'dp_required' => $tpl['dp_required'],
-    ], JSON_UNESCAPED_UNICODE);
+    // Isi surat DIBEKUKAN di sini. Sesudah ini, mengubah templatenya tidak lagi
+    // menyentuh penawaran ini — itulah jaminan bahwa menambah 5 template baru
+    // tidak mengusik satu pun surat yang sudah terbit.
+    $letterJson = json_encode(
+        offer_letter_dari_template($tpl) + ['unit_type' => $unitType],
+        JSON_UNESCAPED_UNICODE
+    );
 
     $data = [
         'module'          => $module,
+        'template_id'     => ($tpl['id'] ?? 0) > 0 ? (int) $tpl['id'] : null,
         'client_id'       => (int) post('client_id') ?: null,
         'contact_id'      => (int) post('contact_id') ?: null,
         'pic_name'        => trim((string) post('pic_name')) ?: null,
@@ -2372,10 +2619,16 @@ function offer_save(PDO $pdo): void
         // satuan biasanya = satu booth — jadi paket 3 booth diisi 3 ×.
         // Seperti penawaran satuan, listrik adalah beban di surat & dokumen
         // konfirmasi; nilai transaksi tetap sebesar sewa per komponen.
-        $data['letter_json']      = json_encode([
-            'template' => 'Paket', 'unit_type' => '', 'perihal' => 'Surat Penawaran Paket',
-            'intro' => '', 'fasilitas' => [], 'payment' => [], 'terms' => [], 'dp_required' => 0, 'bundle' => true,
-        ], JSON_UNESCAPED_UNICODE);
+        // Paket memakai isi template yang DIPILIH juga — dulu isinya dikosongkan
+        // sehingga surat paket terbit tanpa fasilitas, cara bayar, maupun
+        // ketentuan. Yang benar-benar khas paket hanyalah perihal dan tiadanya
+        // aturan DP; sisanya tetap milik template.
+        $suratPaket = offer_letter_dari_template($tpl);
+        $suratPaket['perihal']     = 'Surat Penawaran Paket';
+        $suratPaket['dp_required'] = 0;
+        $suratPaket['unit_type']   = '';
+        $suratPaket['bundle']      = true;
+        $data['letter_json']      = json_encode($suratPaket, JSON_UNESCAPED_UNICODE);
     } elseif ($isBundle) {
         flash('Paket minimal 2 komponen.'); redirect_to('offer_form', $id ? ['id' => $id] : ['bundle' => 1]);
     }
@@ -2510,7 +2763,7 @@ function offer_print(PDO $pdo): void
     $pid = current_property_id();
     $id  = (int) getv('id');
     $st = $pdo->prepare(
-        "SELECT o.*, c.company_name, c.brand_name, c.address,
+        "SELECT o.*, c.company_name, c.brand_name, c.address, c.city,
                 ct.name cp_name,
                 u.location_name, u.floor,
                 p.email pic_email, p.phone pic_phone, p.signature_path pic_signature
@@ -2646,8 +2899,12 @@ function _offer_sign_view(array $o): array
     // PPN per komponen — jumlahnya jadi PPN total, supaya rinciannya bisa
     // ditampilkan dan penjumlahannya tetap pas.
     $kenaPpn    = !isset($o['ppn_flag']) || !empty($o['ppn_flag']);
-    $ppnSewa    = $kenaPpn ? round($sewa * 11 / 12 * 0.12) : 0.0;
-    $ppnListrik = $kenaPpn ? round($listrik * 11 / 12 * 0.12) : 0.0;
+    // Tarif mengikuti template yang sudah dibekukan di surat ini. Bawaannya
+    // 12% + rumus PMK — sama persis dengan angka tetap yang dulu dipakai.
+    $lj = !empty($o['letter_json']) ? (json_decode((string) $o['letter_json'], true) ?: []) : [];
+    $tarifPpn = ((float) ($lj['ppn_persen'] ?? 12) / 100) * ((!isset($lj['ppn_rumus']) || $lj['ppn_rumus']) ? 11 / 12 : 1);
+    $ppnSewa    = $kenaPpn ? round($sewa * $tarifPpn) : 0.0;
+    $ppnListrik = $kenaPpn ? round($listrik * $tarifPpn) : 0.0;
     $ppn        = $ppnSewa + $ppnListrik;
     $afterPpn   = $total + $ppn;
     $deposit  = (float) $o['deposit_amount'];
@@ -2874,7 +3131,7 @@ function offer_templates_page(PDO $pdo): void
     require_permission('manage_master');
     $pid    = current_property_id();
     $module = _tpl_module((string) getv('module', 'cl'));
-    $rows = $pdo->prepare("SELECT * FROM offer_templates WHERE property_id=? AND module=? ORDER BY sort_order ASC, unit_type ASC");
+    $rows = $pdo->prepare("SELECT * FROM offer_templates WHERE property_id=? AND module=? ORDER BY is_default DESC, name ASC");
     $rows->execute([$pid, $module]);
     $tpls = $rows->fetchAll();
 
@@ -2890,19 +3147,22 @@ function offer_templates_page(PDO $pdo): void
         <div class="panel" style="margin-top:12px">
             <p class="muted" style="margin-top:0"><?= _tpl_module_help($module) ?></p>
             <table class="data" style="width:100%">
-                <thead><tr><th>Nama</th><th><?= $module === 'cl' ? 'Tipe Unit' : 'Berlaku untuk' ?></th><th>DP</th><th>Fasilitas / Bayar / Ketentuan / Catatan</th><th>Status</th><th></th></tr></thead>
+                <thead><tr><th>Nama</th><th>Bentuk</th><th>PPN</th><th>Tipe Unit</th><th>DP</th><th>Fasilitas / Media / Bayar / Ketentuan</th><th>Status</th><th></th></tr></thead>
                 <tbody>
                 <?php foreach ($tpls as $t): ?>
                     <tr>
-                        <td><strong><?= h($t['name']) ?></strong></td>
-                        <td><?php if (($t['unit_type'] ?? '') === ''): ?><span class="badge"><?= $module === 'cl' ? '(default)' : 'semua unit' ?></span><?php else: ?><?= h($t['unit_type']) ?><?php endif; ?></td>
+                        <td><strong><?= h($t['name']) ?></strong>
+                            <?php if (!empty($t['is_default'])): ?><br><span class="badge" style="background:#ccfbf1;color:#0f766e">bawaan</span><?php endif; ?></td>
+                        <td><?= ($t['layout'] ?? 'tabel') === 'rincian' ? 'Daftar bernomor' : 'Tabel harga' ?></td>
+                        <td><?= h(rtrim(rtrim(number_format((float) ($t['ppn_persen'] ?? 12), 2, ',', '.'), '0'), ',')) ?>%<?= !empty($t['ppn_rumus']) ? '<br><span class="muted" style="font-size:11px">rumus PMK</span>' : '' ?></td>
+                        <td><?php if (($t['unit_type'] ?? '') === ''): ?><span class="muted">semua</span><?php else: ?><?= h($t['unit_type']) ?><?php endif; ?></td>
                         <td><?= $t['dp_required'] ? 'Wajib · ' . h(rtrim(rtrim(number_format((float)$t['dp_months_default'],1,',',''),'0'),',')) . ' bln' : '<span class="muted">Tanpa DP</span>' ?></td>
-                        <td class="muted"><?= $n($t['fasilitas_json']) ?> / <?= $n($t['payment_json']) ?> / <?= $n($t['terms_json']) ?> / <?= $n($t['notes_json'] ?? '[]') ?></td>
+                        <td class="muted"><?= $n($t['fasilitas_json']) ?> / <?= $n($t['media_json'] ?? '[]') ?> / <?= $n($t['payment_json']) ?> / <?= $n($t['terms_json']) ?></td>
                         <td><?= $t['status'] === 'active' ? '<span style="color:#16a34a">Aktif</span>' : '<span class="muted">Nonaktif</span>' ?></td>
                         <td><a class="btn light" href="?r=offer_template_form&id=<?= (int)$t['id'] ?>">Edit</a></td>
                     </tr>
                 <?php endforeach; ?>
-                <?php if (!$tpls): ?><tr><td colspan="6" class="muted">Belum ada template untuk modul ini.</td></tr><?php endif; ?>
+                <?php if (!$tpls): ?><tr><td colspan="8" class="muted">Belum ada template untuk modul ini.</td></tr><?php endif; ?>
                 </tbody>
             </table>
         </div>
@@ -2928,8 +3188,12 @@ function offer_template_form(PDO $pdo): void
     $val   = fn(string $k, $d = '') => h((string) ($t[$k] ?? $d));
     $lines = fn(string $col) => h(implode("\n", json_decode((string) ($t[$col] ?? '[]'), true) ?: []));
     $xl    = fn(string $k) => h(implode("\n", $extra[$k] ?? []));
+    $judul = array_merge(offer_judul_bawaan(), json_decode((string) ($t['judul_json'] ?? '{}'), true) ?: []);
+    $bank  = array_merge(offer_bank_bawaan(),  json_decode((string) ($t['bank_json'] ?? '{}'), true) ?: []);
+    $rinci = h(offer_rincian_text(json_decode((string) ($t['rincian_json'] ?? '[]'), true) ?: []));
+    $layout = ((string) ($t['layout'] ?? 'tabel')) === 'rincian' ? 'rincian' : 'tabel';
 
-    layout(($t ? 'Edit' : 'Tambah') . ' Template Dokumen', function () use ($t, $id, $module, $unitTypes, $val, $lines, $xl) {
+    layout(($t ? 'Edit' : 'Tambah') . ' Template Dokumen', function () use ($t, $id, $module, $unitTypes, $val, $lines, $xl, $judul, $bank, $rinci, $layout) {
         $isCl = $module === 'cl';
         ?>
         <div class="toolbar"><a class="btn light" href="?r=offer_templates&module=<?= h($module) ?>">← Daftar Template</a>
@@ -2988,7 +3252,67 @@ function offer_template_form(PDO $pdo): void
                     </div>
                 </div>
             </div>
+            <?php /* ── Bentuk surat ─────────────────────────────────────────────── */ ?>
+            <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:11px 14px;margin-top:12px">
+                <label style="font-weight:700">Bentuk Surat</label>
+                <div class="help" style="margin-top:2px">Dua bentuk yang dipakai di kertas selama ini. Pilih yang sesuai &mdash; isian di bawah menyesuaikan sendiri.</div>
+                <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:7px">
+                    <label style="font-weight:400;display:flex;gap:7px;align-items:flex-start;cursor:pointer;max-width:330px">
+                        <input type="radio" name="layout" value="tabel" <?= $layout === 'tabel' ? 'checked' : '' ?> style="margin-top:3px">
+                        <span><strong>Tabel harga</strong><br><span class="help">Lokasi / Luas / Harga Sewa / Keterangan &mdash; dipakai Pushcart, Snack Corner, Atrium, pameran.</span></span>
+                    </label>
+                    <label style="font-weight:400;display:flex;gap:7px;align-items:flex-start;cursor:pointer;max-width:330px">
+                        <input type="radio" name="layout" value="rincian" <?= $layout === 'rincian' ? 'checked' : '' ?> style="margin-top:3px">
+                        <span><strong>Daftar bernomor</strong><br><span class="help">1. Lokasi, 2. Alamat, 3. Area &amp; Ukuran, &hellip; &mdash; dipakai Foodcourt / sewa jangka panjang.</span></span>
+                    </label>
+                </div>
+            </div>
+
+            <div style="margin-top:10px">
+                <label style="font-weight:700">Gaya Daftar (Cara Pembayaran &amp; Ketentuan)</label>
+                <div style="display:flex;gap:18px;margin-top:5px">
+                    <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer">
+                        <input type="radio" name="gaya_daftar" value="nomor" <?= ($t['gaya_daftar'] ?? 'nomor') !== 'bullet' ? 'checked' : '' ?>> Bernomor (1. 2. 3.)
+                    </label>
+                    <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer">
+                        <input type="radio" name="gaya_daftar" value="bullet" <?= ($t['gaya_daftar'] ?? '') === 'bullet' ? 'checked' : '' ?>> Bullet (&bull;) &mdash; seperti surat kertas
+                    </label>
+                </div>
+            </div>
+
+            <?php /* ── PPN ──────────────────────────────────────────────────────── */ ?>
+            <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:11px 14px;margin-top:12px">
+                <label style="font-weight:700">PPN</label>
+                <div class="help" style="margin-top:2px">Hanya mengubah <strong>kalimat</strong> di surat, bukan aturan uangnya.
+                    PPN 12% dengan rumus PMK menghasilkan tarif efektif yang sama persis dengan 11% polos
+                    (12% &times; 11/12 = 11%). Dikenakan atau tidaknya tetap ditentukan centang PPN di penawaran.</div>
+                <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
+                    <div><label style="font-size:12px">Persen</label>
+                        <input type="number" step="0.5" min="0" max="100" name="ppn_persen" value="<?= $val('ppn_persen', '12') ?>" style="width:90px"></div>
+                    <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer;padding-bottom:9px">
+                        <input type="checkbox" name="ppn_rumus" value="1" <?= !$t || !empty($t['ppn_rumus']) ? 'checked' : '' ?>>
+                        <span style="font-size:13px">Pakai rumus PMK (Nilai &times; 11/12 &times; tarif)</span>
+                    </label>
+                </div>
+                <div style="margin-top:8px"><label style="font-size:12px">Catatan PPN (tercetak kecil di bawah kolom Keterangan)</label>
+                    <input name="ppn_catatan" value="<?= $val('ppn_catatan') ?>" placeholder="*PPN 12% Sesuai PMK Nomor 131 Tahun 2024 dengan perhitungan (NILAI SEWA x 11/12 x 12%)" style="width:100%"></div>
+            </div>
+
+            <div style="display:flex;gap:10px;align-items:flex-start;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:11px 14px;margin-top:12px">
+                <input type="checkbox" name="rincian_biaya" id="rincian_biaya" value="1" style="width:18px;height:18px;margin-top:1px" <?= !$t || !empty($t['rincian_biaya']) ? 'checked' : '' ?>>
+                <div>
+                    <label for="rincian_biaya" style="font-weight:700">Cetak tabel "Rincian Biaya"</label>
+                    <div class="help" style="margin-top:2px">Tabel hitungan baris demi baris (subtotal, PPN, deposit, grand total) buatan aplikasi.
+                        Surat kertas yang selama ini dipakai <strong>tidak</strong> memuatnya &mdash; lepas centang bila ingin sama persis.</div>
+                </div>
+            </div>
+
+            <div style="margin-top:12px"><label>Bullet kolom "Keterangan" <span class="muted" style="font-weight:400">(1 baris = 1 bullet &middot; <code>{hari}</code> <code>{periode}</code> <code>{ppn_persen}</code> <code>{luas}</code> <code>{harga}</code>)</span></label><textarea name="ket" rows="4" style="width:100%" placeholder="Masa sewa {hari} hari&#10;Periode sewa {periode}&#10;Harga belum termasuk PPN {ppn_persen}&#10;Harga belum termasuk biaya Listrik"><?= $lines('ket_json') ?></textarea></div>
+
+            <div style="margin-top:10px"><label>Daftar Bernomor <span class="muted" style="font-weight:400">(hanya untuk bentuk "Daftar bernomor" &middot; tulis <code>Label :: isi</code>, baris lanjutannya menempel)</span></label><textarea name="rincian" rows="10" style="width:100%" placeholder="Lokasi :: BSB Foodcourt, Pentacity Shopping Avenue&#10;@Balikpapan Superblock&#10;Alamat :: Jl Jend. Sudirman, Balikpapan&#10;Area &amp; Ukuran :: {luas}&#10;Periode Sewa :: {periode}"><?= $rinci ?></textarea></div>
+
             <div style="margin-top:12px"><label>Fasilitas <span class="muted" style="font-weight:400">(1 baris = 1 poin)</span></label><textarea name="fasilitas" rows="3" style="width:100%"><?= $lines('fasilitas_json') ?></textarea></div>
+            <div style="margin-top:10px"><label>Media Promosi <span class="muted" style="font-weight:400">(1 baris = 1 poin &middot; bagian tersendiri di surat)</span></label><textarea name="media" rows="3" style="width:100%"><?= $lines('media_json') ?></textarea></div>
             <div style="margin-top:10px"><label>Cara Pembayaran <span class="muted" style="font-weight:400">(1 baris = 1 poin · placeholder: <code>{dp}</code> <code>{deposit}</code> <code>{total}</code> <code>{ppn}</code> <code>{grand}</code>)</span></label><textarea name="payment" rows="4" style="width:100%"><?= $lines('payment_json') ?></textarea></div>
             <?php endif; ?>
 
@@ -3003,6 +3327,42 @@ function offer_template_form(PDO $pdo): void
 
             <div style="margin-top:10px"><label><?= $module === 'gudang' ? 'Peraturan Sewa' : ($module === 'media' ? 'Catatan Formulir' : 'Ketentuan &amp; Persyaratan') ?> <span class="muted" style="font-weight:400">(1 baris = 1 poin)</span></label><textarea name="terms" rows="8" style="width:100%"><?= $lines('terms_json') ?></textarea></div>
             <div style="margin-top:10px"><label>Catatan Kaki <span class="muted" style="font-weight:400">(1 baris = 1 poin · mis. catatan PPN &amp; nomor rekening)</span></label><textarea name="notes" rows="3" style="width:100%"><?= $lines('notes_json') ?></textarea></div>
+
+            <?php /* ── Judul bagian: supaya bunyi surat bisa disamakan dengan kertas ── */ ?>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:11px 14px;margin-top:12px">
+                <label style="font-weight:700">Judul Bagian</label>
+                <div class="help" style="margin-top:2px">Kata persis yang tercetak sebagai judul tiap bagian. Kosongkan untuk memakai bawaannya.</div>
+                <div class="form-grid" style="margin-top:8px">
+                    <div><label style="font-size:12px">Rincian Biaya</label><input name="judul_rincian_biaya" value="<?= h($judul['rincian_biaya']) ?>"></div>
+                    <div><label style="font-size:12px">Fasilitas</label><input name="judul_fasilitas" value="<?= h($judul['fasilitas']) ?>"></div>
+                    <div><label style="font-size:12px">Media Promosi</label><input name="judul_media" value="<?= h($judul['media']) ?>"></div>
+                    <div><label style="font-size:12px">Cara Pembayaran</label><input name="judul_pembayaran" value="<?= h($judul['pembayaran']) ?>"></div>
+                    <div><label style="font-size:12px">Ketentuan</label><input name="judul_ketentuan" value="<?= h($judul['ketentuan']) ?>"></div>
+                </div>
+            </div>
+
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:11px 14px;margin-top:12px">
+                <label style="font-weight:700">Rekening Pembayaran</label>
+                <div class="help" style="margin-top:2px">Kosongkan nomor rekening bila blok ini tidak perlu dicetak.</div>
+                <div class="form-grid" style="margin-top:8px">
+                    <div><label style="font-size:12px">Kalimat pembuka</label><input name="bank_kalimat" value="<?= h($bank['kalimat']) ?>"></div>
+                    <div><label style="font-size:12px">Atas nama</label><input name="bank_atas_nama" value="<?= h($bank['atas_nama']) ?>"></div>
+                    <div><label style="font-size:12px">Bank</label><input name="bank_bank" value="<?= h($bank['bank']) ?>"></div>
+                    <div><label style="font-size:12px">Nomor rekening</label><input name="bank_rekening" value="<?= h($bank['rekening']) ?>"></div>
+                </div>
+            </div>
+
+            <div style="margin-top:12px"><label>Kalimat Penutup <span class="muted" style="font-weight:400">(<code>{PIC}</code> <code>{PIC_BESAR}</code> <code>{WA}</code> <code>{EMAIL}</code> <code>{KANTOR}</code> diisi otomatis dari Master PIC sales)</span></label><textarea name="penutup" rows="2" style="width:100%" placeholder="Untuk keterangan lebih lanjut dapat menghubungi kantor kami {KANTOR} atau whatsapp ke {PIC_BESAR} di nomor {WA}."><?= $val('penutup') ?></textarea>
+                <div class="help">Nama dan nomor WhatsApp mengikuti sales yang membuat penawaran &mdash; bukan satu nomor untuk semua orang.</div></div>
+
+            <div style="display:flex;gap:10px;align-items:flex-start;background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:11px 14px;margin-top:12px">
+                <input type="checkbox" name="is_default" id="is_default" value="1" style="width:18px;height:18px;margin-top:1px" <?= !empty($t['is_default']) ? 'checked' : '' ?>>
+                <div>
+                    <label for="is_default" style="font-weight:700">Jadikan template bawaan</label>
+                    <div class="help" style="margin-top:2px">Yang otomatis terpilih saat sales membuat penawaran baru. Hanya satu per modul &mdash;
+                        mencentang di sini otomatis melepas centang di template lain.</div>
+                </div>
+            </div>
 
             <p class="form-actions" style="margin-top:16px"><button type="submit">💾 Simpan Template</button> <a class="btn secondary" href="?r=offer_templates&module=<?= h($module) ?>">Batal</a></p>
         </form>
@@ -3037,11 +3397,14 @@ function offer_template_save(PDO $pdo): void
     $unitType = $module === 'cl' ? trim((string) post('unit_type', '')) : '';
     $name = trim((string) post('name', ''));
     if ($name === '') { flash('Nama template wajib diisi.'); redirect_to('offer_template_form', $id ? ['id' => $id] : ['module' => $module]); }
-    // Cegah duplikat (property, modul, unit_type)
-    $dup = $pdo->prepare("SELECT id FROM offer_templates WHERE property_id=? AND module=? AND unit_type=? AND id<>? LIMIT 1");
-    $dup->execute([$pid, $module, $unitType, $id]);
+    // Nama template harus khas — itu yang dibaca sales di dropdown. Tipe unit
+    // tidak lagi dibatasi satu template: sejak template bisa DIPILIH sendiri,
+    // beberapa template untuk tipe yang sama justru memang dibutuhkan (mis.
+    // Pushcart dan Snack Corner sama-sama Island).
+    $dup = $pdo->prepare("SELECT id FROM offer_templates WHERE property_id=? AND module=? AND name=? AND id<>? LIMIT 1");
+    $dup->execute([$pid, $module, $name, $id]);
     if ($dup->fetchColumn()) {
-        flash($module === 'cl' ? 'Sudah ada template untuk tipe unit tersebut. Edit yang ada atau pilih tipe lain.' : 'Modul ini sudah punya template. Edit template yang ada.');
+        flash('Sudah ada template bernama "' . $name . '" di modul ini. Pakai nama lain supaya tidak tertukar saat dipilih.');
         redirect_to('offer_template_form', $id ? ['id' => $id] : ['module' => $module]);
     }
 
@@ -3065,7 +3428,31 @@ function offer_template_save(PDO $pdo): void
         'name'              => $name,
         'perihal'           => trim((string) post('perihal', '')),
         'intro'             => trim((string) post('intro', '')),
+        'is_default'        => post('is_default') ? 1 : 0,
+        'layout'            => post('layout') === 'rincian' ? 'rincian' : 'tabel',
+        'gaya_daftar'       => post('gaya_daftar') === 'bullet' ? 'bullet' : 'nomor',
+        'ppn_persen'        => max(0, min(100, (float) post('ppn_persen', 12))),
+        'ppn_rumus'         => post('ppn_rumus') ? 1 : 0,
+        'ppn_catatan'       => trim((string) post('ppn_catatan', '')),
+        'rincian_biaya'     => post('rincian_biaya') ? 1 : 0,
         'fasilitas_json'    => $J(_tpl_lines((string) post('fasilitas', ''))),
+        'media_json'        => $J(_tpl_lines((string) post('media', ''))),
+        'ket_json'          => $J(_tpl_lines((string) post('ket', ''))),
+        'rincian_json'      => $J(offer_rincian_parse((string) post('rincian', ''))),
+        'judul_json'        => $J(array_filter([
+            'rincian_biaya' => trim((string) post('judul_rincian_biaya', '')),
+            'fasilitas'     => trim((string) post('judul_fasilitas', '')),
+            'media'         => trim((string) post('judul_media', '')),
+            'pembayaran'    => trim((string) post('judul_pembayaran', '')),
+            'ketentuan'     => trim((string) post('judul_ketentuan', '')),
+        ], fn($v) => $v !== '')),
+        'bank_json'         => $J([
+            'kalimat'   => trim((string) post('bank_kalimat', '')),
+            'atas_nama' => trim((string) post('bank_atas_nama', '')),
+            'bank'      => trim((string) post('bank_bank', '')),
+            'rekening'  => trim((string) post('bank_rekening', '')),
+        ]),
+        'penutup'           => trim((string) post('penutup', '')),
         'payment_json'      => $J(_tpl_lines((string) post('payment', ''))),
         'terms_json'        => $J(_tpl_lines((string) post('terms', ''))),
         'notes_json'        => $J(_tpl_lines((string) post('notes', ''))),
@@ -3082,11 +3469,19 @@ function offer_template_save(PDO $pdo): void
         $data['id'] = $id;
         $pdo->prepare("UPDATE offer_templates SET $sets, updated_at=NOW() WHERE id=:id AND property_id=:property_id")->execute($data);
         audit($pdo, 'update', 'offer_templates', (string) $id, $data);
+        $simpanId = $id;
     } else {
         $cols = implode(',', array_keys($data));
         $ph   = implode(',', array_map(fn($k) => ":$k", array_keys($data)));
         $pdo->prepare("INSERT INTO offer_templates ($cols) VALUES ($ph)")->execute($data);
-        audit($pdo, 'create', 'offer_templates', (string) $pdo->lastInsertId(), $data);
+        $simpanId = (int) $pdo->lastInsertId();
+        audit($pdo, 'create', 'offer_templates', (string) $simpanId, $data);
+    }
+    // Bawaan hanya boleh satu per modul — dua bawaan berarti pilihan awal sales
+    // ditentukan urutan baris, dan itu tidak bisa diterka siapa pun.
+    if (!empty($data['is_default'])) {
+        $pdo->prepare("UPDATE offer_templates SET is_default = 0 WHERE property_id = ? AND module = ? AND id <> ?")
+            ->execute([$pid, $module, $simpanId]);
     }
     flash('Template dokumen disimpan.');
     redirect_to('offer_templates', ['module' => $module]);
@@ -3100,10 +3495,14 @@ function offer_template_rule(PDO $pdo): void
     $pid = current_property_id();
     $module   = _tpl_module((string) getv('module', 'cl'));
     $unitType = $module === 'cl' ? offer_unit_type($pdo, $pid, (string) getv('master_code', '')) : '';
-    $tpl = offer_template_for($pdo, $pid, $unitType, $module);
+    // Template yang dipilih di dropdown menang; tanpa itu, tetap ditebak dari unit.
+    $tpl = offer_template_for($pdo, $pid, $unitType, $module, (int) getv('template_id', 0));
     echo json_encode([
         'unit_type'         => $unitType,
         'template'          => $tpl['name'],
+        'layout'            => $tpl['layout'],
+        'ppn_persen'        => $tpl['ppn_persen'],
+        'ppn_rumus'         => $tpl['ppn_rumus'],
         'dp_required'       => $tpl['dp_required'],
         'dp_months_default' => $tpl['dp_months_default'],
         'electricity_default' => $tpl['electricity_default'],
