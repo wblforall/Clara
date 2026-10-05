@@ -13,9 +13,34 @@ $PPN_PERSEN  = (float) ($letter['ppn_persen'] ?? 12);
 $PPN_RUMUS   = !empty($letter['ppn_rumus']);
 $PPN_CATATAN = trim((string) ($letter['ppn_catatan'] ?? ''));
 $PAKAI_RINCIAN_BIAYA = !isset($letter['rincian_biaya']) || !empty($letter['rincian_biaya']);
+// Penulisan rupiah ikut template. Bawaannya 'polos' — persis seperti sebelumnya,
+// jadi surat yang sudah terbit tidak berubah angkanya maupun bentuknya.
+$GAYA_UANG = ($letter['gaya_uang'] ?? 'polos') === 'kertas' ? 'kertas' : 'polos';
+if (function_exists('offer_rupiah')) {
+    $rp = fn($v) => offer_rupiah((float) $v, $GAYA_UANG);
+}
 // Surat kertas memakai bullet untuk Cara Pembayaran & Ketentuan; aplikasi selama
 // ini menomorinya. Keduanya disediakan — bawaannya tetap bernomor.
 $TAG_LIST = ($letter['gaya_daftar'] ?? 'nomor') === 'bullet' ? 'ul' : 'ol';
+// Judul bagian: tampilan CLARA (hijau, tanpa nomor) atau gaya surat kertas
+// (hitam tebal bernomor I, II, III). Bawaannya tampilan CLARA.
+$GAYA_JUDUL = ($letter['gaya_judul'] ?? 'aplikasi') === 'romawi' ? 'romawi' : 'aplikasi';
+$GAYA_BANK  = ($letter['gaya_bank'] ?? 'kotak') === 'menyatu' ? 'menyatu' : 'kotak';
+$_romawiN = 0;
+$ROMAWI = function (int $n): string {
+    $peta = [10 => 'X', 9 => 'IX', 5 => 'V', 4 => 'IV', 1 => 'I'];
+    $out = '';
+    foreach ($peta as $nilai => $huruf) { while ($n >= $nilai) { $out .= $huruf; $n -= $nilai; } }
+    return $out;
+};
+/** Satu judul bagian, menurut gaya yang dipilih template. */
+$JUDUL_BAGIAN = function (string $teks) use (&$_romawiN, $GAYA_JUDUL, $ROMAWI, $h): string {
+    if ($GAYA_JUDUL !== 'romawi') return '<div class="sec">' . $h($teks) . '</div>';
+    $_romawiN++;
+    // Sengaja DIV biasa, bukan tabel: tabel membuat mPDF memutus halaman tepat
+    // sesudah judul, sehingga sisa halamannya kosong melompong.
+    return '<div class="secrom">' . $ROMAWI($_romawiN) . '.&nbsp;&nbsp;&nbsp;&nbsp;' . $h($teks) . '</div>';
+};
 // Tarif efektif. 12% dengan rumus PMK 131/2024 = 11% polos — angkanya memang
 // sama; yang berbeda cuma kalimat di surat.
 $PPN_TARIF = $PPN_RUMUS ? ($PPN_PERSEN / 100) * 11 / 12 : ($PPN_PERSEN / 100);
@@ -79,12 +104,17 @@ $depBulan = rtrim(rtrim(number_format((float) $o['deposit_months'], 1, ',', ''),
 $validTs  = strtotime(($o['offer_date'] ?: date('Y-m-d')) . ' +7 days');
 $berlaku  = (int) date('d', $validTs) . ' ' . $months[(int) date('n', $validTs)] . ' ' . date('Y', $validTs);
 // Kontak pembayaran: fallback ke kantor bila PIC kosong
-// Dirapikan jadi 0852-4850-7437 seperti di surat kertas; kalau PIC belum punya
+// Dirapikan jadi 08xx-xxxx-xxxx seperti di surat kertas; kalau PIC belum punya
 // nomor, dipakai nomor kantor.
 $payWa    = function_exists('offer_telp_rapi') && $o['pic_phone']
           ? offer_telp_rapi((string) $o['pic_phone'])
           : ($o['pic_phone'] ?: $OFFICE_PHONE);
-$ketentuan = ($letter['terms'] ?? []) ?: offer_terms();
+// Daftar yang SENGAJA dikosongkan di template harus tetap kosong. Dulu kosong
+// berarti "pakai daftar bawaan dari kode", sehingga surat Foodcourt — yang
+// memang tidak punya bagian Ketentuan — tetap mencetak 14 butir ketentuan
+// pameran yang tidak ada di kertasnya. Daftar bawaan kini hanya dipakai untuk
+// surat lama yang memang belum pernah menyimpan kuncinya.
+$ketentuan = array_key_exists('terms', $letter) ? ($letter['terms'] ?? []) : offer_terms();
 ?>
 <?php $PDF_MODE = !empty($PDF_MODE); /* diset oleh offer_print() utk jalur mPDF */ ?>
 <?php if (!$PDF_MODE): ?>
@@ -154,6 +184,7 @@ table.cost tr.tot td{background:#f1f5f9;font-weight:700}
 table.cost tr.grand td{background:#f0fdfa;color:#0f766e;font-weight:800;font-size:11px}
 .validbox{display:inline-block;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:600;margin-top:4px}
 .sec{font-weight:800;margin:14px 0 5px;color:#0D9488;font-size:11px;letter-spacing:.02em;page-break-after:avoid}
+.secrom{font-weight:bold;color:#111;font-size:11px;margin:13px 0 4px;page-break-after:avoid}
 ul,ol{margin:0 0 0 18px}
 li{margin-bottom:3px;line-height:1.45;text-align:justify}
 .intro,.closing{text-align:justify}
@@ -185,10 +216,14 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
 <?php endif; ?>
 <div class="sheet">
     <div style="margin-bottom:8px">Balikpapan, <?= $h($tanggal) ?></div>
-    <div class="meta">
-        <div><b>Nomor</b>: <?= $h($o['offer_no']) ?></div>
-        <div><b>Perihal</b>: <?= $h($perihal) ?></div>
-    </div>
+    <?php /* Titik dua disejajarkan memakai tabel — di Word baris ini diketik
+             dengan tab, dan "Nomor : ..." / "Perihal : ..." memang rata. */ ?>
+    <table style="border-collapse:collapse;margin-bottom:10px">
+        <tr><td style="padding:0 0 2px;font-weight:bold;width:62px">Nomor</td>
+            <td style="padding:0 0 2px">: <?= $h($o['offer_no']) ?></td></tr>
+        <tr><td style="padding:0;font-weight:bold">Perihal</td>
+            <td style="padding:0">: <?= $h($perihal) ?></td></tr>
+    </table>
     <?php
         $addrName  = trim((string)($o['company_name'] ?? '')) ?: '-';
         $addrBrand = trim((string)($o['brand_name'] ?? ''));
@@ -215,8 +250,11 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     $isiKet = [
         'hari'       => (string) $days,
         'periode'    => $periode,
+        'periode_panjang' => function_exists('offer_periode_panjang')
+                           ? offer_periode_panjang($o['start_date'] ?? null, $o['end_date'] ?? null) : $periode,
         'lokasi'     => (string) (($o['location_name'] ?: $o['master_code']) ?? ''),
-        'luas'       => $o['area_sqm'] ? rtrim(rtrim(number_format((float) $o['area_sqm'], 2, ',', '.'), '0'), ',') . ' m²' : '',
+        'luas'       => trim((string) ($o['ukuran'] ?? '')) !== '' ? (string) $o['ukuran']
+                      : ($o['area_sqm'] ? rtrim(rtrim(number_format((float) $o['area_sqm'], 2, ',', '.'), '0'), ',') . ' m²' : ''),
         'harga'      => $rp($total),
         'ppn_persen' => rtrim(rtrim(number_format($PPN_PERSEN, 2, ',', '.'), '0'), ',') . '%',
         'pic'        => $picNama,
@@ -255,7 +293,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     <?php else: ?>
     <table class="obj">
         <?php $adaLuasItem = $isBundle && array_sum(array_map(fn($x) => (float) ($x['area_sqm'] ?? 0), $items)) > 0; ?>
-        <thead><tr><th>Lokasi / Titik</th><th><?= ($isBundle && $adaLuasItem) ? 'Luasan / Jenis' : ($isBundle ? 'Jenis' : 'Luasan') ?></th><th>Harga Sewa / Periode</th><th>Keterangan</th></tr></thead>
+        <thead><tr><th><?= $h($JUDUL['kolom_lokasi']) ?></th><th><?= ($isBundle && $adaLuasItem) ? 'Luasan / Jenis' : ($isBundle ? 'Jenis' : $h($JUDUL['kolom_luas'])) ?></th><th><?= $h($JUDUL['kolom_harga']) ?></th><th><?= $h($JUDUL['kolom_ket']) ?></th></tr></thead>
         <tbody>
         <?php if ($isBundle): ?>
             <?php foreach ($items as $it): ?>
@@ -285,7 +323,11 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             ?>
             <tr>
                 <td><?= $h(($o['location_name'] ?: $o['master_code']) . ($o['floor'] ? ' (Lt. ' . $o['floor'] . ')' : '')) ?></td>
-                <td><?= $o['area_sqm'] ? number_format((float)$o['area_sqm'], 2, ',', '.') . ' m²' : '-' ?></td>
+                <?php /* Ukuran apa adanya (mis. "2x3 m2") lebih mudah dibayangkan client
+                         daripada hasil kalinya; dipakai bila diisi. */ ?>
+                <td><?= trim((string) ($o['ukuran'] ?? '')) !== ''
+                        ? $h($o['ukuran'])
+                        : ($o['area_sqm'] ? number_format((float)$o['area_sqm'], 2, ',', '.') . ' m²' : '-') ?></td>
                 <td><?= $rp($total) ?></td>
                 <td>
                     <?php if ($ketBullet): ?>
@@ -315,7 +357,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
              angkanya cukup di kolom harga. Dibiarkan menyala secara bawaan supaya
              surat yang sudah terbit tidak berubah; template bisa mematikannya. */ ?>
     <?php if ($PAKAI_RINCIAN_BIAYA): ?>
-    <div class="sec"><?= $h($JUDUL['rincian_biaya']) ?></div>
+    <?= $JUDUL_BAGIAN($JUDUL['rincian_biaya']) ?>
     <?php $tierHarga = $tierHarga ?? []; ?>
     <table class="cost">
         <?php if ($isBundle && $tierHarga && $days > 0): ?>
@@ -399,51 +441,72 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     <?php endif; ?>
 
     <?php
-    $facil = $letter['fasilitas'] ?: offer_facilities();
+    $facil = array_key_exists('fasilitas', $letter) ? ($letter['fasilitas'] ?? []) : offer_facilities();
     $payList = $letter['payment'] ?: [];
     $amts = ['dp' => $o['dp_amount'] ?: 0, 'deposit' => $deposit, 'total' => $dasarPpn, 'ppn' => $ppn, 'grand' => $grand];
     ?>
     <?php if ($facil): ?>
-    <div class="sec"><?= $h($JUDUL['fasilitas']) ?></div>
+    <?= $JUDUL_BAGIAN($JUDUL['fasilitas']) ?>
     <ul><?php foreach ($facil as $f): ?><li><?= clara_format_bold($f) ?></li><?php endforeach; ?></ul>
     <?php endif; ?>
 
     <?php /* "Media promosi yang dapat digunakan" adalah bagian tersendiri di surat
              kertas, bukan salah satu butir Fasilitas. */ ?>
     <?php $mediaList = $letter['media'] ?? []; if ($mediaList): ?>
-    <div class="sec"><?= $h($JUDUL['media']) ?></div>
+    <?= $JUDUL_BAGIAN($JUDUL['media']) ?>
     <ul><?php foreach ($mediaList as $m): ?><li><?= clara_format_bold((string) $m) ?></li><?php endforeach; ?></ul>
     <?php endif; ?>
 
     <?php if ($payList): ?>
-    <div class="sec"><?= $h($JUDUL['pembayaran']) ?></div>
+    <?= $JUDUL_BAGIAN($JUDUL['pembayaran']) ?>
     <<?= $TAG_LIST ?> class="pay"><?php foreach ($payList as $p): ?><li><?= clara_format_bold(offer_letter_fill((string) $p, $amts + $isiKet)) ?></li><?php endforeach; ?></<?= $TAG_LIST ?>>
     <?php endif; ?>
     <?php if (trim((string) ($BANK['rekening'] ?? '')) !== ''): ?>
-    <div class="rek">
-        <?= $h($BANK['kalimat']) ?><br>
-        <strong><?= $h($BANK['atas_nama']) ?></strong> · <?= $h($BANK['bank']) ?> · No. Rek <strong><?= $h($BANK['rekening']) ?></strong><br>
-        Bukti pembayaran dikirim via WhatsApp ke <strong><?= $h($payWa) ?></strong><?= $o['pic_email'] ? ' atau email <strong>' . $h($o['pic_email']) . '</strong>' : '' ?>.
-    </div>
+        <?php if ($GAYA_BANK === 'menyatu'): ?>
+        <?php /* Gaya surat kertas: menempel di bawah Cara Pembayaran, tanpa kotak,
+                 masuk ke dalam sedikit mengikuti teks butir di atasnya. */ ?>
+        <div style="margin:3px 0 0 18px;line-height:1.5">
+            <?= $h($BANK['kalimat']) ?><br>
+            <strong><?= $h($BANK['atas_nama']) ?></strong><br>
+            <strong><?= $h($BANK['bank']) ?></strong><br>
+            <strong>Nomor Rekening <?= $h($BANK['rekening']) ?></strong>
+        </div>
+        <p style="margin:7px 0 0">Bukti pembayaran di email ke <strong><?= $h($o['pic_email'] ?: '-') ?></strong>
+           atau whatsapp ke <strong><?= $h(mb_strtoupper((string) ($o['pic_name'] ?? ''), 'UTF-8')) ?></strong>
+           di nomor <strong><?= $h($payWa) ?></strong>.</p>
+        <?php else: ?>
+        <div class="rek">
+            <?= $h($BANK['kalimat']) ?><br>
+            <strong><?= $h($BANK['atas_nama']) ?></strong> · <?= $h($BANK['bank']) ?> · No. Rek <strong><?= $h($BANK['rekening']) ?></strong><br>
+            Bukti pembayaran dikirim via WhatsApp ke <strong><?= $h($payWa) ?></strong><?= $o['pic_email'] ? ' atau email <strong>' . $h($o['pic_email']) . '</strong>' : '' ?>.
+        </div>
+        <?php endif; ?>
     <?php endif; ?>
 
     <?php if ($ketentuan): ?>
-    <div class="sec"><?= $h($JUDUL['ketentuan']) ?></div>
+    <?= $JUDUL_BAGIAN($JUDUL['ketentuan']) ?>
     <<?= $TAG_LIST ?> class="tnc"><?php foreach ($ketentuan as $t): ?><li><?= clara_format_bold(offer_letter_fill((string) $t, $amts + $isiKet)) ?></li><?php endforeach; ?></<?= $TAG_LIST ?>>
     <?php endif; ?>
+    <?php if (!isset($letter['tampil_berlaku']) || !empty($letter['tampil_berlaku'])): ?>
     <div class="validbox" style="margin-top:8px">Penawaran ini berlaku s/d <?= $h($berlaku) ?></div>
+    <?php endif; ?>
 
     <?php /* Nama & nomor WhatsApp diambil dari Master PIC sales yang bersangkutan,
              bukan satu nomor untuk semua orang. Kalimatnya sendiri milik template. */ ?>
     <p style="margin-top:12px"><?= clara_format_bold(offer_letter_fill((string) ($letter['penutup'] ?: offer_penutup_bawaan()), $isiKet)) ?></p>
-    <p class="closing" style="margin-top:6px">Demikian surat penawaran ini kami buat. Atas perhatian dan kerjasamanya kami ucapkan terima kasih.</p>
+    <?php $penutupAkhir = trim((string) ($letter['penutup_akhir'] ?? offer_penutup_akhir_bawaan())); ?>
+    <?php if ($penutupAkhir !== ''): ?>
+    <p class="closing" style="margin-top:6px"><?= clara_format_bold(offer_letter_fill($penutupAkhir, $isiKet)) ?></p>
+    <?php endif; ?>
 
     <?php
     // QR "Scan untuk validasi" pada TTD sales — sama seperti SKP (via sign_token).
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     $vdir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
     $verifyUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $vdir . '/?r=offer_verify&token=' . ($o['sign_token'] ?? '');
-    $hasQr = !empty($o['sign_token']);
+    // QR validasi: buatan aplikasi, tidak ada di surat kertas — template boleh
+    // mematikannya. Bawaannya menyala.
+    $hasQr = !empty($o['sign_token']) && (!isset($letter['tampil_qr']) || !empty($letter['tampil_qr']));
     ?>
     <?php $custSigned = !empty($o['signed_at']); ?>
     <table class="sign">
@@ -460,11 +523,12 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                     <?php endif; ?>
                 <?php endif; ?>
             </div>
-            <div class="nm"<?= $hasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($o['pic_name'] ?: '-') ?><br><span class="muted" style="font-weight:400">Sales <?= $h($propShort) ?></span></div>
+            <div class="nm"<?= $hasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($o['pic_name'] ?: '-') ?><br><span class="muted" style="font-weight:400"><?= $h(trim((string) ($o['pic_role'] ?? '')) !== '' ? $o['pic_role'] : 'Sales ' . $propShort) ?></span></div>
         </td>
         <td class="col">
             <div>Menyetujui,</div>
-            <div style="font-weight:600">Calon Penyewa</div>
+            <?php $ttdKanan = array_key_exists('ttd_kanan', $letter) ? trim((string) $letter['ttd_kanan']) : 'Calon Penyewa'; ?>
+            <?php if ($ttdKanan !== ''): ?><div style="font-weight:600"><?= $h($ttdKanan) ?></div><?php endif; ?>
             <?php if ($custSigned && !empty($o['signature_data'])): ?>
             <div class="sigarea"><img class="ttd-img" height="58" src="<?= $h($o['signature_data']) ?>" alt="TTD"></div>
             <?php else: ?>

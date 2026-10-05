@@ -25,6 +25,14 @@ $TEMPLATE = [
         'name' => 'Pushcart — contoh surat kertas',
         'layout' => 'tabel',
         'gaya_daftar' => 'bullet',
+        'gaya_judul' => 'romawi',
+        'gaya_bank' => 'menyatu',
+        'penutup_akhir' => 'Demikian surat penawaran ini kami buat, atas perhatian dan kerjasamanya kami ucapkan terimakasih.',
+        'ttd_kanan' => '',
+        'tampil_berlaku' => 0,
+        'tampil_qr' => 1,
+        'gaya_uang' => 'kertas',
+        'pakai_bank' => true,
         'perihal' => 'Penawaran Harga Sewa Pushcart',
         'intro' => 'Bersama ini kami Manajemen e-Walk dan Pentacity Mall Balikpapan menawarkan space Exhibition yang ada di area gedung. Space exhibition yang kami tawarkan adalah sebagai berikut :',
         'ppn_persen' => 12.0,
@@ -33,7 +41,7 @@ $TEMPLATE = [
         'rincian_biaya' => 0,
         'ket' => [
             'Masa sewa {hari} hari',
-            'Periode sewa {periode}',
+            'Periode sewa {periode_panjang}',
             'Harga belum termasuk PPN {ppn_persen}',
             'Harga belum termasuk biaya Listrik',
         ],
@@ -74,6 +82,10 @@ $TEMPLATE = [
             'Pemakaian listrik akan dikenakan biaya sesuai pemakaian, dengan tarif Rp 3.150,-/Kwh',
         ],
         'judul' => [
+            'kolom_lokasi' => 'Lokasi',
+            'kolom_luas' => 'Luas',
+            'kolom_harga' => 'Harga Sewa Per Bulan',
+            'kolom_ket' => 'Keterangan',
             'fasilitas' => 'Fasilitas yang disediakan e-Walk dan Pentacity Mall Balikpapan',
             'media' => 'Media promosi yang dapat digunakan',
             'pembayaran' => 'Cara Pembayaran',
@@ -85,6 +97,14 @@ $TEMPLATE = [
         'name' => 'Snack Corner — contoh surat kertas',
         'layout' => 'tabel',
         'gaya_daftar' => 'bullet',
+        'gaya_judul' => 'romawi',
+        'gaya_bank' => 'menyatu',
+        'penutup_akhir' => 'Demikian surat penawaran ini kami buat, atas perhatian dan kerjasamanya kami ucapkan terimakasih.',
+        'ttd_kanan' => '',
+        'tampil_berlaku' => 0,
+        'tampil_qr' => 1,
+        'gaya_uang' => 'kertas',
+        'pakai_bank' => true,
         'perihal' => 'Penawaran Harga Snack Corner',
         'intro' => 'Bersama ini kami Manajemen e-Walk dan Pentacity Mall Balikpapan menawarkan space snack corner yang ada di area gedung. Space snack corner yang kami tawarkan adalah sebagai berikut :',
         'ppn_persen' => 12.0,
@@ -92,7 +112,7 @@ $TEMPLATE = [
         'ppn_catatan' => '',
         'rincian_biaya' => 0,
         'ket' => [
-            'Periode sewa {periode}',
+            'Periode sewa {periode_panjang}',
             'Masa sewa {hari} hari',
             'Harga belum termasuk PPN {ppn_persen}',
             'Harga belum termasuk biaya listrik',
@@ -138,6 +158,10 @@ $TEMPLATE = [
             'Terhadap kerusakan dan atau kehilangan barang milik PT. Wulandari Bangun Laksana, Tbk yang dapat dibuktikan akibat kelalaian maupun kesengajaan Penyewa atau peserta event maka Penyewa diwajibkan untuk mengganti kerugian yang ditimbulkan.',
         ],
         'judul' => [
+            'kolom_lokasi' => 'Lokasi',
+            'kolom_luas' => 'Luas',
+            'kolom_harga' => 'Harga Sewa /Bulan',
+            'kolom_ket' => 'Keterangan',
             'fasilitas' => 'Fasilitas yang disediakan e-Walk dan Pentacity Mall Balikpapan',
             'media' => 'Media promosi yang dapat digunakan',
             'pembayaran' => 'Cara Pembayaran',
@@ -149,6 +173,14 @@ $TEMPLATE = [
         'name' => 'Atrium — contoh surat kertas',
         'layout' => 'tabel',
         'gaya_daftar' => 'bullet',
+        'gaya_judul' => 'romawi',
+        'gaya_bank' => 'menyatu',
+        'penutup_akhir' => 'Demikian surat penawaran ini kami buat, atas perhatian dan kerjasamanya kami ucapkan terimakasih.',
+        'ttd_kanan' => '',
+        'tampil_berlaku' => 0,
+        'tampil_qr' => 1,
+        'gaya_uang' => 'kertas',
+        'pakai_bank' => true,
         'perihal' => 'Penawaran Harga Sewa Atrium Utama GF',
         'intro' => 'Bersama ini kami Manajemen e-Walk dan Pentacity Mall Balikpapan menawarkan space exhibition yang ada di area gedung. Space exhibition yang kami tawarkan adalah sebagai berikut :',
         'ppn_persen' => 12.0,
@@ -157,7 +189,7 @@ $TEMPLATE = [
         'rincian_biaya' => 0,
         'ket' => [
             'Masa sewa {hari} hari',
-            'Periode sewa {periode}',
+            'Periode sewa {periode_panjang}',
             'Harga sudah termasuk listrik',
             'Harga sudah termasuk loading in dan out',
             'Harga belum termasuk PPN {ppn_persen}',
@@ -206,6 +238,10 @@ $TEMPLATE = [
             'Untuk pemakaian listrik penyambungan, peserta pameran diwajibkan memakai ukuran kabel NYM 3x2,5 mm.',
         ],
         'judul' => [
+            'kolom_lokasi' => 'Lokasi',
+            'kolom_luas' => 'Ukuran',
+            'kolom_harga' => 'Harga Sewa',
+            'kolom_ket' => 'Keterangan',
             'fasilitas' => 'Fasilitas yang disediakan Pentacity Mall Balikpapan',
             'media' => 'Media promosi yang dapat digunakan',
             'pembayaran' => 'Cara Pembayaran',
@@ -217,6 +253,14 @@ $TEMPLATE = [
         'name' => 'FuniFun! — contoh surat kertas',
         'layout' => 'tabel',
         'gaya_daftar' => 'bullet',
+        'gaya_judul' => 'romawi',
+        'gaya_bank' => 'menyatu',
+        'penutup_akhir' => 'Demikian surat penawaran ini kami buat, atas perhatian dan kerjasamanya kami ucapkan terimakasih.',
+        'ttd_kanan' => '',
+        'tampil_berlaku' => 0,
+        'tampil_qr' => 1,
+        'gaya_uang' => 'kertas',
+        'pakai_bank' => true,
         'perihal' => 'Penawaran Harga Sewa 1 Tahun',
         'intro' => 'Bersama ini kami Manajemen e-Walk dan Pentacity Mall Balikpapan menawarkan space exhibition yang ada di area gedung. Space exhibition yang kami tawarkan adalah sebagai berikut :',
         'ppn_persen' => 12.0,
@@ -225,7 +269,7 @@ $TEMPLATE = [
         'rincian_biaya' => 0,
         'ket' => [
             'Masa sewa selama 1 tahun',
-            'Periode {periode}',
+            'Periode {periode_panjang}',
             'Harga sewa Rp. 2.800.000 /meter/bulan',
             'Harga belum termasuk biaya listrik',
             'Harga belum termasuk PPN {ppn_persen}',
@@ -269,6 +313,10 @@ $TEMPLATE = [
             'Pemakaian listrik akan dikenakan biaya sesuai pemakaian, dengan tarif Rp 3.150,- /Kwh',
         ],
         'judul' => [
+            'kolom_lokasi' => 'LOKASI',
+            'kolom_luas' => 'UKURAN',
+            'kolom_harga' => 'HARGA SEWA PER BULAN',
+            'kolom_ket' => 'KETERANGAN',
             'fasilitas' => 'Fasilitas yang disediakan e-Walk dan Pentacity Mall Balikpapan',
             'media' => 'Media promosi yang dapat digunakan',
             'pembayaran' => 'Cara Pembayaran',
@@ -280,11 +328,19 @@ $TEMPLATE = [
         'name' => 'Foodcourt — contoh surat kertas',
         'layout' => 'rincian',
         'gaya_daftar' => 'bullet',
+        'gaya_judul' => 'romawi',
+        'gaya_bank' => 'menyatu',
+        'penutup_akhir' => 'Demikian surat penawaran ini kami buat, atas perhatian dan kerjasamanya kami ucapkan terimakasih.',
+        'ttd_kanan' => '',
+        'tampil_berlaku' => 0,
+        'tampil_qr' => 1,
+        'gaya_uang' => 'kertas',
+        'pakai_bank' => false,
         'perihal' => 'Penawaran Harga Area BSB Foodcourt',
         'intro' => 'Bersama ini kami Manajemen e-Walk dan Pentacity Mall Balikpapan menawarkan Outlet Tenant Foodcourt yang ada di BSB Foodcourt dengan detail sebagai berikut:',
         'ppn_persen' => 11.0,
         'ppn_rumus' => 0,
-        'ppn_catatan' => '',
+        'ppn_catatan' => 'Note : Semua biaya diatas belum termasuk PPN 11%',
         'rincian_biaya' => 0,
         'ket' => [],
         'rincian' => [
@@ -313,23 +369,23 @@ $TEMPLATE = [
                 'label' => 'Service Charge',
                 'isi' => 'Rp. 1.732.500,- /bulan 
 Service Charge termasuk :
-• maintenance gedung
-• kebersihan selama jam operational
-• keamanan 24 jam
-• AC gedung
+-   maintenance gedung
+-   kebersihan selama jam operational
+-   keamanan 24 jam
+-   AC gedung
 (biaya Service Charge akan disesuaikan sesuai dengan ketentuan yang berlaku setiap tahunnya)',
             ],
             [
                 'label' => 'Biaya Utilities',
                 'isi' => 'Biaya Utilities akan diperhitungkan sesuai dengan pemakaian per bulannya. Biaya Utilities termasuk : 
-• Air  : Rp 3.500,- /m³
-• Listrik : Rp  2.940,- /Kwh',
+-   Air  : Rp 3.500,- /m³
+-   Listrik : Rp  2.940,- /Kwh',
             ],
             [
                 'label' => 'Security Deposit',
                 'isi' => 'Rp 10.000.000,- (Sepuluh Juta Rupiah)
-• dibayarkan setelah penandatanganan  Surat Konfirmasi, dan pembayaran diselesaikan sebelum stand/booth beroperasi
-• akan dikembalikan satu bulan setelah periode kontrak berakhir',
+-   dibayarkan setelah penandatanganan  Surat Konfirmasi, dan pembayaran diselesaikan sebelum stand/booth beroperasi
+-   akan dikembalikan satu bulan setelah periode kontrak berakhir',
             ],
             [
                 'label' => 'Term of Payment',
@@ -343,36 +399,41 @@ Service Charge termasuk :
             [
                 'label' => 'Serah Terima',
                 'isi' => '-     Floor 	             : FF – Stand BSB Foodcourt No. 5  
-• Electricity 	             : sesuai kebutuhan yang diajukan (tbc)
-• Air Conditioning	: central(mengikuti jam operational Mall)
-• Sprinkler		: 1 unit 
-• Smoke Alarm 	: tbc
-• Equipment 	: Working table, Dish Wash Sink, Hood 
+-   Electricity 	             : sesuai kebutuhan yang diajukan (tbc)
+-   Air Conditioning	: central(mengikuti jam operational Mall)
+-   Sprinkler		: 1 unit 
+-   Smoke Alarm 	: tbc
+-   Equipment 	: Working table, Dish Wash Sink, Hood 
                                    Cooker',
             ],
             [
                 'label' => 'Facilities',
-                'isi' => '• Loading Area 	: Area Loading menggunakan area yang                       
+                'isi' => '-   Loading Area 	: Area Loading menggunakan area yang                       
                                    telah disediakan
-• Back Up Power 	: Chiller dan Penerangan akan beroperasi  
+-   Back Up Power 	: Chiller dan Penerangan akan beroperasi  
 sesuai dengan jam operational yang telah ditentukan. AC akan beroperasi 60% sesuai dengan jam  operational yang telah ditentukan.',
             ],
             [
                 'label' => 'Fit Out Periode',
-                'isi' => '• 1 (satu) bulan setelah serah terima area.
-• Persetujuan design, perubahan dan schedule kerja harus melalui persetujuan Management Pentacity Shopping Venue, dan berdasarkan standard operational prosedur Interior Fit Out yang berlaku.',
+                'isi' => '-   1 (satu) bulan setelah serah terima area.
+-   Persetujuan design, perubahan dan schedule kerja harus melalui persetujuan Management Pentacity Shopping Venue, dan berdasarkan standard operational prosedur Interior Fit Out yang berlaku.',
             ],
             [
                 'label' => 'Schedule',
-                'isi' => '• Serah Terima – Setiap waktu 
-• Opening Schedule – 1 (satu) bulan setelah serah terima',
+                'isi' => '-   Serah Terima – Setiap waktu 
+-   Opening Schedule – 1 (satu) bulan setelah serah terima',
             ],
         ],
         'fasilitas' => [],
         'media' => [],
         'payment' => [],
         'terms' => [],
-        'judul' => [],
+        'judul' => [
+            'kolom_lokasi' => 'Lokasi',
+            'kolom_luas' => 'Luas',
+            'kolom_harga' => 'Harga Sewa Per Bulan',
+            'kolom_ket' => 'Keterangan',
+        ],
         'penutup' => 'Untuk keterangan lebih lanjut dapat menghubungi kantor kami {KANTOR} atau {PIC_BESAR} di No. {WA}.',
     ],
 ];
@@ -382,11 +443,12 @@ $prop = $pdo->query("SELECT id FROM properties")->fetchAll(PDO::FETCH_COLUMN) ?:
 $cek  = $pdo->prepare("SELECT id FROM offer_templates WHERE property_id=? AND module='cl' AND name=? LIMIT 1");
 $ins  = $pdo->prepare(
     "INSERT INTO offer_templates
-      (property_id, module, unit_type, name, is_default, layout, gaya_daftar, ppn_persen, ppn_rumus, ppn_catatan,
+      (property_id, module, unit_type, name, is_default, layout, gaya_daftar, gaya_judul, gaya_bank, gaya_uang,
+       penutup_akhir, ttd_kanan, tampil_berlaku, tampil_qr, ppn_persen, ppn_rumus, ppn_catatan,
        rincian_biaya, perihal, intro, fasilitas_json, media_json, ket_json, rincian_json, judul_json,
        bank_json, penutup, payment_json, terms_json, notes_json, extra_json,
        dp_required, dp_months_default, electricity_default, sort_order, status)
-     VALUES (?, 'cl', '', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '{}', 1, 2, 150000, 0, 'active')");
+     VALUES (?, 'cl', '', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '{}', 1, 2, 150000, 0, 'active')");
 
 // Rekening: dipakai nomor yang selama ini tercetak aplikasi (lihat catatan di atas).
 $bank = ['kalimat' => 'Untuk pembayaran dapat ditransfer ke rekening',
@@ -400,10 +462,13 @@ foreach ($prop as $pid) {
         $cek->execute([$pid, $t['name']]);
         if ($cek->fetchColumn()) continue;
         $ins->execute([
-            $pid, $t['name'], $t['layout'], $t['gaya_daftar'], $t['ppn_persen'], $t['ppn_rumus'], $t['ppn_catatan'],
+            $pid, $t['name'], $t['layout'], $t['gaya_daftar'], $t['gaya_judul'], $t['gaya_bank'], $t['gaya_uang'],
+            $t['penutup_akhir'], $t['ttd_kanan'], $t['tampil_berlaku'], $t['tampil_qr'],
+            $t['ppn_persen'], $t['ppn_rumus'], $t['ppn_catatan'],
             $t['rincian_biaya'], $t['perihal'], $t['intro'],
             $J($t['fasilitas']), $J($t['media']), $J($t['ket']), $J($t['rincian']), $J($t['judul']),
-            $J($bank), $t['penutup'], $J($t['payment']), $J($t['terms']),
+            $J($t['pakai_bank'] ? $bank : ['kalimat'=>'','atas_nama'=>'','bank'=>'','rekening'=>'']),
+            $t['penutup'], $J($t['payment']), $J($t['terms']),
         ]);
         $dibuat++;
     }
