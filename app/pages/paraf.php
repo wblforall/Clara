@@ -280,7 +280,7 @@ function my_paraf_page(PDO $pdo): void
 
                         <label style="font-size:12px;font-weight:700">Lebar paraf: <span id="lbl-lebar"></span> mm</label>
                         <input type="range" name="lebar" id="inp-lebar" min="10" max="80" step="1"
-                               value="<?= (int) round((float) ($set['lebar'] ?? 20)) ?>" style="width:100%;margin:6px 0 12px">
+                               value="<?= (int) round((float) ($set['lebar'] ?? 12)) ?>" style="width:100%;margin:6px 0 12px">
 
                         <div id="blok-koordinat" style="display:flex;gap:10px;margin-bottom:12px">
                             <div style="flex:1">

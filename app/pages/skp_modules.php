@@ -598,6 +598,19 @@ function skp_standalone_src(PDO $pdo, int $pid, string $module, ?array $skp): ar
                 $src['area_sqm']  = (float) $u['area_sqm'];
                 if (!$src['unit_rate']) $src['unit_rate'] = (float) $u['monthly_rate'];
             }
+        } elseif ($module === 'cl') {
+            // SKP Pameran biasanya punya sumber (Penawaran/Transaksi), jadi jalur
+            // ini hanya terpakai saat sumbernya hilang dan dokumennya dibaca dari
+            // dirinya sendiri — lihat skp_form().
+            $st = $pdo->prepare('SELECT location_name, floor, area_sqm, rate FROM master_cl_units WHERE code=? AND property_id=? LIMIT 1');
+            $st->execute([$src['master_code'], $pid]);
+            if ($u = $st->fetch()) {
+                $src['location_name'] = $u['location_name'];
+                $src['floor']     = $u['floor'];
+                $src['unit_area'] = (float) $u['area_sqm'];
+                $src['area_sqm']  = (float) $u['area_sqm'];
+                if (!$src['unit_rate']) $src['unit_rate'] = (float) $u['rate'];
+            }
         } else {
             $st = $pdo->prepare("SELECT CONCAT_WS(' - ', media_type, location, NULLIF(point,'')) AS location_name, location AS floor, rate, pricing_type, slots FROM master_media WHERE code=? AND property_id=? LIMIT 1");
             $st->execute([$src['master_code'], $pid]);

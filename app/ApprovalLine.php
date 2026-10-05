@@ -537,6 +537,27 @@ final class ApprovalLine
     }
 
     /**
+     * Versi pendek "siapa yang ditunggu": jabatan + namanya, tanpa kalimat.
+     *
+     * Di daftar dokumen, satu kalimat penuh ("Masih menunggu paraf dari ...
+     * (tahap 1 dari 2)") terpaksa dicetak kecil supaya muat, dan yang dicetak
+     * kecil tidak dibaca. Yang sebenarnya dicari orang di daftar cuma satu:
+     * giliran siapa sekarang. Itu saja yang dikembalikan di sini, supaya bisa
+     * ditampilkan sebesar tulisan tabelnya.
+     */
+    public static function penungguRingkas(PDO $pdo, int $pid, array $skp, array $steps): string
+    {
+        if (($skp['status'] ?? '') !== 'submitted') return '';
+        if (!$steps) return 'Manager';
+        $tahap = self::currentStep($skp, $steps);
+        if (!$tahap) return '';
+        $nama = self::penungguNama($pdo, $pid, $skp, $steps);
+        return $nama
+            ? $tahap['role_name'] . ' — ' . implode(' atau ', $nama)
+            : $tahap['role_name'];
+    }
+
+    /**
      * Daftar nama orang yang sedang ditunggu parafnya — dipakai untuk memberi
      * tahu siapa yang harus bertindak, memakai data Master PIC yang sudah ada.
      */

@@ -79,7 +79,10 @@ final class Paraf
             'teks'         => null,
             'pos_x'        => 150.0,
             'pos_y'        => 232.0,
-            'lebar'        => 20.0,
+            // Kecil secara bawaan: paraf di kertas memang kecil, dan yang
+            // membesarkan selalu bisa menggeser sendiri. Kebalikannya tidak —
+            // paraf kebesaran baru ketahuan setelah suratnya terbit.
+            'lebar'        => 12.0,
             'tampil_nama'  => 1,
             'tampil_waktu' => 0,
         ];
@@ -166,7 +169,7 @@ final class Paraf
         // itu hanya selebar sepertiga halaman. Paraf yang lebih lebar dari ini
         // akan mendorong QR-nya turun dan merusak blok tanda tangan.
         $lebar = $mode === 'otomatis'
-            ? $jepit($d['lebar'] ?? 20, 10, self::LEBAR_OTOMATIS_MAKS)
+            ? $jepit($d['lebar'] ?? 12, 10, self::LEBAR_OTOMATIS_MAKS)
             : $jepit($d['lebar'] ?? 30, 10, 80);
         // Dijepit supaya parafnya tidak bisa disimpan di luar kertas — tanpa ini
         // satu salah ketik membuat paraf hilang dari dokumen tanpa pesan apa pun.
