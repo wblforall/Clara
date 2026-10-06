@@ -26,6 +26,10 @@ scripts/userguide_assets/
 *.xlsx
 *.code-workspace
 
+# Dokumen asli milik klien (surat penawaran sumber, surat konfirmasi, dsb).
+# Repo ini publik — seluruh isi folder diblok apa pun jenis berkasnya.
+/arsip-surat-klien/
+
 # OS
 .DS_Store
 Thumbs.db
