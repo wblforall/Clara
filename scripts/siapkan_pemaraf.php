@@ -11,11 +11,13 @@
  * Syarat kelimanya dinilai memakai _af_kendala() yang ASLI, bukan salinan,
  * supaya penilaian di sini tidak akan pernah berbeda dari yang di layar.
  *
+ * Orangnya boleh disebut dengan nama atau email.
+ *
  * Jalankan (laporan saja, tidak mengubah apa pun):
- *   php scripts/siapkan_pemaraf.php nama.pic@contoh.co.id --properti=2
+ *   php scripts/siapkan_pemaraf.php "Nama Orang" --properti=2
  *
  * Jalankan dan perbaiki:
- *   php scripts/siapkan_pemaraf.php nama.pic@contoh.co.id --properti=2 --terapkan
+ *   php scripts/siapkan_pemaraf.php "Nama Orang" --properti=2 --terapkan
  *
  * Syarat ke-5 (izin "Approve SKP" pada sebuah role) menyentuh SEMUA orang yang
  * memakai role itu, bukan satu orang saja. Karena itu ia tidak ikut --terapkan
@@ -81,7 +83,7 @@ function sp_main(PDO $pdo, array $argv): int
         elseif ($a[0] !== '-' && $email === '')     $email = $a;
     }
     if ($email === '' || $prop <= 0) {
-        fwrite(STDERR, "Pemakaian: php scripts/siapkan_pemaraf.php <email> --properti=<id> [--terapkan] [--izin-role] [--pic=<id>]\n"
+        fwrite(STDERR, "Pemakaian: php scripts/siapkan_pemaraf.php <nama|email> --properti=<id> [--terapkan] [--izin-role] [--pic=<id>]\n"
                      . "  --properti: 1 = E-Walk, 2 = Pentacity (properti tempat dia harus bisa memaraf)\n");
         return 2;
     }
@@ -91,17 +93,39 @@ function sp_main(PDO $pdo, array $argv): int
     $propRow = $nm->fetch(PDO::FETCH_ASSOC);
     if (!$propRow) { fwrite(STDERR, "Properti id=$prop tidak ada.\n"); return 2; }
 
-    $us = $pdo->prepare("SELECT id, name, email, role, status FROM users WHERE LOWER(email) = LOWER(?)");
-    $us->execute([$email]);
-    $user = $us->fetch(PDO::FETCH_ASSOC);
+    // Boleh disebut dengan email ATAU nama — menghafal email tiap orang hanya
+    // menambah ribet, padahal namanya sudah tertera di layar.
+    if (str_contains($email, '@')) {
+        $us = $pdo->prepare("SELECT id, name, email, role, status FROM users WHERE LOWER(email) = LOWER(?)");
+        $us->execute([$email]);
+        $cocok = $us->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        // Nama persis didahulukan; kalau tidak ada, baru dicari yang mengandung.
+        $us = $pdo->prepare("SELECT id, name, email, role, status FROM users
+                              WHERE LOWER(name) = LOWER(?) OR LOWER(name) LIKE LOWER(CONCAT('%', ?, '%'))
+                              ORDER BY (LOWER(name) = LOWER(?)) DESC, name");
+        $us->execute([$email, $email, $email]);
+        $cocok = $us->fetchAll(PDO::FETCH_ASSOC);
+        // Beberapa nama mirip, tapi satu di antaranya persis sama — pakai itu.
+        $persis = array_values(array_filter($cocok, fn($u) => mb_strtolower($u['name']) === mb_strtolower($email)));
+        if (count($persis) === 1) $cocok = $persis;
+    }
 
     echo "AKUN     : $email\n";
-    if (!$user) {
+    if (!$cocok) {
         echo "         : TIDAK DITEMUKAN di tabel users.\n\n"
            . "Akunnya harus dibuat dulu lewat menu Users & Role, baru skrip ini bisa dipakai.\n";
         return 1;
     }
-    echo "         : {$user['name']} · role \"{$user['role']}\" · status \"{$user['status']}\" (id {$user['id']})\n";
+    if (count($cocok) > 1) {
+        echo "         : ADA " . count($cocok) . " AKUN yang cocok —\n";
+        foreach ($cocok as $c) echo "           - {$c['name']} <{$c['email']}>\n";
+        echo "\nSebutkan emailnya supaya tidak salah orang.\n";
+        return 2;
+    }
+    $user = $cocok[0];
+    echo "         : {$user['name']} <{$user['email']}>\n"
+       . "         : role \"{$user['role']}\" · status \"{$user['status']}\" · id {$user['id']}\n";
     echo "PROPERTI : {$propRow['name']} (id $prop)\n\n";
 
     $calon = sp_calon($pdo, $user);
