@@ -253,6 +253,11 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     $amtsAwal = ['dp' => $o['dp_amount'] ?: 0, 'deposit' => $deposit, 'total' => $dasarPpn, 'ppn' => $ppn, 'grand' => $grand];
     $isiKet = [
         'hari'       => (string) $days,
+        // Masa sewa gaya surat kertas: "13 Bulan 20 Hari".
+        'masa_bulan_hari' => function_exists('offer_masa_bulan_hari')
+                           ? offer_masa_bulan_hari($o['start_date'] ?? null, $o['end_date'] ?? null) : '',
+        // Harga per bulan — beda dengan {harga} yang berisi total periode.
+        'harga_bulan' => $rp((float) ($o['unit_rate'] ?? 0)),
         'periode'    => $periode,
         'periode_panjang' => function_exists('offer_periode_panjang')
                            ? offer_periode_panjang($o['start_date'] ?? null, $o['end_date'] ?? null) : $periode,
@@ -332,7 +337,11 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                 <td><?= trim((string) ($o['ukuran'] ?? '')) !== ''
                         ? $h($o['ukuran'])
                         : ($o['area_sqm'] ? number_format((float)$o['area_sqm'], 2, ',', '.') . ' m²' : '-') ?></td>
-                <td><?= $rp($total) ?></td>
+                <?php /* Surat kertas menulis harga PER BULAN di kolom ini, bukan
+                         total kontrak. Templatenya yang menentukan; bawaannya
+                         tetap total periode supaya template lama tak berubah. */ ?>
+                <td><?= $rp(($letter['harga_tampil'] ?? 'periode') === 'bulan'
+                        ? (float) ($o['unit_rate'] ?? 0) : $total) ?></td>
                 <td>
                     <?php if ($ketBullet): ?>
                         <?php foreach ($ketBullet as $kb): ?><div style="line-height:1.45">&#9679; <?= clara_format_bold($kb) ?></div><?php endforeach; ?>

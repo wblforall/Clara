@@ -238,7 +238,12 @@ $skpHasQr = !empty($skp['sign_token']);
             <?php endforeach; ?>
             <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Luas Area <span class="muted">(dasar perhitungan)</span></td><td class="amt"><?= $h(rtrim(rtrim(number_format($luasSkp, 2, ',', '.'), '0'), ',')) ?> m²</td></tr>
         <?php else: ?>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Biaya Sewa / m² / hari</td><td class="amt"><?= $rp($a['rate_m_day'] ?? 0) ?></td></tr>
+        <?php /* Satuannya mengikuti jenis harga kontrak. Sewa bulanan selama ini
+                 tetap berlabel "per m² per hari" padahal isinya tarif PER BULAN —
+                 salah baca yang sudah lama dikeluhkan. Dokumen lama tidak
+                 menyimpan pricing_type, jadi labelnya dibiarkan seperti dulu. */ ?>
+        <?php $satuanSkp = ($d['pricing_type'] ?? '') === 'monthly' ? 'Biaya Sewa / Bulan' : 'Biaya Sewa / m² / hari'; ?>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?><?= $h($satuanSkp) ?></td><td class="amt"><?= $rp($a['rate_m_day'] ?? 0) ?></td></tr>
         <?php endif; ?>
         <?php if (($a['listrik'] ?? 0) > 0): ?>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Nilai Sewa</td><td class="amt"><?= $rp($a['sewa'] ?? 0) ?></td></tr>

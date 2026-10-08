@@ -30,6 +30,12 @@ final class AllocationService
         $contractMonths = (int) ($trx['contract_months'] ?? 0);
 
         if ($pricingType === 'monthly') {
+            // Dua model penagihan, dipilih per kontrak:
+            //   prorata_kalender = 1 → bulan kalender (ikut surat kertas)
+            //   selain itu       → siklus tanggal-ke-tanggal (perilaku lama)
+            if (!empty($trx['prorata_kalender'])) {
+                return self::monthlyCalendarAllocations($start, $end, $unitRate * $qty, $qty, $slots, $area);
+            }
             $cycles = self::monthlyCycles($start, $end, $contractMonths, $unitRate * $qty);
             return self::splitCyclesToCalendarMonths($cycles, $pricingType, $qty, $slots, $area);
         }
@@ -86,7 +92,13 @@ final class AllocationService
 
         if (($trx['billing_method'] ?? '') === 'spread') {
             $cycleRecognition = $trx['cycle_recognition'] ?? 'cycle_start';
-            if (($trx['pricing_type'] ?? '') === 'monthly'
+            // Prorata bulan kalender tidak lewat sini: baris alokasinya sudah
+            // dibentuk per bulan kalender oleh preview(), lengkap dengan
+            // prorata hariannya. Kalau diteruskan ke monthlyCycleAllocations,
+            // hasil itu dibuang dan diganti siklus tanggal yang dibagi rata —
+            // totalnya tetap, tetapi angka tiap bulannya salah.
+            if (empty($trx['prorata_kalender'])
+                && ($trx['pricing_type'] ?? '') === 'monthly'
                 && in_array($cycleRecognition, ['cycle_start', 'cycle_end'], true)
             ) {
                 // Alokasi per siklus — tiap cycle diakui di 1 period_key tanpa dipecah
@@ -127,7 +139,12 @@ final class AllocationService
                 }
                 return;
             }
-            $allocations = self::applySpreadAmount($allocations, $finalAmount);
+            // Bagi RATA untuk siklus tanggal; untuk bulan kalender dipakai
+            // penyesuaian berbanding lurus supaya bulan yang hanya 20 hari tidak
+            // ikut dibayar penuh.
+            $allocations = empty($trx['prorata_kalender'])
+                ? self::applySpreadAmount($allocations, $finalAmount)
+                : ($finalAmount > 0 ? self::applyOverrideAmount($allocations, $finalAmount) : $allocations);
             if ($monthOverrides) {
                 $allocations = self::applyMonthOverrides($allocations, $monthOverrides);
             }
@@ -451,6 +468,53 @@ final class AllocationService
     public static function totalCalculated(array $trx): float
     {
         return array_sum(array_column(self::preview($trx), 'amount'));
+    }
+
+    /**
+     * Alokasi sewa bulanan dengan patokan BULAN KALENDER.
+     *
+     * Tiap bulan kalender yang disentuh kontrak jadi satu baris. Bulan yang
+     * tercakup penuh dikenai tarif utuh; bulan yang tidak penuh diprorata
+     * menurut jumlah hari bulan ITU SENDIRI — Februari dibagi 28/29, April 30,
+     * Januari 31. Inilah cara surat penawaran dan SKP kertas dihitung, dan
+     * karena itu hasilnya bisa dicocokkan baris per baris dengan suratnya.
+     *
+     * Bandingkan dengan monthlyCycles(): di sana siklusnya mengikuti tanggal
+     * mulai (11 → 10), sehingga satu bulan laporan bisa terpecah dua baris dan
+     * ekornya dihitung per hari siklus, bukan per hari bulan.
+     */
+    private static function monthlyCalendarAllocations(
+        DateTimeImmutable $start,
+        DateTimeImmutable $end,
+        float $cycleAmount,
+        float $qty,
+        float $slots,
+        float $area
+    ): array {
+        $allocations = [];
+        $cursor = $start->modify('first day of this month');
+        while ($cursor <= $end) {
+            $awalBulan  = $cursor;
+            $akhirBulan = $cursor->modify('last day of this month');
+            $a = $awalBulan  < $start ? $start : $awalBulan;
+            $b = $akhirBulan > $end   ? $end   : $akhirBulan;
+            if ($a <= $b) {
+                $hari     = self::daysInclusive($a, $b);
+                $hariBlnn = (int) $akhirBulan->format('d');
+                $penuh    = $a->format('Y-m-d') === $awalBulan->format('Y-m-d')
+                         && $b->format('Y-m-d') === $akhirBulan->format('Y-m-d');
+                $allocations[] = [
+                    'period_key'       => $a->format('Y-m'),
+                    'allocation_start' => $a->format('Y-m-d'),
+                    'allocation_end'   => $b->format('Y-m-d'),
+                    'allocated_days'   => $hari,
+                    'amount'           => $penuh ? $cycleAmount : round($cycleAmount * $hari / $hariBlnn),
+                    'capacity_days'    => self::capacityDays('monthly', $hari, $qty, $slots, $area),
+                ];
+            }
+            $cursor = $cursor->modify('+1 month');
+        }
+        return $allocations;
     }
 
     private static function monthlyCycles(DateTimeImmutable $start, DateTimeImmutable $end, int $contractMonths, float $cycleAmount): array
