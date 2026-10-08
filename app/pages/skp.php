@@ -2015,6 +2015,10 @@ function _skp_create_transaction(PDO $pdo, array $skp, array $src, int $pid, ?ar
         'unit_rate'        => $unitRate,
         'contract_months'  => $months ?: null,
         'billing_method'   => $spread ? 'spread' : 'anchor_cycle',
+        // Model prorata ikut turun dari penawaran. Kalau tertinggal di sini,
+        // surat memakai cara bulan kalender sementara laporan memakai siklus
+        // tanggal — dan angkanya akan beda ratusan ribu tanpa ada yang tahu.
+        'prorata_kalender' => (int) ($src['prorata_kalender'] ?? 0),
         'recurring_flag'   => (int) ($src['recurring_flag'] ?? 0),
         'cycle_recognition'=> $cycleRec,
         'total_calculated' => $total,
@@ -2194,6 +2198,9 @@ function skp_approve(PDO $pdo): void
         'status_sewa' => $skp['status_sewa'],
         'admin_siup' => (int)$skp['admin_siup'], 'admin_npwp' => (int)$skp['admin_npwp'], 'admin_ktp' => (int)$skp['admin_ktp'],
         'amounts' => $amt, 'sales' => $src['pic_name'], 'property_name' => $prop['name'] ?? '',
+        // Jenis harga ikut dibekukan supaya label rincian pembayaran bisa
+        // menyebut satuan yang benar ("per bulan" vs "per m² per hari").
+        'pricing_type' => (string) ($src['pricing_type'] ?? ''),
         // Jadwal harga bertahap ikut dibekukan supaya cetakan ulang tidak berubah.
         'tahap_harga' => AllocationService::priceSteps($pdo, (int) ($skp['transaction_id'] ?? 0), (int) ($skp['offer_id'] ?? 0)),
         // Paraf tahap-tahap sebelum persetujuan akhir ikut dibekukan, supaya

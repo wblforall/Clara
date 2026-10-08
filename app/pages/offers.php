@@ -142,6 +142,9 @@ function _offer_template_norm(array $t): array
         'tampil_berlaku'    => (int) ($t['tampil_berlaku'] ?? 1),
         'tampil_qr'         => (int) ($t['tampil_qr'] ?? 1),
         'gaya_uang'         => ((string) ($t['gaya_uang'] ?? 'polos')) === 'kertas' ? 'kertas' : 'polos',
+        // Kolom harga di tabel objek: 'bulan' menulis harga per bulan seperti
+        // surat kertas, 'periode' menulis total kontrak (bawaan lama).
+        'harga_tampil'      => ((string) ($t['harga_tampil'] ?? 'periode')) === 'bulan' ? 'bulan' : 'periode',
         'perihal'           => (string) ($t['perihal'] ?? ''),
         'intro'             => (string) ($t['intro'] ?? ''),
         'fasilitas'         => json_decode((string) ($t['fasilitas_json'] ?? '[]'), true) ?: [],
@@ -331,7 +334,8 @@ function offer_letter_fill(string $text, array $a): string
     // kalimat baku template bisa menyebut angka penawaran tanpa diketik ulang.
     // Huruf besar maupun kecil sama-sama diterima — orang yang menyunting template
     // menulis {PIC}, dan menolak diam-diam hanya menyisakan kurung kurawal di surat.
-    foreach (['hari', 'periode', 'periode_panjang', 'lokasi', 'luas', 'harga', 'ppn_persen',
+    foreach (['hari', 'periode', 'periode_panjang', 'masa_bulan_hari', 'lokasi', 'luas',
+              'harga', 'harga_bulan', 'ppn_persen',
               'pic', 'pic_besar', 'wa', 'email', 'kantor'] as $k) {
         if (!array_key_exists($k, $a)) continue;
         $ganti['{' . $k . '}'] = (string) $a[$k];
@@ -438,6 +442,9 @@ function offer_letter_dari_template(array $t): array
         'tampil_berlaku' => (int) ($t['tampil_berlaku'] ?? 1),
         'tampil_qr'   => (int) ($t['tampil_qr'] ?? 1),
         'gaya_uang'   => $t['gaya_uang'] ?? 'polos',
+        // Kolom harga di tabel objek: total periode, atau harga per bulan
+        // seperti surat kertas ("Harga Sewa / Bulan  Rp 8.500.000").
+        'harga_tampil' => $t['harga_tampil'] ?? 'periode',
         'perihal'    => $t['perihal'] ?? '', 'intro' => $t['intro'] ?? '',
         'fasilitas'  => $t['fasilitas'] ?? [], 'media' => $t['media'] ?? [],
         'ket'        => $t['ket'] ?? [], 'rincian' => $t['rincian'] ?? [],
@@ -529,6 +536,46 @@ function _offer_days(?string $start, ?string $end): int
 }
 
 /**
+ * Masa sewa dalam gaya surat kertas: "13 Bulan 20 Hari".
+ *
+ * Dihitung dengan patokan bulan kalender, sama dengan prorata di
+ * AllocationService: bulan yang tercakup penuh dihitung sebagai bulan, sisanya
+ * dijumlahkan sebagai hari. Jadi 11 Nov 2026 s/d 31 Des 2027 terbaca
+ * "13 Bulan 20 Hari" — 20 hari di November, lalu 13 bulan penuh.
+ */
+function offer_masa_bulan_hari(?string $mulai, ?string $akhir): string
+{
+    if (!$mulai || !$akhir) return '';
+    try {
+        $s = new DateTimeImmutable($mulai);
+        $e = new DateTimeImmutable($akhir);
+    } catch (Throwable $x) { return ''; }
+    if ($e < $s) return '';
+
+    $bulan = 0; $hari = 0;
+    $kursor = $s->modify('first day of this month');
+    while ($kursor <= $e) {
+        $awalBulan  = $kursor;
+        $akhirBulan = $kursor->modify('last day of this month');
+        $a = $awalBulan  < $s ? $s : $awalBulan;
+        $b = $akhirBulan > $e ? $e : $akhirBulan;
+        if ($a <= $b) {
+            $penuh = $a->format('Y-m-d') === $awalBulan->format('Y-m-d')
+                  && $b->format('Y-m-d') === $akhirBulan->format('Y-m-d');
+            if ($penuh) $bulan++;
+            else        $hari += (int) $a->diff($b)->format('%a') + 1;
+        }
+        $kursor = $kursor->modify('+1 month');
+    }
+    // Sisa hari yang kebetulan genap sebulan (mis. 1-28 Feb) tetap disebut hari,
+    // karena itu memang bukan bulan kalender penuh di mata surat.
+    $bagian = [];
+    if ($bulan > 0) $bagian[] = $bulan . ' Bulan';
+    if ($hari  > 0) $bagian[] = $hari . ' Hari';
+    return $bagian ? implode(' ', $bagian) : '0 Hari';
+}
+
+/**
  * Mesin pricing — SAMA dengan kalkulasiTotal() di form transaksi agar nilai
  * penawaran konsisten dengan transaksi yang terbit nanti.
  */
@@ -553,7 +600,7 @@ function _offer_fields(): array
             'billing_method', 'recurring_flag', 'cycle_recognition',
             'dp_months', 'dp_amount', 'deposit_months', 'deposit_amount', 'deposit_paid', 'ppn_flag', 'sc_flag', 'sc_monthly',
             'electricity_flag', 'electricity_monthly', 'electricity_units', 'electricity_amount',
-            'perihal', 'offer_date', 'is_bundle'];
+            'perihal', 'offer_date', 'is_bundle', 'prorata_kalender'];
 }
 
 /**
@@ -1601,6 +1648,18 @@ function offer_form(PDO $pdo): void
                         <option value="cycle_end" <?= ($offer['cycle_recognition'] ?? '') === 'cycle_end' ? 'selected' : '' ?>>Bulan Akhir siklus</option>
                     </select>
                 </div>
+                <div class="wide" style="display:flex;align-items:flex-start;gap:10px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:11px 14px">
+                    <input type="checkbox" name="prorata_kalender" id="prorata_kalender" value="1" style="width:18px;height:18px;flex-shrink:0;margin-top:1px" <?= !empty($offer['prorata_kalender']) ? 'checked' : '' ?> <?= $disabled ?>>
+                    <label for="prorata_kalender" style="margin:0;cursor:pointer">
+                        <span style="font-weight:700;color:#92400e">Prorata ikut bulan kalender</span>
+                        <span class="help" style="display:block;margin-top:2px;font-weight:400">
+                            Centang bila kontrak tidak mulai di tanggal 1. Bulan yang tidak penuh dihitung
+                            <strong>per hari bulan itu</strong> (mis. 11&ndash;30 November = 20/30 bulan), sisanya bulan penuh &mdash;
+                            cara yang dipakai surat penawaran kertas. Tanpa centang, siklusnya mengikuti tanggal mulai
+                            (11 &rarr; 10) dan totalnya bisa berbeda ratusan ribu. Hanya berlaku untuk Pricing Type <strong>monthly</strong>.
+                        </span>
+                    </label>
+                </div>
                 <div class="wide" style="display:flex;align-items:flex-start;gap:10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:11px 14px">
                     <input type="checkbox" name="recurring_flag" id="recurring_flag" value="1" style="width:18px;height:18px;flex-shrink:0;margin-top:1px" <?= !empty($offer['recurring_flag']) ? 'checked' : '' ?> <?= $disabled ?>>
                     <label for="recurring_flag" style="margin:0;cursor:pointer">
@@ -2524,8 +2583,22 @@ function offer_save(PDO $pdo): void
     $rate     = (float) post('unit_rate', 0);
     $area     = (float) post('area_sqm', 0);
     $slots    = max(1, (float) post('slots', 1));
+    // Prorata bulan kalender: bulan pertama/terakhir yang tidak penuh dihitung
+    // per hari bulan itu, sisanya bulan penuh — cara surat kertas. Totalnya
+    // harus datang dari mesin alokasi yang sama supaya angka di surat dan angka
+    // di laporan tidak mungkin berbeda.
+    $prorataKal = post('prorata_kalender') === '1' && $pricing === 'monthly' ? 1 : 0;
     // Total kalkulasi (mesin pricing) → ditimpa harga nego final bila ada.
-    $calc     = round(_offer_calc_total($pricing, $rate, $area, $slots, $days, $months));
+    if ($prorataKal && $start && $end) {
+        require_once dirname(__DIR__) . '/AllocationService.php';
+        $calc = round(AllocationService::totalCalculated([
+            'pricing_type' => 'monthly', 'unit_rate' => $rate, 'quantity' => 1, 'slots' => $slots,
+            'area_sqm' => $area, 'start_date' => $start, 'end_date' => $end,
+            'contract_months' => null, 'prorata_kalender' => 1,
+        ]));
+    } else {
+        $calc = round(_offer_calc_total($pricing, $rate, $area, $slots, $days, $months));
+    }
     // #3 — parse rupiah aman via helper (titik ribuan / koma desimal), bukan strip digit.
     $override = parse_rupiah(post('override_amount', '')) ?: 0.0;
     $final    = $override > 0 ? $override : $calc;
@@ -2585,6 +2658,7 @@ function offer_save(PDO $pdo): void
         'total_calculated' => $final,
         'override_amount' => $override ?: null,
         'billing_method'  => $billing,
+        'prorata_kalender' => $prorataKal,
         'recurring_flag'  => post('recurring_flag') ? 1 : 0,
         'cycle_recognition' => post('cycle_recognition') === 'cycle_end' ? 'cycle_end' : 'cycle_start',
         'dp_months'       => $dpMonths,
