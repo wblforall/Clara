@@ -2294,15 +2294,33 @@ function skp_approve(PDO $pdo): void
                 $trxMsg = ' Transaksi #' . $newTrxId . ' terbit & masuk laporan.';
             }
         } elseif (!empty($skp['transaction_id'])) {
-            // Perpanjangan: transaksinya sudah ada sejak periode barunya dibuat.
-            // Persetujuan Manager BELUM membuat kesepakatan sah, jadi alokasinya
-            // tidak dibangun di sini — tanda tangan client yang menentukan.
+            // Transaksinya sudah ada sebelum dokumen ini disetujui (perpanjangan,
+            // atau dokumen Gudang/Media yang dibuat dari transaksi yang sudah
+            // diinput).
             //
-            // Yang sudah ada pun TIDAK dihapus. Melepas alokasi kontrak yang
-            // sedang berjalan hanya karena dokumennya lewat sini pernah membuat
-            // income belasan orang lenyap; perpindahan aturan diurus sekali saja
-            // lewat scripts/alih_aturan_ttd.php, bukan diam-diam di jalur ini.
-            $trxMsg = ' Menunggu tanda tangan client sebelum masuk laporan.';
+            // Kesepakatan LAMA — dibuat sebelum aturan tanda tangan berlaku —
+            // tetap berperilaku seperti dulu: alokasinya dibangun begitu Manager
+            // menyetujui. Kalau tidak, kontrak yang sudah berjalan mendadak
+            // kehilangan angkanya hanya karena dokumennya kebetulan diproses
+            // setelah pembaruan dipasang.
+            //
+            // Yang BARU menunggu tanda tangan client, dan alokasinya tidak
+            // dibangun di sini. Yang sudah ada pun tidak dihapus — melepas angka
+            // kontrak berjalan bukan urusan jalur ini.
+            $tid = (int) $skp['transaction_id'];
+            $tq = $pdo->prepare('SELECT * FROM transactions WHERE id = ? AND property_id = ? AND deleted_at IS NULL');
+            $tq->execute([$tid, $pid]);
+            $trxLama = $tq->fetch(PDO::FETCH_ASSOC);
+            if ($trxLama && !ttd_wajib_untuk($pdo, (string) ($trxLama['created_at'] ?? ''))) {
+                $cekAlok = $pdo->prepare('SELECT COUNT(*) FROM transaction_allocations WHERE transaction_id = ?');
+                $cekAlok->execute([$tid]);
+                if ((int) $cekAlok->fetchColumn() === 0 || (int) ($skp['revisi_ke'] ?? 0) > 0) {
+                    AllocationService::saveAllocations($pdo, $tid, $trxLama);
+                    $trxMsg = ' Alokasi bulanan transaksi #' . $tid . ' dihitung ulang.';
+                }
+            } else {
+                $trxMsg = ' Menunggu tanda tangan client sebelum masuk laporan.';
+            }
         }
 
         $pdo->commit();
