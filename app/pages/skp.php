@@ -2016,11 +2016,41 @@ function _skp_create_transaction(PDO $pdo, array $skp, array $src, int $pid, ?ar
     foreach ($trx as $k => $v) $vals[':' . $k] = $v;
     $pdo->prepare('INSERT INTO transactions (' . implode(', ', $cols) . ') VALUES (' . implode(', ', $ph) . ')')->execute($vals);
     $tid = (int) $pdo->lastInsertId();
-    // Alokasi bulanan (spread membagi final_amount; anchor_cycle 1 bulan)
-    $trx['id'] = $tid;
-    if (!$spread) $trx['recognition_period'] = $trx['period_key'];
-    AllocationService::saveAllocations($pdo, $tid, $trx, []);
+    // Alokasi bulanannya SENGAJA belum dibuat di sini. Kesepakatan baru sah
+    // setelah diparaf Asst. Manager, disetujui Manager, DAN ditandatangani
+    // client; sampai saat itu transaksinya memang sudah ada (perlu nomor &
+    // tautan dokumen) tetapi tidak menyumbang satu rupiah pun ke laporan.
+    // Yang membangunnya: _skp_bangun_alokasi(), dipanggil saat tanda tangan.
     return $tid;
+}
+
+/**
+ * Bangun alokasi bulanan untuk seluruh transaksi milik satu dokumen.
+ *
+ * Dipanggil saat CLIENT MENANDATANGANI — inilah titik sebuah kesepakatan mulai
+ * dihitung sebagai pendapatan. Satu dokumen bisa memayungi beberapa transaksi
+ * (penawaran paket), jadi yang dicari bukan hanya transaction_id dokumennya
+ * tetapi juga semua transaksi yang menunjuk balik lewat skp_id.
+ */
+function _skp_bangun_alokasi(PDO $pdo, int $skpId, int $pid): int
+{
+    $q = $pdo->prepare('SELECT t.* FROM transactions t
+                         WHERE t.property_id = ? AND t.deleted_at IS NULL
+                           AND (t.skp_id = ?
+                                OR t.id = (SELECT s.transaction_id FROM skp_documents s WHERE s.id = ?))');
+    $q->execute([$pid, $skpId, $skpId]);
+    $n = 0;
+    foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $t) {
+        // Selalu dibangun ulang, tidak dilewati walau sudah ada: saveAllocations
+        // menghapus-lalu-menulis, dan dokumen yang sempat direvisi harus memakai
+        // angka versi terakhir, bukan sisa hitungan lama.
+        // anchor_cycle: seluruh nilai diakui pada satu periode saja — sama persis
+        // dengan perilaku saat transaksinya dibuat.
+        if (($t['billing_method'] ?? '') !== 'spread') $t['recognition_period'] = $t['period_key'];
+        AllocationService::saveAllocations($pdo, (int) $t['id'], $t);
+        $n++;
+    }
+    return $n;
 }
 
 // ─── Approve (manager) ───────────────────────────────────────────────────────
@@ -2256,7 +2286,7 @@ function skp_approve(PDO $pdo): void
                             ->execute([$totalTahap, $totalTahap, $newTrxId]);
                         $trxBaru['final_amount'] = $totalTahap;
                     }
-                    AllocationService::saveAllocations($pdo, $newTrxId, $trxBaru);
+                    // Alokasinya menyusul saat client menandatangani.
                 }
                 $pdo->prepare('UPDATE skp_documents SET transaction_id=? WHERE id=? AND property_id=?')->execute([$newTrxId, $id, $pid]);
                 _skp_tautkan_bagi($pdo, $id, $newTrxId);
@@ -2264,24 +2294,15 @@ function skp_approve(PDO $pdo): void
                 $trxMsg = ' Transaksi #' . $newTrxId . ' terbit & masuk laporan.';
             }
         } elseif (!empty($skp['transaction_id'])) {
-            // Dokumen perpanjangan yang pernah DIKEMBALIKAN ke PIC: alokasinya
-            // dilepas saat ditolak supaya berhenti dihitung. Begitu disetujui
-            // kembali, alokasinya harus dibangun ulang — kalau tidak, kontraknya
-            // hidup tanpa satu pun angka di laporan dan tidak ada yang tahu.
-            $tid = (int) $skp['transaction_id'];
-            $cekAlok = $pdo->prepare('SELECT COUNT(*) FROM transaction_allocations WHERE transaction_id = ?');
-            $cekAlok->execute([$tid]);
-            // Dihitung ulang bila alokasinya kosong (bekas dikembalikan ke PIC)
-            // ATAU dokumen ini hasil revisi — isinya bisa berubah, jadi angkanya
-            // tidak boleh tetap memakai hitungan versi lama.
-            if ((int) $cekAlok->fetchColumn() === 0 || (int) ($skp['revisi_ke'] ?? 0) > 0) {
-                $tq = $pdo->prepare('SELECT * FROM transactions WHERE id = ? AND property_id = ? AND deleted_at IS NULL');
-                $tq->execute([$tid, $pid]);
-                if ($trxUlang = $tq->fetch()) {
-                    AllocationService::saveAllocations($pdo, $tid, $trxUlang);
-                    $trxMsg = ' Alokasi bulanan transaksi #' . $tid . ' dihitung ulang.';
-                }
-            }
+            // Perpanjangan: transaksinya sudah ada sejak periode barunya dibuat.
+            // Persetujuan Manager BELUM membuat kesepakatan sah, jadi alokasinya
+            // tidak dibangun di sini — tanda tangan client yang menentukan.
+            //
+            // Yang sudah ada pun TIDAK dihapus. Melepas alokasi kontrak yang
+            // sedang berjalan hanya karena dokumennya lewat sini pernah membuat
+            // income belasan orang lenyap; perpindahan aturan diurus sekali saja
+            // lewat scripts/alih_aturan_ttd.php, bukan diam-diam di jalur ini.
+            $trxMsg = ' Menunggu tanda tangan client sebelum masuk laporan.';
         }
 
         $pdo->commit();
@@ -2759,12 +2780,17 @@ function skp_sign_upload(PDO $pdo): void
     if (!@move_uploaded_file($f['tmp_name'], $dir . '/' . $fname)) { flash('Gagal menyimpan file.'); redirect_to('skp_form', ['id' => $id]); }
     $rel = 'uploads/skp/' . $fname;
 
-    $pdo->prepare(
+    $tt = $pdo->prepare(
         "UPDATE skp_documents SET status='signed', sign_method='wet', sign_name=?, signed_doc_path=?, signed_at=CURRENT_TIMESTAMP
          WHERE id=? AND property_id=? AND status='approved'"
-    )->execute([$name, $rel, $id, $pid]);
-    audit($pdo, 'customer_sign_wet', 'skp_documents', (string) $id, ['name' => $name, 'file' => $rel]);
-    flash('Dokumen ditandai sudah ditandatangani sesuai berkas yang diunggah.');
+    );
+    $tt->execute([$name, $rel, $id, $pid]);
+    // Tanda tangan client = kesepakatan sah. Inilah titik nominalnya mulai
+    // dihitung di Dashboard, Laporan, Achievement, dan komisi.
+    $nAlok = $tt->rowCount() > 0 ? _skp_bangun_alokasi($pdo, $id, $pid) : 0;
+    audit($pdo, 'customer_sign_wet', 'skp_documents', (string) $id, ['name' => $name, 'file' => $rel, 'alokasi' => $nAlok]);
+    flash('Dokumen ditandai sudah ditandatangani sesuai berkas yang diunggah.'
+        . ($nAlok ? ' Nilainya sekarang masuk laporan.' : ''));
     redirect_to('skp_form', ['id' => $id]);
 }
 
@@ -2833,16 +2859,23 @@ function skp_sign_save(PDO $pdo): void
         http_response_code(422); exit('Tanda tangan tidak valid.');
     }
     // Simpan sebagai data URL di DB (tanpa file) — kokoh di hosting apa pun.
-    $pdo->prepare(
+    $ttd = $pdo->prepare(
         "UPDATE skp_documents SET status='signed', sign_name=?, sign_ip=?, sign_ua=?, signature_data=?, signed_at=CURRENT_TIMESTAMP
          WHERE id=? AND sign_token=? AND status='approved'"
-    )->execute([
+    );
+    $ttd->execute([
         $name,
         substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
         substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255),
         $data,
         (int) $skp['id'], $token,
     ]);
+
+    // Sama seperti tanda tangan basah: begitu client meneken, nilainya dibangun
+    // jadi alokasi bulanan dan ikut terhitung di laporan.
+    if ($ttd->rowCount() > 0) {
+        _skp_bangun_alokasi($pdo, (int) $skp['id'], (int) $skp['property_id']);
+    }
 
     // Client sudah menandatangani → permintaan revisi yang masih menggantung
     // tidak mungkin lagi dikabulkan (dokumen bertanda tangan tidak bisa

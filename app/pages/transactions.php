@@ -21,16 +21,19 @@ function transactions_page(PDO $pdo): void
     $where  = ['t.module = :module', 't.deleted_at IS NULL', 't.property_id = :property_id'];
     $params = [':module' => $module, ':property_id' => current_property_id()];
 
-    // Dokumen yang DITOLAK tidak ditampilkan di sini. Alokasinya memang sudah
-    // dilepas saat ditolak, jadi nilainya tidak terhitung — tetapi barisnya dulu
-    // tetap terpampang lengkap dengan tanda centang hijau, sehingga terbaca
-    // seperti kesepakatan yang sudah jalan. Barisnya tidak hilang: tetap ada di
-    // menu SKP dengan status Ditolak, dan muncul kembali begitu disetujui.
+    // Daftar ini hanya memuat kesepakatan yang SUDAH SAH, yaitu dokumennya sudah
+    // diparaf Asst. Manager, disetujui Manager, dan ditandatangani client. Selama
+    // belum, berkasnya tertahan di menu SKP — bukan hilang.
     //
-    // Hanya 'rejected' yang disaring. Status lain TIDAK boleh ikut disembunyikan
-    // — selama alokasinya terhitung, barisnya harus terlihat, kalau tidak ada
-    // angka di laporan yang transaksinya tak bisa ditemukan di mana pun.
-    $where[] = "COALESCE(" . $skpSub('status') . ", '') <> 'rejected'";
+    // Aturannya dijaga sejajar dengan perhitungan income: yang tampil di sini
+    // adalah yang terhitung di laporan, tidak kurang tidak lebih. Kalau salah
+    // satunya diubah, yang lain harus ikut — pernah terjadi angka muncul di
+    // laporan sementara transaksinya tak bisa ditemukan di mana pun.
+    //
+    // Transaksi yang BELUM punya dokumen tetap ditampilkan: tombol "Buat SKP"
+    // ada di daftar ini, jadi menyembunyikannya membuat dokumennya mustahil
+    // dibuat — dan alokasinya memang sudah terhitung sejak transaksinya dibuat.
+    $where[] = "COALESCE(" . $skpSub('status') . ", '') IN ('', 'signed')";
 
     if ($search !== '') {
         $where[]            = '(c.company_name LIKE :search1 OR t.master_code LIKE :search2)';
@@ -1107,24 +1110,63 @@ function transaction_save(PDO $pdo): void
     // Datang dari tombol "Perpanjang": lanjut langsung ke form SKP periode baru
     // (status sewa otomatis "Perpanjangan"), bukan ke detail alokasi.
     if (post('to_skp') === '1' && can('manage_skp')) {
-        flash('Periode baru tersimpan. Lanjutkan pengisian SKP perpanjangan di bawah ini.');
-        redirect_to('skp_form', ['transaction_id' => $id, 'renew' => 1]);
+        // Periode baru masih harus lewat paraf Asst. Manager, persetujuan
+        // Manager, dan tanda tangan client. Alokasinya dilepas lagi supaya belum
+        // terhitung; dibangun oleh _skp_bangun_alokasi() saat dokumennya diteken.
+        // Aman dihapus di sini: transaksinya baru saja lahir pada baris-baris di
+        // atas, jadi tidak ada angka lama milik siapa pun yang ikut hilang.
+        // Hitungannya tetap dijalankan tadi karena final_amount memakai hasilnya.
+        $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ? AND property_id = ?')
+            ->execute([$id, current_property_id()]);
+
+        // Dokumen draftnya dibuatkan sekarang juga, bukan menunggu formulirnya
+        // disimpan. Tanpa ini, perpanjangan yang ditinggal di tengah jalan tidak
+        // tercatat di mana pun: transaksinya tidak tampil di daftar modul (karena
+        // belum diteken) dan dokumennya belum ada di menu SKP. Dengan dibuat lebih
+        // dulu, riwayat perpanjangan selalu terlihat di halaman SKP.
+        require_once __DIR__ . '/skp_modules.php';
+        $docType = match ($trx['module'] ?? 'cl') { 'gudang' => 'sks', 'media' => 'fu', default => 'skp' };
+        $ada = $pdo->prepare('SELECT id FROM skp_documents WHERE transaction_id = ? AND property_id = ? LIMIT 1');
+        $ada->execute([$id, current_property_id()]);
+        $skpId = (int) ($ada->fetchColumn() ?: 0);
+        if (!$skpId) {
+            $pdo->prepare(
+                'INSERT INTO skp_documents (property_id, doc_type, module, client_id, contact_id, master_code,
+                     start_date, end_date, unit_rate, total_amount, pic_name, transaction_id, status,
+                     status_sewa, created_by)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,\'draft\',\'Perpanjangan\',?)'
+            )->execute([
+                current_property_id(), $docType, $trx['module'] ?? 'cl',
+                $trx['client_id'] ?: null, $trx['contact_id'] ?? null, $trx['master_code'] ?? null,
+                $trx['start_date'] ?? null, $trx['end_date'] ?? null,
+                (float) ($trx['unit_rate'] ?? 0), (float) ($trx['final_amount'] ?? 0),
+                $trx['pic_name'] ?? null, $id, $_SESSION['user']['name'] ?? 'system',
+            ]);
+            $skpId = (int) $pdo->lastInsertId();
+            audit($pdo, 'create', 'skp_documents', (string) $skpId, ['dari_perpanjangan' => $id]);
+        }
+        flash('Periode baru tersimpan dan sudah tercatat di menu ' . skp_doc_short($docType)
+            . '. Lengkapi isinya di bawah ini — nilainya masuk laporan setelah client menandatangani.');
+        redirect_to('skp_form', ['id' => $skpId, 'renew' => 1]);
     }
     flash('Transaksi tersimpan dan alokasi bulanan sudah dihitung.');
     redirect_to('allocation_detail', ['id' => $id]);
 }
 
 /**
- * Apakah transaksi ini "terkunci" karena terbit dari SKP/SKS yang sudah
- * DISETUJUI / DITANDATANGANI? (offer-first: nilai sudah final & bertanda tangan).
- * Return ['skp_no','status','doc_type'] atau null bila bebas diubah.
+ * Dokumen bertanda tangan yang mengunci transaksi ini — null bila belum ada.
+ *
+ * Kuncinya baru berlaku setelah CLIENT MENANDATANGANI. Selama dokumennya baru
+ * sampai Manager, kesepakatannya belum final: nilainya masih boleh diperbaiki
+ * dan masih boleh direvisi. Begitu diteken, isinya tidak boleh berubah lagi —
+ * yang dipegang client dan yang ada di laporan harus sama.
  */
 function _trx_locking_skp(PDO $pdo, int $trxId, int $pid): ?array
 {
     if ($trxId <= 0) return null;
     $st = $pdo->prepare(
         "SELECT skp_no, status, doc_type, snapshot_json FROM skp_documents
-         WHERE transaction_id = ? AND property_id = ? AND status IN ('approved','signed')
+         WHERE transaction_id = ? AND property_id = ? AND status = 'signed'
          ORDER BY id DESC LIMIT 1"
     );
     $st->execute([$trxId, $pid]);
