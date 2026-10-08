@@ -596,7 +596,16 @@ function layout(string $title, callable $body, array $opts = []): void
        listener form, dan event-nya tetap naik ke sini. Tanpa pemeriksaan ini
        formnya ikut ditandai terkirim lalu tombolnya mati permanen — submit yang
        sudah diperbaiki tidak pernah bisa dikirim sampai halaman dimuat ulang. */
-    document.addEventListener('submit',function(e){if(e.defaultPrevented)return;var form=e.target;if(form.dataset.submitted){e.preventDefault();return;}form.dataset.submitted='1';form.querySelectorAll('button[type=submit]').forEach(function(btn){btn.disabled=true;btn.dataset.orig=btn.textContent;btn.textContent='Menyimpan...';});});
+    /* PENTING: tombolnya dimatikan SETELAH data formulir disusun peramban,
+       bukan di dalam listener ini. Tombol yang sudah disabled TIDAK ikut
+       terkirim — padahal banyak formulir di sini memakai dua tombol submit yang
+       membedakan maksudnya lewat name/value (keputusan=setuju vs tolak,
+       putusan, ke_pic). Mematikannya terlalu cepat membuat nilai itu lenyap,
+       dan sisi server membacanya sebagai pilihan sebaliknya: "Setujui Revisi"
+       tercatat sebagai Ditolak. setTimeout(...,0) menunda sampai pengiriman
+       sudah disusun, sehingga penjaga klik-ganda tetap jalan tanpa menelan
+       nilai tombolnya. */
+    document.addEventListener('submit',function(e){if(e.defaultPrevented)return;var form=e.target;if(form.dataset.submitted){e.preventDefault();return;}form.dataset.submitted='1';setTimeout(function(){form.querySelectorAll('button[type=submit]').forEach(function(btn){btn.disabled=true;btn.dataset.orig=btn.textContent;btn.textContent='Menyimpan...';});},0);});
     /* Salin teks ke clipboard dgn fallback. navigator.clipboard hanya ada di
        secure context (HTTPS/localhost); di PWA via IP LAN (HTTP) ia undefined,
        jadi tombol Salin "diam" tanpa fallback. Fallback: textarea + execCommand. */
