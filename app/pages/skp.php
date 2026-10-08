@@ -2615,12 +2615,14 @@ function skp_revision_decide(PDO $pdo): void
             // duduk di laporan — dan yang membacanya mengira itu sudah pasti.
             // Alokasinya dibangun kembali otomatis saat dokumen disetujui /
             // ditandatangani ulang, jadi tidak ada yang hilang permanen.
-            $trxRev = (int) ($skp['transaction_id'] ?? 0);
-            if ($trxRev) {
-                $pdo->prepare('DELETE FROM transaction_allocations
-                                WHERE transaction_id = ? AND property_id = ?')
-                    ->execute([$trxRev, $pid]);
-            }
+            // Paket: satu dokumen bisa memayungi beberapa transaksi, dan yang
+            // tercatat di transaction_id hanya wakilnya. Semua komponen harus
+            // ikut dilepas — kalau tidak, sebagian nilainya tetap tinggal di
+            // laporan tanpa ada yang menyadarinya.
+            $pdo->prepare('DELETE a FROM transaction_allocations a
+                             JOIN transactions t ON t.id = a.transaction_id
+                            WHERE t.property_id = ? AND (t.skp_id = ? OR t.id = ?)')
+                ->execute([$pid, $id, (int) ($skp['transaction_id'] ?? 0)]);
             ApprovalLine::record($pdo, $pid, $id, 0, $jab ?: null, 'revisi',
                 'Revisi disetujui: ' . $minta['alasan'] . ($note !== '' ? ' — ' . $note : ''), true);
         }

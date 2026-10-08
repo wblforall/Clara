@@ -37,8 +37,11 @@ function lir_main(PDO $pdo, array $argv): int
     $terapkan = in_array('--terapkan', $argv, true);
 
     // Dokumen TERAKHIR milik tiap transaksi.
+    // Ikut jalur paket juga: komponen penawaran paket menunjuk dokumennya lewat
+    // transactions.skp_id, bukan lewat skp_documents.transaction_id.
     $kol = fn(string $c) => "(SELECT s2.$c FROM skp_documents s2
-                               WHERE s2.transaction_id = t.id AND s2.property_id = t.property_id
+                               WHERE s2.property_id = t.property_id
+                                 AND (s2.transaction_id = t.id OR s2.id = t.skp_id)
                                ORDER BY s2.id DESC LIMIT 1)";
     $sedangDibongkar = "(COALESCE({$kol('status')},'') = 'rejected'
                          OR (COALESCE({$kol('status')},'') = 'draft'

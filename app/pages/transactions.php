@@ -14,8 +14,14 @@ function transactions_page(PDO $pdo): void
 
     // Status dokumen TERAKHIR milik transaksi ini. Dipakai untuk menyaring di
     // WHERE sekaligus mengisi kolom keterangan di daftar.
+    // Penawaran PAKET melahirkan beberapa transaksi dari satu dokumen: hanya
+    // satu yang dicatat sebagai transaction_id dokumen (wakilnya), sisanya
+    // menunjuk balik lewat transactions.skp_id. Mencari lewat transaction_id
+    // saja membuat komponen lain dianggap "tanpa dokumen" — ikut tampil dan
+    // ikut terhitung padahal dokumennya sedang direvisi.
     $skpSub = fn(string $kol) => "(SELECT s2.$kol FROM skp_documents s2
-                     WHERE s2.transaction_id = t.id AND s2.property_id = t.property_id
+                     WHERE s2.property_id = t.property_id
+                       AND (s2.transaction_id = t.id OR s2.id = t.skp_id)
                      ORDER BY s2.id DESC LIMIT 1)";
 
     $where  = ['t.module = :module', 't.deleted_at IS NULL', 't.property_id = :property_id'];
