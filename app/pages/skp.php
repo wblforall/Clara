@@ -2609,6 +2609,18 @@ function skp_revision_decide(PDO $pdo): void
                                   reject_note = ?
                             WHERE id = ? AND property_id = ?")
                 ->execute([$revBaru, 'REVISI #' . $revBaru . ': ' . mb_substr((string) $minta['alasan'], 0, 300), $id, $pid]);
+            // Kesepakatannya sedang dibongkar, jadi nilainya BERHENTI dihitung
+            // sampai dokumennya selesai diperbaiki dan menempuh persetujuan
+            // lagi. Tanpa ini, angka yang isinya sedang dipertanyakan tetap
+            // duduk di laporan — dan yang membacanya mengira itu sudah pasti.
+            // Alokasinya dibangun kembali otomatis saat dokumen disetujui /
+            // ditandatangani ulang, jadi tidak ada yang hilang permanen.
+            $trxRev = (int) ($skp['transaction_id'] ?? 0);
+            if ($trxRev) {
+                $pdo->prepare('DELETE FROM transaction_allocations
+                                WHERE transaction_id = ? AND property_id = ?')
+                    ->execute([$trxRev, $pid]);
+            }
             ApprovalLine::record($pdo, $pid, $id, 0, $jab ?: null, 'revisi',
                 'Revisi disetujui: ' . $minta['alasan'] . ($note !== '' ? ' — ' . $note : ''), true);
         }

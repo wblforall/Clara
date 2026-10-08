@@ -35,15 +35,23 @@ function transactions_page(PDO $pdo): void
     // Transaksi yang BELUM punya dokumen selalu ditampilkan: tombol "Buat SKP"
     // ada di daftar ini, jadi menyembunyikannya membuat dokumennya mustahil
     // dibuat — dan alokasinya memang sudah terhitung sejak transaksinya dibuat.
+    // Dokumen yang SEDANG DIBONGKAR tidak pernah tampil, sekalipun kontraknya
+    // lama. Yang ditolak maupun yang dibuka kembali untuk revisi berarti isinya
+    // sedang dipertanyakan — menahannya tetap di daftar membuat angka yang belum
+    // pasti terbaca seperti sudah pasti. Ia muncul lagi begitu dokumennya
+    // selesai diperbaiki dan menempuh persetujuan ulang.
+    $where[] = "COALESCE(" . $skpSub('status') . ", '') <> 'rejected'";
+    $where[] = "NOT (COALESCE(" . $skpSub('status') . ", '') = 'draft'
+                     AND COALESCE(" . $skpSub('revisi_ke') . ", 0) > 0)";
+
     $ttdMulai = ttd_wajib_mulai($pdo);
     if ($ttdMulai !== '') {
         $where[] = "(COALESCE(" . $skpSub('status') . ", '') IN ('', 'signed')
                      OR DATE(t.created_at) < :ttd_mulai)";
         $params[':ttd_mulai'] = $ttdMulai;
-    } else {
-        // Batas belum disetel — pakai aturan lama: hanya yang ditolak disaring.
-        $where[] = "COALESCE(" . $skpSub('status') . ", '') <> 'rejected'";
     }
+    // Tanpa batas tanggal, saringan "ditolak / sedang direvisi" di atas sudah
+    // cukup — tidak ada aturan tambahan di sini.
 
     if ($search !== '') {
         $where[]            = '(c.company_name LIKE :search1 OR t.master_code LIKE :search2)';
