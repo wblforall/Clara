@@ -11,6 +11,19 @@
 
 ---
 
+## Fitur & Perbaikan — 8 Oktober 2026
+
+### Revisi perpanjangan benar-benar bisa direvisi
+
+- **Masa sewa dan harga kini diisi langsung di formulir SKP** pada dokumen perpanjangan (dokumen yang bersumber transaksi, tanpa Surat Penawaran). Sebelumnya keduanya hanya kolom mati: dokumen yang dikembalikan untuk revisi tidak bisa diubah justru pada dua hal yang paling sering diminta berubah.
+- Kolomnya muncul hanya selama dokumen berstatus **Draft** atau **Ditolak/Dikembalikan**, dan hanya untuk **PIC dokumen itu sendiri**. Begitu masuk approval (Submitted/Disetujui) atau sudah ditandatangani client, kolomnya kembali mati.
+- Saat disimpan, nilai kontrak **dihitung ulang oleh mesin hitung aplikasi** (tarif × luas/slot/titik × hari, atau per bulan sesuai jenis harga), lalu ditulis ke transaksinya dan ke salinan periode di dokumen SKP — sehingga surat dan kontrak tidak lagi bisa menyebut dua angka berbeda.
+- **Override nilai manual yang lama otomatis dilepas** ketika harga diubah. Selama override masih terpasang, harga baru tidak akan terlihat sama sekali pada nilai kontrak.
+- Income tetap mengikuti aturan alur: **tidak masuk laporan sampai client menandatangani**. Transaksi lama (sebelum aturan tanda tangan berlaku) alokasinya diperbarui mengikuti angka baru, bukan ditinggal usang.
+- Dokumen **Paket** tidak bisa disunting dari sini — tarif tiap komponen berbeda, jadi diarahkan ke halaman Alokasi/transaksi komponennya.
+
+---
+
 ## Fitur & Perbaikan — 2 Oktober 2026
 
 ### Master data sebagai acuan proyeksi
