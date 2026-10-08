@@ -2379,6 +2379,35 @@ function offer_form(PDO $pdo): void
                 if (el) el.addEventListener('change', gambarSc);
             });
             gambarSc();
+            /**
+             * Total sewa dengan patokan bulan kalender — kembaran
+             * AllocationService::monthlyCalendarAllocations() di server.
+             * Bulan penuh dikenai tarif utuh; bulan yang tidak penuh dibagi
+             * menurut jumlah hari bulan itu sendiri.
+             */
+            function prorataKalender(mulai, akhir, tarif) {
+                var s = new Date(mulai + 'T00:00:00'), e = new Date(akhir + 'T00:00:00');
+                if (isNaN(s) || isNaN(e) || e < s) return 0;
+                var total = 0, k = new Date(s.getFullYear(), s.getMonth(), 1);
+                while (k <= e) {
+                    var awalBln  = new Date(k.getFullYear(), k.getMonth(), 1);
+                    var akhirBln = new Date(k.getFullYear(), k.getMonth() + 1, 0);
+                    var a = awalBln  < s ? s : awalBln;
+                    var b = akhirBln > e ? e : akhirBln;
+                    if (a <= b) {
+                        var penuh = a.getTime() === awalBln.getTime() && b.getTime() === akhirBln.getTime();
+                        if (penuh) {
+                            total += tarif;
+                        } else {
+                            var hari = Math.round((b - a) / 86400000) + 1;
+                            total += Math.round(tarif * hari / akhirBln.getDate());
+                        }
+                    }
+                    k = new Date(k.getFullYear(), k.getMonth() + 1, 1);
+                }
+                return total;
+            }
+
             // ── Mesin pricing (sama dgn input transaksi) ──
             function kalkulasi() {
                 var s = (document.getElementById('start_date') || {}).value, e = (document.getElementById('end_date') || {}).value;
@@ -2391,7 +2420,16 @@ function offer_form(PDO $pdo): void
                     case 'daily_point': calc = rate * days; break;
                     case 'daily_slot':  calc = rate * Math.max(1, slots) * days; break;
                     case 'daily_area':  calc = rate * Math.max(1, area) * days; break;
-                    case 'monthly': calc = rate * Math.max(1, months); break;
+                    case 'monthly':
+                        // Prorata bulan kalender: bulan yang tidak penuh dihitung
+                        // per hari bulan itu. Harus sama persis dengan
+                        // AllocationService di sisi server, kalau tidak angka di
+                        // layar berbeda dari angka yang tersimpan.
+                        var pk = document.getElementById('prorata_kalender');
+                        calc = (pk && pk.checked && s && e)
+                             ? prorataKalender(s, e, rate)
+                             : rate * Math.max(1, months);
+                        break;
                     case 'fixed':   calc = rate; break;
                 }
                 calc = Math.round(calc);
@@ -2441,6 +2479,10 @@ function offer_form(PDO $pdo): void
             var bmEl = document.getElementById('billing_method');
             if (bmEl) bmEl.addEventListener('change', function () { syncRecognition(); kalkulasi(); });
             ['unit_rate', 'area_sqm', 'slots_input', 'dp_months', 'deposit_months'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('input', kalkulasi); });
+            // Mencentang prorata mengubah total kontrak, jadi angkanya harus
+            // ikut berubah saat itu juga — bukan baru ketahuan setelah disimpan.
+            var pkEl = document.getElementById('prorata_kalender');
+            if (pkEl) pkEl.addEventListener('change', kalkulasi);
             var ptEl = document.getElementById('pricing_type'); if (ptEl) ptEl.addEventListener('change', kalkulasi);
             ['start_date', 'end_date'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('change', function () { syncRecognition(); kalkulasi(); checkOverlap(); }); });
             var btn = document.getElementById('btn-kalkulasi'); if (btn) btn.addEventListener('click', kalkulasi);
