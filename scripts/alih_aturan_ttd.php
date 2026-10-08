@@ -18,10 +18,11 @@
  *   - dokumen yang ditolak                (alokasinya sudah lepas sejak dulu)
  *
  * Laporan saja (tidak mengubah apa pun):
- *   php scripts/alih_aturan_ttd.php
+ *   php scripts/alih_aturan_ttd.php --rinci
  *
- * Terapkan:
- *   php scripts/alih_aturan_ttd.php --terapkan
+ * Terapkan — HANYA bila aturan memang mau diberlakukan SURUT ke kesepakatan
+ * yang sudah berjalan. Tanpa --termasuk-lama perintahnya ditolak:
+ *   php scripts/alih_aturan_ttd.php --terapkan --termasuk-lama
  *
  * Bisa dibatalkan: begitu client menandatangani dokumennya, angkanya dibangun
  * kembali otomatis. Tidak ada transaksi maupun dokumen yang dihapus di sini.
@@ -37,10 +38,39 @@ require_once CLARA_ROOT . '/app/Database.php';
 
 function att_rp(float $v): string { return 'Rp ' . number_format($v, 0, ',', '.'); }
 
+/** Tanggal mulai berlakunya aturan tanda tangan ('' bila belum disetel). */
+function att_mulai(PDO $pdo): string
+{
+    try {
+        return (string) ($pdo->query("SELECT value FROM settings WHERE `key` = 'ttd_wajib_mulai' LIMIT 1")
+                             ->fetchColumn() ?: '');
+    } catch (Throwable $e) {
+        return '';
+    }
+}
+
 function att_main(PDO $pdo, array $argv): int
 {
     $terapkan = in_array('--terapkan', $argv, true);
     $rinci    = in_array('--rinci', $argv, true);
+    $pakaiLama = in_array('--termasuk-lama', $argv, true);
+
+    // PENGAMAN. Aturan tanda tangan hanya mengikat kesepakatan yang dibuat sejak
+    // tanggal berlakunya; yang lebih lama sengaja dibiarkan terhitung. Daftar di
+    // bawah hampir seluruhnya kesepakatan lama, jadi --terapkan tanpa sadar akan
+    // melepas angka yang memang masih berhak ada di laporan. Harus disebut
+    // terang-terangan dengan --termasuk-lama.
+    $mulai = att_mulai($pdo);
+    if ($terapkan && $mulai !== '' && !$pakaiLama) {
+        fwrite(STDERR,
+            "DITOLAK. Aturan tanda tangan berlaku untuk kesepakatan sejak $mulai.\n"
+          . "Daftar di bawah memuat kesepakatan LAMA yang sengaja dibiarkan terhitung.\n"
+          . "Melepasnya berarti memberlakukan aturan secara surut — angka laporan\n"
+          . "dan komisi orang-orang akan berubah mundur sampai berbulan-bulan.\n\n"
+          . "Jalankan tanpa --terapkan untuk melihat daftarnya.\n"
+          . "Kalau memang itu yang dikehendaki, sebut --termasuk-lama.\n");
+        return 2;
+    }
 
     $stat = "(SELECT s2.status FROM skp_documents s2
                WHERE s2.transaction_id = t.id AND s2.property_id = t.property_id
@@ -113,9 +143,15 @@ function att_main(PDO $pdo, array $argv): int
     }
 
     if (!$terapkan) {
-        echo "Belum ada yang diubah (mode laporan).\n"
-           . "Tambahkan --terapkan untuk melepas alokasi di atas dari laporan.\n"
-           . "Transaksi & dokumennya tetap utuh; angkanya kembali sendiri begitu client meneken.\n";
+        echo "Belum ada yang diubah (mode laporan).\n";
+        if ($mulai !== '') {
+            echo "Aturan tanda tangan berlaku untuk kesepakatan sejak $mulai; yang di atas\n"
+               . "sebagian besar LEBIH LAMA dari itu dan memang dibiarkan tetap terhitung.\n"
+               . "Daftar ini untuk diketahui, bukan untuk dieksekusi.\n";
+        } else {
+            echo "Tambahkan --terapkan untuk melepas alokasi di atas dari laporan.\n"
+               . "Transaksi & dokumennya tetap utuh; angkanya kembali begitu client meneken.\n";
+        }
         return 1;
     }
 

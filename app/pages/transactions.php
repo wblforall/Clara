@@ -21,19 +21,29 @@ function transactions_page(PDO $pdo): void
     $where  = ['t.module = :module', 't.deleted_at IS NULL', 't.property_id = :property_id'];
     $params = [':module' => $module, ':property_id' => current_property_id()];
 
-    // Daftar ini hanya memuat kesepakatan yang SUDAH SAH, yaitu dokumennya sudah
-    // diparaf Asst. Manager, disetujui Manager, dan ditandatangani client. Selama
-    // belum, berkasnya tertahan di menu SKP — bukan hilang.
+    // Daftar ini sejajar dengan perhitungan income: yang tampil di sini adalah
+    // yang terhitung di laporan, tidak kurang tidak lebih. Kalau salah satunya
+    // diubah, yang lain harus ikut — pernah terjadi angka muncul di laporan
+    // sementara transaksinya tak bisa ditemukan di mana pun.
     //
-    // Aturannya dijaga sejajar dengan perhitungan income: yang tampil di sini
-    // adalah yang terhitung di laporan, tidak kurang tidak lebih. Kalau salah
-    // satunya diubah, yang lain harus ikut — pernah terjadi angka muncul di
-    // laporan sementara transaksinya tak bisa ditemukan di mana pun.
+    // Kesepakatan BARU (sejak aturan tanda tangan berlaku) baru tampil setelah
+    // diteken client; sebelum itu berkasnya tertahan di menu SKP, bukan hilang.
+    // Kesepakatan LAMA tetap tampil apa adanya, karena angkanya pun masih
+    // terhitung — memberlakukan aturan ini surut akan membuat ratusan transaksi
+    // yang sedang berjalan lenyap dari layar padahal masih masuk laporan.
     //
-    // Transaksi yang BELUM punya dokumen tetap ditampilkan: tombol "Buat SKP"
+    // Transaksi yang BELUM punya dokumen selalu ditampilkan: tombol "Buat SKP"
     // ada di daftar ini, jadi menyembunyikannya membuat dokumennya mustahil
     // dibuat — dan alokasinya memang sudah terhitung sejak transaksinya dibuat.
-    $where[] = "COALESCE(" . $skpSub('status') . ", '') IN ('', 'signed')";
+    $ttdMulai = ttd_wajib_mulai($pdo);
+    if ($ttdMulai !== '') {
+        $where[] = "(COALESCE(" . $skpSub('status') . ", '') IN ('', 'signed')
+                     OR DATE(t.created_at) < :ttd_mulai)";
+        $params[':ttd_mulai'] = $ttdMulai;
+    } else {
+        // Batas belum disetel — pakai aturan lama: hanya yang ditolak disaring.
+        $where[] = "COALESCE(" . $skpSub('status') . ", '') <> 'rejected'";
+    }
 
     if ($search !== '') {
         $where[]            = '(c.company_name LIKE :search1 OR t.master_code LIKE :search2)';

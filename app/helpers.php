@@ -602,6 +602,42 @@ function csrf_token(): string
     return $_SESSION['csrf'];
 }
 
+/**
+ * Mulai kapan aturan "income masuk setelah client menandatangani" mengikat.
+ *
+ * Kesepakatan yang transaksinya dibuat SEBELUM tanggal ini tetap berperilaku
+ * lama: angkanya terhitung sejak disetujui Manager dan barisnya tetap terlihat
+ * di daftar modul. Yang dibuat sejak tanggal ini wajib lewat tanda tangan
+ * client dulu.
+ *
+ * Batas ini ada supaya pergantian aturan tidak berlaku surut. Tanpanya, satu
+ * kali deploy akan melepas miliaran rupiah dari laporan orang-orang yang
+ * kesepakatannya sudah berjalan — dan itu pernah terjadi.
+ *
+ * Kosong = belum disetel; artinya aturan lama untuk semuanya.
+ */
+function ttd_wajib_mulai(PDO $pdo): string
+{
+    static $tgl = null;
+    if ($tgl === null) {
+        try {
+            $tgl = (string) ($pdo->query("SELECT value FROM settings WHERE `key` = 'ttd_wajib_mulai' LIMIT 1")
+                                 ->fetchColumn() ?: '');
+        } catch (Throwable $e) {
+            $tgl = '';
+        }
+    }
+    return $tgl;
+}
+
+/** Apakah transaksi ini sudah terikat aturan tanda tangan? */
+function ttd_wajib_untuk(PDO $pdo, ?string $dibuatPada): bool
+{
+    $mulai = ttd_wajib_mulai($pdo);
+    if ($mulai === '' || !$dibuatPada) return false;
+    return substr($dibuatPada, 0, 10) >= $mulai;
+}
+
 function verify_csrf(): void
 {
     // hash_equals: perbandingan waktu-konstan (anti timing attack).
