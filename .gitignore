@@ -75,3 +75,4 @@ scripts/build_laporan_gudang_media.php
 # repo ini publik, jadi jangan pernah ikut ter-commit.
 /scripts/audit/
 /generate_pdf_report.php
+/pembanding-*.json
