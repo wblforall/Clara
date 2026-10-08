@@ -12,8 +12,8 @@ function transactions_page(PDO $pdo): void
     $page    = max(1, (int) getv('page', 1));
     $perPage = 50;
 
-    // Status dokumen terakhir milik transaksi ini. Dipakai dua kali: untuk
-    // menyaring di WHERE, dan untuk kolom keterangan di daftar.
+    // Status dokumen TERAKHIR milik transaksi ini. Dipakai untuk menyaring di
+    // WHERE sekaligus mengisi kolom keterangan di daftar.
     $skpSub = fn(string $kol) => "(SELECT s2.$kol FROM skp_documents s2
                      WHERE s2.transaction_id = t.id AND s2.property_id = t.property_id
                      ORDER BY s2.id DESC LIMIT 1)";
@@ -21,17 +21,16 @@ function transactions_page(PDO $pdo): void
     $where  = ['t.module = :module', 't.deleted_at IS NULL', 't.property_id = :property_id'];
     $params = [':module' => $module, ':property_id' => current_property_id()];
 
-    // Daftar ini hanya memuat kesepakatan yang SUDAH SAH, yaitu dokumennya sudah
-    // diparaf Asst. Manager, disetujui Manager, dan ditandatangani client
-    // (status 'signed'). Selama belum, berkasnya tertahan di menu SKP — bukan
-    // hilang. Sebelum ini, dokumen yang masih menunggu paraf bahkan yang sudah
-    // DITOLAK tetap terpampang di sini berikut nominalnya, lengkap dengan tanda
-    // centang hijau, sehingga terbaca seperti pendapatan yang sudah jalan.
+    // Dokumen yang DITOLAK tidak ditampilkan di sini. Alokasinya memang sudah
+    // dilepas saat ditolak, jadi nilainya tidak terhitung — tetapi barisnya dulu
+    // tetap terpampang lengkap dengan tanda centang hijau, sehingga terbaca
+    // seperti kesepakatan yang sudah jalan. Barisnya tidak hilang: tetap ada di
+    // menu SKP dengan status Ditolak, dan muncul kembali begitu disetujui.
     //
-    // Transaksi yang BELUM punya dokumen tetap ditampilkan: tombol "Buat SKP"
-    // ada di daftar ini, jadi menyembunyikannya membuat dokumennya mustahil
-    // dibuat.
-    $where[] = "COALESCE(" . $skpSub('status') . ", '') IN ('', 'signed')";
+    // Hanya 'rejected' yang disaring. Status lain TIDAK boleh ikut disembunyikan
+    // — selama alokasinya terhitung, barisnya harus terlihat, kalau tidak ada
+    // angka di laporan yang transaksinya tak bisa ditemukan di mana pun.
+    $where[] = "COALESCE(" . $skpSub('status') . ", '') <> 'rejected'";
 
     if ($search !== '') {
         $where[]            = '(c.company_name LIKE :search1 OR t.master_code LIKE :search2)';
@@ -1108,13 +1107,6 @@ function transaction_save(PDO $pdo): void
     // Datang dari tombol "Perpanjang": lanjut langsung ke form SKP periode baru
     // (status sewa otomatis "Perpanjangan"), bukan ke detail alokasi.
     if (post('to_skp') === '1' && can('manage_skp')) {
-        // Periode baru ini masih harus melewati paraf Asst. Manager, persetujuan
-        // Manager, dan tanda tangan client. Alokasinya dilepas lagi supaya tidak
-        // terhitung sebagai pendapatan selama itu; dibangun kembali oleh
-        // _skp_bangun_alokasi() begitu dokumennya diteken. Hitungannya tetap
-        // dijalankan di atas karena final_amount memakai hasilnya.
-        $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ? AND property_id = ?')
-            ->execute([$id, current_property_id()]);
         flash('Periode baru tersimpan. Lanjutkan pengisian SKP perpanjangan di bawah ini.');
         redirect_to('skp_form', ['transaction_id' => $id, 'renew' => 1]);
     }
