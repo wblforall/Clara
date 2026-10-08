@@ -477,6 +477,37 @@ function _skp_pemilik(PDO $pdo, int $pid, ?array $skp, array $src): bool
     ], true);
 }
 
+/**
+ * Dokumen ini hanya memayungi SATU transaksi?
+ *
+ * Penawaran paket melahirkan beberapa transaksi di bawah satu dokumen, dan
+ * tarif tiap komponen berbeda. Pada dokumen seperti itu satu kotak "harga"
+ * tidak punya arti — jadi masa sewa & harga baru boleh disunting dari formulir
+ * SKP kalau yang digantung di bawahnya memang cuma satu transaksi.
+ */
+function _skp_komponen_tunggal(PDO $pdo, int $pid, ?array $skp, int $trxId): bool
+{
+    if (!$skp || $trxId <= 0) return false;
+    $q = $pdo->prepare('SELECT COUNT(*) FROM transactions
+                         WHERE property_id = ? AND deleted_at IS NULL
+                           AND (skp_id = ? OR id = ?)');
+    $q->execute([$pid, (int) $skp['id'], $trxId]);
+    return (int) $q->fetchColumn() === 1;
+}
+
+/** Label tarif sesuai cara kontrak ini dihargai — satuannya ikut pricing_type. */
+function _skp_satuan_tarif(string $pricingType): string
+{
+    return match ($pricingType) {
+        'daily_area'  => 'Biaya Sewa / m² / hari',
+        'daily_slot'  => 'Biaya Sewa / slot / hari',
+        'daily_point' => 'Biaya Sewa / titik / hari',
+        'monthly'     => 'Biaya Sewa / bulan',
+        'fixed'       => 'Nilai Kontrak (lump sum)',
+        default       => 'Harga Sewa',
+    };
+}
+
 function skp_form(PDO $pdo): void
 {
     require_permission('manage_skp');
@@ -660,8 +691,23 @@ function skp_form(PDO $pdo): void
     }
     // Acuan jumlah: nilai kontrak dokumen ini, bukan angka yang diketik ulang.
     $nilaiAcuan = (float) ($src['final_amount'] ?: $src['total_calculated']);
+    // Masa sewa, harga dan jumlah bulan diisi LANGSUNG di formulir ini selama
+    // dokumennya masih boleh diperbaiki. Sebelum ini ketiganya hanya tampil mati,
+    // dan satu-satunya jalan mengubahnya adalah membuka form transaksi lewat
+    // daftar Exhibition — padahal dokumen yang sedang direvisi justru sudah tidak
+    // tampil di daftar itu. Revisi yang tidak bisa mengubah masa sewa dan harga
+    // tidak ada gunanya: dua hal itulah yang biasanya diminta berubah.
+    $ubahPeriode = $editable && $skp && $trxId && !$offerId && !$standalone && !$sumberHilang
+                   && empty($src['is_bundle']) && _skp_komponen_tunggal($pdo, $pid, $skp, $trxId);
+    $satuanTarif = _skp_satuan_tarif((string) ($src['pricing_type'] ?? ''));
+    // Unit, kuantitas dan jenis harga tidak disunting di sini — kolomnya milik
+    // transaksi dan jarang berubah saat revisi. Tautannya disediakan supaya yang
+    // perlu mengubahnya tidak mentok.
+    $ubahTrxUrl = ($ubahPeriode && can('manage_transactions'))
+        ? '?r=transaction_edit&id=' . $trxId . '&skp=' . (int) $skp['id'] : '';
 
-    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir, $revTahap, $revPending, $revRiwayat, $revBolehAjukan, $revBolehPutus, $dibatalkan, $sumberHilang) {
+
+    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir, $revTahap, $revPending, $revRiwayat, $revBolehAjukan, $revBolehPutus, $dibatalkan, $sumberHilang, $ubahPeriode, $satuanTarif, $ubahTrxUrl) {
         $statusSewaDefault = ($isRenew || (!empty($src['renewal_status']) && $src['renewal_status'] !== 'none')) ? 'Perpanjangan' : 'Baru';
         ?>
         <?php /* Sumbernya hilang → tombol kembali ke sumber ikut buntu, jadi
@@ -811,7 +857,20 @@ function skp_form(PDO $pdo): void
                 <div><label>Luas Area (m²)</label><input id="spec-luas" value="<?= number_format($area, 2, ',', '.') ?>" disabled></div>
                 <div><label>Luas Seating Area (m²)</label><input name="seating_area" value="<?= $val('seating_area') ?>" inputmode="decimal" placeholder="opsional" <?= $editable ? '' : 'disabled' ?>></div>
                 <?php endif; ?>
+                <?php if ($ubahPeriode): ?>
+                <div><label>Tanggal Mulai <span style="color:#dc2626">*</span></label><input type="date" name="p_start_date" value="<?= h((string) $src['start_date']) ?>" required></div>
+                <div><label>Tanggal Selesai <span style="color:#dc2626">*</span></label><input type="date" name="p_end_date" value="<?= h((string) $src['end_date']) ?>" required></div>
+                <div><label><?= h($satuanTarif) ?> <span style="color:#dc2626">*</span></label><?php skp_input_rp('p_unit_rate', (float) ($src['unit_rate'] ?? 0), '', true); ?></div>
+                <?php if (($src['pricing_type'] ?? '') === 'monthly'): ?>
+                <div><label>Jumlah Bulan Kontrak</label><input name="p_contract_months" value="<?= (int) ($src['contract_months'] ?? 0) ?: '' ?>" inputmode="numeric" placeholder="kosong = ikut tanggal"></div>
+                <?php endif; ?>
+                <div class="wide" style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:8px 10px;font-size:12px;color:#5b21b6;line-height:1.5">
+                    <strong>Masa sewa &amp; harga boleh diubah di sini.</strong> Totalnya dihitung ulang oleh sistem saat <strong>Simpan</strong> &mdash; angka di <em>Rincian Pembayaran</em> di bawah masih memakai nilai sebelum perubahan sampai formulir ini disimpan.<?php
+                    if ($ubahTrxUrl): ?> Perlu mengubah unit, kuantitas atau jenis harga? <a href="<?= h($ubahTrxUrl) ?>" style="font-weight:700">buka form transaksi</a>.<?php endif; ?>
+                </div>
+                <?php else: ?>
                 <div><label>Masa Sewa</label><input id="spec-masa" value="<?= h($src['start_date'] . ' s/d ' . $src['end_date']) ?> (<?= $days ?> hari)" disabled></div>
+                <?php endif; ?>
                 <div>
                     <label>Status Sewa</label>
                     <select name="status_sewa" <?= $editable ? '' : 'disabled' ?>>
@@ -1735,6 +1794,127 @@ function _skp_missing_required(PDO $pdo, int $skpId): array
     return $missing;
 }
 
+/**
+ * Simpan masa sewa & harga baru dari formulir SKP ke transaksinya.
+ *
+ * Dipakai pada dokumen perpanjangan — dokumen yang bersumber transaksi, tanpa
+ * Surat Penawaran. Di dokumen seperti itu masa sewa dan harga milik transaksi,
+ * bukan milik dokumen, jadi perubahannya harus turun ke sana; kalau tidak,
+ * dokumen dan kontraknya menyebut dua angka yang berbeda.
+ *
+ * Mengembalikan pesan untuk ditampilkan, atau string kosong bila tidak ada yang
+ * diubah / perubahannya ditolak.
+ */
+function _skp_simpan_periode(PDO $pdo, int $pid, int $trxId, ?array $skp, array $src): string
+{
+    require_once dirname(__DIR__) . '/AllocationService.php';
+    if (!$skp) return '';
+    // Diperiksa ULANG di server. Formulirnya memang hanya memunculkan kotak ini
+    // saat dokumen boleh diperbaiki, tetapi pengiriman POST bisa disusun tangan —
+    // dan yang ditulis di sini adalah nilai kontrak.
+    if (!in_array((string) ($skp['status'] ?? ''), ['draft', 'rejected'], true)) return '';
+    if (!_skp_pemilik($pdo, $pid, $skp, $src)) return '';
+    if (!empty($src['is_bundle']) || !_skp_komponen_tunggal($pdo, $pid, $skp, $trxId)) return '';
+
+    $mulai   = trim((string) post('p_start_date', ''));
+    $selesai = trim((string) post('p_end_date', ''));
+    $tarif   = parse_rupiah((string) post('p_unit_rate', '0'));
+    $sah = function (string $t): bool {
+        $d = DateTimeImmutable::createFromFormat('Y-m-d', $t);
+        return $d instanceof DateTimeImmutable && $d->format('Y-m-d') === $t;
+    };
+    if (!$sah($mulai) || !$sah($selesai)) { flash('Tanggal masa sewa tidak sah — masa sewa & harga tidak diubah.'); return ''; }
+    if ($selesai < $mulai)                { flash('Tanggal selesai lebih awal dari tanggal mulai — masa sewa & harga tidak diubah.'); return ''; }
+    if ($tarif <= 0)                      { flash('Harga harus lebih besar dari nol — masa sewa & harga tidak diubah.'); return ''; }
+
+    $trx = $src;
+    $trx['start_date'] = $mulai;
+    $trx['end_date']   = $selesai;
+    $trx['unit_rate']  = $tarif;
+    if (($src['pricing_type'] ?? '') === 'monthly') {
+        $bulan = (int) post('p_contract_months', 0);
+        $trx['contract_months'] = $bulan > 0 ? min(60, $bulan) : null;
+    }
+    // Tidak ada yang berubah → jangan menulis apa pun, jangan isi riwayat audit.
+    if ((string) $src['start_date'] === $mulai
+        && (string) $src['end_date'] === $selesai
+        && round((float) ($src['unit_rate'] ?? 0)) === round($tarif)
+        && (int) ($src['contract_months'] ?? 0) === (int) ($trx['contract_months'] ?? 0)) return '';
+
+    try {
+        $hitung = (float) AllocationService::totalCalculated($trx);
+    } catch (Throwable $e) {
+        flash('Masa sewa / harga tidak bisa dihitung: ' . $e->getMessage() . ' — tidak ada yang diubah.');
+        return '';
+    }
+    if ($hitung <= 0) { flash('Masa sewa & harga itu menghasilkan nilai nol — tidak ada yang diubah.'); return ''; }
+
+    // Override manual dilepas. Selama override masih terpasang, final_amount
+    // memakai angka ketikan lama, jadi harga baru yang diisi PIC tidak akan
+    // kelihatan sama sekali — persis keluhan yang membuat revisi terasa buntu.
+    $adaOverride = (float) ($src['override_amount'] ?? 0) > 0;
+    // period_key mengikuti pilihan pengakuan semula (awal atau akhir kontrak),
+    // supaya bulan pengakuan tidak berpindah tanpa diminta.
+    $pkLama = (string) ($src['period_key'] ?? '');
+    $pkBaru = ($pkLama !== '' && $pkLama === substr((string) $src['end_date'], 0, 7)
+               && $pkLama !== substr((string) $src['start_date'], 0, 7))
+        ? substr($selesai, 0, 7) : substr($mulai, 0, 7);
+
+    $pdo->prepare('UPDATE transactions
+                      SET start_date = ?, end_date = ?, unit_rate = ?, contract_months = ?,
+                          period_key = ?, total_calculated = ?, override_amount = NULL,
+                          final_amount = ?, updated_by = ?
+                    WHERE id = ? AND property_id = ?')
+        ->execute([$mulai, $selesai, $tarif, $trx['contract_months'] ?? null, $pkBaru,
+                   $hitung, $hitung, $_SESSION['user']['name'] ?? 'system', $trxId, $pid]);
+
+    $trx['period_key']       = $pkBaru;
+    $trx['total_calculated'] = $hitung;
+    $trx['override_amount']  = null;
+    $trx['final_amount']     = $hitung;
+
+    // Income. Dokumen ini belum diteken client (statusnya draft/rejected), jadi
+    // menurut alur PIC → Asmen → Manager → TTD client alokasinya memang harus
+    // kosong; _skp_bangun_alokasi() membangunnya saat tanda tangan masuk, dari
+    // angka versi ini. Transaksi lama — dibuat sebelum aturan itu berlaku —
+    // tidak ikut aturan tersebut: nilainya sudah duduk di laporan, jadi
+    // alokasinya diperbarui supaya laporan mengikuti masa sewa & harga baru,
+    // bukan ditinggal memakai angka yang sudah tidak berlaku.
+    $ikutTtd = ttd_wajib_untuk($pdo, (string) ($src['created_at'] ?? ''));
+    if ($ikutTtd) {
+        $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ? AND property_id = ?')
+            ->execute([$trxId, $pid]);
+    } else {
+        if (($trx['billing_method'] ?? '') !== 'spread') $trx['recognition_period'] = $pkBaru;
+        AllocationService::saveAllocations($pdo, $trxId, $trx);
+    }
+
+    // Salinan periode & nilai di barisnya sendiri — inilah yang dibaca daftar SKP.
+    $pdo->prepare("UPDATE skp_documents
+                      SET start_date = ?, end_date = ?, unit_rate = ?, total_amount = ?
+                    WHERE id = ? AND property_id = ? AND status <> 'signed'")
+        ->execute([$mulai, $selesai, $tarif, $hitung, (int) $skp['id'], $pid]);
+
+    audit($pdo, 'update', 'transactions', (string) $trxId, [
+        'dari_skp'   => (int) $skp['id'],
+        'start_date' => $mulai, 'end_date' => $selesai,
+        'unit_rate'  => $tarif, 'final_amount' => $hitung,
+    ], [
+        'start_date' => (string) $src['start_date'], 'end_date' => (string) $src['end_date'],
+        'unit_rate'  => (float) ($src['unit_rate'] ?? 0),
+        'final_amount' => (float) ($src['final_amount'] ?: $src['total_calculated']),
+    ]);
+
+    $pesan = 'Masa sewa jadi ' . $mulai . ' s/d ' . $selesai . ', harga jadi Rp '
+           . number_format($tarif, 0, ',', '.') . ' → nilai kontrak dihitung ulang jadi Rp '
+           . number_format($hitung, 0, ',', '.') . '.';
+    if ($adaOverride) $pesan .= ' Nilai override manual yang lama dilepas supaya harga baru ini yang dipakai.';
+    $pesan .= $ikutTtd
+        ? ' Income tetap di luar laporan sampai client menandatangani.'
+        : ' Alokasi income diperbarui mengikuti angka baru.';
+    return $pesan;
+}
+
 function skp_save(PDO $pdo): void
 {
     require_permission('manage_skp');
@@ -1748,8 +1928,12 @@ function skp_save(PDO $pdo): void
     // bukan dari formulir. Mempercayai POST di sini berarti satu pengiriman bisa
     // menyuruh dokumen A membaca data transaksi/penawaran milik dokumen B —
     // dan isinya tertulis ke dokumen yang salah.
+    $asalRow = null;
     if ($id) {
-        $asal = $pdo->prepare('SELECT offer_id, transaction_id, doc_type FROM skp_documents WHERE id = ? AND property_id = ?');
+        // status/pic_name/created_by ikut diambil: dipakai memeriksa ulang di
+        // server apakah dokumen ini memang masih boleh diubah masa sewa & harganya.
+        $asal = $pdo->prepare('SELECT id, offer_id, transaction_id, doc_type, status, pic_name, created_by
+                                 FROM skp_documents WHERE id = ? AND property_id = ?');
         $asal->execute([$id, $pid]);
         if ($asalRow = $asal->fetch()) {
             $offerId = (int) ($asalRow['offer_id'] ?? 0);
@@ -1780,7 +1964,19 @@ function skp_save(PDO $pdo): void
         $src = $offerId ? _skp_source_from_offer($pdo, $offerId, $pid) : _skp_source($pdo, $trxId, $pid);
     }
     if (!$src) { flash('Sumber (penawaran/transaksi) tidak valid.'); redirect_to($offerId ? 'offers' : 'skp'); }
+    // Masa sewa & harga pada dokumen perpanjangan dimiliki oleh transaksinya.
+    // Kalau PIC mengubahnya di formulir ini, perubahannya ditulis ke transaksi
+    // DULU, lalu sumbernya dibaca ulang — supaya sisa penyimpanan di bawah
+    // (nilai dokumen, pembagian income, rincian) memakai angka yang baru.
+    if (!$standalone && !$offerId && $trxId && isset($_POST['p_start_date'])) {
+        $pesanPeriode = _skp_simpan_periode($pdo, $pid, $trxId, $asalRow, $src);
+        if ($pesanPeriode !== '') {
+            $src = _skp_source($pdo, $trxId, $pid) ?: $src;
+            flash($pesanPeriode);
+        }
+    }
     $clientId = (int) ($src['client_id'] ?? 0);
+
 
     $ktp  = trim((string) post('ktp_pj')) ?: null;
     $npwp = trim((string) post('npwp_no')) ?: null;
