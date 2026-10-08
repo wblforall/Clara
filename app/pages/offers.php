@@ -2644,7 +2644,10 @@ function offer_save(PDO $pdo): void
     // #3 — parse rupiah aman via helper (titik ribuan / koma desimal), bukan strip digit.
     $override = parse_rupiah(post('override_amount', '')) ?: 0.0;
     $final    = $override > 0 ? $override : $calc;
-    $monthly  = $months > 0 ? round($final / $months) : $final;
+    // Harga / Bulan. Untuk kontrak prorata, membagi total dengan jumlah bulan
+    // menghasilkan rata-rata (mis. Rp 8.297.619) — bukan tarif yang disepakati
+    // dan tidak ada di surat mana pun. Tarif sewanya yang ditampilkan.
+    $monthly  = $prorataKal ? round($rate) : ($months > 0 ? round($final / $months) : $final);
     // Recurring/pengakuan ditentukan sales; default spread bila multi-bulan/lintas bulan.
     $crossMonth = $start && $end && substr($start, 0, 7) !== substr($end, 0, 7);
     $billing  = post('billing_method') === 'anchor_cycle' ? 'anchor_cycle'
