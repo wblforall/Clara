@@ -1209,21 +1209,37 @@ function skp_form(PDO $pdo): void
                 <button type="submit" onclick="return confirm('<?= $alurAkhir ? 'Setujui dokumen ini? Nomor akan terbit dan nilai dikunci.' : 'Paraf dokumen ini dan teruskan ke tahap berikutnya?' ?>')"><?= $alurAkhir ? '✓ Setujui' : '✓ Paraf & Teruskan' ?></button>
             </form>
             <?php
-            // Tolak = TURUN SATU TAHAP. Dari tahap tengah berarti dikembalikan
-            // ke pemeriksa sebelumnya; dari tahap pertama berarti kembali ke PIC.
-            $lvlKini  = (int) ($skp['approval_level'] ?? 0);
-            $keBawah  = $lvlKini > 0 ? ($alur[$lvlKini - 1] ?? null) : null;
-            $labelTlk = $keBawah ? '↩ Kembalikan ke ' . $keBawah['label'] : '✗ Tolak & kembalikan ke PIC';
-            $konfTlk  = $keBawah
-                ? 'Kembalikan dokumen ini ke ' . $keBawah['label'] . ' untuk diperiksa ulang?\n\nNilai & transaksinya TIDAK diubah.'
-                : 'Kembalikan dokumen ini ke PIC untuk diperbaiki?\n\nAlokasi bulanannya dilepas dulu dari laporan sampai disetujui kembali. Kesepakatannya TIDAK dibatalkan.\n\nKalau hanya salah scan KTP/NPWP, tidak perlu ditolak — pakai Ganti Berkas Lampiran.';
+            // Dua cara menolak, dan pemeriksa tahap mana pun berhak atas keduanya:
+            //   - turun SATU TAHAP ke pemeriksa sebelumnya (kalau ada), untuk
+            //     diperiksa ulang tanpa mengubah isi dokumen;
+            //   - TOLAK KE PIC, kalau isinya memang salah dan harus diperbaiki
+            //     pembuatnya.
+            // Di tahap pertama keduanya sama saja, jadi cukup satu tombol.
+            $lvlKini = (int) ($skp['approval_level'] ?? 0);
+            $keBawah = $lvlKini > 0 ? ($alur[$lvlKini - 1] ?? null) : null;
+            $konfPic = 'Tolak dokumen ini dan kembalikan ke PIC untuk diperbaiki?'
+                     . '\n\nDokumen jatuh ke status Ditolak dan harus diajukan ulang dari awal.'
+                     . '\nAlokasi bulanannya dilepas dari laporan sampai disetujui kembali.'
+                     . '\nKesepakatannya TIDAK dibatalkan.'
+                     . '\n\nKalau hanya salah scan KTP/NPWP, tidak perlu ditolak — pakai Ganti Berkas Lampiran.';
             ?>
             <form method="post" action="?r=skp_reject" style="display:inline-flex;gap:8px;align-items:center;margin-left:10px;flex-wrap:wrap">
                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$skp['id'] ?>">
-                <input name="reject_note" placeholder="<?= $keBawah ? 'Apa yang perlu diperiksa ulang' : 'Apa yang perlu diperbaiki PIC' ?>" style="width:250px;max-width:100%" required>
-                <button type="submit" class="btn warn" onclick="return confirm('<?= $konfTlk ?>')"><?= $labelTlk ?></button>
+                <input name="reject_note" placeholder="Alasannya (wajib)" style="width:250px;max-width:100%" required>
+                <?php if ($keBawah): ?>
+                <button type="submit" class="btn warn"
+                        onclick="return confirm('Kembalikan dokumen ini ke <?= h($keBawah['label']) ?> untuk diperiksa ulang?\n\nIsi dokumen, nilai, dan transaksinya TIDAK diubah.')">↩ Kembalikan ke <?= h($keBawah['label']) ?></button>
+                <?php endif; ?>
+                <button type="submit" name="ke_pic" value="1" class="btn warn" style="background:#b91c1c"
+                        onclick="return confirm('<?= $konfPic ?>')">✗ Tolak &amp; kembalikan ke PIC</button>
             </form>
-            <p class="help" style="margin:8px 0 0">Menolak berarti <strong>menurunkan dokumen satu tahap</strong>, bukan membatalkan kesepakatan.
+            <p class="help" style="margin:8px 0 0">
+               <?php if ($keBawah): ?>
+               <strong>Kembalikan</strong> = turun satu tahap ke <?= h($keBawah['label']) ?>, isinya tidak diubah &mdash; dipakai bila cukup diperiksa ulang.
+               <strong>Tolak</strong> = balik ke PIC untuk diperbaiki, lalu diajukan dari awal lagi.
+               <?php else: ?>
+               Menolak mengembalikan dokumen ke PIC untuk diperbaiki, bukan membatalkan kesepakatan.
+               <?php endif; ?>
                Urutannya PIC &rarr; <?= implode(' &rarr; ', array_map('h', array_column($alur, 'label'))) ?>. Hanya <strong>PIC</strong> yang bisa memperbaiki isinya.</p>
         </div>
 
@@ -2379,19 +2395,26 @@ function skp_reject(PDO $pdo): void
         redirect_to('skp_form', ['id' => $id]);
     }
 
-    // ── Tolak = TURUN SATU TAHAP, bukan langsung batal ─────────────────────
-    // Urutannya PIC → Asst. Manager → Manager. Manager yang menolak berarti
-    // mengembalikan ke Asst. Manager untuk diperiksa lagi, BUKAN membatalkan
-    // kesepakatannya. Baru ketika dokumen jatuh dari tahap pertama ia kembali
-    // ke PIC untuk diperbaiki — dan hanya PIC yang boleh memperbaikinya.
+    // ── Dua cara menolak ───────────────────────────────────────────────────
+    // 1. KEMBALIKAN SATU TAHAP — dokumennya turun ke pemeriksa sebelumnya untuk
+    //    diperiksa ulang. Isinya tidak perlu diapa-apakan; yang kurang cuma
+    //    ketelitian tahap di bawahnya.
+    // 2. TOLAK KE PIC — isinya memang salah dan harus diperbaiki pembuatnya.
+    //    Dokumen jatuh ke status 'rejected' berapa pun tahapnya sekarang, dan
+    //    hanya PIC yang bisa memperbaiki lalu mengajukannya lagi dari awal.
     //
-    // Membatalkan kesepakatan adalah tindakan TERSENDIRI (skp_cancel_deal),
-    // supaya "tolak karena perlu revisi" tidak lagi mematikan transaksi yang
+    // Manager perlu keduanya: tidak semua kekeliruan cukup diselesaikan dengan
+    // melempar balik ke Asst. Manager. Tanpa pilihan kedua, dokumen yang jelas
+    // salah isi harus turun selangkah demi selangkah.
+    //
+    // Membatalkan kesepakatan tetap tindakan TERSENDIRI (skp_cancel_deal),
+    // supaya "tolak karena perlu revisi" tidak mematikan transaksi yang
     // sebenarnya masih berjalan.
     $level = (int) ($cur['approval_level'] ?? 0);
     $trxId = (int) ($cur['transaction_id'] ?? 0);
+    $kePic = post('ke_pic') === '1';
 
-    if ($level > 0) {
+    if ($level > 0 && !$kePic) {
         $turun = $level - 1;
         $tujuan = $alurTolak[$turun] ?? null;
         $pdo->beginTransaction();
