@@ -2435,7 +2435,13 @@ function offer_form(PDO $pdo): void
                 calc = Math.round(calc);
                 var override = parseFloat((document.getElementById('override_amount') || {}).value || '0') || 0;
                 var total = override > 0 ? override : calc;
-                var monthly = months > 0 ? Math.round(total / months) : total;
+                // Kontrak prorata: harga/bulan adalah TARIF-nya, bukan total dibagi
+                // jumlah bulan. Rata-rata itu angka yang tidak ada di surat mana pun
+                // dan membuat DP serta deposit otomatis ikut meleset.
+                var pkM = document.getElementById('prorata_kalender');
+                var monthly = (pkM && pkM.checked && pricing === 'monthly')
+                            ? Math.round(rate)
+                            : (months > 0 ? Math.round(total / months) : total);
                 document.getElementById('total_calc').value = rp(total);
                 document.getElementById('total_calc_h').value = total;
                 document.getElementById('monthly_disp').value = rp(monthly);
