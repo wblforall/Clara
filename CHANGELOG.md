@@ -40,6 +40,18 @@ pemutus (bawaan: Manager, bisa disetel per properti) menyetujui atau menolak, da
   nilainya diambil dari kolom di tabel dokumen, padahal dokumen perpanjangan dan dokumen dari Surat Penawaran
   menyimpannya di transaksi / penawarannya. Sekarang dibaca berurutan dari transaksi → dokumen → penawaran, dan
   untuk Penawaran Paket **dijumlahkan dari seluruh transaksi komponennya**. Pengajuan lama ikut diperbaiki. *(migrasi 073)*
+- **Nilai kontrak dan income dibedakan.** Daftar sempat memperingatkan "Rp 14.560.000 akan hilang dari income"
+  untuk dokumen berstatus Draft &mdash; padahal dokumen yang belum ditandatangani client belum pernah masuk laporan,
+  jadi menghapusnya tidak memotong income siapa pun. Sekarang ada dua kolom: **Nilai Kontrak** dan **Income Berjalan**
+  (dibaca dari baris alokasi yang benar-benar ada, bukan dari nilai dokumen). Ringkasan, konfirmasi, pesan hasil,
+  riwayat dan kartu dashboard semuanya memakai angka yang kedua. *(migrasi 074)*
+- **Kolom Modul + saringan Exhibition / Media / Gudang** pada daftar dokumen, lengkap dengan jumlah per modul.
+- **Kepemilikan dokumen mengikuti pemilik income.** Sebelumnya hanya `pic_name` di baris dokumen yang dicocokkan,
+  padahal banyak dokumen dibiarkan kosong dan pemilik income sesungguhnya ada di transaksinya &mdash; akibatnya
+  sebagian besar transaksi seseorang tidak pernah muncul di daftar yang bisa dia ajukan. Sekarang dicocokkan ke
+  PIC dokumen **atau** PIC transaksinya.
+- **Rekap per PIC diganti grafik ringkas:** satu kalimat "siapa paling sering dan karena apa", batang bertumpuk
+  per PIC yang dipecah menurut jenis alasan, dan tabel angka lengkapnya tinggal dibuka bila perlu.
 - **Tampilan dirapikan:** ringkasan angka + rekap per PIC naik ke paling atas sebagai dashboard kecil, daftar
   dokumen jadi tabel berkolom yang bisa **dicari dan diurutkan** (dengan "pilih semua yang tampil"), dan Riwayat
   turun ke paling bawah dengan pencarian sendiri.

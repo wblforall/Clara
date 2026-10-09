@@ -85,8 +85,17 @@ function _dr_dokumen_saya(PDO $pdo, int $pid): array
     $where = ['s.property_id = ?', 's.deleted_at IS NULL'];
     $par   = [$pid];
     if (!in_array($peran, ['superadmin', 'admin'], true)) {
-        $where[] = '(s.pic_name = ? OR (COALESCE(s.pic_name, \'\') = \'\' AND s.created_by = ?))';
+        // Pemilik income sesungguhnya ada di TRANSAKSINYA, bukan hanya di
+        // dokumen. Banyak dokumen dibiarkan tanpa pic_name padahal transaksinya
+        // jelas atas nama seseorang — kalau hanya kolom dokumen yang dicocokkan,
+        // sebagian besar transaksi orang itu tidak pernah muncul di sini.
+        $punyaTrx = "EXISTS (SELECT 1 FROM transactions tx
+                              WHERE tx.property_id = s.property_id AND tx.deleted_at IS NULL
+                                AND (tx.skp_id = s.id OR tx.id = s.transaction_id)
+                                AND tx.pic_name = ?)";
+        $where[] = "(s.pic_name = ? OR $punyaTrx OR (COALESCE(s.pic_name, '') = '' AND s.created_by = ?))";
         $par[] = $pic !== '' ? $pic : "\0";   // "\0" = tidak mungkin cocok
+        $par[] = $pic !== '' ? $pic : "\0";
         $par[] = $uname;
     }
     $where[] = "NOT EXISTS (SELECT 1 FROM deletion_requests d
@@ -107,6 +116,17 @@ function _dr_dokumen_saya(PDO $pdo, int $pid): array
                    WHERE t2.property_id = s.property_id AND t2.deleted_at IS NULL
                      AND (t2.skp_id = s.id OR t2.id = s.transaction_id))';
 
+    // Nilai kontrak BELUM TENTU sama dengan income yang sedang duduk di laporan.
+    // Dokumen draft atau yang belum ditandatangani client memang belum punya
+    // baris alokasi sama sekali — menghapusnya tidak mengurangi income siapa pun.
+    // Dua angka ini harus dibedakan, kalau tidak peringatan "sekian akan hilang"
+    // menakut-nakuti untuk sesuatu yang tidak akan terjadi.
+    $incomeSql = '(SELECT COALESCE(SUM(a.amount), 0)
+                     FROM transaction_allocations a
+                     JOIN transactions t3 ON t3.id = a.transaction_id
+                    WHERE t3.property_id = s.property_id AND t3.deleted_at IS NULL
+                      AND (t3.skp_id = s.id OR t3.id = s.transaction_id))';
+
     $sql = 'SELECT s.id, s.skp_no, s.doc_type, s.status, s.pic_name, s.transaction_id,
                    COALESCE(s.module, t.module, o.module)                   AS module,
                    COALESCE(s.master_code, t.master_code, o.master_code)    AS master_code,
@@ -114,6 +134,7 @@ function _dr_dokumen_saya(PDO $pdo, int $pid): array
                    COALESCE(s.end_date, t.end_date, o.end_date)             AS end_date,
                    COALESCE(' . $nilaiSql . ', NULLIF(s.total_amount, 0),
                             NULLIF(o.total_calculated, 0), 0)               AS total_amount,
+                   ' . $incomeSql . '                                       AS income_aktif,
                    COALESCE(c.company_name, tc.company_name, oc.company_name) AS client_name
               FROM skp_documents s
               LEFT JOIN master_clients c  ON c.id = s.client_id
@@ -143,6 +164,48 @@ function _dr_jenis_alasan(): array
         'batal'       => 'Client batal',
         'lainnya'     => 'Lainnya',
     ];
+}
+
+/**
+ * Income yang SEDANG duduk di laporan untuk tiap dokumen — bukan nilai kontraknya.
+ *
+ * Dibaca dari baris alokasi, satu-satunya tempat income benar-benar dihitung.
+ * Dokumen yang belum ditandatangani client tidak punya baris alokasi sama sekali,
+ * jadi hasilnya 0: menghapusnya tidak mengurangi income siapa pun. Angka inilah
+ * yang boleh dipakai untuk memperingatkan, bukan nilai kontrak.
+ *
+ * Mengembalikan [skp_id => jumlah rupiah].
+ */
+function _dr_income_berjalan(PDO $pdo, int $pid, array $skpIds): array
+{
+    $skpIds = array_values(array_unique(array_filter(array_map('intval', $skpIds))));
+    if (!$skpIds) return [];
+    $tanya = implode(',', array_fill(0, count($skpIds), '?'));
+    $st = $pdo->prepare(
+        "SELECT s.id, COALESCE(SUM(a.amount), 0) AS income
+           FROM skp_documents s
+           LEFT JOIN transactions t
+                  ON t.property_id = s.property_id AND t.deleted_at IS NULL
+                 AND (t.skp_id = s.id OR t.id = s.transaction_id)
+           LEFT JOIN transaction_allocations a ON a.transaction_id = t.id
+          WHERE s.property_id = ? AND s.id IN ($tanya)
+          GROUP BY s.id"
+    );
+    $st->execute(array_merge([$pid], $skpIds));
+    $out = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $out[(int) $r['id']] = (float) $r['income'];
+    return $out;
+}
+
+/** Nama modul sebagaimana dipakai di sidebar — bukan kode basis datanya. */
+function _dr_modul(?string $m): string
+{
+    return match ((string) $m) {
+        'cl'     => 'Exhibition',
+        'gudang' => 'Gudang',
+        'media'  => 'Media',
+        default  => '—',
+    };
 }
 
 /** Label jenis dokumen untuk ditampilkan. */
@@ -218,6 +281,10 @@ function deletion_request_page(PDO $pdo): void
     $perluPutus = $bolehPutus ? $ambil("property_id = ? AND status = 'menunggu'", [$pid]) : [];
     $siapHapus  = $bolehHapus ? $ambil("property_id = ? AND status = 'disetujui'", [$pid]) : [];
     $riwayat    = $ambil("property_id = ? AND status IN ('dihapus','batal','dipulihkan')", [$pid]);
+    // Income yang benar-benar berjalan untuk tiap pengajuan yang menunggu —
+    // dibaca sekarang, bukan dari salinan saat diajukan, karena di antara
+    // pengajuan dan keputusan dokumennya bisa saja baru ditandatangani client.
+    $incomeKini = _dr_income_berjalan($pdo, $pid, array_column($perluPutus, 'skp_id'));
     // Boleh memulihkan: pemutus atau pemegang manage_deleted — aturan yang sama
     // dengan yang diperiksa deletion_request_restore().
     $bolehPulih = $bolehHapus || $bolehPutus;
@@ -253,7 +320,8 @@ function deletion_request_page(PDO $pdo): void
                 SUM(status = 'dihapus')                                             AS dok_dihapus,
                 SUM(status = 'dipulihkan')                                          AS dok_pulih,
                 SUM(status = 'batal')                                               AS dok_tolak,
-                COALESCE(SUM(CASE WHEN status = 'dihapus' THEN nilai END), 0)       AS nilai_hilang
+                COALESCE(SUM(CASE WHEN status = 'dihapus' THEN rupiah_dilepas END), 0) AS nilai_hilang,
+                COALESCE(SUM(CASE WHEN status = 'dihapus' THEN nilai END), 0)       AS kontrak_hilang
            FROM deletion_requests WHERE property_id = ?"
     );
     $rs->execute([$pid]);
@@ -272,7 +340,7 @@ function deletion_request_page(PDO $pdo): void
 
     layout('Pengajuan Hapus Data', function () use (
         $dokumen, $punyaSaya, $perluPutus, $siapHapus, $riwayat, $rekap,
-        $bolehPutus, $bolehHapus, $bolehPulih, $set, $jabatan, $stat
+        $bolehPutus, $bolehHapus, $bolehPulih, $set, $jabatan, $stat, $incomeKini
     ) {
         $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
         $tgl = function (?string $t): string {
@@ -290,6 +358,23 @@ function deletion_request_page(PDO $pdo): void
         };
         ?>
         <style>
+        /* Empat warna kategori, urutannya tetap — tidak pernah diputar ulang
+           saat jumlah seri berubah. Lolos pemeriksaan keterbacaan buta warna
+           (ΔE terburuk 9,1 protan). Kontras tiga di antaranya di bawah 3:1
+           terhadap latar putih, jadi legenda dan tabel rinciannya WAJIB ada —
+           warna tidak pernah jadi satu-satunya penanda.
+           Aplikasi ini tidak punya mode gelap, jadi tidak ada langkah gelapnya. */
+        .panel, .dr-graf { --dr-dobel:#2a78d6; --dr-salah_input:#eb6834; --dr-batal:#1baf7a; --dr-lainnya:#eda100 }
+        .dr-graf i, .dr-seg { background-clip: padding-box }
+        .dr-grow  { display:flex; align-items:center; gap:10px; margin-bottom:7px }
+        .dr-nama  { width:140px; flex:none; font-size:12.5px; color:var(--ink2); text-align:right;
+                    overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+        .dr-track { display:flex; gap:2px; height:17px; min-width:3px }
+        .dr-seg   { min-width:3px; border-radius:2px }
+        .dr-track > .dr-seg:first-child { border-radius:4px 2px 2px 4px }
+        .dr-track > .dr-seg:last-child  { border-radius:2px 4px 4px 2px }
+        .dr-track > .dr-seg:only-child  { border-radius:4px }
+        .dr-tot   { font-size:12.5px; font-weight:700; color:var(--ink); min-width:22px }
         .dr-cari { width: 100%; max-width: 320px }
         .dr-bar  { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:9px }
         .dr-tabel th[data-sort] { cursor:pointer; user-select:none }
@@ -319,79 +404,131 @@ function deletion_request_page(PDO $pdo): void
             <div class="card">
                 <div class="kpi-label">Income Yang Hilang</div>
                 <div class="kpi-value" style="color:#991b1b"><?= h(money($stat['nilai_hilang'] ?? 0)) ?></div>
-                <div class="help" style="margin-top:3px">dari dokumen yang jadi dihapus</div>
+                <?php /* Yang dihitung di sini adalah alokasi yang benar-benar dilepas,
+                         bukan nilai kontraknya. Dokumen yang belum pernah masuk laporan
+                         tidak menambah angka ini sepeser pun. */ ?>
+                <div class="help" style="margin-top:3px">benar-benar lepas dari laporan<?php
+                    $kh = (float) ($stat['kontrak_hilang'] ?? 0);
+                    if ($kh > (float) ($stat['nilai_hilang'] ?? 0)): ?><br>nilai kontrak <?= h(money($kh)) ?><?php endif; ?></div>
             </div>
         </div>
 
         <div class="panel">
-            <div class="dr-bar" style="justify-content:space-between;margin-bottom:4px">
-                <h3 style="margin:0">Rekap pengajuan per PIC</h3>
-                <?php if ($rekap): ?>
-                <input class="dr-cari" data-cari placeholder="Cari nama PIC…" style="max-width:220px">
-                <?php endif; ?>
-            </div>
-            <p class="help" style="margin:0 0 9px">
-                Dihitung dari <strong>jenis alasan</strong> yang dipilih saat mengajukan, bukan dari tebakan atas teksnya.
-                Urutan awal: yang paling sering <strong>dobel</strong>. Klik judul kolom untuk mengurutkan ulang.
-                Terlihat oleh semua orang.
-            </p>
+            <h3 style="margin-top:0">Siapa yang paling sering mengajukan hapus</h3>
             <?php if (!$rekap): ?>
                 <p class="dr-kosong" style="margin:0">Belum ada pengajuan sama sekali.</p>
             <?php else: ?>
-            <div class="table-wrap" data-dr-tabel>
-                <table class="dr-tabel">
-                    <thead><tr>
-                        <th data-sort="text">PIC <span class="dr-arr"></span></th>
-                        <th data-sort="num" style="text-align:right">Dobel <span class="dr-arr">▼</span></th>
-                        <th data-sort="num" style="text-align:right">Salah input <span class="dr-arr"></span></th>
-                        <th data-sort="num" style="text-align:right">Client batal <span class="dr-arr"></span></th>
-                        <th data-sort="num" style="text-align:right">Lainnya <span class="dr-arr"></span></th>
-                        <th data-sort="num" style="text-align:right">Total <span class="dr-arr"></span></th>
-                        <th data-sort="num" style="text-align:right">Jadi dihapus <span class="dr-arr"></span></th>
-                        <th data-sort="num" style="text-align:right">Ditolak <span class="dr-arr"></span></th>
-                        <th data-sort="num" style="text-align:right">Nilai dihapus <span class="dr-arr"></span></th>
-                    </tr></thead>
-                    <tbody>
-                    <?php
-                    $t = ['dobel'=>0,'salah_input'=>0,'batal'=>0,'lainnya'=>0,'total'=>0,
-                          'jadi_dihapus'=>0,'ditolak'=>0,'nilai_dihapus'=>0];
-                    foreach ($rekap as $r):
-                        foreach ($t as $k => $_) $t[$k] += (float) $r[$k];
-                        // Yang dobel-nya menonjol ditandai supaya langsung terlihat,
-                        // tanpa perlu membandingkan angka satu per satu.
-                        $tebal = (int) $r['dobel'] >= 3;
-                    ?>
-                        <tr<?= $tebal ? ' style="background:#fff7ed"' : '' ?>>
-                            <td<?= $tebal ? ' style="font-weight:700;color:#9a3412"' : '' ?>><?= h($r['pic']) ?></td>
-                            <td style="text-align:right<?= $tebal ? ';font-weight:700;color:#9a3412' : '' ?>"><?= (int) $r['dobel'] ?></td>
-                            <td style="text-align:right"><?= (int) $r['salah_input'] ?></td>
-                            <td style="text-align:right"><?= (int) $r['batal'] ?></td>
-                            <td style="text-align:right"><?= (int) $r['lainnya'] ?></td>
-                            <td style="text-align:right;font-weight:700"><?= (int) $r['total'] ?></td>
-                            <td style="text-align:right"><?= (int) $r['jadi_dihapus'] ?></td>
-                            <td style="text-align:right"><?= (int) $r['ditolak'] ?></td>
-                            <td style="text-align:right;white-space:nowrap" data-urut="<?= (float) $r['nilai_dihapus'] ?>"><?= h(money($r['nilai_dihapus'])) ?></td>
-                        </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                    <tfoot><tr style="background:#f1f5f9;font-weight:700">
-                        <td>TOTAL</td>
-                        <td style="text-align:right"><?= (int) $t['dobel'] ?></td>
-                        <td style="text-align:right"><?= (int) $t['salah_input'] ?></td>
-                        <td style="text-align:right"><?= (int) $t['batal'] ?></td>
-                        <td style="text-align:right"><?= (int) $t['lainnya'] ?></td>
-                        <td style="text-align:right"><?= (int) $t['total'] ?></td>
-                        <td style="text-align:right"><?= (int) $t['jadi_dihapus'] ?></td>
-                        <td style="text-align:right"><?= (int) $t['ditolak'] ?></td>
-                        <td style="text-align:right;white-space:nowrap"><?= h(money($t['nilai_dihapus'])) ?></td>
-                    </tr></tfoot>
-                </table>
-            </div>
-            <p class="help" style="margin:8px 0 0">
-                Baris yang <strong style="color:#9a3412">disorot</strong> = 3 pengajuan dobel atau lebih.
-                Angka <strong>Ditolak</strong> juga perlu dibaca: pengajuan yang sering ditolak berarti
-                alasannya kurang kuat, bukan datanya yang salah.
+            <?php
+            // Diurutkan dari yang paling banyak mengajukan. Yang dibaca orang
+            // pertama kali adalah peringkat dan sebabnya — rincian angkanya
+            // disediakan di bawah bagi yang memang mencarinya.
+            $urut = $rekap;
+            usort($urut, fn($a, $b) => (int) $b['total'] <=> (int) $a['total']);
+            $jenisUrut = ['dobel' => 'Dobel / duplikat', 'salah_input' => 'Salah input',
+                          'batal' => 'Client batal',     'lainnya' => 'Lainnya'];
+            $puncak    = $urut[0];
+            $maxTotal  = max(1, (int) $puncak['total']);
+            // Alasan terbanyak si puncak — itulah kalimat pembukanya.
+            $alasanTop = 'lainnya'; $nTop = -1;
+            foreach ($jenisUrut as $k => $_) if ((int) $puncak[$k] > $nTop) { $nTop = (int) $puncak[$k]; $alasanTop = $k; }
+            $tampil = array_slice($urut, 0, 8);
+            ?>
+            <p style="margin:0 0 12px;font-size:13.5px;color:var(--ink2)">
+                Paling sering: <strong style="color:var(--ink)"><?= h($puncak['pic']) ?></strong>
+                &mdash; <strong><?= (int) $puncak['total'] ?> pengajuan</strong>,
+                terbanyak karena <strong><?= h(mb_strtolower($jenisUrut[$alasanTop], 'UTF-8')) ?></strong>
+                (<?= $nTop ?>&times;).
             </p>
+
+            <?php /* Legenda selalu ada: warna saja tidak boleh jadi satu-satunya
+                     penanda identitas, dan tiga dari empat warna ini kontrasnya
+                     di bawah 3:1 terhadap latar putih. */ ?>
+            <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px">
+                <?php foreach ($jenisUrut as $k => $label): ?>
+                <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink2)">
+                    <i style="width:11px;height:11px;border-radius:3px;background:var(--dr-<?= h($k) ?>);display:inline-block"></i>
+                    <?= h($label) ?>
+                </span>
+                <?php endforeach; ?>
+            </div>
+
+            <div class="dr-graf">
+                <?php foreach ($tampil as $r): $tot = max(1, (int) $r['total']); ?>
+                <div class="dr-grow">
+                    <div class="dr-nama" title="<?= h($r['pic']) ?>"><?= h($r['pic']) ?></div>
+                    <div class="dr-track" style="width:<?= round((int) $r['total'] / $maxTotal * 100, 1) ?>%">
+                        <?php foreach ($jenisUrut as $k => $label): $n = (int) $r[$k]; if (!$n) continue; ?>
+                        <div class="dr-seg" style="flex:<?= $n ?>;background:var(--dr-<?= h($k) ?>)"
+                             title="<?= h($r['pic']) ?> — <?= h($label) ?>: <?= $n ?> pengajuan"></div>
+                        <?php endforeach; ?>
+                    </div>
+                    <div class="dr-tot"><?= (int) $r['total'] ?></div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php if (count($urut) > count($tampil)): ?>
+            <p class="help" style="margin:8px 0 0"><?= count($urut) - count($tampil) ?> PIC lain dengan pengajuan lebih sedikit
+               tidak digambar &mdash; semuanya ada di rincian di bawah.</p>
+            <?php endif; ?>
+
+            <?php /* Tabel lengkapnya tetap ada, tinggal dibuka. Grafik menjawab
+                     "siapa dan kenapa"; yang butuh angka per kolom membuka ini. */ ?>
+            <details style="margin-top:12px">
+                <summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--ink2)">
+                    Lihat angka lengkapnya (<?= count($rekap) ?> PIC)</summary>
+                <p class="help" style="margin:8px 0 7px">
+                    Dihitung dari <strong>jenis alasan</strong> yang dipilih saat mengajukan, bukan dari tebakan atas teksnya.
+                    Klik judul kolom untuk mengurutkan. Terlihat oleh semua orang.
+                </p>
+                <div class="table-wrap" data-dr-tabel>
+                    <table class="dr-tabel">
+                        <thead><tr>
+                            <th data-sort="text">PIC <span class="dr-arr"></span></th>
+                            <th data-sort="num" style="text-align:right">Dobel <span class="dr-arr"></span></th>
+                            <th data-sort="num" style="text-align:right">Salah input <span class="dr-arr"></span></th>
+                            <th data-sort="num" style="text-align:right">Client batal <span class="dr-arr"></span></th>
+                            <th data-sort="num" style="text-align:right">Lainnya <span class="dr-arr"></span></th>
+                            <th data-sort="num" style="text-align:right">Total <span class="dr-arr"></span></th>
+                            <th data-sort="num" style="text-align:right">Jadi dihapus <span class="dr-arr"></span></th>
+                            <th data-sort="num" style="text-align:right">Ditolak <span class="dr-arr"></span></th>
+                            <th data-sort="num" style="text-align:right">Nilai kontrak dihapus <span class="dr-arr"></span></th>
+                        </tr></thead>
+                        <tbody>
+                        <?php
+                        $t = ['dobel'=>0,'salah_input'=>0,'batal'=>0,'lainnya'=>0,'total'=>0,
+                              'jadi_dihapus'=>0,'ditolak'=>0,'nilai_dihapus'=>0];
+                        foreach ($rekap as $r): foreach ($t as $k => $_) $t[$k] += (float) $r[$k]; ?>
+                            <tr>
+                                <td><?= h($r['pic']) ?></td>
+                                <td style="text-align:right"><?= (int) $r['dobel'] ?></td>
+                                <td style="text-align:right"><?= (int) $r['salah_input'] ?></td>
+                                <td style="text-align:right"><?= (int) $r['batal'] ?></td>
+                                <td style="text-align:right"><?= (int) $r['lainnya'] ?></td>
+                                <td style="text-align:right;font-weight:700"><?= (int) $r['total'] ?></td>
+                                <td style="text-align:right"><?= (int) $r['jadi_dihapus'] ?></td>
+                                <td style="text-align:right"><?= (int) $r['ditolak'] ?></td>
+                                <td style="text-align:right;white-space:nowrap" data-urut="<?= (float) $r['nilai_dihapus'] ?>"><?= h(money($r['nilai_dihapus'])) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                        <tfoot><tr style="background:#f1f5f9;font-weight:700">
+                            <td>TOTAL</td>
+                            <td style="text-align:right"><?= (int) $t['dobel'] ?></td>
+                            <td style="text-align:right"><?= (int) $t['salah_input'] ?></td>
+                            <td style="text-align:right"><?= (int) $t['batal'] ?></td>
+                            <td style="text-align:right"><?= (int) $t['lainnya'] ?></td>
+                            <td style="text-align:right"><?= (int) $t['total'] ?></td>
+                            <td style="text-align:right"><?= (int) $t['jadi_dihapus'] ?></td>
+                            <td style="text-align:right"><?= (int) $t['ditolak'] ?></td>
+                            <td style="text-align:right;white-space:nowrap"><?= h(money($t['nilai_dihapus'])) ?></td>
+                        </tr></tfoot>
+                    </table>
+                </div>
+                <p class="help" style="margin:8px 0 0">
+                    Angka <strong>Ditolak</strong> juga perlu dibaca: pengajuan yang sering ditolak berarti
+                    alasannya kurang kuat, bukan datanya yang salah.
+                </p>
+            </details>
             <?php endif; ?>
         </div>
 
@@ -410,13 +547,16 @@ function deletion_request_page(PDO $pdo): void
             <h3 style="margin-top:0;color:#92400e">Menunggu keputusan Anda<?= $grup ? ' (' . count($grup) . ')' : '' ?></h3>
             <p class="help" style="margin:0 0 9px;color:#92400e">
                 <strong>Menyetujui = data langsung terhapus.</strong> Tidak ada langkah berikutnya.
-                Periksa nilainya dulu &mdash; itu income yang akan hilang dari laporan PIC.
+                Perhatikan kolom <strong>Income Berjalan</strong>: itulah yang benar-benar hilang dari laporan.
+                Dokumen yang belum ditandatangani client tertulis <em>belum masuk</em> &mdash; menghapusnya
+                tidak memotong income siapa pun, hanya membersihkan dokumennya.
             </p>
             <?php if (!$grup): ?>
                 <p class="dr-kosong" style="margin:0">Tidak ada yang menunggu.</p>
             <?php else: ?>
             <?php foreach ($grup as $rows): $u = $rows[0];
-                $nilaiGrup = array_sum(array_map(fn($r) => (float) $r['nilai'], $rows)); ?>
+                $nilaiGrup  = array_sum(array_map(fn($r) => (float) $r['nilai'], $rows));
+                $incomeGrup = array_sum(array_map(fn($r) => (float) ($incomeKini[(int) $r['skp_id']] ?? 0), $rows)); ?>
             <div style="border:1px solid #fde68a;background:#fff;border-radius:9px;padding:11px;margin-bottom:10px">
                 <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;justify-content:space-between">
                     <div style="font-size:12px;color:#92400e">
@@ -428,21 +568,32 @@ function deletion_request_page(PDO $pdo): void
                         <?php endif; ?>
                         &middot; diajukan <strong><?= h($u['requested_by']) ?></strong> &middot; <?= h($tgl($u['requested_at'])) ?>
                     </div>
-                    <div style="font-size:13px;font-weight:800;color:#991b1b">Total <?= h(money($nilaiGrup)) ?></div>
+                    <div style="text-align:right">
+                        <div style="font-size:13px;font-weight:800;color:<?= $incomeGrup > 0 ? '#991b1b' : '#475569' ?>">
+                            Income berkurang <?= h(money($incomeGrup)) ?></div>
+                        <div class="help" style="margin:0">nilai kontrak <?= h(money($nilaiGrup)) ?></div>
+                    </div>
                 </div>
                 <div style="margin:7px 0 9px;font-size:12px">
                     <?= _dr_tanda_jenis($u['jenis'] ?? '') ?><?= h($u['alasan']) ?>
                 </div>
                 <div class="table-wrap" style="margin:0 0 9px">
                     <table class="dr-tabel">
-                        <thead><tr><th>Dokumen</th><th>Unit</th><th>Periode</th><th style="text-align:right">Nilai</th><th>PIC</th></tr></thead>
+                        <thead><tr><th>Modul</th><th>Dokumen</th><th>Unit</th><th>Periode</th>
+                            <th style="text-align:right">Nilai Kontrak</th>
+                            <th style="text-align:right">Income Berjalan</th><th>PIC</th></tr></thead>
                         <tbody>
-                        <?php foreach ($rows as $d): ?>
+                        <?php foreach ($rows as $d): $inc = (float) ($incomeKini[(int) $d['skp_id']] ?? 0); ?>
                             <tr>
+                                <td><?= h(_dr_modul($d['module'] ?? null)) ?></td>
                                 <?= $selDok($d) ?>
                                 <td><?= h($d['master_code'] ?: '—') ?></td>
                                 <td style="white-space:nowrap"><?= h($d['periode'] ?: '—') ?></td>
                                 <td style="text-align:right;white-space:nowrap"><?= h(money($d['nilai'])) ?></td>
+                                <td style="text-align:right;white-space:nowrap">
+                                    <?php if ($inc > 0): ?><strong style="color:#991b1b"><?= h(money($inc)) ?></strong>
+                                    <?php else: ?><span class="muted" style="font-size:11.5px">belum masuk</span><?php endif; ?>
+                                </td>
                                 <td><?= h($d['pic_name'] ?: '—') ?></td>
                             </tr>
                         <?php endforeach; ?>
@@ -454,7 +605,7 @@ function deletion_request_page(PDO $pdo): void
                     <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
                     <input name="catatan" placeholder="Catatan (opsional)" style="width:200px">
                     <button type="submit" name="putusan" value="setuju" class="btn warn" style="background:#991b1b"
-                            onclick="return confirm('SETUJUI dan HAPUS SEKARANG?\n\n· <?= count($rows) ?> dokumen\n· Income PIC berkurang <?= h(number_format($nilaiGrup, 0, ',', '.')) ?>\n· Hilang dari Exhibition/Media/Gudang\n\nMasih bisa dipulihkan lewat tombol Pulihkan di Riwayat.')">
+                            onclick="return confirm('SETUJUI dan HAPUS SEKARANG?\n\n· <?= count($rows) ?> dokumen\n· Nilai kontrak Rp <?= h(number_format($nilaiGrup, 0, ',', '.')) ?>\n· Income PIC berkurang <?= $incomeGrup > 0 ? 'Rp ' . h(number_format($incomeGrup, 0, ',', '.')) : 'Rp 0 — belum pernah masuk laporan' ?>\n· Hilang dari Exhibition/Media/Gudang\n\nMasih bisa dipulihkan lewat tombol Pulihkan di Riwayat.')">
                         ✓ Setujui &amp; Hapus<?= count($rows) > 1 ? ' (' . count($rows) . ')' : '' ?>
                     </button>
                     <button type="submit" name="putusan" value="tolak"
@@ -483,8 +634,23 @@ function deletion_request_page(PDO $pdo): void
                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
 
                 <label style="display:block;margin-bottom:5px">Dokumen yang mau dihapus <span style="color:#b91c1c">*</span></label>
+                <?php
+                // Jumlah per modul untuk label saringan — angka di tombolnya
+                // membuat orang tahu ada berapa tanpa harus menekannya dulu.
+                $perModul = ['' => count($dokumen), 'cl' => 0, 'media' => 0, 'gudang' => 0];
+                foreach ($dokumen as $d) {
+                    $m = (string) ($d['module'] ?? '');
+                    if (isset($perModul[$m])) $perModul[$m]++;
+                }
+                ?>
                 <div class="dr-bar">
                     <input class="dr-cari" data-cari placeholder="Cari nomor SKP, client, atau unit…">
+                    <select id="dr-modul" style="width:auto;min-width:150px">
+                        <option value="">Semua modul (<?= (int) $perModul[''] ?>)</option>
+                        <option value="cl">Exhibition (<?= (int) $perModul['cl'] ?>)</option>
+                        <option value="media">Media (<?= (int) $perModul['media'] ?>)</option>
+                        <option value="gudang">Gudang (<?= (int) $perModul['gudang'] ?>)</option>
+                    </select>
                     <span class="help" data-hitung><?= count($dokumen) ?> dokumen</span>
                     <span class="help" style="margin-left:auto">Klik judul kolom untuk mengurutkan</span>
                 </div>
@@ -495,28 +661,44 @@ function deletion_request_page(PDO $pdo): void
                     <table class="dr-tabel">
                         <thead><tr>
                             <th style="width:34px"><input type="checkbox" id="dr-semua" title="Pilih semua yang tampil" style="width:16px;height:16px;margin:0"></th>
+                            <th data-sort="text">Modul <span class="dr-arr"></span></th>
                             <th data-sort="text">Dokumen <span class="dr-arr"></span></th>
                             <th data-sort="text">Client <span class="dr-arr"></span></th>
                             <th data-sort="text">Unit <span class="dr-arr"></span></th>
                             <th data-sort="text">Periode <span class="dr-arr"></span></th>
-                            <th data-sort="num" style="text-align:right">Nilai <span class="dr-arr"></span></th>
+                            <th data-sort="num" style="text-align:right">Nilai Kontrak <span class="dr-arr"></span></th>
+                            <th data-sort="num" style="text-align:right">Income Berjalan <span class="dr-arr"></span></th>
                             <th data-sort="text">Status <span class="dr-arr"></span></th>
                         </tr></thead>
                         <tbody>
                         <?php foreach ($dokumen as $d):
                             $periode = ($d['start_date'] && $d['end_date'])
                                 ? date('d/m/y', strtotime($d['start_date'])) . ' – ' . date('d/m/y', strtotime($d['end_date']))
-                                : '—'; ?>
-                            <tr>
+                                : '—';
+                            $inc = (float) ($d['income_aktif'] ?? 0); ?>
+                            <tr data-modul="<?= h((string) ($d['module'] ?? '')) ?>">
                                 <td><input type="checkbox" name="skp_id[]" value="<?= (int) $d['id'] ?>"
                                            class="dr-pick" data-nilai="<?= (float) $d['total_amount'] ?>"
+                                           data-income="<?= $inc ?>"
                                            style="width:16px;height:16px;margin:0"></td>
+                                <td><?= h(_dr_modul($d['module'] ?? null)) ?></td>
                                 <td data-urut="<?= h((string) ($d['skp_no'] ?: $d['id'])) ?>">
                                     <b><?= h(_dr_jenis($d['doc_type'])) ?> <?= h($d['skp_no'] ?: 'draft #' . $d['id']) ?></b></td>
                                 <td><?= h($d['client_name'] ?: '—') ?></td>
                                 <td><?= h($d['master_code'] ?: '—') ?></td>
                                 <td style="white-space:nowrap" data-urut="<?= h((string) $d['start_date']) ?>"><?= h($periode) ?></td>
                                 <td style="text-align:right;white-space:nowrap" data-urut="<?= (float) $d['total_amount'] ?>"><?= h(money($d['total_amount'])) ?></td>
+                                <?php /* Angka inilah yang benar-benar akan hilang dari laporan. Dokumen
+                                         yang belum diteken client belum punya alokasi sama sekali — nol,
+                                         dan itu harus terlihat jelas supaya tidak ada yang mengira
+                                         income-nya ikut terpotong. */ ?>
+                                <td style="text-align:right;white-space:nowrap" data-urut="<?= $inc ?>">
+                                    <?php if ($inc > 0): ?>
+                                        <strong style="color:#991b1b"><?= h(money($inc)) ?></strong>
+                                    <?php else: ?>
+                                        <span class="muted" style="font-size:11.5px">belum masuk</span>
+                                    <?php endif; ?>
+                                </td>
                                 <td><?= _dr_badge_skp((string) $d['status']) ?></td>
                             </tr>
                         <?php endforeach; ?>
@@ -735,11 +917,15 @@ function deletion_request_page(PDO $pdo): void
                                 <?php endif; ?>
                                 <?php if ($d['executed_by']): ?><br>
                                 <span style="color:#991b1b">Dihapus <b><?= h($d['executed_by']) ?></b> &middot; <?= h($tgl($d['executed_at'])) ?>
-                                &middot; <?= (int) $d['alokasi_dilepas'] ?> baris income dilepas</span>
+                                &middot; <?= (float) ($d['rupiah_dilepas'] ?? 0) > 0
+                                    ? 'income lepas ' . h(money($d['rupiah_dilepas'])) . ' (' . (int) $d['alokasi_dilepas'] . ' baris)'
+                                    : 'tidak ada income yang lepas — belum pernah masuk laporan' ?></span>
                                 <?php endif; ?>
                                 <?php if (!empty($d['restored_by'])): ?><br>
                                 <span style="color:#1d4ed8">Dipulihkan <b><?= h($d['restored_by']) ?></b> &middot; <?= h($tgl($d['restored_at'])) ?>
-                                &middot; <?= (int) ($d['alokasi_pulih'] ?? 0) ?> baris income dibangun kembali
+                                &middot; <?= (float) ($d['rupiah_pulih'] ?? 0) > 0
+                                    ? 'income kembali ' . h(money($d['rupiah_pulih'])) . ' (' . (int) ($d['alokasi_pulih'] ?? 0) . ' baris)'
+                                    : 'income belum kembali — menunggu TTD client' ?>
                                 <?= !empty($d['restore_note']) ? '&middot; ' . h($d['restore_note']) : '' ?></span>
                                 <?php endif; ?>
                             </td>
@@ -786,17 +972,24 @@ function deletion_request_page(PDO $pdo): void
                 var cari  = wrap.querySelector('[data-cari]') || (panel && panel.querySelector('[data-cari]'));
                 var info  = panel && panel.querySelector('[data-hitung]');
 
+                // Saringan modul hanya ada di tabel pilihan dokumen; tabel lain
+                // memakai pencarian teks saja.
+                var modul = panel && panel.querySelector('#dr-modul');
                 function saring() {
-                    var q = (cari.value || '').toLowerCase().trim();
+                    var q = cari ? (cari.value || '').toLowerCase().trim() : '';
+                    var m = modul ? modul.value : '';
                     var n = 0;
                     baris.forEach(function (r) {
-                        var tampil = !q || r.textContent.toLowerCase().indexOf(q) !== -1;
+                        var cocokTeks  = !q || r.textContent.toLowerCase().indexOf(q) !== -1;
+                        var cocokModul = !m || r.getAttribute('data-modul') === m;
+                        var tampil = cocokTeks && cocokModul;
                         r.style.display = tampil ? '' : 'none';
                         if (tampil) n++;
                     });
                     if (info) info.textContent = n + ' dari ' + baris.length + ' dokumen';
                 }
-                if (cari) cari.addEventListener('input', saring);
+                if (cari)  cari.addEventListener('input', saring);
+                if (modul) modul.addEventListener('change', saring);
 
                 function nilai(r, i, tipe) {
                     var c = r.cells[i];
@@ -839,10 +1032,29 @@ function deletion_request_page(PDO $pdo): void
 
             function rp(n) { return 'Rp ' + n.toLocaleString('id-ID'); }
             function hitung() {
-                var n = 0, jml = 0;
-                pick.forEach(function (c) { if (c.checked) { n++; jml += parseFloat(c.dataset.nilai || 0); } });
-                ring.textContent = n ? n + ' dokumen dipilih — total ' + rp(jml) + ' akan hilang dari income bila disetujui.' : '';
-                return { n: n, jml: jml };
+                var n = 0, jml = 0, inc = 0, belum = 0;
+                pick.forEach(function (c) {
+                    if (!c.checked) return;
+                    n++;
+                    jml += parseFloat(c.dataset.nilai || 0);
+                    var i = parseFloat(c.dataset.income || 0);
+                    inc += i;
+                    if (i <= 0) belum++;
+                });
+                if (!n) { ring.innerHTML = ''; return { n: 0, jml: 0, inc: 0, belum: 0 }; }
+                // Dua angka, dan keduanya disebut. Menyebut nilai kontrak saja
+                // membuat orang mengira income-nya terpotong sebesar itu; padahal
+                // dokumen yang belum diteken client memang belum pernah masuk.
+                var t = '<b>' + n + ' dokumen dipilih</b> — nilai kontrak ' + rp(jml) + '.<br>';
+                if (inc > 0) {
+                    t += 'Yang benar-benar hilang dari income: <b>' + rp(inc) + '</b>';
+                    t += belum ? ' (' + belum + ' dokumen lainnya belum pernah masuk laporan, jadi tidak mengurangi apa pun).' : '.';
+                } else {
+                    t += '<b>Tidak ada income yang berkurang</b> — dokumen ini belum pernah masuk laporan '
+                       + '(belum ditandatangani client), jadi menghapusnya tidak memotong income siapa pun.';
+                }
+                ring.innerHTML = t;
+                return { n: n, jml: jml, inc: inc, belum: belum };
             }
             pick.forEach(function (c) { c.addEventListener('change', hitung); });
             if (semua) semua.addEventListener('change', function () {
@@ -857,10 +1069,13 @@ function deletion_request_page(PDO $pdo): void
             kirim.closest('form').addEventListener('submit', function (e) {
                 var x = hitung();
                 if (!x.n) { e.preventDefault(); alert('Pilih dulu dokumen yang mau dihapus.'); return; }
-                if (!confirm('Kirim pengajuan penghapusan ' + x.n + ' dokumen?\n\nNilai yang akan hilang dari income: '
-                             + rp(x.jml) + '\n\nData BELUM dihapus sekarang — masih menunggu persetujuan pemutus.')) {
-                    e.preventDefault();
-                }
+                var pesan = 'Kirim pengajuan penghapusan ' + x.n + ' dokumen?\n\n'
+                          + 'Nilai kontrak: ' + rp(x.jml) + '\n'
+                          + (x.inc > 0
+                                ? 'Income yang akan berkurang: ' + rp(x.inc)
+                                : 'Income yang akan berkurang: Rp 0 — belum pernah masuk laporan')
+                          + '\n\nData BELUM dihapus sekarang — masih menunggu persetujuan pemutus.';
+                if (!confirm(pesan)) e.preventDefault();
             });
             hitung();
         })();
@@ -965,7 +1180,7 @@ function deletion_request_save(PDO $pdo): void
  * tertinggal, ada angka di laporan yang transaksinya tak bisa ditemukan di mana
  * pun.
  *
- * Mengembalikan [jumlah transaksi, jumlah baris alokasi yang dilepas].
+ * Mengembalikan [jumlah transaksi, jumlah baris alokasi, rupiah yang dilepas].
  */
 function _dr_hapus_satu(PDO $pdo, int $pid, array $d, string $uname): array
 {
@@ -981,7 +1196,16 @@ function _dr_hapus_satu(PDO $pdo, int $pid, array $d, string $uname): array
     $trxIds = array_map('intval', $tq->fetchAll(PDO::FETCH_COLUMN));
 
     $nAlok = 0;
+    $rpAlok = 0.0;
     foreach ($trxIds as $tid) {
+        // Jumlahnya dibaca SEBELUM dihapus — sesudahnya tidak ada lagi yang bisa
+        // dijumlah, padahal angka itu yang dilaporkan ke pengguna dan disimpan
+        // di riwayat sebagai "sekian income lepas".
+        $sum = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) FROM transaction_allocations
+                               WHERE transaction_id = ? AND property_id = ?');
+        $sum->execute([$tid, $pid]);
+        $rpAlok += (float) $sum->fetchColumn();
+
         $del = $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ? AND property_id = ?');
         $del->execute([$tid, $pid]);
         $nAlok += $del->rowCount();
@@ -995,7 +1219,7 @@ function _dr_hapus_satu(PDO $pdo, int $pid, array $d, string $uname): array
     $pdo->prepare('UPDATE skp_documents SET deleted_at = NOW(), deleted_by = ? WHERE id = ? AND property_id = ?')
         ->execute([$uname, $skpId, $pid]);
 
-    return [count($trxIds), $nAlok];
+    return [count($trxIds), $nAlok, $rpAlok];
 }
 
 /**
@@ -1053,12 +1277,14 @@ function deletion_request_decide(PDO $pdo): void
     try {
         $tutup = $pdo->prepare("UPDATE deletion_requests
                                    SET status = 'dihapus', decided_by = ?, decided_role = ?, decided_at = NOW(),
-                                       decision_note = ?, executed_by = ?, executed_at = NOW(), alokasi_dilepas = ?
+                                       decision_note = ?, executed_by = ?, executed_at = NOW(),
+                                       alokasi_dilepas = ?, rupiah_dilepas = ?
                                  WHERE id = ? AND property_id = ? AND status = 'menunggu'");
-        $nDok = $nTrx = $nAlok = 0;
+        $nDok = $nTrx = $nAlok = 0; $rpAlok = 0.0;
         foreach ($rows as $r) {
-            [$t, $a] = _dr_hapus_satu($pdo, $pid, $r, $uname);
-            $tutup->execute([$uname, $jab ?: null, $catatan ?: null, $uname, $a, (int) $r['id'], $pid]);
+            [$t, $a, $rp] = _dr_hapus_satu($pdo, $pid, $r, $uname);
+            $rpAlok += $rp;
+            $tutup->execute([$uname, $jab ?: null, $catatan ?: null, $uname, $a, $rp, (int) $r['id'], $pid]);
             // rowCount 0 = keduluan orang lain; batalkan seluruhnya daripada
             // menghapus data yang keputusannya tidak tercatat.
             if ($tutup->rowCount() === 0) throw new RuntimeException('Pengajuan #' . (int) $r['id'] . ' sudah diputuskan orang lain.');
@@ -1072,9 +1298,13 @@ function deletion_request_decide(PDO $pdo): void
     }
 
     audit($pdo, 'delete', 'deletion_requests', (string) $id,
-        ['dokumen' => $nDok, 'batch_no' => $batch ?: null, 'transaksi' => $nTrx, 'alokasi_dilepas' => $nAlok]);
-    flash('Disetujui dan langsung dihapus: ' . $nDok . ' dokumen, ' . $nTrx . ' transaksi dilepas dari laporan ('
-        . $nAlok . ' baris income). Keliru? Ada tombol Pulihkan di Riwayat.');
+        ['dokumen' => $nDok, 'batch_no' => $batch ?: null, 'transaksi' => $nTrx,
+         'alokasi_dilepas' => $nAlok, 'rupiah_dilepas' => $rpAlok]);
+    flash('Disetujui dan langsung dihapus: ' . $nDok . ' dokumen, ' . $nTrx . ' transaksi keluar dari laporan. '
+        . ($rpAlok > 0
+            ? 'Income berkurang Rp ' . number_format($rpAlok, 0, ',', '.') . ' (' . $nAlok . ' baris).'
+            : 'Income tidak berkurang — dokumen ini memang belum pernah masuk laporan.')
+        . ' Keliru? Ada tombol Pulihkan di Riwayat.');
     redirect_to('deletion_request');
 }
 
@@ -1164,13 +1394,17 @@ function deletion_request_restore(PDO $pdo): void
         $tq->execute([$pid, $tanda, $skpId, $skpId]);
         $trxs = $tq->fetchAll(PDO::FETCH_ASSOC);
 
-        $nAlok = 0;
+        $nAlok = 0; $rpPulih = 0.0;
         foreach ($trxs as $t) {
             $pdo->prepare('UPDATE transactions SET deleted_at = NULL, deleted_by = NULL, cancel_reason = NULL
                             WHERE id = ? AND property_id = ?')
                 ->execute([(int) $t['id'], $pid]);
             $t['deleted_at'] = null;
             $nAlok += _dr_bangun_income($pdo, $pid, $t, $statusDok);
+            $jm = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) FROM transaction_allocations
+                                  WHERE transaction_id = ? AND property_id = ?');
+            $jm->execute([(int) $t['id'], $pid]);
+            $rpPulih += (float) $jm->fetchColumn();
         }
 
         $pdo->prepare('UPDATE skp_documents SET deleted_at = NULL, deleted_by = NULL WHERE id = ? AND property_id = ?')
@@ -1178,9 +1412,9 @@ function deletion_request_restore(PDO $pdo): void
 
         $upd = $pdo->prepare("UPDATE deletion_requests
                                  SET status = 'dipulihkan', restored_by = ?, restored_at = NOW(),
-                                     restore_note = ?, alokasi_pulih = ?
+                                     restore_note = ?, alokasi_pulih = ?, rupiah_pulih = ?
                                WHERE id = ? AND property_id = ? AND status = 'dihapus'");
-        $upd->execute([$uname, $nota ?: null, $nAlok, $id, $pid]);
+        $upd->execute([$uname, $nota ?: null, $nAlok, $rpPulih, $id, $pid]);
         if ($upd->rowCount() === 0) throw new RuntimeException('Pengajuan ini sudah dipulihkan orang lain.');
 
         $pdo->commit();
@@ -1194,8 +1428,8 @@ function deletion_request_restore(PDO $pdo): void
         ['skp_id' => $skpId, 'transaksi' => count($trxs), 'alokasi_pulih' => $nAlok]);
 
     $pesan = 'Data dipulihkan: ' . count($trxs) . ' transaksi kembali ke Exhibition/Media/Gudang.';
-    $pesan .= $nAlok > 0
-        ? ' Income kembali masuk laporan (' . $nAlok . ' baris).'
+    $pesan .= $rpPulih > 0
+        ? ' Income kembali masuk laporan Rp ' . number_format($rpPulih, 0, ',', '.') . ' (' . $nAlok . ' baris).'
         : ' Income BELUM masuk laporan karena dokumennya belum ditandatangani client — akan masuk setelah TTD.';
     flash($pesan);
     redirect_to('deletion_request');
@@ -1221,11 +1455,12 @@ function deletion_request_execute(PDO $pdo): void
 
     $pdo->beginTransaction();
     try {
-        [$nTrx, $nAlok] = _dr_hapus_satu($pdo, $pid, $d, $uname);
+        [$nTrx, $nAlok, $rpAlok] = _dr_hapus_satu($pdo, $pid, $d, $uname);
         $upd = $pdo->prepare("UPDATE deletion_requests
-                                 SET status = 'dihapus', executed_by = ?, executed_at = NOW(), alokasi_dilepas = ?
+                                 SET status = 'dihapus', executed_by = ?, executed_at = NOW(),
+                                     alokasi_dilepas = ?, rupiah_dilepas = ?
                                WHERE id = ? AND property_id = ? AND status = 'disetujui'");
-        $upd->execute([$uname, $nAlok, $id, $pid]);
+        $upd->execute([$uname, $nAlok, $rpAlok, $id, $pid]);
         if ($upd->rowCount() === 0) throw new RuntimeException('Pengajuan ini sudah dieksekusi orang lain.');
         $pdo->commit();
     } catch (Throwable $e) {
@@ -1236,7 +1471,9 @@ function deletion_request_execute(PDO $pdo): void
 
     audit($pdo, 'delete', 'deletion_requests', (string) $id,
         ['skp_id' => (int) $d['skp_id'], 'transaksi' => $nTrx, 'alokasi_dilepas' => $nAlok]);
-    flash('Data dihapus. ' . $nTrx . ' transaksi dilepas dari laporan (' . $nAlok . ' baris income).');
+    flash('Data dihapus. ' . $nTrx . ' transaksi keluar dari laporan. '
+        . ($rpAlok > 0 ? 'Income berkurang Rp ' . number_format($rpAlok, 0, ',', '.') . ' (' . $nAlok . ' baris).'
+                       : 'Income tidak berkurang — belum pernah masuk laporan.'));
     redirect_to('deletion_request');
 }
 
