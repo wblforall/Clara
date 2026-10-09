@@ -13,6 +13,15 @@
 
 ## Fitur & Perbaikan — 9 Oktober 2026
 
+### Batas jumlah baris tidak lagi menyembunyikan data diam-diam
+
+- Daftar pengajuan memotong di 1000 baris per modul dan Riwayat di 200 baris &mdash; keduanya **tanpa
+  pemberitahuan**. Itu persis penyebab Gudang pernah hilang sama sekali: datanya ada, hanya terpotong, dan tidak
+  ada satu pun tanda bahwa yang tampil belum lengkap.
+- Sekarang pemotongannya terdeteksi dan **dikatakan**: judul golongan yang terpotong diberi label merah
+  "hanya 1000 teratas — masih ada lagi, persempit dengan pencarian", dan Riwayat memberi tahu bila hanya
+  200 terbaru yang tampil.
+
 ### Total Biaya Sewa bisa diisi langsung saat revisi
 
 - Dokumen perpanjangan yang dibuka untuk revisi sudah bisa diubah masa sewa dan tarifnya, tetapi **Total Biaya

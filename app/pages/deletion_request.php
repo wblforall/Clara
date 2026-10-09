@@ -76,8 +76,13 @@ function _dr_boleh_putus(PDO $pdo, int $pid): bool
  * Superadmin melihat semuanya. Dokumen yang pengajuannya masih berjalan atau
  * sudah dihapus tidak ikut, supaya tidak ada pengajuan ganda untuk satu berkas.
  */
-function _dr_dokumen_saya(PDO $pdo, int $pid): array
+function _dr_dokumen_saya(PDO $pdo, int $pid, array &$terpotong = []): array
 {
+    // Batas baris dibuat TERLIHAT. Batas diam adalah persis sebab Gudang pernah
+    // hilang sama sekali dari daftar: datanya ada, hanya terpotong, dan tidak
+    // ada satu pun tanda bahwa yang tampil belum lengkap.
+    $batas = 1000;
+    $terpotong = [];
     $peran = current_role();
     $uname = (string) ($_SESSION['user']['name'] ?? '');
     $pic   = ApprovalLine::namaPic($pdo, $pid);
@@ -142,12 +147,14 @@ function _dr_dokumen_saya(PDO $pdo, int $pid): array
               LEFT JOIN offers o          ON o.id = s.offer_id
               LEFT JOIN master_clients oc ON oc.id = o.client_id
              WHERE ' . implode(' AND ', $where) . '
-             ORDER BY s.id ASC LIMIT 1000';
+             ORDER BY s.id ASC LIMIT ' . ($batas + 1);
     $st = $pdo->prepare($sql);
     $st->execute($par);
 
     $hasil = [];
-    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $barisDok = $st->fetchAll(PDO::FETCH_ASSOC);
+    if (count($barisDok) > $batas) { $terpotong['dok'] = $batas; $barisDok = array_slice($barisDok, 0, $batas); }
+    foreach ($barisDok as $r) {
         $r['jenis_baris'] = 'dok';
         $r['grup']        = 'dok';
         $r['kunci']       = 's:' . (int) $r['id'];
@@ -189,13 +196,15 @@ function _dr_dokumen_saya(PDO $pdo, int $pid): array
                FROM transactions t
                LEFT JOIN master_clients tc2 ON tc2.id = t.client_id
               WHERE " . implode(' AND ', $w2) . " AND t.module = ?
-              ORDER BY t.id ASC LIMIT 1000";
+              ORDER BY t.id ASC LIMIT " . ($batas + 1);
     $st2 = $pdo->prepare($sql2);
 
     $baris2 = [];
     foreach (['cl', 'media', 'gudang'] as $mod) {
         $st2->execute(array_merge($p2, [$mod]));
-        foreach ($st2->fetchAll(PDO::FETCH_ASSOC) as $r) { $r['grup'] = $mod; $baris2[] = $r; }
+        $ambil = $st2->fetchAll(PDO::FETCH_ASSOC);
+        if (count($ambil) > $batas) { $terpotong[$mod] = $batas; $ambil = array_slice($ambil, 0, $batas); }
+        foreach ($ambil as $r) { $r['grup'] = $mod; $baris2[] = $r; }
     }
 
     foreach ($baris2 as $r) {
@@ -360,17 +369,25 @@ function deletion_request_page(PDO $pdo): void
     $uid   = (int) ($_SESSION['user']['id'] ?? 0);
 
     $set = _dr_pemutus($pdo, $pid);
-    $dokumen = _dr_dokumen_saya($pdo, $pid);
+    // Disiapkan dulu: dilewatkan by-reference, dan PHP 8 menolak null untuk
+    // parameter bertipe array.
+    $terpotong = [];
+    $dokumen = _dr_dokumen_saya($pdo, $pid, $terpotong);
 
-    $ambil = function (string $where, array $par) use ($pdo): array {
-        $st = $pdo->prepare('SELECT * FROM deletion_requests WHERE ' . $where . ' ORDER BY id DESC LIMIT 200');
+    // Batas 200 dibuat terdeteksi, bukan diam: diambil 201, dan kalau memang
+    // ada yang ke-201 berarti daftarnya belum lengkap — itu harus dikatakan.
+    $adaLagi = [];
+    $ambil = function (string $where, array $par, string $tandai = '') use ($pdo, &$adaLagi): array {
+        $st = $pdo->prepare('SELECT * FROM deletion_requests WHERE ' . $where . ' ORDER BY id DESC LIMIT 201');
         $st->execute($par);
-        return $st->fetchAll(PDO::FETCH_ASSOC);
+        $r = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (count($r) > 200) { if ($tandai !== '') $adaLagi[$tandai] = true; $r = array_slice($r, 0, 200); }
+        return $r;
     };
     $punyaSaya = $ambil('property_id = ? AND requested_user_id = ?', [$pid, $uid]);
     $perluPutus = $bolehPutus ? $ambil("property_id = ? AND status = 'menunggu'", [$pid]) : [];
     $siapHapus  = $bolehHapus ? $ambil("property_id = ? AND status = 'disetujui'", [$pid]) : [];
-    $riwayat    = $ambil("property_id = ? AND status IN ('dihapus','batal','dipulihkan')", [$pid]);
+    $riwayat    = $ambil("property_id = ? AND status IN ('dihapus','batal','dipulihkan')", [$pid], 'riwayat');
     // Income yang benar-benar berjalan untuk tiap pengajuan yang menunggu —
     // dibaca sekarang, bukan dari salinan saat diajukan, karena di antara
     // pengajuan dan keputusan dokumennya bisa saja baru ditandatangani client.
@@ -430,7 +447,7 @@ function deletion_request_page(PDO $pdo): void
 
     layout('Pengajuan Hapus Data', function () use (
         $dokumen, $punyaSaya, $perluPutus, $siapHapus, $riwayat, $rekap,
-        $bolehPutus, $bolehHapus, $bolehPulih, $set, $jabatan, $stat, $incomeKini
+        $bolehPutus, $bolehHapus, $bolehPulih, $set, $jabatan, $stat, $incomeKini, $terpotong, $adaLagi
     ) {
         $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
         $tgl = function (?string $t): string {
@@ -882,6 +899,10 @@ function deletion_request_page(PDO $pdo): void
                                 <td colspan="9">
                                     <?= h($judulGrup[$g] ?? $g) ?>
                                     <span class="muted" style="font-weight:400">&middot; <?= (int) ($jumlahGrup[$g] ?? 0) ?> data</span>
+                                    <?php if (isset($terpotong[$g])): ?>
+                                    <span style="background:#fee2e2;color:#991b1b;padding:1px 7px;border-radius:9px;margin-left:6px;text-transform:none;letter-spacing:0">
+                                        hanya <?= (int) $terpotong[$g] ?> teratas &mdash; masih ada lagi, persempit dengan pencarian</span>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                             <?php endif; ?>
@@ -1099,6 +1120,10 @@ function deletion_request_page(PDO $pdo): void
             </div>
             <p class="help" style="margin:0 0 9px">
                 Semua yang sudah dihapus, ditolak, atau dipulihkan. Jejaknya tidak pernah dibuang.
+                <?php if (!empty($adaLagi['riwayat'])): ?>
+                <strong style="color:#991b1b">Hanya 200 terbaru yang ditampilkan di sini &mdash; yang lebih lama
+                tetap tersimpan dan bisa dilihat di Activity Log.</strong>
+                <?php endif; ?>
             </p>
             <?php if (!$riwayat): ?>
                 <p class="dr-kosong" style="margin:0">Belum ada data yang dihapus, ditolak, atau dipulihkan.</p>
