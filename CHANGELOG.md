@@ -13,6 +13,22 @@
 
 ## Fitur & Perbaikan — 9 Oktober 2026
 
+### Override Aktual tidak lagi tertinggal dari nilai kontrak
+
+- Saat nominal **per bulan** disesuaikan di form transaksi, nilai kontrak dihitung ulang dari jumlah alokasi
+  tetapi kotak **Override Aktual** dibiarkan menyimpan angka lama. Akibatnya satu kontrak punya dua angka:
+  daftar Exhibition/Media/Gudang menampilkan nilai kontrak, form Edit menampilkan override yang sudah usang.
+- Bahayanya bukan sekadar beda tampilan: `transaction_update()` memakai isi kotak override sebagai nilai
+  kontrak, dan form Edit mengisi kotak itu dari kolom yang usang &mdash; jadi membuka lalu menyimpan transaksi
+  tanpa menyentuh nominal per bulan akan mengembalikan angka lama dan menurunkan nilai kontraknya diam-diam.
+- Keduanya kini disamakan di kedua jalur (transaksi baru & pengeditan), sama seperti yang sudah dilakukan
+  override alokasi per bulan di halaman Detail Alokasi.
+- Skrip `scripts/cek_override_vs_final.php` mendaftar transaksi yang sudah terlanjur melenceng dan bisa
+  menyamakannya. Patokannya jumlah alokasi &mdash; baris yang alokasinya juga tidak cocok dilewati, tidak ditebak.
+
+---
+
+
 ### Form Pengajuan Hapus Data
 
 Data yang salah input tidak lagi dihapus sepihak. PIC mengajukan lewat menu **Pengajuan Hapus Data**,
