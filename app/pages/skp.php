@@ -169,7 +169,7 @@ function _skp_deposit_pernah(PDO $pdo, int $clientId, int $kecuali = 0): bool
            LEFT JOIN transactions t ON t.id = s.transaction_id
            LEFT JOIN offers o ON o.id = s.offer_id
           WHERE COALESCE(s.client_id, t.client_id, o.client_id) = ?
-            AND s.id <> ? AND s.deposit_amount > 0
+            AND s.id <> ? AND s.deposit_amount > 0 AND s.deleted_at IS NULL
             AND s.status IN ('approved','signed') LIMIT 1"
     );
     $st->execute([$clientId, $kecuali]);
@@ -205,7 +205,10 @@ function skp_list_page(PDO $pdo): void
     require_permission('manage_skp');
     $pid    = current_property_id();
     $status = getv('status', '');
-    $where  = ['s.property_id = ?']; $params = [$pid];
+    // Dokumen yang sudah dihapus lewat Pengajuan Hapus Data tidak ditampilkan.
+    // Barisnya tidak dibuang dari basis data — jejaknya tetap bisa dibuka dari
+    // Riwayat di halaman pengajuan.
+    $where  = ['s.property_id = ?', 's.deleted_at IS NULL']; $params = [$pid];
     if (in_array($status, ['draft', 'submitted', 'approved', 'signed', 'rejected'], true)) {
         $where[] = 's.status = ?'; $params[] = $status;
     }

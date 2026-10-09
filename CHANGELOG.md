@@ -11,6 +11,34 @@
 
 ---
 
+## Fitur & Perbaikan — 9 Oktober 2026
+
+### Form Pengajuan Hapus Data
+
+Data yang salah input tidak lagi dihapus sepihak. PIC mengajukan lewat menu **Pengajuan Hapus Data**,
+pemutus (bawaan: Manager, bisa disetel per properti) menyetujui atau menolak, dan semuanya tercatat.
+
+- **Persetujuan pemutus langsung menghapus** &mdash; tidak menunggu superadmin menekan tombol kedua.
+  Langkah itu tidak menambah pengamanan apa pun: keputusannya sudah diambil, yang tersisa hanya penundaan.
+  Pengamanannya dipindah ke arah sebaliknya, yaitu tombol Pulihkan.
+- **Tombol Pulihkan.** Penghapusan hanya penandaan &mdash; barisnya tidak pernah dibuang &mdash; jadi dokumen,
+  transaksi dan alokasi income bisa dikembalikan utuh oleh pemutus atau superadmin. Income yang kembali tetap
+  mengikuti aturan alur: dokumen yang belum ditandatangani client menunggu TTD dulu.
+- **Beberapa dokumen dalam satu pengajuan.** Barisnya tetap satu per dokumen supaya rekap per PIC tetap
+  menghitung dokumen, tetapi diikat satu nomor batch sehingga pemutus memutuskannya sekali. Formulirnya
+  menampilkan total nilai yang akan hilang dari income sebelum dikirim.
+- **Lencana angka di sidebar** untuk pemutus, plus tautan pengingat WhatsApp bagi pengaju &mdash; sebelumnya
+  pengajuan bisa menggantung berhari-hari karena pemutus hanya tahu kalau membuka menunya.
+- **PIC hanya bisa mengajukan dokumen atas namanya sendiri.** Patokannya PIC, bukan siapa yang mengetik:
+  yang dihapus adalah income milik seseorang, jadi dia yang berhak memintanya hilang.
+- **Rekap pengajuan per PIC** dihitung dari jenis alasan yang dipilih (dobel / salah input / client batal),
+  terlihat oleh semua orang &mdash; termasuk kolom Ditolak, karena pengajuan yang sering ditolak berarti
+  alasannya kurang kuat, bukan datanya yang salah.
+- Penghapusan satu batch dibungkus satu transaksi basis data: kalau satu dokumen gagal, tidak ada yang
+  terhapus separuh. *(migrasi 070, 071, 072)*
+
+---
+
 ## Fitur & Perbaikan — 8 Oktober 2026
 
 ### Revisi perpanjangan benar-benar bisa direvisi

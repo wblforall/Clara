@@ -520,6 +520,17 @@ function permission_for_route(string $route): string
         'transactions', 'transaction_form', 'transaction_edit', 'allocation_detail' => 'view_transactions',
         'transaction_save', 'transaction_update' => 'manage_transactions',
         'transaction_delete', 'deleted_transactions' => 'manage_deleted',
+        // Halaman pengajuan dibuka dengan request_delete; tiap tindakan di
+        // dalamnya memeriksa izinnya sendiri (approve_delete / manage_deleted).
+        'deletion_request', 'deletion_request_save' => 'request_delete',
+        'deletion_request_decide' => 'approve_delete',
+        'deletion_request_execute', 'deletion_approver_save' => 'manage_deleted',
+        // Pulihkan sengaja TIDAK dikunci di sini. Yang berhak adalah pemutus
+        // ATAU pemegang manage_deleted — dua himpunan yang tidak bisa diwakili
+        // satu nama izin, dan gerbang yang memakai salah satunya akan menolak
+        // orang yang sebenarnya berhak. Pemeriksaannya ada di dalam
+        // deletion_request_restore(), satu tempat, tanpa dua aturan yang bisa
+        // berbeda. Rute tanpa daftar jatuh ke default di bawah.
         'transaction_cancel', 'price_step_save', 'pic_split_save' => 'approve_skp',
         'transaction_history' => 'view_transactions',
         'master' => 'view_master',
@@ -636,6 +647,48 @@ function ttd_wajib_untuk(PDO $pdo, ?string $dibuatPada): bool
     $mulai = ttd_wajib_mulai($pdo);
     if ($mulai === '' || !$dibuatPada) return false;
     return substr($dibuatPada, 0, 10) >= $mulai;
+}
+
+/**
+ * Berapa pengajuan penghapusan yang menunggu keputusan ORANG INI.
+ *
+ * Dipakai untuk lencana angka di sidebar: sebelum ini pemutus hanya tahu ada
+ * pengajuan kalau kebetulan membuka menunya, dan pengajuan bisa menggantung
+ * berhari-hari tanpa ada yang salah.
+ *
+ * Satu pengajuan berisi beberapa dokumen dihitung SATU — yang diputuskan
+ * pemutus memang satu keputusan, bukan sejumlah dokumennya.
+ *
+ * Dihitung di layout(), jadi berjalan di tiap halaman: semua kegagalan ditelan
+ * dan menghasilkan 0. Tabelnya bisa belum ada (migrasi belum dijalankan), dan
+ * sebuah angka hiasan di sidebar tidak boleh sampai mematikan aplikasi.
+ */
+function deletion_pending_count(PDO $pdo, int $pid): int
+{
+    if (!can('approve_delete')) return 0;
+    try {
+        // Jabatan pemutus harus cocok dengan yang disetel; superadmin & admin
+        // selalu boleh, sama seperti perlakuan can() di seluruh aplikasi.
+        if (!in_array(current_role(), ['superadmin', 'admin'], true)) {
+            $set = $pdo->prepare('SELECT role_name, pic_name FROM deletion_approver WHERE property_id = ?');
+            $set->execute([$pid]);
+            $cfg = $set->fetch(PDO::FETCH_ASSOC);
+            if (!$cfg || trim((string) $cfg['role_name']) === '') return 0;
+
+            require_once __DIR__ . '/ApprovalLine.php';
+            $jabatan = ApprovalLine::jabatan($pdo, $pid);
+            if ($jabatan === '' || strcasecmp($jabatan, (string) $cfg['role_name']) !== 0) return 0;
+
+            $khusus = trim((string) ($cfg['pic_name'] ?? ''));
+            if ($khusus !== '' && strcasecmp(ApprovalLine::namaPic($pdo, $pid), $khusus) !== 0) return 0;
+        }
+        $q = $pdo->prepare("SELECT COUNT(DISTINCT COALESCE(NULLIF(batch_no, ''), CONCAT('x', id)))
+                              FROM deletion_requests WHERE property_id = ? AND status = 'menunggu'");
+        $q->execute([$pid]);
+        return (int) $q->fetchColumn();
+    } catch (Throwable $e) {
+        return 0;
+    }
 }
 
 function verify_csrf(): void

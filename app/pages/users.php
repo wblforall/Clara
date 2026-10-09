@@ -339,6 +339,8 @@ function roles_page(PDO $pdo): void
         'view_logs'           => 'Activity Log',
         'manage_users'        => 'Kelola Users',
         'manage_deleted'      => 'Hapus Transaksi',
+        'request_delete'      => 'Ajukan Hapus Data',
+        'approve_delete'      => 'Putuskan Pengajuan Hapus',
     ];
     $editableRoles = ['supervisor', 'sales', 'finance', 'administrasi', 'viewer'];
     $current = [];
@@ -405,6 +407,11 @@ function roles_save(PDO $pdo): void
         'view_master', 'manage_master', 'import_master',
         'export_reports', 'view_pic_report', 'view_commission_sim',
         'view_renewals', 'manage_renewals', 'manage_offers', 'manage_skp', 'approve_skp', 'view_logs', 'manage_users', 'manage_deleted',
+        'request_delete', 'approve_delete',
+        // Dua ini punya centang di layar tetapi dulu tidak ada di sini, jadi
+        // setiap kali Simpan ditekan izin Laporan Stock terhapus dari semua
+        // peran tanpa ada yang menyadarinya.
+        'view_stock_report', 'manage_stock_report',
     ];
 
     $submitted = $_POST['perms'] ?? [];

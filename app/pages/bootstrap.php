@@ -130,6 +130,7 @@ function layout(string $title, callable $body, array $opts = []): void
         ['Input', 'offers', 'Surat Penawaran', 'manage_offers'],
         ['', 'skp', 'SKP Pameran', 'manage_skp'],
         ['', 'contract_requests', 'Permintaan Kontrak', 'manage_skp'],
+        ['', 'deletion_request', 'Pengajuan Hapus Data', 'request_delete'],
         ['', 'transactions&module=cl', 'Exhibition', 'view_transactions'],
         ['', 'transactions&module=media', 'Media', 'view_transactions'],
         ['', 'transactions&module=gudang', 'Gudang', 'view_transactions'],
@@ -161,6 +162,10 @@ function layout(string $title, callable $body, array $opts = []): void
         ['Akun', 'my_signature', 'Tanda Tangan Saya', 'view_dashboard'],
         ['', 'my_paraf', 'Paraf Saya', 'approve_skp'],
     ];
+
+    // Lencana angka di sidebar: pemutus pengajuan penghapusan perlu tahu ada
+    // yang menunggu tanpa harus membuka menunya. Dihitung sekali per halaman.
+    $navBadge = ['deletion_request' => ($pdo instanceof PDO) ? deletion_pending_count($pdo, current_property_id()) : 0];
 
     $currentProp  = current_property();
     $isMulti      = is_multi_property();
@@ -399,7 +404,9 @@ function layout(string $title, callable $body, array $opts = []): void
                     <?php } elseif ($group !== '' && $group !== 'Admin') {
                         echo '<div class="nav-label">' . h($group) . '</div>';
                     } ?>
-                    <a class="<?= $_active ? 'active' : '' ?>" href="?r=<?= h($key) ?>"><?= h($label) ?></a>
+                    <?php $_bdg = (int) ($navBadge[$_kp['r'] ?? ''] ?? 0); ?>
+                    <a class="<?= $_active ? 'active' : '' ?>" href="?r=<?= h($key) ?>"><?= h($label) ?><?php
+                        if ($_bdg > 0): ?><span style="display:inline-block;min-width:17px;margin-left:6px;padding:0 5px;background:#dc2626;color:#fff;border-radius:9px;font-size:10px;font-weight:800;text-align:center;line-height:17px" title="<?= (int) $_bdg ?> pengajuan menunggu keputusan Anda"><?= (int) $_bdg ?></span><?php endif; ?></a>
                 <?php endforeach; ?>
                 <?php if ($_inAdmin): ?></div><?php endif; ?>
                 <div class="nav-logout">
