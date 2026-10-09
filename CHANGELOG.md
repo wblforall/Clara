@@ -40,6 +40,13 @@ pemutus (bawaan: Manager, bisa disetel per properti) menyetujui atau menolak, da
   nilainya diambil dari kolom di tabel dokumen, padahal dokumen perpanjangan dan dokumen dari Surat Penawaran
   menyimpannya di transaksi / penawarannya. Sekarang dibaca berurutan dari transaksi → dokumen → penawaran, dan
   untuk Penawaran Paket **dijumlahkan dari seluruh transaksi komponennya**. Pengajuan lama ikut diperbaiki. *(migrasi 073)*
+- **Tampilan dibuat lebih nyaman dibaca:** baris alat (pencarian, saringan modul, jumlah) jadi satu bar
+  bernada lembut; daftar diberi ruang gulir yang lega dengan pemisah golongan yang menempel di atas saat
+  digulir; baris yang dicentang disorot dan diberi garis merah di tepi kiri supaya pilihan tetap terlihat
+  saat menggulir jauh; ringkasan pilihan jadi kotak berwarna &mdash; merah hanya bila income memang berkurang,
+  netral bila tidak; dan tombol kirim dipisah garis sebagai kaki formulir.
+- **Dua formulir sebelumnya menumpuk selebar panel** karena memakai kelas `grid2` yang tidak pernah ada di
+  stylesheet. Sekarang memakai grid yang benar-benar didefinisikan, dan ikut menyempit jadi satu kolom di HP.
 - **Gudang & Media sempat hilang sama sekali dari daftar.** Semua modul berbagi satu batas 500 baris yang
   diurut dari ID terbesar, sedangkan ID Gudang justru yang paling lama &mdash; ratusan transaksi Exhibition yang
   lebih baru menenggelamkannya. Diuji pada data yang sama: cara lama mengembalikan 500 baris yang **seluruhnya**
