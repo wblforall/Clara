@@ -36,6 +36,13 @@ pemutus (bawaan: Manager, bisa disetel per properti) menyetujui atau menolak, da
   alasannya kurang kuat, bukan datanya yang salah.
 - Penghapusan satu batch dibungkus satu transaksi basis data: kalau satu dokumen gagal, tidak ada yang
   terhapus separuh. *(migrasi 070, 071, 072)*
+- **Nilai dokumen diperbaiki.** Daftar pilihan sempat menampilkan "Rp 0" dan unit "-" untuk hampir semua dokumen:
+  nilainya diambil dari kolom di tabel dokumen, padahal dokumen perpanjangan dan dokumen dari Surat Penawaran
+  menyimpannya di transaksi / penawarannya. Sekarang dibaca berurutan dari transaksi → dokumen → penawaran, dan
+  untuk Penawaran Paket **dijumlahkan dari seluruh transaksi komponennya**. Pengajuan lama ikut diperbaiki. *(migrasi 073)*
+- **Tampilan dirapikan:** ringkasan angka + rekap per PIC naik ke paling atas sebagai dashboard kecil, daftar
+  dokumen jadi tabel berkolom yang bisa **dicari dan diurutkan** (dengan "pilih semua yang tampil"), dan Riwayat
+  turun ke paling bawah dengan pencarian sendiri.
 
 ---
 
