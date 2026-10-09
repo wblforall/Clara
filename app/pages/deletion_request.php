@@ -452,33 +452,126 @@ function deletion_request_page(PDO $pdo): void
         };
         ?>
         <style>
-        /* Empat warna kategori, urutannya tetap — tidak pernah diputar ulang
+        /* Gaya khusus halaman ini. Memakai token aplikasi (--line, --ink, --muted,
+           --primary, --r) supaya tetap satu bahasa dengan halaman lain — tidak
+           ada warna atau radius baru yang diperkenalkan di luar palet grafik. */
+
+        /* ── Grafik "siapa paling sering" ──────────────────────────────────
+           Empat warna kategori, urutannya tetap — tidak pernah diputar ulang
            saat jumlah seri berubah. Lolos pemeriksaan keterbacaan buta warna
            (ΔE terburuk 9,1 protan). Kontras tiga di antaranya di bawah 3:1
            terhadap latar putih, jadi legenda dan tabel rinciannya WAJIB ada —
            warna tidak pernah jadi satu-satunya penanda.
            Aplikasi ini tidak punya mode gelap, jadi tidak ada langkah gelapnya. */
         .panel, .dr-graf { --dr-dobel:#2a78d6; --dr-salah_input:#eb6834; --dr-batal:#1baf7a; --dr-lainnya:#eda100 }
-        .dr-graf i, .dr-seg { background-clip: padding-box }
-        .dr-grow  { display:flex; align-items:center; gap:10px; margin-bottom:7px }
-        .dr-nama  { width:140px; flex:none; font-size:12.5px; color:var(--ink2); text-align:right;
-                    overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-        .dr-track { display:flex; gap:2px; height:17px; min-width:3px }
+        .dr-graf i, .dr-seg { background-clip:padding-box }
+        .dr-grow  { display:flex; align-items:center; gap:12px; margin-bottom:9px }
+        .dr-nama  { width:150px; flex:none; font-size:12.5px; font-weight:600; color:var(--ink2);
+                    text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+        .dr-track { display:flex; gap:2px; height:20px; min-width:3px;
+                    transition:filter .12s ease }
+        .dr-grow:hover .dr-track { filter:saturate(1.15) }
         .dr-seg   { min-width:3px; border-radius:2px }
-        .dr-track > .dr-seg:first-child { border-radius:4px 2px 2px 4px }
-        .dr-track > .dr-seg:last-child  { border-radius:2px 4px 4px 2px }
-        .dr-track > .dr-seg:only-child  { border-radius:4px }
-        .dr-tot   { font-size:12.5px; font-weight:700; color:var(--ink); min-width:22px }
-        .dr-cari { width: 100%; max-width: 320px }
-        .dr-bar  { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:9px }
-        .dr-tabel th[data-sort] { cursor:pointer; user-select:none }
-        .dr-tabel th[data-sort]:hover { background:#EEF2F7 }
-        .dr-tabel td, .dr-tabel th { padding:8px 11px }
-        .dr-kosong { padding:14px 2px; color:var(--muted); font-size:12.5px }
-        .dr-judul-grup td { background:#EEF2F7; font-size:11.5px; font-weight:800; color:#334155;
-                            text-transform:uppercase; letter-spacing:.04em; padding:7px 11px;
-                            position:sticky; top:0; z-index:1 }
-        .dr-pil { padding:1px 7px;border-radius:9px;font-size:10.5px;font-weight:700;white-space:nowrap }
+        .dr-track > .dr-seg:first-child { border-radius:5px 2px 2px 5px }
+        .dr-track > .dr-seg:last-child  { border-radius:2px 5px 5px 2px }
+        .dr-track > .dr-seg:only-child  { border-radius:5px }
+        .dr-tot   { font-size:13px; font-weight:800; color:var(--ink); min-width:24px }
+        .dr-legenda { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px }
+        .dr-legenda span { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--ink2) }
+        .dr-legenda i { width:11px; height:11px; border-radius:3px; display:inline-block; flex:none }
+
+        /* ── Kepala bagian: judul + alat bantu di satu baris ──────────────── */
+        .dr-kepala { display:flex; gap:12px; align-items:baseline; justify-content:space-between;
+                     flex-wrap:wrap; margin-bottom:6px }
+        .dr-kepala h3 { margin:0 }
+
+        /* ── Baris alat: pencarian, saringan, jumlah ──────────────────────── */
+        .dr-bar  { display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+                   background:#F8FAFC; border:1px solid var(--line); border-radius:var(--r);
+                   padding:9px 11px; margin-bottom:10px }
+        .dr-bar input, .dr-bar select { height:36px; padding:0 11px }
+        .dr-cari { width:100%; max-width:300px }
+        .dr-hitung { font-size:12px; color:var(--ink2); font-weight:600; white-space:nowrap }
+        .dr-petunjuk { font-size:11.5px; color:var(--muted); margin-left:auto; white-space:nowrap }
+
+        /* ── Tabel ─────────────────────────────────────────────────────────── */
+        /* Di layar sempit tabelnya DIGULIR mendatar, bukan diremas: sembilan kolom
+           dalam 360px membuat tiap sel pecah jadi beberapa baris dan angkanya
+           tidak bisa dibandingkan lagi. */
+        .dr-tabel { min-width:900px }
+        .dr-tabel td, .dr-tabel th { padding:9px 12px }
+        .dr-tabel th[data-sort] { cursor:pointer; user-select:none; transition:background .12s ease }
+        .dr-tabel th[data-sort]:hover { background:#E7EDF5 }
+        .dr-tabel tbody tr:hover td { background:#F7FAFC }
+        /* Baris yang dicentang diberi warna & garis kiri: saat menggulir daftar
+           panjang, pilihan yang sudah dibuat harus tetap terlihat sekilas. */
+        .dr-tabel tr:has(.dr-pick:checked) td { background:#FEF2F2 }
+        .dr-tabel tr:has(.dr-pick:checked) td:first-child { box-shadow:inset 3px 0 0 #dc2626 }
+        .dr-tabel tr:has(.dr-pick:checked):hover td { background:#FEE7E7 }
+        /* .dr-pick dipakai JS untuk menghitung pilihan, jadi kotak "pilih semua"
+           memakai kelas lain meski tampilannya sama. */
+        .dr-pick, .dr-kotak { width:16px; height:16px; margin:0; cursor:pointer; accent-color:#dc2626 }
+
+        /* Pemisah golongan: menempel di atas saat digulir supaya selalu jelas
+           sedang berada di bagian mana. */
+        .dr-judul-grup td { background:#EDF1F7; font-size:11px; font-weight:800; color:#334155;
+                            text-transform:uppercase; letter-spacing:.05em; padding:8px 12px;
+                            position:sticky; top:0; z-index:2;
+                            border-top:1px solid var(--line); border-bottom:1px solid #DCE3EC }
+        .dr-judul-grup:first-child td { border-top:none }
+        .dr-judul-grup:hover td { background:#EDF1F7 }
+
+        /* Kotak gulir daftar: tinggi lega, dan bayangan tipis di bawah sebagai
+           tanda masih ada isi di bawahnya. */
+        .dr-gulir { max-height:430px; overflow:auto; position:relative }
+        .dr-gulir::after { content:''; position:sticky; bottom:0; display:block; height:22px;
+                           background:linear-gradient(to top, rgba(255,255,255,.95), rgba(255,255,255,0));
+                           pointer-events:none; margin-top:-22px }
+
+        /* ── Ringkasan pilihan: kotak, bukan teks lepas ───────────────────── */
+        .dr-ringkas { margin-top:10px; border-radius:var(--r); padding:11px 13px; font-size:12.5px;
+                      line-height:1.6; border:1px solid transparent }
+        .dr-ringkas:empty { display:none }
+        .dr-ringkas.ada  { background:#FEF2F2; border-color:#FECACA; color:#991b1b }
+        .dr-ringkas.nol  { background:#F8FAFC; border-color:var(--line); color:var(--ink2) }
+
+        /* ── Kaki formulir: tindakan utama dipisah garis ──────────────────── */
+        .dr-kaki { display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+                   border-top:1px solid var(--line); margin-top:15px; padding-top:14px }
+
+        /* Grid isian. Kelas .grid2 yang dipakai sebelumnya tidak pernah ada di
+           app.css, jadi semua isian menumpuk selebar panel. */
+        .dr-isian  { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,2fr); gap:16px; margin-top:14px }
+        .dr-isian2 { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:16px }
+        .dr-isian2 .wide { grid-column:1 / -1 }
+        @media (max-width: 760px) {
+            .dr-isian, .dr-isian2 { grid-template-columns:1fr }
+        }
+
+        /* Keterangan panjang di bawah tabel: dibuat tenang supaya tidak bersaing
+           dengan angka dan tombol di sekitarnya. */
+        .dr-nota { font-size:11.5px; line-height:1.65; color:var(--muted); margin:8px 0 0 }
+        .dr-nota strong { color:var(--ink2); font-weight:700 }
+
+        .dr-kosong { padding:16px 2px; color:var(--muted); font-size:12.5px }
+        .dr-pil { display:inline-block; padding:2px 8px; border-radius:9px; font-size:10.5px;
+                  font-weight:700; white-space:nowrap; line-height:1.5 }
+        .dr-jejak { font-size:11px; line-height:1.65; max-width:340px }
+        .dr-jejak b { color:var(--ink2) }
+
+        @media (max-width: 820px) {
+            .dr-cari { max-width:none }
+            .dr-petunjuk { display:none }
+            .dr-nama { width:100px }
+        }
+        /* Di bawah 768px aplikasi mengubah tabel jadi kartu bertumpuk
+           (mobile-tables.js). Kotak gulir setinggi 430px jadi tidak masuk akal:
+           satu kartu saja hampir setinggi itu. Dibiarkan mengalir di halaman. */
+        @media (max-width: 768px) {
+            .dr-gulir { max-height:none; overflow:visible }
+            .dr-gulir::after { display:none }
+            .dr-judul-grup td { position:static }
+        }
         </style>
 
         <?php /* ── 1. Dashboard kecil + rekap per PIC ─────────────────────── */ ?>
@@ -540,12 +633,9 @@ function deletion_request_page(PDO $pdo): void
             <?php /* Legenda selalu ada: warna saja tidak boleh jadi satu-satunya
                      penanda identitas, dan tiga dari empat warna ini kontrasnya
                      di bawah 3:1 terhadap latar putih. */ ?>
-            <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px">
+            <div class="dr-legenda">
                 <?php foreach ($jenisUrut as $k => $label): ?>
-                <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink2)">
-                    <i style="width:11px;height:11px;border-radius:3px;background:var(--dr-<?= h($k) ?>);display:inline-block"></i>
-                    <?= h($label) ?>
-                </span>
+                <span><i style="background:var(--dr-<?= h($k) ?>)"></i><?= h($label) ?></span>
                 <?php endforeach; ?>
             </div>
 
@@ -748,16 +838,16 @@ function deletion_request_page(PDO $pdo): void
                         <option value="media">Media (<?= (int) $perModul['media'] ?>)</option>
                         <option value="gudang">Gudang (<?= (int) $perModul['gudang'] ?>)</option>
                     </select>
-                    <span class="help" data-hitung><?= count($dokumen) ?> data</span>
-                    <span class="help" style="margin-left:auto">Klik judul kolom untuk mengurutkan</span>
+                    <span class="dr-hitung" data-hitung><?= count($dokumen) ?> data</span>
+                    <span class="dr-petunjuk">Klik judul kolom untuk mengurutkan &mdash; di dalam golongannya</span>
                 </div>
                 <?php /* Tabel berkolom, bukan satu baris teks panjang: nomor, client, unit,
                          periode dan nilai masing-masing punya kolomnya sendiri supaya bisa
                          dibandingkan sekilas dan diurutkan. */ ?>
-                <div class="table-wrap" data-dr-tabel style="max-height:330px;overflow:auto">
+                <div class="table-wrap dr-gulir" data-dr-tabel>
                     <table class="dr-tabel">
                         <thead><tr>
-                            <th style="width:34px"><input type="checkbox" id="dr-semua" title="Pilih semua yang tampil" style="width:16px;height:16px;margin:0"></th>
+                            <th style="width:34px"><input type="checkbox" id="dr-semua" class="dr-kotak" title="Pilih semua yang tampil"></th>
                             <th data-sort="text">Modul <span class="dr-arr"></span></th>
                             <th data-sort="text">Dokumen <span class="dr-arr"></span></th>
                             <th data-sort="text">Client <span class="dr-arr"></span></th>
@@ -798,8 +888,7 @@ function deletion_request_page(PDO $pdo): void
                             <tr data-grup="<?= (int) $noGrup ?>" data-modul="<?= h((string) ($d['module'] ?? '')) ?>">
                                 <td><input type="checkbox" name="pilih[]" value="<?= h((string) $d['kunci']) ?>"
                                            class="dr-pick" data-nilai="<?= (float) $d['total_amount'] ?>"
-                                           data-income="<?= $inc ?>"
-                                           style="width:16px;height:16px;margin:0"></td>
+                                           data-income="<?= $inc ?>"></td>
                                 <td><?= h(_dr_modul($d['module'] ?? null)) ?></td>
                                 <?php /* Transaksi tanpa dokumen dikenali dari nomor transaksinya —
                                          itu satu-satunya nomor yang dimilikinya. */ ?>
@@ -830,14 +919,14 @@ function deletion_request_page(PDO $pdo): void
                         </tbody>
                     </table>
                 </div>
-                <p class="help" style="margin:6px 0 0">Hanya data <strong>atas nama Anda sebagai PIC</strong>.
+                <p class="dr-nota">Hanya data <strong>atas nama Anda sebagai PIC</strong>.
                     Milik rekan tidak muncul &mdash; income-nya milik dia, jadi dia yang mengajukan.
                     Boleh pilih <strong>beberapa sekaligus</strong> bila alasannya sama; pemutus memutuskannya sekali.
                     Baris berlabel <strong>Tanpa dokumen</strong> adalah transaksi yang diinput langsung dari menu
                     Exhibition / Media / Gudang dan belum pernah dibuatkan SKP/SKS &mdash; sekarang ikut bisa diajukan.</p>
-                <div id="dr-ringkas" style="margin-top:7px;font-weight:700;color:#991b1b;font-size:12.5px"></div>
+                <div id="dr-ringkas" class="dr-ringkas"></div>
 
-                <div class="grid2" style="margin-top:11px">
+                <div class="dr-isian">
                     <div>
                         <label>Jenis alasan <span style="color:#b91c1c">*</span></label>
                         <select name="jenis" required>
@@ -854,9 +943,9 @@ function deletion_request_page(PDO $pdo): void
                         <span class="help">Alasan ini yang dibaca pemutus. Tanpa alasan yang jelas, pengajuan biasanya ditolak.</span>
                     </div>
                 </div>
-                <div style="margin-top:10px">
+                <div class="dr-kaki">
                     <button type="submit" id="dr-kirim">Kirim Pengajuan</button>
-                    <span class="help" style="margin-left:9px">Akan diputuskan oleh
+                    <span class="help" style="margin:0">Akan diputuskan oleh
                         <strong><?= h($set['role_name'] ?: 'belum disetel') ?><?= $set['pic_name'] ? ' — ' . h($set['pic_name']) : '' ?></strong>.</span>
                 </div>
             </form>
@@ -865,8 +954,8 @@ function deletion_request_page(PDO $pdo): void
 
         <?php /* ── 4. Pengajuan saya ───────────────────────────────────────── */ ?>
         <div class="panel">
-            <div class="dr-bar" style="justify-content:space-between;margin-bottom:4px">
-                <h3 style="margin:0">Pengajuan saya<?= $punyaSaya ? ' (' . count($punyaSaya) . ')' : '' ?></h3>
+            <div class="dr-kepala">
+                <h3>Pengajuan saya<?= $punyaSaya ? ' (' . count($punyaSaya) . ')' : '' ?></h3>
                 <?php if ($punyaSaya): ?>
                 <input class="dr-cari" data-cari placeholder="Cari dokumen atau alasan…" style="max-width:240px">
                 <?php endif; ?>
@@ -895,7 +984,7 @@ function deletion_request_page(PDO $pdo): void
                             <td style="text-align:right;white-space:nowrap" data-urut="<?= (float) $d['nilai'] ?>"><?= h(money($d['nilai'])) ?></td>
                             <td data-urut="<?= h($d['status']) ?>"><?= _dr_badge($d['status']) ?></td>
                             <td style="white-space:nowrap" data-urut="<?= h((string) $d['requested_at']) ?>"><?= h($tgl($d['requested_at'])) ?></td>
-                            <td style="font-size:11.5px;max-width:280px">
+                            <td style="font-size:11.5px;max-width:300px;line-height:1.6">
                                 <?= _dr_tanda_jenis($d['jenis'] ?? '') ?><?= h($d['alasan']) ?>
                                 <?php if (trim((string) ($d['batch_no'] ?? '')) !== ''): ?>
                                 <div class="muted" style="font-size:10.5px;margin-top:2px">satu pengajuan dengan dokumen lain &middot; batch <?= h((string) $d['batch_no']) ?></div>
@@ -976,7 +1065,7 @@ function deletion_request_page(PDO $pdo): void
         <?php if ($bolehHapus): ?>
         <div class="panel">
             <h3 style="margin-top:0">Siapa yang memutuskan</h3>
-            <form method="post" action="?r=deletion_approver_save" class="grid2">
+            <form method="post" action="?r=deletion_approver_save" class="dr-isian2">
                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
                 <div>
                     <label>Jabatan pemutus</label>
@@ -1002,8 +1091,8 @@ function deletion_request_page(PDO $pdo): void
 
         <?php /* ── 7. Riwayat (paling bawah) ───────────────────────────────── */ ?>
         <div class="panel">
-            <div class="dr-bar" style="justify-content:space-between;margin-bottom:4px">
-                <h3 style="margin:0">Riwayat<?= $riwayat ? ' (' . count($riwayat) . ')' : '' ?></h3>
+            <div class="dr-kepala">
+                <h3>Riwayat<?= $riwayat ? ' (' . count($riwayat) . ')' : '' ?></h3>
                 <?php if ($riwayat): ?>
                 <input class="dr-cari" data-cari placeholder="Cari dokumen, client, PIC, alasan…">
                 <?php endif; ?>
@@ -1035,7 +1124,7 @@ function deletion_request_page(PDO $pdo): void
                             <td style="text-align:right;white-space:nowrap" data-urut="<?= (float) $d['nilai'] ?>"><?= h(money($d['nilai'])) ?></td>
                             <td><?= h($d['pic_name'] ?: '—') ?></td>
                             <td data-urut="<?= h($d['status']) ?>"><?= _dr_badge($d['status']) ?></td>
-                            <td style="font-size:11px;line-height:1.55;max-width:330px">
+                            <td class="dr-jejak">
                                 <?= _dr_tanda_jenis($d['jenis'] ?? '') ?><?= h($d['alasan']) ?><br>
                                 <span class="muted">Diajukan <b><?= h($d['requested_by']) ?></b> &middot; <?= h($tgl($d['requested_at'])) ?></span>
                                 <?php if ($d['decided_by']): ?><br>
@@ -1199,7 +1288,7 @@ function deletion_request_page(PDO $pdo): void
                     inc += i;
                     if (i <= 0) belum++;
                 });
-                if (!n) { ring.innerHTML = ''; return { n: 0, jml: 0, inc: 0, belum: 0 }; }
+                if (!n) { ring.innerHTML = ''; ring.className = 'dr-ringkas'; return { n: 0, jml: 0, inc: 0, belum: 0 }; }
                 // Dua angka, dan keduanya disebut. Menyebut nilai kontrak saja
                 // membuat orang mengira income-nya terpotong sebesar itu; padahal
                 // dokumen yang belum diteken client memang belum pernah masuk.
@@ -1212,6 +1301,9 @@ function deletion_request_page(PDO $pdo): void
                        + '(belum ditandatangani client), jadi menghapusnya tidak memotong income siapa pun.';
                 }
                 ring.innerHTML = t;
+                // Merah hanya bila income memang berkurang; kalau tidak, nada netral —
+                // kotak merah untuk sesuatu yang tidak memotong apa pun itu menakut-nakuti.
+                ring.className = 'dr-ringkas ' + (inc > 0 ? 'ada' : 'nol');
                 return { n: n, jml: jml, inc: inc, belum: belum };
             }
             pick.forEach(function (c) { c.addEventListener('change', hitung); });
