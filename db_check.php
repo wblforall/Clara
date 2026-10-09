@@ -91,7 +91,26 @@ $expected = [
     'schema_migrations' => ['id', 'migration', 'ran_at'],
     'settings' => ['key', 'value', 'updated_at'],
     'master_referrer' => ['id', 'name', 'dept', 'status', 'created_at'],
+
+    // Pengajuan Hapus Data (migrasi 070-075). Tanpa baris ini db_check tetap
+    // menjawab "semua sudah ada" walau migrasinya gagal diam-diam — padahal
+    // justru fitur inilah yang menghapus transaksi dan memotong income.
+    'deletion_requests' => [
+        'id', 'property_id', 'skp_id', 'transaction_id', 'doc_no', 'doc_type', 'module',
+        'client_name', 'master_code', 'periode', 'nilai', 'pic_name', 'alasan', 'jenis',
+        'status', 'batch_no', 'requested_by', 'requested_user_id', 'requested_at',
+        'decided_by', 'decided_role', 'decided_at', 'decision_note',
+        'executed_by', 'executed_at', 'alokasi_dilepas', 'rupiah_dilepas',
+        'restored_by', 'restored_at', 'restore_note', 'alokasi_pulih', 'rupiah_pulih',
+    ],
+    'deletion_approver' => ['property_id', 'role_name', 'pic_name', 'updated_by', 'updated_at'],
 ];
+
+// Kolom penanda terhapus pada dokumen — dipakai Pengajuan Hapus Data untuk
+// menyembunyikan dokumen tanpa membuang barisnya.
+$expected['skp_documents'] = array_unique(array_merge(
+    $expected['skp_documents'] ?? [], ['deleted_at', 'deleted_by']
+));
 
 $existingTables = $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);
 $existingTables = array_flip($existingTables);
