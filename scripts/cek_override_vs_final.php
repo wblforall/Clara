@@ -118,10 +118,48 @@ if ($hanyaId && !$baris) {
            . "  (" . $t['pricing_type'] . ", rate " . $rp($t['unit_rate']) . ")\n";
         $selisih = round((float) $t['alokasi'] - $rumus);
         if (abs($selisih) >= 1) {
-            echo "  Selisih alokasi vs rumus: " . ($selisih > 0 ? '+' : '') . $rp($selisih) . "\n";
-            echo "\n  Artinya nominal salah satu bulan pernah diketik manual. Yang benar\n";
-            echo "  ditentukan orang, bukan skrip: kalau Rp " . number_format($rumus, 0, ',', '.')
-               . " yang betul, perbaiki bulan\n  yang menyimpang lewat halaman Detail Alokasi.\n";
+            echo "  Selisih alokasi vs rumus: " . ($selisih > 0 ? '+' : '') . $rp($selisih)
+               . "  -> ada bulan yang nominalnya pernah diketik manual\n";
+        }
+
+        // Cara pembagian per bulan ditentukan dua setelan. Salah satunya
+        // (prorata kalender) hanya bisa dicentang di Surat Penawaran, tidak ada
+        // di form transaksi — jadi tanpa ditampilkan di sini orang tidak punya
+        // cara tahu hasil apa yang akan keluar saat menekan Simpan.
+        echo "\n  Cara membagi ke tiap bulan:\n";
+        echo "    Nilai diakui      : " . (($t['billing_method'] ?? '') === 'spread'
+                ? 'Spread per Bulan (dibagi ke tiap bulan)' : 'satu bulan saja (' . $t['period_key'] . ')') . "\n";
+        echo "    Prorata kalender  : " . (!empty($t['prorata_kalender'])
+                ? 'YA  — dibagi menurut jumlah hari tiap bulan'
+                : 'TIDAK — dibagi RATA, jumlah hari diabaikan') . "\n";
+
+        // Ramalan: apa yang terjadi kalau Simpan ditekan sekarang.
+        if (($t['billing_method'] ?? '') === 'spread') {
+            $pakai = (float) ($t['override_amount'] ?: $rumus);
+            $pre   = AllocationService::preview($t);
+            $ref   = new ReflectionMethod('AllocationService',
+                        empty($t['prorata_kalender']) ? 'applySpreadAmount' : 'applyOverrideAmount');
+            $ref->setAccessible(true);
+            $hasil = $ref->invoke(null, $pre, $pakai);
+            echo "\n  Kalau tombol \"Simpan & Hitung Ulang Alokasi\" ditekan sekarang,\n";
+            echo "  nominal bulanannya akan menjadi:\n";
+            foreach ($hasil as $a)
+                printf("    %-9s %2d hari  %16s\n", $a['period_key'], (int) $a['allocated_days'], $rp($a['amount']));
+            printf("    %-19s %16s\n", 'JUMLAH', $rp(array_sum(array_column($hasil, 'amount'))));
+            // Yang paling sering bikin bingung: form Edit MENGIRIM ULANG nominal
+            // bulanan yang sekarang (kotak-kotak di tabel bulanan sudah terisi),
+            // dan nominal itu menimpa apa pun yang diketik di Override Aktual.
+            echo "\n  TAPI: tabel bulanan di form Edit sudah terisi angka yang sekarang, dan\n";
+            echo "  angka itu IKUT TERKIRIM saat Simpan — menimpa isi Override Aktual.\n";
+            echo "  Jadi mengetik angka baru di Override Aktual saja tidak akan berpengaruh:\n";
+            echo "  nilainya kembali ke " . $rp($t['alokasi']) . " lagi.\n";
+            echo "  Yang harus diubah adalah NOMINAL BULANANNYA.\n";
+            if (empty($t['prorata_kalender'])) {
+                echo "\n  PERHATIAN: karena prorata kalender TIDAK aktif, pembagiannya RATA —\n";
+                echo "  bulan yang hanya beberapa hari akan dapat porsi sama dengan bulan penuh.\n";
+                echo "  Kalau itu tidak dikehendaki, jangan tekan Simpan; perbaiki nominal\n";
+                echo "  bulanannya saja lewat halaman Detail Alokasi.\n";
+            }
         }
     } catch (Throwable $e) {
         echo "\n  (rumus tidak bisa dihitung: " . $e->getMessage() . ")\n";
