@@ -703,6 +703,12 @@ function skp_form(PDO $pdo): void
     $ubahPeriode = $editable && $skp && $trxId && !$offerId && !$standalone && !$sumberHilang
                    && empty($src['is_bundle']) && _skp_komponen_tunggal($pdo, $pid, $skp, $trxId);
     $satuanTarif = _skp_satuan_tarif((string) ($src['pricing_type'] ?? ''));
+    // Kotak Total hanya terisi bila nilai kontraknya memang pernah ditetapkan
+    // manual (berbeda dari hitungan). Kalau sama, dibiarkan kosong supaya jelas
+    // bahwa yang berlaku adalah hitungan sistem — bukan angka beku.
+    $hitungOtomatis = round((float) ($src['total_calculated'] ?? 0));
+    $nilaiBerlaku   = round((float) ($src['final_amount'] ?: $src['total_calculated']));
+    $tampilTotalManual = ($nilaiBerlaku > 0 && $nilaiBerlaku !== $hitungOtomatis) ? $nilaiBerlaku : 0;
     // Unit, kuantitas dan jenis harga tidak disunting di sini — kolomnya milik
     // transaksi dan jarang berubah saat revisi. Tautannya disediakan supaya yang
     // perlu mengubahnya tidak mentok.
@@ -710,7 +716,7 @@ function skp_form(PDO $pdo): void
         ? '?r=transaction_edit&id=' . $trxId . '&skp=' . (int) $skp['id'] : '';
 
 
-    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir, $revTahap, $revPending, $revRiwayat, $revBolehAjukan, $revBolehPutus, $dibatalkan, $sumberHilang, $ubahPeriode, $satuanTarif, $ubahTrxUrl) {
+    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir, $revTahap, $revPending, $revRiwayat, $revBolehAjukan, $revBolehPutus, $dibatalkan, $sumberHilang, $ubahPeriode, $satuanTarif, $ubahTrxUrl, $tampilTotalManual) {
         $statusSewaDefault = ($isRenew || (!empty($src['renewal_status']) && $src['renewal_status'] !== 'none')) ? 'Perpanjangan' : 'Baru';
         ?>
         <?php /* Sumbernya hilang → tombol kembali ke sumber ikut buntu, jadi
@@ -867,8 +873,17 @@ function skp_form(PDO $pdo): void
                 <?php if (($src['pricing_type'] ?? '') === 'monthly'): ?>
                 <div><label>Jumlah Bulan Kontrak</label><input name="p_contract_months" value="<?= (int) ($src['contract_months'] ?? 0) ?: '' ?>" inputmode="numeric" placeholder="kosong = ikut tanggal"></div>
                 <?php endif; ?>
+                <?php /* Harga hasil nego sering tidak sama dengan tarif × luas × hari.
+                         Tanpa kotak ini satu-satunya jalan memasukkannya adalah form
+                         transaksi — dan dokumen yang sedang direvisi justru tidak lagi
+                         tampil di daftar transaksi, jadi jalan itu buntu.
+                         Dikosongkan = biarkan sistem yang menghitung. */ ?>
+                <div><label>Total Biaya Sewa <span class="muted" style="font-weight:400">(kosongkan = hitung otomatis)</span></label>
+                    <?php skp_input_rp('p_total', $tampilTotalManual, ''); ?>
+                    <div class="help">Isi hanya bila harga akhirnya hasil nego &mdash; mis. diskon, atau pembulatan kesepakatan.</div>
+                </div>
                 <div class="wide" style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:8px 10px;font-size:12px;color:#5b21b6;line-height:1.5">
-                    <strong>Masa sewa &amp; harga boleh diubah di sini.</strong> Totalnya dihitung ulang oleh sistem saat <strong>Simpan</strong> &mdash; angka di <em>Rincian Pembayaran</em> di bawah masih memakai nilai sebelum perubahan sampai formulir ini disimpan.<?php
+                    <strong>Masa sewa &amp; harga boleh diubah di sini.</strong> Kalau <em>Total Biaya Sewa</em> dikosongkan, sistem menghitungnya sendiri dari tarif &times; luas &times; hari saat <strong>Simpan</strong>; kalau diisi, angka Anda yang dipakai. Angka di <em>Rincian Pembayaran</em> di bawah masih memakai nilai sebelum perubahan sampai formulir ini disimpan.<?php
                     if ($ubahTrxUrl): ?> Perlu mengubah unit, kuantitas atau jenis harga? <a href="<?= h($ubahTrxUrl) ?>" style="font-weight:700">buka form transaksi</a>.<?php endif; ?>
                 </div>
                 <?php else: ?>
@@ -1822,6 +1837,8 @@ function _skp_simpan_periode(PDO $pdo, int $pid, int $trxId, ?array $skp, array 
     $mulai   = trim((string) post('p_start_date', ''));
     $selesai = trim((string) post('p_end_date', ''));
     $tarif   = parse_rupiah((string) post('p_unit_rate', '0'));
+    // Kosong = biarkan sistem menghitung. Diisi = itu harga kesepakatannya.
+    $totalKetik = parse_rupiah((string) post('p_total', '0'));
     $sah = function (string $t): bool {
         $d = DateTimeImmutable::createFromFormat('Y-m-d', $t);
         return $d instanceof DateTimeImmutable && $d->format('Y-m-d') === $t;
@@ -1839,10 +1856,13 @@ function _skp_simpan_periode(PDO $pdo, int $pid, int $trxId, ?array $skp, array 
         $trx['contract_months'] = $bulan > 0 ? min(60, $bulan) : null;
     }
     // Tidak ada yang berubah → jangan menulis apa pun, jangan isi riwayat audit.
+    $overrideLama = round((float) ($src['override_amount'] ?? 0));
     if ((string) $src['start_date'] === $mulai
         && (string) $src['end_date'] === $selesai
         && round((float) ($src['unit_rate'] ?? 0)) === round($tarif)
-        && (int) ($src['contract_months'] ?? 0) === (int) ($trx['contract_months'] ?? 0)) return '';
+        && (int) ($src['contract_months'] ?? 0) === (int) ($trx['contract_months'] ?? 0)
+        && round($totalKetik) === $overrideLama) return '';
+
 
     try {
         $hitung = (float) AllocationService::totalCalculated($trx);
@@ -1852,10 +1872,15 @@ function _skp_simpan_periode(PDO $pdo, int $pid, int $trxId, ?array $skp, array 
     }
     if ($hitung <= 0) { flash('Masa sewa & harga itu menghasilkan nilai nol — tidak ada yang diubah.'); return ''; }
 
-    // Override manual dilepas. Selama override masih terpasang, final_amount
-    // memakai angka ketikan lama, jadi harga baru yang diisi PIC tidak akan
-    // kelihatan sama sekali — persis keluhan yang membuat revisi terasa buntu.
-    $adaOverride = (float) ($src['override_amount'] ?? 0) > 0;
+    // Nilai yang berlaku: angka yang diketik bila ada, kalau tidak hasil hitung.
+    //
+    // Dulu override SELALU dilepas di sini. Itu benar selama tidak ada tempat
+    // mengetik total, karena override lama membuat harga baru tidak kelihatan.
+    // Sekarang ada kotaknya, jadi yang dilepas hanya override yang memang tidak
+    // diisi ulang — bukan angka yang baru saja sengaja diketik.
+    $pakaiKetik  = $totalKetik > 0;
+    $nilaiFinal  = $pakaiKetik ? $totalKetik : $hitung;
+    $adaOverride = !$pakaiKetik && (float) ($src['override_amount'] ?? 0) > 0;
     // period_key mengikuti pilihan pengakuan semula (awal atau akhir kontrak),
     // supaya bulan pengakuan tidak berpindah tanpa diminta.
     $pkLama = (string) ($src['period_key'] ?? '');
@@ -1865,16 +1890,17 @@ function _skp_simpan_periode(PDO $pdo, int $pid, int $trxId, ?array $skp, array 
 
     $pdo->prepare('UPDATE transactions
                       SET start_date = ?, end_date = ?, unit_rate = ?, contract_months = ?,
-                          period_key = ?, total_calculated = ?, override_amount = NULL,
+                          period_key = ?, total_calculated = ?, override_amount = ?,
                           final_amount = ?, updated_by = ?
                     WHERE id = ? AND property_id = ?')
         ->execute([$mulai, $selesai, $tarif, $trx['contract_months'] ?? null, $pkBaru,
-                   $hitung, $hitung, $_SESSION['user']['name'] ?? 'system', $trxId, $pid]);
+                   $hitung, $pakaiKetik ? $totalKetik : null, $nilaiFinal,
+                   $_SESSION['user']['name'] ?? 'system', $trxId, $pid]);
 
     $trx['period_key']       = $pkBaru;
     $trx['total_calculated'] = $hitung;
-    $trx['override_amount']  = null;
-    $trx['final_amount']     = $hitung;
+    $trx['override_amount']  = $pakaiKetik ? $totalKetik : null;
+    $trx['final_amount']     = $nilaiFinal;
 
     // Income. Dokumen ini belum diteken client (statusnya draft/rejected), jadi
     // menurut alur PIC → Asmen → Manager → TTD client alokasinya memang harus
@@ -1896,22 +1922,28 @@ function _skp_simpan_periode(PDO $pdo, int $pid, int $trxId, ?array $skp, array 
     $pdo->prepare("UPDATE skp_documents
                       SET start_date = ?, end_date = ?, unit_rate = ?, total_amount = ?
                     WHERE id = ? AND property_id = ? AND status <> 'signed'")
-        ->execute([$mulai, $selesai, $tarif, $hitung, (int) $skp['id'], $pid]);
+        ->execute([$mulai, $selesai, $tarif, $nilaiFinal, (int) $skp['id'], $pid]);
 
     audit($pdo, 'update', 'transactions', (string) $trxId, [
         'dari_skp'   => (int) $skp['id'],
         'start_date' => $mulai, 'end_date' => $selesai,
-        'unit_rate'  => $tarif, 'final_amount' => $hitung,
+        'unit_rate'  => $tarif, 'final_amount' => $nilaiFinal,
+        'total_diketik' => $pakaiKetik ? $totalKetik : null,
     ], [
         'start_date' => (string) $src['start_date'], 'end_date' => (string) $src['end_date'],
         'unit_rate'  => (float) ($src['unit_rate'] ?? 0),
         'final_amount' => (float) ($src['final_amount'] ?: $src['total_calculated']),
     ]);
 
-    $pesan = 'Masa sewa jadi ' . $mulai . ' s/d ' . $selesai . ', harga jadi Rp '
-           . number_format($tarif, 0, ',', '.') . ' → nilai kontrak dihitung ulang jadi Rp '
-           . number_format($hitung, 0, ',', '.') . '.';
-    if ($adaOverride) $pesan .= ' Nilai override manual yang lama dilepas supaya harga baru ini yang dipakai.';
+    $pesan = 'Masa sewa jadi ' . $mulai . ' s/d ' . $selesai . ', tarif jadi Rp '
+           . number_format($tarif, 0, ',', '.') . ' → nilai kontrak '
+           . ($pakaiKetik ? 'dipakai sesuai yang Anda ketik: Rp ' : 'dihitung ulang jadi Rp ')
+           . number_format($nilaiFinal, 0, ',', '.') . '.';
+    if ($pakaiKetik && round($nilaiFinal) !== round($hitung)) {
+        $pesan .= ' (Hitungan otomatis Rp ' . number_format($hitung, 0, ',', '.') . ' — beda Rp '
+                . number_format(abs($nilaiFinal - $hitung), 0, ',', '.') . '.)';
+    }
+    if ($adaOverride) $pesan .= ' Nilai manual yang lama dilepas supaya harga baru ini yang dipakai.';
     $pesan .= $ikutTtd
         ? ' Income tetap di luar laporan sampai client menandatangani.'
         : ' Alokasi income diperbarui mengikuti angka baru.';
