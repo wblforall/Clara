@@ -81,10 +81,13 @@ function _dr_dokumen_saya(PDO $pdo, int $pid): array
     $peran = current_role();
     $uname = (string) ($_SESSION['user']['name'] ?? '');
     $pic   = ApprovalLine::namaPic($pdo, $pid);
+    $semua = in_array($peran, ['superadmin', 'admin'], true);
+    $akuPic = $pic !== '' ? $pic : "\0";   // "\0" = tidak mungkin cocok
 
+    // ── A. Dokumen (SKP / SKS / Form Utilities) ──────────────────────────────
     $where = ['s.property_id = ?', 's.deleted_at IS NULL'];
     $par   = [$pid];
-    if (!in_array($peran, ['superadmin', 'admin'], true)) {
+    if (!$semua) {
         // Pemilik income sesungguhnya ada di TRANSAKSINYA, bukan hanya di
         // dokumen. Banyak dokumen dibiarkan tanpa pic_name padahal transaksinya
         // jelas atas nama seseorang — kalau hanya kolom dokumen yang dicocokkan,
@@ -94,8 +97,8 @@ function _dr_dokumen_saya(PDO $pdo, int $pid): array
                                 AND (tx.skp_id = s.id OR tx.id = s.transaction_id)
                                 AND tx.pic_name = ?)";
         $where[] = "(s.pic_name = ? OR $punyaTrx OR (COALESCE(s.pic_name, '') = '' AND s.created_by = ?))";
-        $par[] = $pic !== '' ? $pic : "\0";   // "\0" = tidak mungkin cocok
-        $par[] = $pic !== '' ? $pic : "\0";
+        $par[] = $akuPic;
+        $par[] = $akuPic;
         $par[] = $uname;
     }
     $where[] = "NOT EXISTS (SELECT 1 FROM deletion_requests d
@@ -104,9 +107,7 @@ function _dr_dokumen_saya(PDO $pdo, int $pid): array
     // Kode unit, periode dan NILAI tidak selalu ada di baris dokumennya sendiri.
     // Dokumen Gudang/Media yang berdiri sendiri menyimpannya di sana, tetapi
     // dokumen perpanjangan dan dokumen dari Surat Penawaran menyimpannya di
-    // transaksi / penawarannya — kolom di skp_documents dibiarkan kosong. Tanpa
-    // COALESCE ini seluruh daftar tampil "- · Rp 0", dan angka yang dipakai
-    // untuk memperingatkan "sekian income akan hilang" jadi nol semua.
+    // transaksi / penawarannya — kolom di skp_documents dibiarkan kosong.
     //
     // Nilainya DIJUMLAHKAN dari transaksinya, bukan diambil satu: penawaran
     // paket melahirkan beberapa transaksi di bawah satu dokumen, dan yang akan
@@ -119,8 +120,6 @@ function _dr_dokumen_saya(PDO $pdo, int $pid): array
     // Nilai kontrak BELUM TENTU sama dengan income yang sedang duduk di laporan.
     // Dokumen draft atau yang belum ditandatangani client memang belum punya
     // baris alokasi sama sekali — menghapusnya tidak mengurangi income siapa pun.
-    // Dua angka ini harus dibedakan, kalau tidak peringatan "sekian akan hilang"
-    // menakut-nakuti untuk sesuatu yang tidak akan terjadi.
     $incomeSql = '(SELECT COALESCE(SUM(a.amount), 0)
                      FROM transaction_allocations a
                      JOIN transactions t3 ON t3.id = a.transaction_id
@@ -143,10 +142,81 @@ function _dr_dokumen_saya(PDO $pdo, int $pid): array
               LEFT JOIN offers o          ON o.id = s.offer_id
               LEFT JOIN master_clients oc ON oc.id = o.client_id
              WHERE ' . implode(' AND ', $where) . '
-             ORDER BY s.id DESC LIMIT 300';
+             ORDER BY s.id DESC LIMIT 500';
     $st = $pdo->prepare($sql);
     $st->execute($par);
-    return $st->fetchAll(PDO::FETCH_ASSOC);
+
+    $hasil = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $r['jenis_baris'] = 'dok';
+        $r['kunci']       = 's:' . (int) $r['id'];
+        $r['trx_id']      = (int) ($r['transaction_id'] ?? 0);
+        $hasil[] = $r;
+    }
+
+    // ── B. Transaksi yang BELUM punya dokumen sama sekali ────────────────────
+    //
+    // Inilah sebagian besar data yang sebenarnya perlu bisa dihapus: input
+    // langsung dari menu Exhibition/Media/Gudang, tanpa pernah dibuatkan
+    // SKP/SKS. Sebelum ini tidak ada satu pun cara mengajukannya — seluruh
+    // Gudang, misalnya, tidak pernah muncul karena memang tidak berdokumen.
+    $w2  = ['t.property_id = ?', 't.deleted_at IS NULL'];
+    $p2  = [$pid];
+    if (!$semua) {
+        $w2[] = '(t.pic_name = ? OR (COALESCE(t.pic_name, \'\') = \'\' AND t.created_by = ?))';
+        $p2[] = $akuPic;
+        $p2[] = $uname;
+    }
+    // Tanpa dokumen: tidak ada skp_documents yang menunjuk transaksi ini, dan
+    // transaksi ini tidak menunjuk dokumen mana pun.
+    $w2[] = "NOT EXISTS (SELECT 1 FROM skp_documents s2
+                          WHERE s2.property_id = t.property_id AND s2.deleted_at IS NULL
+                            AND (s2.transaction_id = t.id OR s2.id = t.skp_id))";
+    $w2[] = "NOT EXISTS (SELECT 1 FROM deletion_requests d2
+                          WHERE d2.skp_id IS NULL AND d2.transaction_id = t.id
+                            AND d2.status IN ('menunggu','disetujui','dihapus'))";
+
+    $sql2 = "SELECT t.id AS trx_id, t.module, t.master_code, t.start_date, t.end_date,
+                    t.pic_name, COALESCE(NULLIF(t.final_amount, 0), t.total_calculated) AS total_amount,
+                    (SELECT COALESCE(SUM(a2.amount), 0) FROM transaction_allocations a2
+                      WHERE a2.transaction_id = t.id) AS income_aktif,
+                    tc2.company_name AS client_name
+               FROM transactions t
+               LEFT JOIN master_clients tc2 ON tc2.id = t.client_id
+              WHERE " . implode(' AND ', $w2) . "
+              ORDER BY t.id DESC LIMIT 500";
+    $st2 = $pdo->prepare($sql2);
+    $st2->execute($p2);
+
+    foreach ($st2->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $hasil[] = [
+            'jenis_baris'    => 'trx',
+            'kunci'          => 't:' . (int) $r['trx_id'],
+            'id'             => (int) $r['trx_id'],
+            'trx_id'         => (int) $r['trx_id'],
+            'transaction_id' => (int) $r['trx_id'],
+            'skp_no'         => null,
+            'doc_type'       => null,
+            // Transaksi tanpa dokumen tidak punya status approval — statusnya
+            // memang "belum berdokumen", dan itu yang ditulis apa adanya.
+            'status'         => 'tanpa_dokumen',
+            'module'         => $r['module'],
+            'master_code'    => $r['master_code'],
+            'start_date'     => $r['start_date'],
+            'end_date'       => $r['end_date'],
+            'total_amount'   => $r['total_amount'],
+            'income_aktif'   => $r['income_aktif'],
+            'client_name'    => $r['client_name'],
+            'pic_name'       => $r['pic_name'],
+        ];
+    }
+
+    // Diurutkan ulang: yang terbaru di atas, apa pun jenisnya.
+    usort($hasil, function (array $a, array $b) {
+        return [(string) ($b['start_date'] ?? ''), (int) $b['id']]
+           <=> [(string) ($a['start_date'] ?? ''), (int) $a['id']];
+    });
+    return $hasil;
 }
 
 /**
@@ -174,26 +244,31 @@ function _dr_jenis_alasan(): array
  * jadi hasilnya 0: menghapusnya tidak mengurangi income siapa pun. Angka inilah
  * yang boleh dipakai untuk memperingatkan, bukan nilai kontrak.
  *
- * Mengembalikan [skp_id => jumlah rupiah].
+ * Menangani dua jenis pengajuan: yang menunjuk dokumen (beserta seluruh
+ * transaksi di bawahnya) dan yang menunjuk satu transaksi tanpa dokumen.
+ *
+ * Mengembalikan [id pengajuan => jumlah rupiah].
  */
-function _dr_income_berjalan(PDO $pdo, int $pid, array $skpIds): array
+function _dr_income_berjalan(PDO $pdo, int $pid, array $baris): array
 {
-    $skpIds = array_values(array_unique(array_filter(array_map('intval', $skpIds))));
-    if (!$skpIds) return [];
-    $tanya = implode(',', array_fill(0, count($skpIds), '?'));
-    $st = $pdo->prepare(
-        "SELECT s.id, COALESCE(SUM(a.amount), 0) AS income
-           FROM skp_documents s
-           LEFT JOIN transactions t
-                  ON t.property_id = s.property_id AND t.deleted_at IS NULL
-                 AND (t.skp_id = s.id OR t.id = s.transaction_id)
-           LEFT JOIN transaction_allocations a ON a.transaction_id = t.id
-          WHERE s.property_id = ? AND s.id IN ($tanya)
-          GROUP BY s.id"
-    );
-    $st->execute(array_merge([$pid], $skpIds));
     $out = [];
-    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $out[(int) $r['id']] = (float) $r['income'];
+    $dok = $pdo->prepare(
+        "SELECT COALESCE(SUM(a.amount), 0)
+           FROM transactions t
+           LEFT JOIN transaction_allocations a ON a.transaction_id = t.id
+          WHERE t.property_id = ? AND t.deleted_at IS NULL
+            AND (t.skp_id = ? OR t.id = (SELECT s.transaction_id FROM skp_documents s WHERE s.id = ?))"
+    );
+    $trx = $pdo->prepare(
+        "SELECT COALESCE(SUM(a.amount), 0) FROM transaction_allocations a
+          WHERE a.property_id = ? AND a.transaction_id = ?"
+    );
+    foreach ($baris as $r) {
+        $id    = (int) $r['id'];
+        $skpId = (int) ($r['skp_id'] ?? 0);
+        if ($skpId > 0) { $dok->execute([$pid, $skpId, $skpId]); $out[$id] = (float) $dok->fetchColumn(); }
+        else            { $trx->execute([$pid, (int) ($r['transaction_id'] ?? 0)]); $out[$id] = (float) $trx->fetchColumn(); }
+    }
     return $out;
 }
 
@@ -237,6 +312,7 @@ function _dr_badge_skp(string $status): string
         'approved'  => ['Disetujui', '#065f46', '#d1fae5'],
         'signed'    => ['Ber-TTD Client', '#1d4ed8', '#dbeafe'],
         'rejected'  => ['Dikembalikan', '#991b1b', '#fee2e2'],
+        'tanpa_dokumen' => ['Tanpa dokumen', '#5b21b6', '#ede9fe'],
         default     => [$status !== '' ? $status : '—', '#334155', '#f1f5f9'],
     };
     return '<span class="dr-pil" style="background:' . $latar . ';color:' . $warna . '">' . h($teks) . '</span>';
@@ -284,7 +360,7 @@ function deletion_request_page(PDO $pdo): void
     // Income yang benar-benar berjalan untuk tiap pengajuan yang menunggu —
     // dibaca sekarang, bukan dari salinan saat diajukan, karena di antara
     // pengajuan dan keputusan dokumennya bisa saja baru ditandatangani client.
-    $incomeKini = _dr_income_berjalan($pdo, $pid, array_column($perluPutus, 'skp_id'));
+    $incomeKini = _dr_income_berjalan($pdo, $pid, $perluPutus);
     // Boleh memulihkan: pemutus atau pemegang manage_deleted — aturan yang sama
     // dengan yang diperiksa deletion_request_restore().
     $bolehPulih = $bolehHapus || $bolehPutus;
@@ -351,8 +427,12 @@ function deletion_request_page(PDO $pdo): void
         // bawahnya. data-urut diisi nilai mentah supaya pengurutan kolom tidak
         // ikut format tampilan.
         $selDok = function (array $d): string {
-            $no = $d['doc_no'] ?? ($d['skp_no'] ?? '');
-            $no = $no !== '' ? $no : ('draft #' . ($d['skp_id'] ?? $d['id']));
+            $no = (string) ($d['doc_no'] ?? ($d['skp_no'] ?? ''));
+            if ($no === '') {
+                $no = (int) ($d['skp_id'] ?? 0) > 0
+                    ? 'draft #' . (int) $d['skp_id']
+                    : 'Transaksi #' . (int) ($d['transaction_id'] ?? $d['id']);
+            }
             return '<td data-urut="' . h($no) . '"><b>' . h($no) . '</b>'
                  . '<div class="muted" style="font-size:11px">' . h($d['client_name'] ?: '—') . '</div></td>';
         };
@@ -556,7 +636,7 @@ function deletion_request_page(PDO $pdo): void
             <?php else: ?>
             <?php foreach ($grup as $rows): $u = $rows[0];
                 $nilaiGrup  = array_sum(array_map(fn($r) => (float) $r['nilai'], $rows));
-                $incomeGrup = array_sum(array_map(fn($r) => (float) ($incomeKini[(int) $r['skp_id']] ?? 0), $rows)); ?>
+                $incomeGrup = array_sum(array_map(fn($r) => (float) ($incomeKini[(int) $r['id']] ?? 0), $rows)); ?>
             <div style="border:1px solid #fde68a;background:#fff;border-radius:9px;padding:11px;margin-bottom:10px">
                 <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;justify-content:space-between">
                     <div style="font-size:12px;color:#92400e">
@@ -583,7 +663,7 @@ function deletion_request_page(PDO $pdo): void
                             <th style="text-align:right">Nilai Kontrak</th>
                             <th style="text-align:right">Income Berjalan</th><th>PIC</th></tr></thead>
                         <tbody>
-                        <?php foreach ($rows as $d): $inc = (float) ($incomeKini[(int) $d['skp_id']] ?? 0); ?>
+                        <?php foreach ($rows as $d): $inc = (float) ($incomeKini[(int) $d['id']] ?? 0); ?>
                             <tr>
                                 <td><?= h(_dr_modul($d['module'] ?? null)) ?></td>
                                 <?= $selDok($d) ?>
@@ -627,13 +707,13 @@ function deletion_request_page(PDO $pdo): void
                 dan income PIC berkurang sebesar nilai dokumennya. Keliru? Ada tombol <strong>Pulihkan</strong> di Riwayat.
             </p>
             <?php if (!$dokumen): ?>
-                <p class="dr-kosong" style="margin:0">Tidak ada dokumen milik Anda yang bisa diajukan.
-                   Dokumen yang pengajuannya sedang berjalan atau sudah dihapus tidak muncul di sini.</p>
+                <p class="dr-kosong" style="margin:0">Tidak ada data milik Anda yang bisa diajukan.
+                   Yang pengajuannya sedang berjalan atau sudah dihapus tidak muncul di sini.</p>
             <?php else: ?>
             <form method="post" action="?r=deletion_request_save">
                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
 
-                <label style="display:block;margin-bottom:5px">Dokumen yang mau dihapus <span style="color:#b91c1c">*</span></label>
+                <label style="display:block;margin-bottom:5px">Data yang mau dihapus <span style="color:#b91c1c">*</span></label>
                 <?php
                 // Jumlah per modul untuk label saringan — angka di tombolnya
                 // membuat orang tahu ada berapa tanpa harus menekannya dulu.
@@ -644,14 +724,14 @@ function deletion_request_page(PDO $pdo): void
                 }
                 ?>
                 <div class="dr-bar">
-                    <input class="dr-cari" data-cari placeholder="Cari nomor SKP, client, atau unit…">
+                    <input class="dr-cari" data-cari placeholder="Cari nomor SKP / transaksi, client, atau unit…">
                     <select id="dr-modul" style="width:auto;min-width:150px">
                         <option value="">Semua modul (<?= (int) $perModul[''] ?>)</option>
                         <option value="cl">Exhibition (<?= (int) $perModul['cl'] ?>)</option>
                         <option value="media">Media (<?= (int) $perModul['media'] ?>)</option>
                         <option value="gudang">Gudang (<?= (int) $perModul['gudang'] ?>)</option>
                     </select>
-                    <span class="help" data-hitung><?= count($dokumen) ?> dokumen</span>
+                    <span class="help" data-hitung><?= count($dokumen) ?> data</span>
                     <span class="help" style="margin-left:auto">Klik judul kolom untuk mengurutkan</span>
                 </div>
                 <?php /* Tabel berkolom, bukan satu baris teks panjang: nomor, client, unit,
@@ -677,13 +757,19 @@ function deletion_request_page(PDO $pdo): void
                                 : '—';
                             $inc = (float) ($d['income_aktif'] ?? 0); ?>
                             <tr data-modul="<?= h((string) ($d['module'] ?? '')) ?>">
-                                <td><input type="checkbox" name="skp_id[]" value="<?= (int) $d['id'] ?>"
+                                <td><input type="checkbox" name="pilih[]" value="<?= h((string) $d['kunci']) ?>"
                                            class="dr-pick" data-nilai="<?= (float) $d['total_amount'] ?>"
                                            data-income="<?= $inc ?>"
                                            style="width:16px;height:16px;margin:0"></td>
                                 <td><?= h(_dr_modul($d['module'] ?? null)) ?></td>
+                                <?php /* Transaksi tanpa dokumen dikenali dari nomor transaksinya —
+                                         itu satu-satunya nomor yang dimilikinya. */ ?>
                                 <td data-urut="<?= h((string) ($d['skp_no'] ?: $d['id'])) ?>">
-                                    <b><?= h(_dr_jenis($d['doc_type'])) ?> <?= h($d['skp_no'] ?: 'draft #' . $d['id']) ?></b></td>
+                                    <?php if (($d['jenis_baris'] ?? '') === 'trx'): ?>
+                                    <b>Transaksi #<?= (int) $d['trx_id'] ?></b>
+                                    <?php else: ?>
+                                    <b><?= h(_dr_jenis($d['doc_type'])) ?> <?= h($d['skp_no'] ?: 'draft #' . $d['id']) ?></b>
+                                    <?php endif; ?></td>
                                 <td><?= h($d['client_name'] ?: '—') ?></td>
                                 <td><?= h($d['master_code'] ?: '—') ?></td>
                                 <td style="white-space:nowrap" data-urut="<?= h((string) $d['start_date']) ?>"><?= h($periode) ?></td>
@@ -705,9 +791,11 @@ function deletion_request_page(PDO $pdo): void
                         </tbody>
                     </table>
                 </div>
-                <p class="help" style="margin:6px 0 0">Hanya dokumen <strong>atas nama Anda sebagai PIC</strong>.
-                    Dokumen milik rekan tidak muncul &mdash; income-nya milik dia, jadi dia yang mengajukan.
-                    Boleh pilih <strong>beberapa sekaligus</strong> bila alasannya sama; pemutus memutuskannya sekali.</p>
+                <p class="help" style="margin:6px 0 0">Hanya data <strong>atas nama Anda sebagai PIC</strong>.
+                    Milik rekan tidak muncul &mdash; income-nya milik dia, jadi dia yang mengajukan.
+                    Boleh pilih <strong>beberapa sekaligus</strong> bila alasannya sama; pemutus memutuskannya sekali.
+                    Baris berlabel <strong>Tanpa dokumen</strong> adalah transaksi yang diinput langsung dari menu
+                    Exhibition / Media / Gudang dan belum pernah dibuatkan SKP/SKS &mdash; sekarang ikut bisa diajukan.</p>
                 <div id="dr-ringkas" style="margin-top:7px;font-weight:700;color:#991b1b;font-size:12.5px"></div>
 
                 <div class="grid2" style="margin-top:11px">
@@ -986,7 +1074,7 @@ function deletion_request_page(PDO $pdo): void
                         r.style.display = tampil ? '' : 'none';
                         if (tampil) n++;
                     });
-                    if (info) info.textContent = n + ' dari ' + baris.length + ' dokumen';
+                    if (info) info.textContent = n + ' dari ' + baris.length + ' data';
                 }
                 if (cari)  cari.addEventListener('input', saring);
                 if (modul) modul.addEventListener('change', saring);
@@ -1045,10 +1133,10 @@ function deletion_request_page(PDO $pdo): void
                 // Dua angka, dan keduanya disebut. Menyebut nilai kontrak saja
                 // membuat orang mengira income-nya terpotong sebesar itu; padahal
                 // dokumen yang belum diteken client memang belum pernah masuk.
-                var t = '<b>' + n + ' dokumen dipilih</b> — nilai kontrak ' + rp(jml) + '.<br>';
+                var t = '<b>' + n + ' data dipilih</b> — nilai kontrak ' + rp(jml) + '.<br>';
                 if (inc > 0) {
                     t += 'Yang benar-benar hilang dari income: <b>' + rp(inc) + '</b>';
-                    t += belum ? ' (' + belum + ' dokumen lainnya belum pernah masuk laporan, jadi tidak mengurangi apa pun).' : '.';
+                    t += belum ? ' (' + belum + ' lainnya belum pernah masuk laporan, jadi tidak mengurangi apa pun).' : '.';
                 } else {
                     t += '<b>Tidak ada income yang berkurang</b> — dokumen ini belum pernah masuk laporan '
                        + '(belum ditandatangani client), jadi menghapusnya tidak memotong income siapa pun.';
@@ -1068,7 +1156,7 @@ function deletion_request_page(PDO $pdo): void
             });
             kirim.closest('form').addEventListener('submit', function (e) {
                 var x = hitung();
-                if (!x.n) { e.preventDefault(); alert('Pilih dulu dokumen yang mau dihapus.'); return; }
+                if (!x.n) { e.preventDefault(); alert('Pilih dulu data yang mau dihapus.'); return; }
                 var pesan = 'Kirim pengajuan penghapusan ' + x.n + ' dokumen?\n\n'
                           + 'Nilai kontrak: ' + rp(x.jml) + '\n'
                           + (x.inc > 0
@@ -1108,27 +1196,31 @@ function deletion_request_save(PDO $pdo): void
     $jenis  = array_key_exists((string) post('jenis'), _dr_jenis_alasan()) ? (string) post('jenis') : 'lainnya';
     $uname  = (string) ($_SESSION['user']['name'] ?? 'system');
 
-    // skp_id[] = pilihan baru (beberapa dokumen). skp_id tunggal tetap diterima
-    // supaya tautan/pintasan lama tidak mendadak berhenti bekerja.
-    $minta = $_POST['skp_id'] ?? [];
+    // pilih[] berisi kunci "s:<id dokumen>" atau "t:<id transaksi>" — satu daftar
+    // untuk dua jenis baris. skp_id[] lama tetap diterima supaya tautan atau
+    // halaman yang belum dimuat ulang tidak mendadak berhenti bekerja.
+    $minta = $_POST['pilih'] ?? [];
     if (!is_array($minta)) $minta = [$minta];
-    $minta = array_values(array_unique(array_filter(array_map('intval', $minta))));
+    foreach ((array) ($_POST['skp_id'] ?? []) as $lamaId) {
+        if ((int) $lamaId > 0) $minta[] = 's:' . (int) $lamaId;
+    }
+    $minta = array_values(array_unique(array_filter(array_map('strval', $minta))));
 
     if ($alasan === '') { flash('Alasan penghapusan wajib diisi.'); redirect_to('deletion_request'); }
-    if (!$minta)        { flash('Pilih dulu dokumen yang mau dihapus.'); redirect_to('deletion_request'); }
+    if (!$minta)        { flash('Pilih dulu data yang mau dihapus.'); redirect_to('deletion_request'); }
 
     // Dokumennya harus benar-benar boleh diajukan orang ini. Diperiksa ulang di
     // sini, bukan percaya isian formulir — isian formulir bisa diubah.
     $boleh = [];
-    foreach (_dr_dokumen_saya($pdo, $pid) as $d) $boleh[(int) $d['id']] = $d;
+    foreach (_dr_dokumen_saya($pdo, $pid) as $d) $boleh[(string) $d['kunci']] = $d;
 
     $sah = $tolak = [];
-    foreach ($minta as $skpId) {
-        if (isset($boleh[$skpId])) $sah[] = $boleh[$skpId];
-        else                       $tolak[] = $skpId;
+    foreach ($minta as $kunci) {
+        if (isset($boleh[$kunci])) $sah[] = $boleh[$kunci];
+        else                       $tolak[] = $kunci;
     }
     if (!$sah) {
-        flash('Dokumen itu tidak bisa Anda ajukan — bukan milik Anda, atau pengajuannya sudah ada.');
+        flash('Data itu tidak bisa Anda ajukan — bukan milik Anda, atau pengajuannya sudah ada.');
         redirect_to('deletion_request');
     }
 
@@ -1147,9 +1239,16 @@ function deletion_request_save(PDO $pdo): void
         $periode = ($dok['start_date'] ?? '') && ($dok['end_date'] ?? '')
             ? date('d/m/Y', strtotime($dok['start_date'])) . ' s/d ' . date('d/m/Y', strtotime($dok['end_date']))
             : '';
+        // Transaksi tanpa dokumen: skp_id dibiarkan NULL dan yang dicatat
+        // transaction_id-nya. Nomor dokumennya tidak dikarang — ditulis apa
+        // adanya sebagai nomor transaksi, supaya riwayat tetap bisa dilacak.
+        $trxOnly = ($dok['jenis_baris'] ?? 'dok') === 'trx';
         $ins->execute([
-            $pid, (int) $dok['id'], $dok['transaction_id'] ?: null,
-            $dok['skp_no'] ?: null, $dok['doc_type'] ?: null, $dok['module'] ?: null,
+            $pid,
+            $trxOnly ? null : (int) $dok['id'],
+            $dok['transaction_id'] ?: null,
+            $trxOnly ? ('Transaksi #' . (int) $dok['trx_id']) : ($dok['skp_no'] ?: null),
+            $dok['doc_type'] ?: null, $dok['module'] ?: null,
             $dok['client_name'] ?: null, $dok['master_code'] ?: null,
             $periode, (float) ($dok['total_amount'] ?? 0), $dok['pic_name'] ?: null,
             $alasan, $jenis, $batch, $uname, (int) ($_SESSION['user']['id'] ?? 0),
@@ -1165,7 +1264,7 @@ function deletion_request_save(PDO $pdo): void
         ? 'Pengajuan terkirim ke ' . ($set['role_name'] ?: 'pemutus') . '. Datanya BELUM dihapus.'
         : count($ids) . ' dokumen diajukan dalam satu pengajuan (batch ' . $batch . ') ke '
           . ($set['role_name'] ?: 'pemutus') . '. Datanya BELUM dihapus.';
-    if ($tolak) $pesan .= ' ' . count($tolak) . ' dokumen dilewati karena bukan milik Anda atau sudah pernah diajukan.';
+    if ($tolak) $pesan .= ' ' . count($tolak) . ' data dilewati karena bukan milik Anda atau sudah pernah diajukan.';
     flash($pesan);
     redirect_to('deletion_request');
 }
@@ -1184,15 +1283,22 @@ function deletion_request_save(PDO $pdo): void
  */
 function _dr_hapus_satu(PDO $pdo, int $pid, array $d, string $uname): array
 {
-    $skpId = (int) $d['skp_id'];
+    $skpId = (int) ($d['skp_id'] ?? 0);
     $id    = (int) $d['id'];
 
-    // Semua transaksi yang dipayungi dokumen ini — penawaran paket bisa
-    // melahirkan beberapa transaksi dari satu dokumen.
-    $tq = $pdo->prepare('SELECT id FROM transactions
-                          WHERE property_id = ? AND deleted_at IS NULL
-                            AND (skp_id = ? OR id = (SELECT s.transaction_id FROM skp_documents s WHERE s.id = ?))');
-    $tq->execute([$pid, $skpId, $skpId]);
+    if ($skpId > 0) {
+        // Semua transaksi yang dipayungi dokumen ini — penawaran paket bisa
+        // melahirkan beberapa transaksi dari satu dokumen.
+        $tq = $pdo->prepare('SELECT id FROM transactions
+                              WHERE property_id = ? AND deleted_at IS NULL
+                                AND (skp_id = ? OR id = (SELECT s.transaction_id FROM skp_documents s WHERE s.id = ?))');
+        $tq->execute([$pid, $skpId, $skpId]);
+    } else {
+        // Pengajuan atas transaksi yang tidak berdokumen — hanya transaksi itu.
+        $tq = $pdo->prepare('SELECT id FROM transactions
+                              WHERE property_id = ? AND deleted_at IS NULL AND id = ?');
+        $tq->execute([$pid, (int) ($d['transaction_id'] ?? 0)]);
+    }
     $trxIds = array_map('intval', $tq->fetchAll(PDO::FETCH_COLUMN));
 
     $nAlok = 0;
@@ -1216,8 +1322,10 @@ function _dr_hapus_satu(PDO $pdo, int $pid, array $d, string $uname): array
 
     // Dokumennya ditandai terhapus, bukan dibuang. Nomornya sudah terbit dan
     // pernah sampai ke client — jejaknya harus tetap bisa dibuka.
-    $pdo->prepare('UPDATE skp_documents SET deleted_at = NOW(), deleted_by = ? WHERE id = ? AND property_id = ?')
-        ->execute([$uname, $skpId, $pid]);
+    if ($skpId > 0) {
+        $pdo->prepare('UPDATE skp_documents SET deleted_at = NOW(), deleted_by = ? WHERE id = ? AND property_id = ?')
+            ->execute([$uname, $skpId, $pid]);
+    }
 
     return [count($trxIds), $nAlok, $rpAlok];
 }
@@ -1365,33 +1473,53 @@ function deletion_request_restore(PDO $pdo): void
     $d = $st->fetch(PDO::FETCH_ASSOC);
     if (!$d) { flash('Pengajuan tidak ditemukan, atau datanya tidak dalam keadaan terhapus.'); redirect_to('deletion_request'); }
 
-    $skpId = (int) $d['skp_id'];
+    $skpId = (int) ($d['skp_id'] ?? 0);
+    $trxId = (int) ($d['transaction_id'] ?? 0);
 
-    // Dokumen yang nomornya sudah dipakai pengajuan lain yang masih berjalan
-    // tidak boleh dipulihkan diam-diam — nanti ada dua pengajuan hidup untuk
-    // satu berkas dan keputusan keduanya saling membatalkan.
-    $bentrok = $pdo->prepare("SELECT id FROM deletion_requests
-                               WHERE property_id = ? AND skp_id = ? AND id <> ? AND status = 'menunggu' LIMIT 1");
-    $bentrok->execute([$pid, $skpId, $id]);
+    // Data yang sudah dipakai pengajuan lain yang masih berjalan tidak boleh
+    // dipulihkan diam-diam — nanti ada dua pengajuan hidup untuk satu berkas
+    // dan keputusan keduanya saling membatalkan.
+    if ($skpId > 0) {
+        $bentrok = $pdo->prepare("SELECT id FROM deletion_requests
+                                   WHERE property_id = ? AND skp_id = ? AND id <> ? AND status = 'menunggu' LIMIT 1");
+        $bentrok->execute([$pid, $skpId, $id]);
+    } else {
+        $bentrok = $pdo->prepare("SELECT id FROM deletion_requests
+                                   WHERE property_id = ? AND skp_id IS NULL AND transaction_id = ?
+                                     AND id <> ? AND status = 'menunggu' LIMIT 1");
+        $bentrok->execute([$pid, $trxId, $id]);
+    }
     if ($lain = $bentrok->fetchColumn()) {
-        flash('Dokumen ini punya pengajuan lain yang masih menunggu keputusan (#' . (int) $lain . '). Putuskan dulu yang itu.');
+        flash('Data ini punya pengajuan lain yang masih menunggu keputusan (#' . (int) $lain . '). Putuskan dulu yang itu.');
         redirect_to('deletion_request');
     }
 
     $pdo->beginTransaction();
     try {
-        $sq = $pdo->prepare('SELECT status FROM skp_documents WHERE id = ? AND property_id = ?');
-        $sq->execute([$skpId, $pid]);
-        $statusDok = (string) ($sq->fetchColumn() ?: '');
+        // Tanpa dokumen tidak ada status TTD yang bisa dibaca. Transaksi seperti
+        // itu memang tidak pernah melewati alur tanda tangan, jadi alokasinya
+        // dibangun apa adanya — persis keadaan sebelum dihapus.
+        $statusDok = 'signed';
+        if ($skpId > 0) {
+            $sq = $pdo->prepare('SELECT status FROM skp_documents WHERE id = ? AND property_id = ?');
+            $sq->execute([$skpId, $pid]);
+            $statusDok = (string) ($sq->fetchColumn() ?: '');
+        }
 
         // Transaksi yang ikut terhapus oleh pengajuan INI — dikenali dari
         // cancel_reason yang ditulis saat penghapusan, supaya transaksi yang
         // sudah dibatalkan lebih dulu karena sebab lain tidak ikut dihidupkan.
         $tanda = 'Pengajuan hapus #' . $id . ':%';
-        $tq = $pdo->prepare('SELECT * FROM transactions
-                              WHERE property_id = ? AND deleted_at IS NOT NULL AND cancel_reason LIKE ?
-                                AND (skp_id = ? OR id = (SELECT s.transaction_id FROM skp_documents s WHERE s.id = ?))');
-        $tq->execute([$pid, $tanda, $skpId, $skpId]);
+        if ($skpId > 0) {
+            $tq = $pdo->prepare('SELECT * FROM transactions
+                                  WHERE property_id = ? AND deleted_at IS NOT NULL AND cancel_reason LIKE ?
+                                    AND (skp_id = ? OR id = (SELECT s.transaction_id FROM skp_documents s WHERE s.id = ?))');
+            $tq->execute([$pid, $tanda, $skpId, $skpId]);
+        } else {
+            $tq = $pdo->prepare('SELECT * FROM transactions
+                                  WHERE property_id = ? AND deleted_at IS NOT NULL AND cancel_reason LIKE ? AND id = ?');
+            $tq->execute([$pid, $tanda, $trxId]);
+        }
         $trxs = $tq->fetchAll(PDO::FETCH_ASSOC);
 
         $nAlok = 0; $rpPulih = 0.0;
@@ -1407,8 +1535,10 @@ function deletion_request_restore(PDO $pdo): void
             $rpPulih += (float) $jm->fetchColumn();
         }
 
-        $pdo->prepare('UPDATE skp_documents SET deleted_at = NULL, deleted_by = NULL WHERE id = ? AND property_id = ?')
-            ->execute([$skpId, $pid]);
+        if ($skpId > 0) {
+            $pdo->prepare('UPDATE skp_documents SET deleted_at = NULL, deleted_by = NULL WHERE id = ? AND property_id = ?')
+                ->execute([$skpId, $pid]);
+        }
 
         $upd = $pdo->prepare("UPDATE deletion_requests
                                  SET status = 'dipulihkan', restored_by = ?, restored_at = NOW(),
