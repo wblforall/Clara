@@ -13,6 +13,16 @@
 
 ## Fitur & Perbaikan — 9 Oktober 2026
 
+### Peran di luar daftar tidak lagi kehilangan izinnya saat Role & Permission disimpan
+
+- Menekan **Simpan** di halaman Role & Permission menghapus seluruh baris izin selain `superadmin`, lalu
+  mengisinya kembali **hanya** untuk lima peran yang tampil di layar (supervisor, sales, finance, administrasi,
+  viewer). Peran di luar lima itu &mdash; mis. peran buatan sendiri &mdash; kehilangan **seluruh** izinnya,
+  diam-diam, tanpa pernah muncul di halaman tersebut.
+- Diuji pada data yang sama: cara lama membuat peran khusus turun dari 3 izin menjadi **0**; sekarang tetap 3,
+  sementara peran yang memang diedit tetap tersimpan benar.
+- Yang dikosongkan sekarang hanya peran yang benar-benar ada di layar itu.
+
 ### Batas jumlah baris tidak lagi menyembunyikan data diam-diam
 
 - Daftar pengajuan memotong di 1000 baris per modul dan Riwayat di 200 baris &mdash; keduanya **tanpa
