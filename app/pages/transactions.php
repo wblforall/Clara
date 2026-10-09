@@ -1128,7 +1128,13 @@ function transaction_save(PDO $pdo): void
         $s = $pdo->prepare('SELECT SUM(amount) FROM transaction_allocations WHERE transaction_id=? AND property_id=?');
         $s->execute([$id, current_property_id()]);
         $newFinal = (float) ($s->fetchColumn() ?: $trx['final_amount']);
-        $pdo->prepare('UPDATE transactions SET final_amount=? WHERE id=?')->execute([$newFinal, $id]);
+        // override_amount IKUT disamakan. Kalau hanya final_amount yang diubah,
+        // kotak "Override Aktual" di form Edit menyimpan angka lama — dan
+        // pengeditan berikutnya (tanpa menyentuh nominal per bulan) akan
+        // mengirim angka lama itu kembali, diam-diam menurunkan nilai kontrak
+        // ke besaran sebelum alokasinya disesuaikan.
+        $pdo->prepare('UPDATE transactions SET final_amount=?, override_amount=? WHERE id=?')
+            ->execute([$newFinal, $newFinal, $id]);
     }
     audit($pdo, 'create', 'transactions', (string) $id, $trx);
     // Datang dari tombol "Perpanjang": lanjut langsung ke form SKP periode baru
@@ -1928,7 +1934,10 @@ function transaction_update(PDO $pdo): void
             $s = $pdo->prepare('SELECT SUM(amount) FROM transaction_allocations WHERE transaction_id=? AND property_id=?');
             $s->execute([$id, current_property_id()]);
             $newFinal = (float) ($s->fetchColumn() ?: $trx['final_amount']);
-            $pdo->prepare('UPDATE transactions SET final_amount=? WHERE id=?')->execute([$newFinal, $id]);
+            // Lihat catatan yang sama di transaction_save(): override_amount wajib
+            // ikut, kalau tidak angka lama akan dikirim balik pada edit berikutnya.
+            $pdo->prepare('UPDATE transactions SET final_amount=?, override_amount=? WHERE id=?')
+                ->execute([$newFinal, $newFinal, $id]);
         }
     }
     audit($pdo, 'update', 'transactions', (string) $id, $trx, (array) $existing);
