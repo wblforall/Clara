@@ -40,6 +40,13 @@ pemutus (bawaan: Manager, bisa disetel per properti) menyetujui atau menolak, da
   nilainya diambil dari kolom di tabel dokumen, padahal dokumen perpanjangan dan dokumen dari Surat Penawaran
   menyimpannya di transaksi / penawarannya. Sekarang dibaca berurutan dari transaksi → dokumen → penawaran, dan
   untuk Penawaran Paket **dijumlahkan dari seluruh transaksi komponennya**. Pengajuan lama ikut diperbaiki. *(migrasi 073)*
+- **Transaksi tanpa dokumen kini bisa diajukan juga.** Sebelumnya pengajuan selalu menunjuk sebuah SKP/SKS/FU,
+  padahal sebagian besar data yang perlu dihapus justru transaksi yang diinput langsung dari menu
+  Exhibition / Media / Gudang dan tidak pernah dibuatkan dokumennya. Akibatnya **seluruh Gudang tidak bisa
+  diajukan sama sekali**, dan dari ratusan transaksi Exhibition hanya puluhan yang muncul. Sekarang keduanya
+  tampil dalam satu daftar: baris berdokumen memakai nomor SKP-nya, baris tanpa dokumen memakai nomor
+  transaksinya dan diberi label **Tanpa dokumen**. Menyetujui, menghapus, dan memulihkan bekerja sama untuk
+  kedua jenis. *(migrasi 075)*
 - **Nilai kontrak dan income dibedakan.** Daftar sempat memperingatkan "Rp 14.560.000 akan hilang dari income"
   untuk dokumen berstatus Draft &mdash; padahal dokumen yang belum ditandatangani client belum pernah masuk laporan,
   jadi menghapusnya tidak memotong income siapa pun. Sekarang ada dua kolom: **Nilai Kontrak** dan **Income Berjalan**
