@@ -1305,7 +1305,14 @@ function skp_form(PDO $pdo): void
                 <input name="reject_note" placeholder="Alasannya (wajib)" style="width:250px;max-width:100%" required>
                 <?php if ($keBawah): ?>
                 <button type="submit" class="btn warn"
-                        onclick="return confirm('Kembalikan dokumen ini ke <?= h($keBawah['label']) ?> untuk diperiksa ulang?\n\nIsi dokumen, nilai, dan transaksinya TIDAK diubah.')">↩ Kembalikan ke <?= h($keBawah['label']) ?></button>
+                        <?php /* Teksnya dititipkan di data-konfirm, bukan ditulis langsung
+                                 ke dalam string JavaScript. h() memang mengubah ' jadi &#039;,
+                                 tetapi peramban men-decode entitas itu SEBELUM JavaScript
+                                 dibaca — sehingga nama jabatan yang mengandung kutip bisa
+                                 memutus string dan menyisipkan kode. Lewat dataset, isinya
+                                 dibaca sebagai teks biasa. */ ?>
+                        data-konfirm="<?= h('Kembalikan dokumen ini ke ' . $keBawah['label'] . " untuk diperiksa ulang?\n\nIsi dokumen, nilai, dan transaksinya TIDAK diubah.") ?>"
+                        onclick="return confirm(this.dataset.konfirm)">↩ Kembalikan ke <?= h($keBawah['label']) ?></button>
                 <?php endif; ?>
                 <button type="submit" name="ke_pic" value="1" class="btn warn" style="background:#b91c1c"
                         onclick="return confirm('<?= $konfPic ?>')">✗ Tolak &amp; kembalikan ke PIC</button>
