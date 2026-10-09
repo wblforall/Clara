@@ -13,6 +13,17 @@
 
 ## Fitur & Perbaikan — 9 Oktober 2026
 
+### Total Biaya Sewa bisa diisi langsung saat revisi
+
+- Dokumen perpanjangan yang dibuka untuk revisi sudah bisa diubah masa sewa dan tarifnya, tetapi **Total Biaya
+  Sewa** masih kolom mati. Padahal harga akhir sering hasil nego &mdash; bukan tarif &times; luas &times; hari &mdash;
+  dan satu-satunya tempat mengetiknya ada di form transaksi, yang justru tidak lagi tampil di daftar saat
+  dokumennya sedang direvisi. Jalannya buntu.
+- Sekarang ada kotak **Total Biaya Sewa (kosongkan = hitung otomatis)** tepat di bawah tarif. Dikosongkan berarti
+  sistem yang menghitung; diisi berarti angka itu yang dipakai dan disimpan sebagai nilai kesepakatan. Hitungan
+  otomatisnya tetap tersimpan terpisah sebagai pembanding, dan pesan setelah simpan menyebut keduanya bila beda.
+- Mengosongkan kotak itu kembali melepas nilai manualnya &mdash; kembali ke hitungan sistem.
+
 ### Override Aktual tidak lagi tertinggal dari nilai kontrak
 
 - Saat nominal **per bulan** disesuaikan di form transaksi, nilai kontrak dihitung ulang dari jumlah alokasi
