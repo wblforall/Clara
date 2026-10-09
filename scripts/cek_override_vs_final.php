@@ -20,9 +20,14 @@
  * income. Baris yang jumlah alokasinya juga tidak cocok TIDAK disentuh — sebab
  * di situ ada persoalan lain dan menebak akan memperburuk.
  *
- *   php scripts/cek_override_vs_final.php                 # laporan saja
- *   php scripts/cek_override_vs_final.php --id=2062       # periksa satu transaksi
- *   php scripts/cek_override_vs_final.php --terapkan      # samakan override ke alokasi
+ *   php scripts/cek_override_vs_final.php                      # laporan saja
+ *   php scripts/cek_override_vs_final.php --id=2062            # periksa satu transaksi
+ *   php scripts/cek_override_vs_final.php --id=2062 --terapkan # samakan SATU transaksi
+ *   php scripts/cek_override_vs_final.php --terapkan --semua   # samakan semuanya
+ *
+ * --terapkan tanpa --id= atau --semua DITOLAK. Versi pertama skrip ini menyapu
+ * seluruh tabel hanya karena perintahnya pendek, padahal yang ditanyakan satu
+ * transaksi. Cakupan harus disebut, bukan disimpulkan.
  */
 
 declare(strict_types=1);
@@ -34,8 +39,16 @@ require_once CLARA_ROOT . '/app/env.php';
 require_once CLARA_ROOT . '/app/Database.php';
 
 $terapkan = in_array('--terapkan', $argv, true);
+$semua    = in_array('--semua', $argv, true);
 $hanyaId  = 0;
 foreach ($argv as $a) if (preg_match('/^--id=(\d+)$/', $a, $m)) $hanyaId = (int) $m[1];
+
+if ($terapkan && !$hanyaId && !$semua) {
+    echo "\nDitolak: --terapkan harus menyebut cakupannya.\n";
+    echo "  php scripts/cek_override_vs_final.php --id=<ID> --terapkan   (satu transaksi)\n";
+    echo "  php scripts/cek_override_vs_final.php --terapkan --semua     (semuanya)\n";
+    exit(2);
+}
 
 $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
 $pdo = Database::connect();
@@ -76,7 +89,43 @@ if ($hanyaId && !$baris) {
     $beda = abs((float) $t['final_amount'] - (float) $t['alokasi']);
     echo $beda >= 1
         ? "\n  PERHATIAN: nilai kontrak tidak sama dengan jumlah alokasinya (selisih " . $rp($beda) . ").\n"
-        : "\n  Ketiganya cocok — tidak ada yang perlu diperbaiki.\n";
+        : "\n  Nilai kontrak sama dengan jumlah alokasinya.\n";
+
+    // Rincian per bulan. Kalau jumlah alokasi berbeda dari hasil hitung rumus,
+    // selisihnya pasti duduk di satu atau dua bulan tertentu — dan hanya dengan
+    // melihat daftarnya orang bisa memutuskan mana yang benar.
+    $ar = $pdo->prepare("SELECT period_key, allocation_start, allocation_end, allocated_days, pic_name, amount
+                           FROM transaction_allocations WHERE transaction_id = ?
+                          ORDER BY allocation_start, id");
+    $ar->execute([$hanyaId]);
+    $rows = $ar->fetchAll(PDO::FETCH_ASSOC);
+    if ($rows) {
+        echo "\n  Rincian alokasi per bulan:\n";
+        printf("    %-9s %-24s %6s %-14s %16s\n", 'PERIODE', 'RENTANG', 'HARI', 'PIC', 'NOMINAL');
+        foreach ($rows as $r) {
+            printf("    %-9s %-24s %6s %-14s %16s\n", $r['period_key'],
+                $r['allocation_start'] . ' s/d ' . $r['allocation_end'],
+                (string) $r['allocated_days'], substr((string) ($r['pic_name'] ?? '-'), 0, 14), $rp($r['amount']));
+        }
+        printf("    %-42s %14s %16s\n", '', 'JUMLAH', $rp($t['alokasi']));
+    }
+
+    // Hitung ulang menurut rumus, untuk dibandingkan dengan yang tersimpan.
+    require_once CLARA_ROOT . '/app/AllocationService.php';
+    try {
+        $rumus = AllocationService::totalCalculated($t);
+        echo "\n  Hasil hitung rumus  : " . $rp($rumus)
+           . "  (" . $t['pricing_type'] . ", rate " . $rp($t['unit_rate']) . ")\n";
+        $selisih = round((float) $t['alokasi'] - $rumus);
+        if (abs($selisih) >= 1) {
+            echo "  Selisih alokasi vs rumus: " . ($selisih > 0 ? '+' : '') . $rp($selisih) . "\n";
+            echo "\n  Artinya nominal salah satu bulan pernah diketik manual. Yang benar\n";
+            echo "  ditentukan orang, bukan skrip: kalau Rp " . number_format($rumus, 0, ',', '.')
+               . " yang betul, perbaiki bulan\n  yang menyimpang lewat halaman Detail Alokasi.\n";
+        }
+    } catch (Throwable $e) {
+        echo "\n  (rumus tidak bisa dihitung: " . $e->getMessage() . ")\n";
+    }
     exit(0);
 }
 
@@ -109,9 +158,19 @@ if (!$terapkan) {
     exit(0);
 }
 
+// Perubahannya DICATAT di Activity Log, supaya nilai lamanya selalu bisa
+// dilihat dan dikembalikan tanpa menebak.
+require_once CLARA_ROOT . '/app/helpers.php';
+$_SESSION['user'] = ['id' => null, 'name' => 'skrip perbaikan override', 'email' => 'cli', 'role' => 'system'];
 $upd = $pdo->prepare('UPDATE transactions SET override_amount = final_amount, updated_by = ? WHERE id = ?');
 $n = 0;
-foreach ($amanDiperbaiki as $b) { $upd->execute(['skrip perbaikan override', (int) $b['id']]); $n += $upd->rowCount(); }
+foreach ($amanDiperbaiki as $b) {
+    $upd->execute(['skrip perbaikan override', (int) $b['id']]);
+    $n += $upd->rowCount();
+    audit($pdo, 'update', 'transactions', (string) $b['id'],
+        ['override_amount' => (float) $b['final_amount'], 'alasan' => 'disamakan dengan nilai kontrak'],
+        ['override_amount' => (float) $b['override_amount']]);
+}
 echo "\n$n transaksi disamakan. Nilai kontrak & alokasinya TIDAK disentuh — income tidak berubah sepeser pun.\n";
 if ($perluDilihat) {
     echo count($perluDilihat) . " dilewati karena jumlah alokasinya juga berbeda dari nilai kontrak:\n  ";
