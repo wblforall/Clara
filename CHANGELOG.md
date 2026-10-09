@@ -40,6 +40,13 @@ pemutus (bawaan: Manager, bisa disetel per properti) menyetujui atau menolak, da
   nilainya diambil dari kolom di tabel dokumen, padahal dokumen perpanjangan dan dokumen dari Surat Penawaran
   menyimpannya di transaksi / penawarannya. Sekarang dibaca berurutan dari transaksi → dokumen → penawaran, dan
   untuk Penawaran Paket **dijumlahkan dari seluruh transaksi komponennya**. Pengajuan lama ikut diperbaiki. *(migrasi 073)*
+- **Gudang & Media sempat hilang sama sekali dari daftar.** Semua modul berbagi satu batas 500 baris yang
+  diurut dari ID terbesar, sedangkan ID Gudang justru yang paling lama &mdash; ratusan transaksi Exhibition yang
+  lebih baru menenggelamkannya. Diuji pada data yang sama: cara lama mengembalikan 500 baris yang **seluruhnya**
+  Exhibition (Gudang 0, Media 0); sekarang tiap modul diambil terpisah dengan batasnya sendiri.
+- **Daftar dipisah bergolong dan diurut menaik:** dokumen SKP/SKS/FU dulu, lalu Exhibition, Media, dan Gudang
+  menurut ID transaksinya, masing-masing dari terkecil ke terbesar. Pemisahnya bertahan saat kolom diurutkan
+  (pengurutan berlaku di dalam golongan), dan judul golongan ikut hilang saat isinya tersaring habis.
 - **Transaksi tanpa dokumen kini bisa diajukan juga.** Sebelumnya pengajuan selalu menunjuk sebuah SKP/SKS/FU,
   padahal sebagian besar data yang perlu dihapus justru transaksi yang diinput langsung dari menu
   Exhibition / Media / Gudang dan tidak pernah dibuatkan dokumennya. Akibatnya **seluruh Gudang tidak bisa

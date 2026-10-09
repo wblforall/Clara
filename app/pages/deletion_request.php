@@ -142,13 +142,14 @@ function _dr_dokumen_saya(PDO $pdo, int $pid): array
               LEFT JOIN offers o          ON o.id = s.offer_id
               LEFT JOIN master_clients oc ON oc.id = o.client_id
              WHERE ' . implode(' AND ', $where) . '
-             ORDER BY s.id DESC LIMIT 500';
+             ORDER BY s.id ASC LIMIT 1000';
     $st = $pdo->prepare($sql);
     $st->execute($par);
 
     $hasil = [];
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
         $r['jenis_baris'] = 'dok';
+        $r['grup']        = 'dok';
         $r['kunci']       = 's:' . (int) $r['id'];
         $r['trx_id']      = (int) ($r['transaction_id'] ?? 0);
         $hasil[] = $r;
@@ -176,6 +177,10 @@ function _dr_dokumen_saya(PDO $pdo, int $pid): array
                           WHERE d2.skp_id IS NULL AND d2.transaction_id = t.id
                             AND d2.status IN ('menunggu','disetujui','dihapus'))";
 
+    // Diambil TERPISAH per modul, masing-masing dengan batasnya sendiri.
+    // Sebelumnya satu batas dipakai bersama dan diurut dari ID terbesar —
+    // akibatnya ratusan transaksi Exhibition yang ID-nya baru menenggelamkan
+    // seluruh Gudang, yang ID-nya justru lama. Gudang jadi tidak pernah tampil.
     $sql2 = "SELECT t.id AS trx_id, t.module, t.master_code, t.start_date, t.end_date,
                     t.pic_name, COALESCE(NULLIF(t.final_amount, 0), t.total_calculated) AS total_amount,
                     (SELECT COALESCE(SUM(a2.amount), 0) FROM transaction_allocations a2
@@ -183,13 +188,19 @@ function _dr_dokumen_saya(PDO $pdo, int $pid): array
                     tc2.company_name AS client_name
                FROM transactions t
                LEFT JOIN master_clients tc2 ON tc2.id = t.client_id
-              WHERE " . implode(' AND ', $w2) . "
-              ORDER BY t.id DESC LIMIT 500";
+              WHERE " . implode(' AND ', $w2) . " AND t.module = ?
+              ORDER BY t.id ASC LIMIT 1000";
     $st2 = $pdo->prepare($sql2);
-    $st2->execute($p2);
 
-    foreach ($st2->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $baris2 = [];
+    foreach (['cl', 'media', 'gudang'] as $mod) {
+        $st2->execute(array_merge($p2, [$mod]));
+        foreach ($st2->fetchAll(PDO::FETCH_ASSOC) as $r) { $r['grup'] = $mod; $baris2[] = $r; }
+    }
+
+    foreach ($baris2 as $r) {
         $hasil[] = [
+            'grup'           => $r['grup'],
             'jenis_baris'    => 'trx',
             'kunci'          => 't:' . (int) $r['trx_id'],
             'id'             => (int) $r['trx_id'],
@@ -211,10 +222,13 @@ function _dr_dokumen_saya(PDO $pdo, int $pid): array
         ];
     }
 
-    // Diurutkan ulang: yang terbaru di atas, apa pun jenisnya.
-    usort($hasil, function (array $a, array $b) {
-        return [(string) ($b['start_date'] ?? ''), (int) $b['id']]
-           <=> [(string) ($a['start_date'] ?? ''), (int) $a['id']];
+    // Urutan tampil: dokumen dulu, lalu Exhibition, Media, Gudang — masing-masing
+    // dari ID terkecil ke terbesar, supaya nomor yang dicari bisa ditelusuri
+    // berurutan dan tidak melompat-lompat antar modul.
+    $urutanGrup = ['dok' => 0, 'cl' => 1, 'media' => 2, 'gudang' => 3];
+    usort($hasil, function (array $a, array $b) use ($urutanGrup) {
+        return [$urutanGrup[$a['grup']] ?? 9, (int) $a['id']]
+           <=> [$urutanGrup[$b['grup']] ?? 9, (int) $b['id']];
     });
     return $hasil;
 }
@@ -461,6 +475,9 @@ function deletion_request_page(PDO $pdo): void
         .dr-tabel th[data-sort]:hover { background:#EEF2F7 }
         .dr-tabel td, .dr-tabel th { padding:8px 11px }
         .dr-kosong { padding:14px 2px; color:var(--muted); font-size:12.5px }
+        .dr-judul-grup td { background:#EEF2F7; font-size:11.5px; font-weight:800; color:#334155;
+                            text-transform:uppercase; letter-spacing:.04em; padding:7px 11px;
+                            position:sticky; top:0; z-index:1 }
         .dr-pil { padding:1px 7px;border-radius:9px;font-size:10.5px;font-weight:700;white-space:nowrap }
         </style>
 
@@ -751,12 +768,34 @@ function deletion_request_page(PDO $pdo): void
                             <th data-sort="text">Status <span class="dr-arr"></span></th>
                         </tr></thead>
                         <tbody>
+                        <?php
+                        // Baris pemisah dicetak saat golongannya berganti. Urutannya
+                        // tetap: dokumen, lalu Exhibition, Media, Gudang — masing-masing
+                        // menaik menurut ID.
+                        $judulGrup = [
+                            'dok'    => 'Berdasarkan dokumen SKP / SKS / Form Utilities',
+                            'cl'     => 'Exhibition — berdasarkan ID transaksi (belum berdokumen)',
+                            'media'  => 'Media — berdasarkan ID transaksi (belum berdokumen)',
+                            'gudang' => 'Gudang — berdasarkan ID transaksi (belum berdokumen)',
+                        ];
+                        $jumlahGrup = array_count_values(array_map(fn($x) => (string) ($x['grup'] ?? ''), $dokumen));
+                        $grupKini = null; $noGrup = -1;
+                        ?>
                         <?php foreach ($dokumen as $d):
                             $periode = ($d['start_date'] && $d['end_date'])
                                 ? date('d/m/y', strtotime($d['start_date'])) . ' – ' . date('d/m/y', strtotime($d['end_date']))
                                 : '—';
-                            $inc = (float) ($d['income_aktif'] ?? 0); ?>
-                            <tr data-modul="<?= h((string) ($d['module'] ?? '')) ?>">
+                            $inc = (float) ($d['income_aktif'] ?? 0);
+                            $g   = (string) ($d['grup'] ?? 'dok');
+                            if ($g !== $grupKini): $grupKini = $g; $noGrup++; ?>
+                            <tr class="dr-judul-grup" data-grup-judul="<?= (int) $noGrup ?>">
+                                <td colspan="9">
+                                    <?= h($judulGrup[$g] ?? $g) ?>
+                                    <span class="muted" style="font-weight:400">&middot; <?= (int) ($jumlahGrup[$g] ?? 0) ?> data</span>
+                                </td>
+                            </tr>
+                            <?php endif; ?>
+                            <tr data-grup="<?= (int) $noGrup ?>" data-modul="<?= h((string) ($d['module'] ?? '')) ?>">
                                 <td><input type="checkbox" name="pilih[]" value="<?= h((string) $d['kunci']) ?>"
                                            class="dr-pick" data-nilai="<?= (float) $d['total_amount'] ?>"
                                            data-income="<?= $inc ?>"
@@ -1052,7 +1091,12 @@ function deletion_request_page(PDO $pdo): void
                 var tbl = wrap.querySelector('table');
                 if (!tbl || !tbl.tBodies.length) return;
                 var tbody = tbl.tBodies[0];
-                var baris = Array.prototype.slice.call(tbody.rows);
+                // Baris pemisah golongan bukan data: dikeluarkan dari daftar yang
+                // disaring & diurutkan, lalu disembunyikan sendiri saat seluruh
+                // isinya tersaring habis.
+                var semua  = Array.prototype.slice.call(tbody.rows);
+                var judul  = semua.filter(function (r) { return r.classList.contains('dr-judul-grup'); });
+                var baris  = semua.filter(function (r) { return !r.classList.contains('dr-judul-grup'); });
 
                 // Kotak cari boleh berada di luar wrap (di header panel), jadi
                 // dicari dulu di dalam, lalu ke panel terdekat.
@@ -1074,6 +1118,14 @@ function deletion_request_page(PDO $pdo): void
                         r.style.display = tampil ? '' : 'none';
                         if (tampil) n++;
                     });
+                    // Judul golongan ikut hilang kalau tidak ada lagi isinya.
+                    judul.forEach(function (h) {
+                        var g = h.getAttribute('data-grup-judul');
+                        var ada = baris.some(function (r) {
+                            return r.getAttribute('data-grup') === g && r.style.display !== 'none';
+                        });
+                        h.style.display = ada ? '' : 'none';
+                    });
                     if (info) info.textContent = n + ' dari ' + baris.length + ' data';
                 }
                 if (cari)  cari.addEventListener('input', saring);
@@ -1092,12 +1144,30 @@ function deletion_request_page(PDO $pdo): void
                         var tipe = th.getAttribute('data-sort');
                         var arah = th.getAttribute('data-arah') === 'naik' ? 'turun' : 'naik';
                         var k = arah === 'naik' ? 1 : -1;
+                        // Diurutkan DI DALAM golongannya masing-masing. Mengurutkan
+                        // seluruh tabel akan membubarkan pemisah Exhibition / Media /
+                        // Gudang, padahal pemisah itulah gunanya.
                         baris.sort(function (a, b) {
+                            var ga = parseInt(a.getAttribute('data-grup') || 0, 10);
+                            var gb = parseInt(b.getAttribute('data-grup') || 0, 10);
+                            if (ga !== gb) return ga - gb;
                             var x = nilai(a, i, tipe), y = nilai(b, i, tipe);
                             if (tipe === 'num') return (x - y) * k;
                             return String(x).localeCompare(String(y), 'id') * k;
                         });
-                        baris.forEach(function (r) { tbody.appendChild(r); });
+                        if (judul.length) {
+                            // Tiap judul ditaruh kembali tepat sebelum baris pertama
+                            // golongannya.
+                            judul.forEach(function (h) { tbody.appendChild(h); });
+                            baris.forEach(function (r) { tbody.appendChild(r); });
+                            judul.forEach(function (h) {
+                                var g = h.getAttribute('data-grup-judul');
+                                var pertama = baris.find(function (r) { return r.getAttribute('data-grup') === g; });
+                                if (pertama) tbody.insertBefore(h, pertama);
+                            });
+                        } else {
+                            baris.forEach(function (r) { tbody.appendChild(r); });
+                        }
                         tbl.querySelectorAll('th[data-sort]').forEach(function (o) {
                             o.removeAttribute('data-arah');
                             var s = o.querySelector('.dr-arr'); if (s) s.textContent = '';
