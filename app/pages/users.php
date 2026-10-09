@@ -416,7 +416,13 @@ function roles_save(PDO $pdo): void
 
     $submitted = $_POST['perms'] ?? [];
 
-    $pdo->prepare('DELETE FROM role_permissions WHERE role != ?')->execute(['superadmin']);
+    // HANYA peran yang benar-benar ada di layar ini yang dikosongkan. Dulu
+    // seluruh baris selain superadmin dihapus, lalu diisi ulang hanya untuk
+    // $editableRoles — artinya peran di luar daftar itu (mis. peran buatan
+    // sendiri) kehilangan SELURUH izinnya setiap kali tombol Simpan ditekan,
+    // diam-diam, tanpa pernah muncul di halaman ini.
+    $tanya = implode(',', array_fill(0, count($editableRoles), '?'));
+    $pdo->prepare("DELETE FROM role_permissions WHERE role IN ($tanya)")->execute($editableRoles);
 
     $stmt = $pdo->prepare('INSERT INTO role_permissions (role, permission) VALUES (?, ?)');
     foreach ($editableRoles as $role) {
