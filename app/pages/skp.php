@@ -703,6 +703,8 @@ function skp_form(PDO $pdo): void
     $ubahPeriode = $editable && $skp && $trxId && !$offerId && !$standalone && !$sumberHilang
                    && empty($src['is_bundle']) && _skp_komponen_tunggal($pdo, $pid, $skp, $trxId);
     $satuanTarif = _skp_satuan_tarif((string) ($src['pricing_type'] ?? ''));
+    // Batas unggah yang BENAR-BENAR berlaku (aturan aplikasi vs setelan PHP server).
+    $batasUnggahMb = number_format(_skp_batas_unggah() / 1048576, 1, ',', '.') . ' MB';
     // Kotak Total hanya terisi bila nilai kontraknya memang pernah ditetapkan
     // manual (berbeda dari hitungan). Kalau sama, dibiarkan kosong supaya jelas
     // bahwa yang berlaku adalah hitungan sistem — bukan angka beku.
@@ -716,7 +718,7 @@ function skp_form(PDO $pdo): void
         ? '?r=transaction_edit&id=' . $trxId . '&skp=' . (int) $skp['id'] : '';
 
 
-    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir, $revTahap, $revPending, $revRiwayat, $revBolehAjukan, $revBolehPutus, $dibatalkan, $sumberHilang, $ubahPeriode, $satuanTarif, $ubahTrxUrl, $tampilTotalManual) {
+    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir, $revTahap, $revPending, $revRiwayat, $revBolehAjukan, $revBolehPutus, $dibatalkan, $sumberHilang, $ubahPeriode, $satuanTarif, $ubahTrxUrl, $tampilTotalManual, $batasUnggahMb) {
         $statusSewaDefault = ($isRenew || (!empty($src['renewal_status']) && $src['renewal_status'] !== 'none')) ? 'Perpanjangan' : 'Baru';
         ?>
         <?php /* Sumbernya hilang → tombol kembali ke sumber ikut buntu, jadi
@@ -850,7 +852,10 @@ function skp_form(PDO $pdo): void
                         </label>
                         <span class="help" style="font-size:11px;color:var(--muted)">Hapus centang bila ingin unggah baru.</span>
                     <?php endif; ?>
-                    <?php if ($editable): ?><input type="file" name="att_<?= $kind ?>" accept="image/*,application/pdf"><?php endif; ?>
+                    <?php /* Batasnya ditulis di sini, sebelum berkas dipilih. Memberitahu
+                             sesudah ditolak membuat orang menebak-nebak apa yang salah. */ ?>
+                    <?php if ($editable): ?><input type="file" name="att_<?= $kind ?>" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf">
+                    <div class="help" style="margin-top:2px">JPG / PNG / WEBP / PDF, maksimal <?= h($batasUnggahMb) ?></div><?php endif; ?>
                 </div>
                 <?php endforeach; ?>
                 <div><label>Lampiran Surat Penawaran</label><div style="font-size:12px;color:var(--muted)"><?= $offerId ? '📎 otomatis dari penawaran (PDF)' : '— (sumber transaksi, tanpa penawaran)' ?></div></div>
@@ -1650,21 +1655,88 @@ function skp_form(PDO $pdo): void
 }
 
 // ─── Simpan (insert/update draft) ────────────────────────────────────────────
-/** Simpan lampiran upload (folder) → skp_attachments. Ganti file kind yg sama. */
-function _skp_handle_uploads(PDO $pdo, int $skpId, string $uname, int $clientId = 0): void
+/** Batas ukuran unggahan yang BENAR-BENAR berlaku — aturan aplikasi vs setelan PHP. */
+function _skp_batas_unggah(): int
+{
+    $ke = function (string $v): int {
+        $v = trim($v); $n = (int) $v;
+        return match (strtolower(substr($v, -1))) { 'g' => $n * 1073741824, 'm' => $n * 1048576, 'k' => $n * 1024, default => $n };
+    };
+    $batas = [8 * 1024 * 1024];
+    foreach (['upload_max_filesize', 'post_max_size'] as $k) {
+        $v = $ke((string) ini_get($k));
+        if ($v > 0) $batas[] = $v;
+    }
+    return min($batas);
+}
+
+/**
+ * Simpan lampiran upload (folder) → skp_attachments. Ganti file kind yg sama.
+ *
+ * Tiap kegagalan DIKEMBALIKAN sebagai nilai balik, tidak ditelan. Sebelumnya ada lima
+ * jalur `continue` tanpa sepatah kata pun: file kebesaran, formatnya tidak
+ * diterima, atau gagal dipindah — semuanya berakhir sama, yaitu lampirannya
+ * "tidak pernah ada", lalu submit ditolak dengan alasan yang tidak nyambung
+ * ("Scan NPWP belum ada") sementara pengunggahnya yakin sudah memilih berkas.
+ * Kode galat PHP sendiri ($_FILES['error']) bahkan tidak pernah dibaca.
+ *
+ * Dikembalikan sebagai nilai balik, BUKAN lewat parameter by-reference:
+ * melewatkan variabel yang belum ada ke parameter bertipe array langsung
+ * menggagalkan seluruh penyimpanan dengan TypeError di PHP 8 — jebakan yang
+ * mudah terinjak lagi di pemanggilan berikutnya.
+ *
+ * @return string[] daftar alasan, kosong bila semua berkas aman.
+ */
+function _skp_handle_uploads(PDO $pdo, int $skpId, string $uname, int $clientId = 0): array
 {
     $dir = dirname(__DIR__, 2) . '/public/uploads/skp';
     if (!is_dir($dir)) @mkdir($dir, 0777, true);
     $kinds = ['att_ktp' => 'ktp', 'att_npwp' => 'npwp', 'att_siup' => 'siup', 'att_bukti_transfer' => 'bukti_transfer', 'att_pengajuan' => 'pengajuan'];
+    $label = ['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP', 'siup' => 'Scan SIUP',
+              'bukti_transfer' => 'Bukti Transfer', 'pengajuan' => 'Lampiran Pengajuan'];
+    $batas = _skp_batas_unggah();
+    $mb    = fn(int $b) => number_format($b / 1048576, 1, ',', '.') . ' MB';
+    $gagal = [];
     $uploaded = [];
     foreach ($kinds as $field => $kind) {
-        if (empty($_FILES[$field]['tmp_name']) || !is_uploaded_file($_FILES[$field]['tmp_name'])) continue;
-        $f = $_FILES[$field];
-        if ($f['size'] <= 0 || $f['size'] > 5 * 1024 * 1024) continue;
+        $f = $_FILES[$field] ?? null;
+        $nama = $label[$kind] ?? $kind;
+        // Tidak memilih berkas bukan kegagalan — itu memang pilihan.
+        if (!$f || ($f['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) continue;
+
+        if ($f['error'] !== UPLOAD_ERR_OK) {
+            $gagal[] = $nama . ': ' . match ($f['error']) {
+                UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE =>
+                    'berkasnya melebihi batas server (maksimal ' . $mb($batas) . ') — perkecil dulu atau simpan sebagai JPG',
+                UPLOAD_ERR_PARTIAL   => 'unggahannya terputus di tengah jalan — coba lagi',
+                UPLOAD_ERR_NO_TMP_DIR, UPLOAD_ERR_CANT_WRITE =>
+                    'server gagal menyimpan berkas sementara — hubungi IT',
+                UPLOAD_ERR_EXTENSION => 'ditolak oleh setelan server — hubungi IT',
+                default              => 'gagal diunggah (kode ' . (int) $f['error'] . ')',
+            };
+            continue;
+        }
+        if (empty($f['tmp_name']) || !is_uploaded_file($f['tmp_name'])) {
+            $gagal[] = $nama . ': berkasnya tidak sampai ke server — coba unggah ulang';
+            continue;
+        }
+        if ($f['size'] <= 0) { $gagal[] = $nama . ': berkasnya kosong (0 byte)'; continue; }
+        if ($f['size'] > $batas) {
+            $gagal[] = $nama . ': ukurannya ' . $mb((int) $f['size']) . ', melebihi batas ' . $mb($batas)
+                     . ' — perkecil dulu atau simpan sebagai JPG';
+            continue;
+        }
         $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
-        if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'], true)) continue;
+        if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'], true)) {
+            $gagal[] = $nama . ': format ".' . $ext . '" tidak diterima — pakai JPG, PNG, WEBP, atau PDF'
+                     . ($ext === 'heic' || $ext === 'heif' ? ' (foto iPhone: ubah dulu ke JPG lewat Bagikan → Pilihan → JPEG)' : '');
+            continue;
+        }
         $fname = 'skp' . $skpId . '_' . $kind . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-        if (!@move_uploaded_file($f['tmp_name'], $dir . '/' . $fname)) continue;
+        if (!@move_uploaded_file($f['tmp_name'], $dir . '/' . $fname)) {
+            $gagal[] = $nama . ': server gagal menyimpan berkasnya — folder uploads mungkin tidak bisa ditulis';
+            continue;
+        }
         $pdo->prepare('DELETE FROM skp_attachments WHERE skp_id=? AND kind=?')->execute([$skpId, $kind]);
         $pdo->prepare('INSERT INTO skp_attachments (skp_id, kind, file_path, original_name, uploaded_by) VALUES (?,?,?,?,?)')
             ->execute([$skpId, $kind, 'uploads/skp/' . $fname, substr((string) $f['name'], 0, 190), $uname]);
@@ -1680,6 +1752,7 @@ function _skp_handle_uploads(PDO $pdo, int $skpId, string $uname, int $clientId 
         $pdo->prepare('INSERT INTO skp_attachments (skp_id, kind, file_path, original_name, uploaded_by) VALUES (?,?,?,?,?)')
             ->execute([$skpId, $kind, $reuse[$kind]['file_path'], $reuse[$kind]['original_name'], $uname . ' (reuse)']);
     }
+    return $gagal;
 }
 
 /**
@@ -2099,12 +2172,20 @@ function skp_save(PDO $pdo): void
             redirect_to('skp_form', ['id' => $id]);
         }
         // Proses upload dulu agar validasi lampiran wajib akurat.
-        _skp_handle_uploads($pdo, $id, $uname, $clientId);
+        $gagalUnggah = _skp_handle_uploads($pdo, $id, $uname, $clientId);
         _skp_update_master($pdo, $clientId, $ktp, $npwp, $siup);
         $blockMsg = '';
         if ($doSubmit && ($miss = array_merge($missNum, _skp_missing_required($pdo, $id)))) {
             $doSubmit = false;
             $blockMsg = 'Belum bisa submit — lengkapi dulu: ' . implode(', ', $miss) . '. Disimpan sebagai draft.';
+        }
+        // Berkas yang ditolak disebut lebih dulu dan apa adanya. Tanpa ini
+        // pengunggah hanya melihat "lampirannya belum ada" padahal dia yakin
+        // sudah memilih berkasnya — dan tidak ada petunjuk apa pun untuk
+        // memperbaikinya.
+        if ($gagalUnggah) {
+            $blockMsg = 'Lampiran GAGAL diunggah → ' . implode(' | ', $gagalUnggah)
+                      . ($blockMsg !== '' ? ' — ' . $blockMsg : '');
         }
         $newStatus = $doSubmit ? 'submitted' : 'draft';
         // Kolom yang diperbarui mengikuti $fields — dokumen mandiri otomatis ikut
@@ -2159,12 +2240,16 @@ function skp_save(PDO $pdo): void
     }
     $newId = (int) $pdo->lastInsertId();
     _skp_simpan_bagi($pdo, $pid, $newId, $trxId ?: null, $bagi, $uname);
-    _skp_handle_uploads($pdo, $newId, $uname, $clientId);
+    $gagalUnggah = _skp_handle_uploads($pdo, $newId, $uname, $clientId);
     _skp_update_master($pdo, $clientId, $ktp, $npwp, $siup);
     audit($pdo, 'create', 'skp_documents', (string) $newId, $fields);
 
+    // Berkas yang ditolak disebut lebih dulu — lihat catatan di _skp_handle_uploads().
+    $awalan = $gagalUnggah ? 'Lampiran GAGAL diunggah → ' . implode(' | ', $gagalUnggah) . '. ' : '';
     if ($doSubmit && ($miss = array_merge($missNum, _skp_missing_required($pdo, $newId)))) {
-        flash('Dibuat sebagai draft. Belum bisa submit — lengkapi dulu: ' . implode(', ', $miss) . '.');
+        flash($awalan . 'Dibuat sebagai draft. Belum bisa submit — lengkapi dulu: ' . implode(', ', $miss) . '.');
+    } elseif ($gagalUnggah) {
+        flash($awalan . 'Sisanya tersimpan.');
     } elseif ($doSubmit) {
         $pdo->prepare("UPDATE skp_documents SET status='submitted', submitted_at=CURRENT_TIMESTAMP WHERE id=? AND property_id=?")->execute([$newId, $pid]);
         flash('Dokumen dibuat & disubmit untuk approval.');
