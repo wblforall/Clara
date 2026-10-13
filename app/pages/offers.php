@@ -853,33 +853,91 @@ function offer_items(PDO $pdo, int $offerId): array
  * Cek bentrok slot: master_code yang sama dipakai PENAWARAN aktif lain (status
  * <> cancelled, termasuk deal — karena offer deal tidak di-cancel) pada periode
  * tumpang-tindih, baik di offers.master_code maupun komponen offer_items.
- * Return daftar pesan bentrok (kosong = aman). Karena pipeline ini offer-first,
- * cek di level offers sudah mencakup deal; booking transaksi-langsung legacy di
- * luar cakupan. $excludeOffer = id offer yg sedang disimpan (jangan bentrok diri).
+ *
+ * Yang dikembalikan BUKAN sekadar kalimat, tetapi rinciannya: nomor penawaran
+ * lawan, statusnya, dan periodenya. Tanpa itu pesan "bentrok dgn penawaran 019"
+ * tidak bisa ditindaklanjuti — orang tidak tahu apakah lawannya draft terbengkalai
+ * atau kontrak berjalan, jadi tidak tahu harus membatalkan yang mana.
+ *
+ * Karena pipeline ini offer-first, cek di level offers sudah mencakup deal;
+ * booking transaksi-langsung legacy di luar cakupan.
+ * $excludeOffer = id offer yg sedang disimpan (jangan bentrok diri).
+ *
+ * @return array<int,array{kode:string,nama:string,offer_no:string,status:string,mulai:string,selesai:string}>
  */
 function _offer_slot_conflicts(PDO $pdo, int $pid, array $items, ?string $start, ?string $end, int $excludeOffer = 0): array
 {
     if (!$start || !$end) return [];
-    $msgs = [];
+    $hasil = [];
+    $sudah = [];
     foreach ($items as $it) {
         $mc = $it['master_code'] ?? null;
-        if (!$mc) continue;
+        if (!$mc || isset($sudah[$mc])) continue;
+        $sudah[$mc] = true;
         // Penawaran aktif lain (belum batal) dgn unit/titik sama, periode tumpang-tindih.
         $q = $pdo->prepare(
-            "SELECT o.offer_no FROM offers o
+            "SELECT o.offer_no, o.status, o.start_date, o.end_date FROM offers o
              WHERE o.property_id = ? AND o.id <> ? AND o.status <> 'cancelled'
                AND o.start_date IS NOT NULL AND o.end_date IS NOT NULL
                AND o.start_date <= ? AND o.end_date >= ?
                AND (o.master_code = ? OR EXISTS (
                    SELECT 1 FROM offer_items oi WHERE oi.offer_id = o.id AND oi.master_code = ?))
+             ORDER BY FIELD(o.status, 'deal', 'nego', 'sent', 'draft'), o.id DESC
              LIMIT 1"
         );
         $q->execute([$pid, $excludeOffer, $end, $start, $mc, $mc]);
-        if ($no = $q->fetchColumn()) {
-            $msgs[] = ($it['name_snapshot'] ?: $mc) . ' bentrok dgn penawaran ' . $no;
+        if ($r = $q->fetch(PDO::FETCH_ASSOC)) {
+            $hasil[] = [
+                'kode'     => (string) $mc,
+                'nama'     => (string) ($it['name_snapshot'] ?: $mc),
+                'offer_no' => (string) ($r['offer_no'] ?: '(belum bernomor)'),
+                'status'   => (string) $r['status'],
+                'mulai'    => (string) $r['start_date'],
+                'selesai'  => (string) $r['end_date'],
+            ];
         }
     }
-    return $msgs;
+    return $hasil;
+}
+
+/**
+ * Simpan isian formulir sementara di sesi, supaya penolakan tidak menghapus
+ * ketikan orang.
+ *
+ * Sebelum ini setiap penolakan mengarahkan balik ke formulir KOSONG: seluruh
+ * komponen paket, tanggal, harga — hilang, dan harus diketik ulang dari nol
+ * hanya untuk memperbaiki satu tanggal. Berkas unggahan tidak ikut disimpan
+ * (tidak bisa), jadi hanya isian teks yang kembali.
+ */
+function _offer_simpan_draft_sesi(array $bentrok = []): void
+{
+    $buang = ['_csrf', 'id'];
+    $_SESSION['offer_draft'] = [
+        'post'    => array_diff_key($_POST, array_flip($buang)),
+        'bentrok' => $bentrok,
+        'waktu'   => time(),
+    ];
+}
+
+/** Ambil isian yang disimpan tadi, sekali pakai. */
+function _offer_ambil_draft_sesi(): array
+{
+    $d = $_SESSION['offer_draft'] ?? null;
+    unset($_SESSION['offer_draft']);
+    // Lebih dari 30 menit dianggap basi — orang sudah pindah pekerjaan lain.
+    if (!is_array($d) || (time() - (int) ($d['waktu'] ?? 0)) > 1800) return [];
+    return $d;
+}
+
+/** Kalimat bentrok yang bisa ditindaklanjuti — menyebut status & periode lawannya. */
+function _offer_conflict_text(array $c): string
+{
+    $label = ['draft' => 'masih draft', 'sent' => 'sudah dikirim ke client',
+              'nego' => 'sedang nego', 'deal' => 'SUDAH DEAL'];
+    $tgl = fn(string $d) => $d !== '' ? date('d/m/y', strtotime($d)) : '?';
+    return $c['nama'] . ' dipakai penawaran ' . $c['offer_no']
+         . ' (' . ($label[$c['status']] ?? $c['status']) . ', '
+         . $tgl($c['mulai']) . '–' . $tgl($c['selesai']) . ')';
 }
 
 // ─── Daftar ──────────────────────────────────────────────────────────────────
@@ -1367,12 +1425,46 @@ function offer_form(PDO $pdo): void
     foreach ([$linkedPic, $offer['pic_name'] ?? null] as $must) {
         if ($must && !in_array($must, $picNames, true)) { $pics[] = ['name' => $must]; $picNames[] = $must; }
     }
+    // ── Isian yang sempat ditolak: dikembalikan, bukan dihapus ───────────────
+    // Penolakan (bentrok slot, tanggal salah) dulu mengarahkan ke formulir kosong
+    // sehingga seluruh paket harus diketik ulang. Sekarang isiannya dipulihkan.
+    $draft    = _offer_ambil_draft_sesi();
+    $draftPost = $draft['post'] ?? [];
+    $bentrokKini = $draft['bentrok'] ?? [];
+    if ($draftPost) {
+        foreach (['module', 'client_id', 'contact_id', 'pic_name', 'referrer_name', 'master_code',
+                  'area_sqm', 'slots', 'pricing_type', 'unit_rate', 'keterangan', 'start_date',
+                  'end_date', 'billing_method', 'cycle_recognition', 'template_id', 'perihal'] as $k) {
+            if (array_key_exists($k, $draftPost)) $offer[$k] = $draftPost[$k];
+        }
+        $offer['is_bundle'] = ($draftPost['is_bundle'] ?? '') === '1' ? 1 : 0;
+    }
+
+    // Didefinisikan SESUDAH pemulihan di atas: fn() menangkap $offer saat itu
+    // juga, jadi kalau dipasang lebih dulu ia akan terus memakai nilai lama.
     $v = fn(string $k, $def = '') => h((string) ($offer[$k] ?? $def));
 
     // ── Paket Bundling: tentukan mode & prefill komponen ─────────────────────
     $isBundle  = $existing ? !empty($offer['is_bundle']) : (bool) getv('bundle');
+    if ($draftPost) $isBundle = ($draftPost['is_bundle'] ?? '') === '1';
     $bundleRows = [];
-    if ($existing && $isBundle) {
+    if ($draftPost && !empty($draftPost['item_segment']) && is_array($draftPost['item_segment'])) {
+        $rp = fn($v) => (int) preg_replace('/\D/', '', (string) $v);
+        foreach ($draftPost['item_segment'] as $i => $seg) {
+            $kode = trim((string) ($draftPost['item_master_code'][$i] ?? ''));
+            $nama = trim((string) ($draftPost['item_name'][$i] ?? ''));
+            if ($kode === '' && $nama === '') continue;
+            $bundleRows[] = [
+                'segment'     => in_array($seg, ['cl', 'media', 'gudang'], true) ? $seg : 'cl',
+                'master_code' => $kode,
+                'name'        => $nama,
+                'area'        => (string) ($draftPost['item_area'][$i] ?? ''),
+                'monthly'     => $rp($draftPost['item_monthly'][$i] ?? ''),
+                'dp'          => $rp($draftPost['item_dp'][$i] ?? ''),
+                'deposit'     => $rp($draftPost['item_deposit'][$i] ?? ''),
+            ];
+        }
+    } elseif ($existing && $isBundle) {
         foreach (offer_items($pdo, (int)$offer['id']) as $it) {
             $bundleRows[] = [
                 'segment'     => $it['segment'],
@@ -1397,7 +1489,7 @@ function offer_form(PDO $pdo): void
         foreach ($tplList as $tt) { if (!empty($tt['is_default'])) { $tplSel = (int) $tt['id']; break; } }
     }
 
-    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $listrikTotal, $listrikUnit, $tplBaru, $tahapHarga, $tierRows, $tplList, $tplSel) {
+    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $listrikTotal, $listrikUnit, $tplBaru, $tahapHarga, $tierRows, $tplList, $tplSel, $bentrokKini, $draftPost) {
         $picSel = $offer['pic_name'] ?? $linkedPic;
         $disabled = $editable ? '' : 'disabled';
         ?>
@@ -1527,6 +1619,43 @@ function offer_form(PDO $pdo): void
                 </div>
                 <?php if ($editable): ?>
                 <p style="margin-top:8px"><button type="button" class="btn light" id="bundle-add" style="background:#0ea5e9;color:#fff">+ Tambah komponen</button></p>
+
+                <?php /* Jalan keluar dari bentrok. Muncul hanya SETELAH bentrok terjadi —
+                         bukan kotak permanen yang lama-lama dicentang orang tanpa dibaca.
+                         Alasannya wajib dan masuk Activity Log. */ ?>
+                <?php if ($bentrokKini): ?>
+                <div style="border:1px solid #fca5a5;background:#fef2f2;border-radius:8px;padding:12px 14px;margin-top:10px">
+                    <div style="font-weight:800;color:#991b1b;font-size:13px;margin-bottom:6px">Slot ini sudah dipakai penawaran lain</div>
+                    <ul style="margin:0 0 9px;padding-left:18px;font-size:12.5px;color:#7f1d1d;line-height:1.7">
+                        <?php foreach ($bentrokKini as $c): ?>
+                        <li><?= h(_offer_conflict_text($c)) ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                    <p class="help" style="margin:0 0 9px">
+                        Pilihannya: ubah tanggal, ganti unitnya, atau batalkan penawaran lawannya di
+                        <strong>Daftar Penawaran</strong>. Kalau memang disengaja &mdash; misalnya lawannya draft
+                        terbengkalai, atau client yang sama minta dua versi surat &mdash; centang di bawah ini.
+                    </p>
+                    <label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-weight:600;color:#991b1b;font-size:13px">
+                        <input type="checkbox" name="abaikan_bentrok" id="abaikan_bentrok" value="1"
+                               style="width:16px;height:16px;flex:none;margin-top:2px">
+                        <span>Tetap simpan walau bentrok</span>
+                    </label>
+                    <input name="alasan_bentrok" id="alasan_bentrok" placeholder="Alasannya — wajib diisi, tercatat di Activity Log"
+                           style="margin-top:8px" value="<?= h((string) ($draftPost['alasan_bentrok'] ?? '')) ?>">
+                </div>
+                <script>
+                (function () {
+                    var c = document.getElementById('abaikan_bentrok');
+                    var a = document.getElementById('alasan_bentrok');
+                    if (!c || !a) return;
+                    // Wajib hanya saat kotaknya dicentang — kalau tidak, orang yang
+                    // memilih memperbaiki tanggalnya malah terhalang isian ini.
+                    function sinkron() { a.required = c.checked; }
+                    c.addEventListener('change', sinkron); sinkron();
+                })();
+                </script>
+                <?php endif; ?>
                 <?php endif; ?>
 
                 <?php /* ── Tarif bertingkat per m² ────────────────────────────
@@ -2759,7 +2888,33 @@ function offer_save(PDO $pdo): void
     $tierTotal = offer_tier_total($tierRows, $days);
     if ($isBundle && count($bundleItems) >= 2) {
         $conf = _offer_slot_conflicts($pdo, $pid, $bundleItems, $start, $end, $id);
-        if ($conf) { flash('Bentrok slot: ' . implode('; ', $conf) . '. Perbaiki dulu.'); redirect_to('offer_form', $id ? ['id' => $id] : ['bundle' => 1]); }
+        // Bentrok bisa DILEWATI dengan sengaja — satu slot memang kadang dipakai
+        // dua penawaran (lawannya draft terbengkalai, atau client yang sama minta
+        // dua versi surat). Yang tidak boleh adalah melewatinya tanpa sadar dan
+        // tanpa jejak, jadi alasannya wajib dan dicatat.
+        $abaikan = post('abaikan_bentrok') === '1';
+        $alasanAbaikan = trim((string) post('alasan_bentrok', ''));
+        if ($conf && $abaikan && $alasanAbaikan === '') {
+            _offer_simpan_draft_sesi($conf);
+            flash('Untuk tetap menyimpan walau bentrok, alasannya wajib diisi.');
+            redirect_to('offer_form', $id ? ['id' => $id] : ['bundle' => 1]);
+        }
+        if ($conf && !$abaikan) {
+            // Isian disimpan sementara supaya tidak perlu diketik ulang dari nol.
+            _offer_simpan_draft_sesi($conf);
+            flash('Bentrok slot: ' . implode('; ', array_map('_offer_conflict_text', $conf))
+                . '. Perbaiki tanggalnya, batalkan penawaran lawannya, atau centang '
+                . '"Tetap simpan walau bentrok" di bawah daftar komponen.');
+            redirect_to('offer_form', $id ? ['id' => $id] : ['bundle' => 1]);
+        }
+        if ($conf && $abaikan) {
+            audit($pdo, 'override_bentrok', 'offers', (string) ($id ?: 0), [
+                'alasan'  => $alasanAbaikan,
+                'bentrok' => array_map('_offer_conflict_text', $conf),
+                'periode' => $start . ' s/d ' . $end,
+            ]);
+            flash('Disimpan walau bentrok dengan ' . count($conf) . ' slot — alasannya tercatat di Activity Log.');
+        }
         if ($tierRows && $tierTotal <= 0) {
             flash('Tarif bertingkat terisi tetapi lama sewanya 0 hari — periksa tanggal mulai & selesai. Penawaran tidak disimpan agar nilainya tidak tertinggal memakai periode lama.');
             redirect_to('offer_form', $id ? ['id' => $id] : ['bundle' => 1]);
