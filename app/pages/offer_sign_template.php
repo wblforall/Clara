@@ -65,7 +65,9 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
         </table>
 
 <?php
-        $isBundle = !empty($o['is_bundle']) && !empty($items);
+        // Paket dikenali dari komponennya, bukan penanda is_bundle — sama
+        // seperti surat cetaknya.
+        $isBundle = count($items) >= 2;
         $segLabels = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
         if ($isBundle):
         ?>
@@ -74,12 +76,22 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
             <tr><td><strong>Nama Booth / Item</strong></td><td><strong>Jenis</strong></td><td class="amt"><strong>Nilai Sewa</strong></td><td><strong>Kode</strong></td></tr>
             <?php foreach ($items as $it): ?>
             <tr>
-                <td><?= $h($it['name_snapshot'] ?: $it['master_code']) ?></td>
-                <td><?= $h($segLabels[$it['segment']] ?? $it['segment']) ?></td>
+                <td><?= $h($it['name_snapshot'] ?: $it['master_code']) ?><?php
+                    $lt = trim((string) ($it['lantai'] ?? ''));
+                    if ($lt !== '' && $lt !== '-') echo ' (Lt. ' . $h($lt) . ')'; ?></td>
+                <td><?= $h($segLabels[$it['segment']] ?? $it['segment']) ?><?= (float) ($it['area_sqm'] ?? 0) > 0
+                        ? ' · ' . $h(rtrim(rtrim(number_format((float) $it['area_sqm'], 2, ',', '.'), '0'), ',')) . ' m²' : '' ?></td>
                 <td class="amt"><?= $rp($it['total_amount'] ?? 0) ?></td>
                 <td><?= $h($it['master_code']) ?></td>
             </tr>
             <?php endforeach; ?>
+            <?php $luasTtd = array_sum(array_map(fn($x) => (float) ($x['area_sqm'] ?? 0), $items)); ?>
+            <tr style="font-weight:700">
+                <td>TOTAL <?= count($items) ?> lokasi</td>
+                <td><?= $luasTtd > 0 ? $h(rtrim(rtrim(number_format($luasTtd, 2, ',', '.'), '0'), ',')) . ' m²' : '' ?></td>
+                <td class="amt"><?= $rp(array_sum(array_map(fn($x) => (float) ($x['total_amount'] ?? 0), $items))) ?></td>
+                <td></td>
+            </tr>
         </table>
         <table class="kv" style="margin-top:8px">
             <tr><td class="l">Periode Sewa</td><td class="v"><?= $h($d['periode'] ?? '-') ?><?= !empty($d['days']) ? ' (' . (int)$d['days'] . ' hari)' : '' ?></td></tr>
@@ -98,6 +110,15 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
             <?php foreach ($items as $it): ?>
             <tr><td><?= $h($it['name_snapshot'] ?: $it['master_code']) ?> <span class="muted">(<?= $h($segLabels[$it['segment']] ?? $it['segment']) ?>)</span></td><td class="amt"><?= $rp($it['total_amount'] ?? 0) ?></td></tr>
             <?php endforeach; ?>
+            <?php /* Selisih nego dicetak sebagai barisnya sendiri — halaman ini
+                     dibaca client, jadi angkanya harus bisa dijumlah sendiri. */ ?>
+            <?php $jmlKomp = array_sum(array_map(fn($x) => (float) ($x['total_amount'] ?? 0), $items));
+                  $selisih = $total - $jmlKomp; ?>
+            <?php if (abs($selisih) >= 1): ?>
+            <tr><td>Jumlah daftar harga <?= count($items) ?> lokasi</td><td class="amt"><?= $rp($jmlKomp) ?></td></tr>
+            <tr><td><?= $selisih < 0 ? 'Penyesuaian harga paket' : 'Tambahan harga paket' ?></td>
+                <td class="amt"><?= ($selisih < 0 ? '- ' : '') . $rp(abs($selisih)) ?></td></tr>
+            <?php endif; ?>
             <tr><td>Subtotal sewa paket</td><td class="amt"><?= $rp($total) ?></td></tr>
             <tr><td><?= $PPN_LABEL ?><?= $PPN_HINT ?></td><td class="amt"><?= $rp($ppn) ?></td></tr>
             <tr><td>Total setelah PPN</td><td class="amt"><?= $rp($afterPpn) ?></td></tr>

@@ -28,11 +28,16 @@ $rp  = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
 $pdo = Database::connect();
 
 // 0. Apakah berkas di server ini sudah memuat perbaikannya?
-$skpFile = @file_get_contents(CLARA_ROOT . '/app/pages/skp.php') ?: '';
-$adaPerbaikan = str_contains($skpFile, '_skp_komponen_paket');
-echo "\nVersi kode di server ini: "
-   . ($adaPerbaikan ? "SUDAH memuat tampilan komponen paket\n"
-                    : "BELUM memuat tampilan komponen paket — jalankan: git pull\n");
+$berkas = fn(string $f) => @file_get_contents(CLARA_ROOT . '/app/pages/' . $f) ?: '';
+$adaPerbaikan = str_contains($berkas('skp.php'), '_skp_komponen_paket');
+// Surat cetak & halaman TTD punya perbaikannya sendiri: keduanya dulu bertanya
+// ke penanda is_bundle, jadi surat paket tercetak satu baris.
+$adaCetak = str_contains($berkas('offer_print_template.php'), 'count($items) >= 2');
+$adaSkpCetak = str_contains($berkas('skp_print_body.php'), 'bundle_susulan');
+echo "\nVersi kode di server ini\n";
+printf("   %-28s %s\n", 'Formulir SKP',    $adaPerbaikan ? 'SUDAH' : 'BELUM — jalankan git pull');
+printf("   %-28s %s\n", 'Surat Penawaran cetak', $adaCetak ? 'SUDAH' : 'BELUM — jalankan git pull');
+printf("   %-28s %s\n", 'Dokumen SKP cetak', $adaSkpCetak ? 'SUDAH' : 'BELUM — jalankan git pull');
 
 $st = $pdo->prepare('SELECT * FROM skp_documents WHERE id = ?');
 $st->execute([$id]);
@@ -105,4 +110,30 @@ if (count($items) >= 2 && $adaPerbaikan) {
     echo "   Jalankan `git pull` di server ini, lalu muat ulang halamannya.\n";
 } else {
     echo "   Hanya 1 komponen — memang ditampilkan sebagai satu lokasi, dan itu benar.\n";
+}
+
+echo "\n5. Yang ditampilkan Surat Penawaran & dokumen cetaknya\n";
+if (count($items) < 2) {
+    echo "   Satu lokasi — tidak ada yang perlu dirinci.\n";
+} else {
+    $jmlKomp = 0.0;
+    foreach ($items as $it) $jmlKomp += (float) $it['total_amount'];
+    $nilaiOffer = (float) ($o['override_amount'] ?: $o['total_calculated']);
+    printf("   %-28s %s\n", 'Badge di daftar', 'Paket · ' . count($items) . ' lokasi'
+        . ($o['module'] !== 'bundle' ? "   (kolom module masih '" . $o['module'] . "' — tidak dipakai lagi untuk badge)" : ''));
+    printf("   %-28s %s\n", 'Surat cetak', count($items) . ' baris lokasi + baris TOTAL');
+    printf("   %-28s %s\n", 'Dokumen SKP cetak', 'Lokasi "Paket — ' . count($items) . ' lokasi", luas '
+        . number_format($luas, 2, ',', '.') . ' m², + tabel Komponen Paket');
+    if (abs($nilaiOffer - $jmlKomp) >= 1) {
+        echo "\n   Catatan: jumlah daftar harga tiap lokasi " . $rp($jmlKomp) . ", sedangkan nilai\n";
+        echo "   penawaran yang disepakati " . $rp($nilaiOffer) . " (selisih " . $rp(abs($nilaiOffer - $jmlKomp)) . ").\n";
+        echo "   Selisih itu DICETAK sebagai baris sendiri (\"Penyesuaian harga paket\"),\n";
+        echo "   jadi angka di surat tetap bisa dijumlah sendiri oleh client.\n";
+    }
+    if (empty($o['is_bundle'])) {
+        echo "\n   Penanda is_bundle penawaran ini 0 padahal komponennya " . count($items) . ".\n";
+        echo "   Tampilan sudah tidak bergantung penanda itu, jadi surat & dokumennya benar.\n";
+        echo "   Yang MASIH ikut penanda hanyalah penerbitan transaksi saat SKP disetujui\n";
+        echo "   (1 transaksi, bukan " . count($items) . ") — itu uang, jadi tidak diubah diam-diam.\n";
+    }
 }

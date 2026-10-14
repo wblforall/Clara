@@ -273,7 +273,10 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
         'kantor'     => $OFFICE_PHONE,
     ];
 ?>
-<?php $isBundle = !empty($o['is_bundle']) && !empty($items);
+<?php /* Paket = penawaran dengan >=2 komponen. Penanda is_bundle tidak dipakai
+         lagi di sini: ada surat paket yang penandanya tidak tersimpan, dan
+         suratnya lalu tercetak satu baris saja. */ ?>
+<?php $isBundle = count($items) >= 2;
     $segLbl = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
     $sumDp = $isBundle ? array_sum(array_column($items, 'dp_amount')) : (float) $o['dp_amount']; ?>
     <?php if ($LAYOUT === 'rincian'): ?>
@@ -307,7 +310,12 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
         <?php if ($isBundle): ?>
             <?php foreach ($items as $it): ?>
             <tr>
-                <td><?= $h($it['name_snapshot'] ?: $it['master_code']) ?></td>
+                <?php /* Lantai ikut di kolom lokasi: yang pertama dicari pemeriksa
+                         adalah "di mana", dan paket lintas lantai (GF + UG) tidak
+                         boleh terbaca seolah satu lantai. */ ?>
+                <td><?= $h($it['name_snapshot'] ?: $it['master_code']) ?><?php
+                    $lt = trim((string) ($it['lantai'] ?? ''));
+                    if ($lt !== '' && $lt !== '-') echo ' (Lt. ' . $h($lt) . ')'; ?></td>
                 <?php /* Dua keterangan, bukan salah satu: paket campuran punya titik
                          media tanpa luas, dan jenisnya tetap perlu terbaca. */ ?>
                 <td><?= (float) ($it['area_sqm'] ?? 0) > 0
@@ -317,6 +325,16 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                 <td><?= $h($it['master_code'] ?? '-') ?></td>
             </tr>
             <?php endforeach; ?>
+            <?php /* Baris jumlah: pemeriksa tidak perlu menjumlah sendiri, dan
+                     selisihnya terhadap harga paket jadi kelihatan. */ ?>
+            <?php $luasItem = array_sum(array_map(fn($x) => (float) ($x['area_sqm'] ?? 0), $items));
+                  $jmlItem  = array_sum(array_map(fn($x) => (float) ($x['total_amount'] ?? 0), $items)); ?>
+            <tr style="font-weight:700;background:#f1f5f9">
+                <td>TOTAL <?= count($items) ?> lokasi</td>
+                <td><?= $luasItem > 0 ? $h(rtrim(rtrim(number_format($luasItem, 2, ',', '.'), '0'), ',')) . ' m²' : '' ?></td>
+                <td><?= $rp($jmlItem) ?></td>
+                <td></td>
+            </tr>
         <?php else: ?>
             <?php
             /* Kolom Keterangan di surat kertas berisi bullet baku milik template
@@ -392,6 +410,17 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             <?php foreach ($items as $it): ?>
             <tr><td class="lbl"><?= $h($it['name_snapshot'] ?: $it['master_code']) ?> <span class="muted" style="font-weight:400">(<?= $h($segLbl[$it['segment']] ?? $it['segment']) ?>)</span></td><td class="amt"><?= $rp($it['total_amount']) ?></td></tr>
             <?php endforeach; ?>
+            <?php /* Harga paket yang disepakati bisa lebih rendah dari jumlah daftar
+                     harga tiap lokasi (hasil nego). Selisihnya dicetak sebagai
+                     barisnya sendiri; tanpa itu angka-angka di atas tidak pernah
+                     bertemu dengan Subtotal di bawahnya. */ ?>
+            <?php $jmlKomp = array_sum(array_map(fn($x) => (float) ($x['total_amount'] ?? 0), $items));
+                  $selisih = $total - $jmlKomp; ?>
+            <?php if (abs($selisih) >= 1): ?>
+            <tr><td class="lbl">Jumlah daftar harga <?= count($items) ?> lokasi</td><td class="amt"><?= $rp($jmlKomp) ?></td></tr>
+            <tr><td class="lbl"><?= $selisih < 0 ? 'Penyesuaian harga paket' : 'Tambahan harga paket' ?></td>
+                <td class="amt"><?= ($selisih < 0 ? '- ' : '') . $rp(abs($selisih)) ?></td></tr>
+            <?php endif; ?>
             <tr class="sub"><td class="lbl">Subtotal sewa paket</td><td class="amt"><?= $rp($total) ?></td></tr>
         <?php else: ?>
             <tr><td class="lbl">Harga Sewa / Periode</td><td class="amt"><?= $rp($total) ?></td></tr>

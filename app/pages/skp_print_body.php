@@ -192,11 +192,25 @@ $skpHasQr = !empty($skp['sign_token']);
     </table>
     <?php endif; ?>
 
+    <?php
+    /* Dokumen paket menyebut SELURUH lokasinya di kepala dokumen. Tanpa ini,
+       dokumen gabungan 4 lokasi tercetak "1 lokasi, 20 m²" — dan pemeriksa
+       (asst. manager & manager) tidak punya cara tahu sisanya ada. Dokumen yang
+       sudah disetujui sebelum perbaikan ini rinciannya diambil dari Surat
+       Penawaran saat dicetak; angka pembayarannya tetap dari snapshot. */
+    $kmpSkp    = array_values((array) ($d['bundle_items'] ?? []));
+    $adaKmp    = count($kmpSkp) >= 2;
+    $luasKmp   = array_sum(array_map(fn($x) => (float) ($x['luas'] ?? 0), $kmpSkp));
+    $lantaiKmp = implode(', ', array_values(array_unique(array_filter(
+        array_map(fn($x) => trim((string) ($x['lantai'] ?? '')), $kmpSkp),
+        fn($x) => $x !== '' && $x !== '-'))));
+    $lokSkp = $adaKmp ? 'Paket — ' . count($kmpSkp) . ' lokasi' : (string) ($d['location'] ?? '-');
+    ?>
     <div class="sec">Spesifikasi Tempat &amp; Periode Sewa</div>
     <table class="kv">
-        <tr><td class="l">Lokasi</td><td class="c">:</td><td class="v"><?= $h($d['location'] ?? '-') ?></td></tr>
-        <tr><td class="l">Lantai</td><td class="c">:</td><td class="v"><?= $h($d['floor'] ?? '-') ?></td></tr>
-        <tr><td class="l">Luas Area</td><td class="c">:</td><td class="v"><?= number_format((float) ($d['area'] ?? 0), 2, ',', '.') ?> m²</td></tr>
+        <tr><td class="l">Lokasi</td><td class="c">:</td><td class="v"><?= $h($lokSkp) ?></td></tr>
+        <tr><td class="l">Lantai</td><td class="c">:</td><td class="v"><?= $h($adaKmp && $lantaiKmp !== '' ? $lantaiKmp : ($d['floor'] ?? '-')) ?></td></tr>
+        <tr><td class="l">Luas Area</td><td class="c">:</td><td class="v"><?= number_format($adaKmp && $luasKmp > 0 ? $luasKmp : (float) ($d['area'] ?? 0), 2, ',', '.') ?> m²</td></tr>
         <?php if (!empty($d['seating_area'])): ?><tr><td class="l">Luas Seating Area</td><td class="c">:</td><td class="v"><?= number_format((float) $d['seating_area'], 2, ',', '.') ?> m²</td></tr><?php endif; ?>
         <tr><td class="l">Masa Sewa</td><td class="c">:</td><td class="v"><?= $h(date('d/m/Y', strtotime($d['start_date'])) . ' s/d ' . date('d/m/Y', strtotime($d['end_date']))) ?> (<?= (int) ($d['days'] ?? 0) ?> hari)</td></tr>
         <tr><td class="l">Status Sewa</td><td class="c">:</td><td class="v"><?= $h($d['status_sewa'] ?? '-') ?></td></tr>
@@ -204,14 +218,42 @@ $skpHasQr = !empty($skp['sign_token']);
         <tr><td class="l">Produk</td><td class="c">:</td><td class="v"><?= $h(($d['produk'] ?? '') ?: ($d['brand_name'] ?? '-')) ?></td></tr>
     </table>
 
-    <?php if (!empty($d['is_bundle']) && !empty($d['bundle_items'])): $segL = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang']; ?>
-    <div class="sec">Komponen Paket</div>
+    <?php /* Patokannya ada tidaknya komponen, bukan penanda is_bundle: ada
+             dokumen paket yang penandanya tidak tersimpan. */ ?>
+    <?php if ($adaKmp): $segL = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang']; ?>
+    <div class="sec">Komponen Paket &mdash; <?= count($kmpSkp) ?> lokasi</div>
     <table class="pay">
-        <tr><td class="lbl"><strong>Titik / Unit</strong></td><td class="amt"><strong>Harga / Periode</strong></td></tr>
-        <?php foreach ($d['bundle_items'] as $bi): ?>
-        <tr><td class="lbl"><?= $h(($bi['name'] ?: $bi['master_code']) . ' · ' . ($segL[$bi['segment']] ?? $bi['segment'])) ?></td><td class="amt"><?= $rp($bi['total'] ?? 0) ?></td></tr>
+        <tr>
+            <td style="width:10%"><strong>Kode</strong></td>
+            <td class="lbl" style="width:34%"><strong>Titik / Unit</strong></td>
+            <td style="width:16%"><strong>Jenis</strong></td>
+            <td style="width:10%"><strong>Lantai</strong></td>
+            <td class="amt" style="width:12%"><strong>Luas</strong></td>
+            <td class="amt" style="width:18%"><strong>Harga / Periode</strong></td>
+        </tr>
+        <?php foreach ($kmpSkp as $bi): ?>
+        <tr>
+            <td><?= $h($bi['master_code'] ?? '-') ?></td>
+            <td class="lbl"><?= $h(($bi['name'] ?? '') ?: ($bi['master_code'] ?? '-')) ?></td>
+            <td><?= $h($segL[$bi['segment'] ?? ''] ?? ($bi['segment'] ?? '-')) ?></td>
+            <td><?= $h(($bi['lantai'] ?? '') !== '' ? $bi['lantai'] : '-') ?></td>
+            <td class="amt"><?= (float) ($bi['luas'] ?? 0) > 0 ? number_format((float) $bi['luas'], 2, ',', '.') . ' m²' : '-' ?></td>
+            <td class="amt"><?= $rp($bi['total'] ?? 0) ?></td>
+        </tr>
         <?php endforeach; ?>
+        <tr class="grand">
+            <td colspan="4">TOTAL <?= count($kmpSkp) ?> lokasi</td>
+            <td class="amt"><?= $luasKmp > 0 ? number_format($luasKmp, 2, ',', '.') . ' m²' : '-' ?></td>
+            <td class="amt"><?= $rp(array_sum(array_map(fn($x) => (float) ($x['total'] ?? 0), $kmpSkp))) ?></td>
+        </tr>
     </table>
+    <?php /* Nilai per lokasi adalah daftar harga penawaran; yang ditagih adalah
+             Total di Rincian Pembayaran Sewa. Disebut supaya pemeriksa tidak
+             mengira ada dua harga yang bertentangan. */ ?>
+    <div style="font-size:9px;font-style:italic;color:#475569;margin-top:3px">
+        Nilai tiap lokasi di atas mengikuti rincian Surat Penawaran<?= !empty($d['bundle_susulan']) ? ' (diambil saat dokumen ini dicetak)' : '' ?>.
+        Nilai yang ditagih adalah Total pada Rincian Pembayaran Sewa.
+    </div>
     <?php endif; ?>
 
     <?php /* Dokumen berharga bersih: seluruh baris PPN tidak dicetak. */ ?>

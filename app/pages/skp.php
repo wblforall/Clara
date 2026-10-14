@@ -2570,11 +2570,21 @@ function skp_approve(PDO $pdo): void
     // Paket: ambil komponen lebih dulu (dipakai utk snapshot itemize + loop transaksi).
     $isBundleSrc = !empty($src['is_bundle']);
     $bundleRows = [];
-    if ($isBundleSrc && !empty($skp['offer_id'])) {
+    if (!empty($skp['offer_id'])) {
         $bq = $pdo->prepare('SELECT * FROM offer_items WHERE offer_id = ? ORDER BY sort_order ASC, id ASC');
         $bq->execute([(int) $skp['offer_id']]);
         $bundleRows = $bq->fetchAll();
     }
+    // Dua patokan yang SENGAJA dipisah:
+    //  • tampilan  → ada tidaknya komponen ($bundleTampil). Penanda is_bundle
+    //    bisa tidak tersimpan, dan dokumennya lalu dicetak satu lokasi padahal
+    //    penawarannya empat lokasi (keluhan 019/QT-CL/.../X/2026).
+    //  • transaksi → tetap is_bundle + komponen. Jangan disatukan: komponen
+    //    basi dari penawaran yang dikembalikan ke satuan akan meledak jadi N
+    //    transaksi, dan itu uang, bukan tampilan.
+    $bundleTampil = count($bundleRows) >= 2;
+    $komponenSnap = $bundleTampil
+        ? _skp_komponen_paket($pdo, (int) $skp['offer_id'], $pid) : [];
 
     // Snapshot nilai cetak
     $days  = _skp_days($src['start_date'], $src['end_date']);
@@ -2585,19 +2595,30 @@ function skp_approve(PDO $pdo): void
         !empty($skp['sc_flag']) ? (float) $skp['sc_monthly'] : 0.0,
         _skp_bulan($src['start_date'] ?? null, $src['end_date'] ?? null));
     // Paket: lokasi & komponen utk ditampilkan di dokumen SKP.
-    $bundleLoc = $bundleRows ? ('Paket (' . count($bundleRows) . ' komponen)') : '';
-    $bundleItemsSnap = array_map(fn($r) => [
-        'segment' => $r['segment'], 'master_code' => $r['master_code'],
-        'name' => $r['name_snapshot'], 'total' => (float) $r['total_amount'],
-    ], $bundleRows);
+    $bundleLoc = $bundleTampil ? ('Paket — ' . count($bundleRows) . ' lokasi') : '';
+    // Lantai & luas tiap komponen ikut dibekukan: tanpanya pemeriksa cuma
+    // melihat daftar harga, padahal yang dicari lebih dulu "di mana" & "seluas apa".
+    $bundleItemsSnap = array_map(fn($k) => [
+        'segment' => $k['segment'], 'master_code' => $k['kode'], 'name' => $k['nama'],
+        'lantai'  => $k['lantai'], 'luas' => (float) $k['luas'], 'total' => (float) $k['nilai'],
+    ], $komponenSnap);
+    $bundleLantai = implode(', ', array_values(array_unique(array_filter(
+        array_map(fn($k) => trim((string) $k['lantai']), $komponenSnap),
+        fn($x) => $x !== '' && $x !== '-'))));
+    $bundleLuas = array_sum(array_map(fn($k) => (float) $k['luas'], $komponenSnap));
     $snapshot = [
         'company_name' => $src['company_name'], 'npwp' => $src['npwp'], 'siup' => $src['siup'] ?? null, 'address' => $src['address'],
         'cp_name' => $skp['cp_name'] ?: $src['cp_name'], 'phone' => $skp['phone_pj'] ?: $src['cp_phone'],
         'ktp_pj' => $skp['ktp_pj'], 'business_type' => $src['business_type'],
         'produk' => $skp['produk'] ?: ($src['brand_name'] ?? null), 'brand_name' => $src['brand_name'] ?? null,
-        'location' => ($src['location_name'] ?: $src['master_code']) ?: $bundleLoc, 'floor' => $src['floor'],
-        'is_bundle' => $isBundleSrc ? 1 : 0, 'bundle_items' => $bundleItemsSnap,
-        'area' => (float) ($src['area_sqm'] ?: $src['unit_area']), 'seating_area' => $skp['seating_area'],
+        // Paket: lokasi/lantai/luas di kepala dokumen mengikuti seluruh
+        // komponennya. Sebelumnya mengambil master_code penawaran — satu kode
+        // saja — sehingga paket 4 lokasi tercetak "1 lokasi, 20 m²".
+        'location' => $bundleTampil ? $bundleLoc : ((($src['location_name'] ?: $src['master_code']) ?: '') ?: '-'),
+        'floor' => $bundleTampil ? ($bundleLantai ?: $src['floor']) : $src['floor'],
+        'is_bundle' => $bundleTampil ? 1 : 0, 'bundle_items' => $bundleItemsSnap,
+        'area' => $bundleTampil && $bundleLuas > 0 ? $bundleLuas : (float) ($src['area_sqm'] ?: $src['unit_area']),
+        'seating_area' => $skp['seating_area'],
         'start_date' => $src['start_date'], 'end_date' => $src['end_date'], 'days' => $days,
         'status_sewa' => $skp['status_sewa'],
         'admin_siup' => (int)$skp['admin_siup'], 'admin_npwp' => (int)$skp['admin_npwp'], 'admin_ktp' => (int)$skp['admin_ktp'],
@@ -3273,6 +3294,20 @@ function skp_print(PDO $pdo): void
         http_response_code(404); exit('SKP belum disetujui / tidak ditemukan.');
     }
     $d = json_decode($skp['snapshot_json'], true) ?: [];
+    // Dokumen yang SUDAH disetujui sebelum perbaikan ini: snapshotnya terbit
+    // tanpa komponen, jadi cetakannya tetap satu lokasi. Rinciannya diambil
+    // langsung dari Surat Penawaran — HANYA untuk ditampilkan. Seluruh angka
+    // pembayaran tetap memakai snapshot yang ditandatangani, tidak dihitung ulang.
+    if (count($d['bundle_items'] ?? []) < 2 && !empty($skp['offer_id'])) {
+        $kmpLive = _skp_komponen_paket($pdo, (int) $skp['offer_id'], $pid);
+        if (count($kmpLive) >= 2) {
+            $d['bundle_items'] = array_map(fn($k) => [
+                'segment' => $k['segment'], 'master_code' => $k['kode'], 'name' => $k['nama'],
+                'lantai'  => $k['lantai'], 'luas' => (float) $k['luas'], 'total' => (float) $k['nilai'],
+            ], $kmpLive);
+            $d['bundle_susulan'] = 1;
+        }
+    }
     $a = $d['amounts'] ?? [];
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
     // ■/□ dipakai (bukan ☑/☐) karena font PDF (DejaVu) tak punya glyph ballot-box.
