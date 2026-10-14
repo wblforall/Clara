@@ -842,6 +842,54 @@ function _offer_write_items(PDO $pdo, int $offerId, array $items): void
 }
 
 /** Ambil komponen paket sebuah offer (urut). */
+/**
+ * Komponen penawaran LENGKAP dengan lantai & luas dari master.
+ *
+ * offer_items menyimpan nama & nilainya saja; lantai dan luas ada di master
+ * unit/gudang/media. Tanpa digabung, tabel komponen hanya bisa menampilkan
+ * harga — padahal yang pertama dicari pemeriksa justru "di mana" dan "seberapa
+ * luas". Dipakai bersama oleh halaman Penawaran dan formulir SKP supaya
+ * keduanya tidak pernah menampilkan angka yang berbeda.
+ *
+ * @return array<int,array{segment:string,kode:string,nama:string,lantai:string,
+ *                         luas:float,nilai:float,dp:float,deposit:float}>
+ */
+function offer_items_detail(PDO $pdo, int $offerId, int $pid): array
+{
+    if ($offerId <= 0) return [];
+    $st = $pdo->prepare(
+        "SELECT oi.segment, oi.master_code, oi.name_snapshot, oi.area_sqm,
+                oi.total_amount, oi.dp_amount, oi.deposit_amount,
+                COALESCE(u.location_name, g.name, CONCAT_WS(' - ', m.media_type, m.location, NULLIF(m.point, ''))) AS lokasi,
+                COALESCE(u.floor, g.location, m.location) AS lantai,
+                COALESCE(u.area_sqm, g.area_sqm)          AS luas_master
+           FROM offer_items oi
+           LEFT JOIN master_cl_units u ON u.code = oi.master_code AND u.property_id = ? AND oi.segment = 'cl'
+           LEFT JOIN master_gudang   g ON g.code = oi.master_code AND g.property_id = ? AND oi.segment = 'gudang'
+           LEFT JOIN master_media    m ON m.code = oi.master_code AND m.property_id = ? AND oi.segment = 'media'
+          WHERE oi.offer_id = ?
+          ORDER BY oi.sort_order ASC, oi.id ASC"
+    );
+    $st->execute([$pid, $pid, $pid, $offerId]);
+    $out = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $out[] = [
+            'segment' => (string) $r['segment'],
+            'kode'    => (string) $r['master_code'],
+            // Nama saat penawaran dibuat lebih dipercaya daripada master: kalau
+            // unitnya kemudian berganti nama, surat yang sudah terbit tetap
+            // terbaca seperti saat ditandatangani.
+            'nama'    => (string) ($r['name_snapshot'] ?: ($r['lokasi'] ?: $r['master_code'])),
+            'lantai'  => (string) ($r['lantai'] ?: '-'),
+            'luas'    => (float) ($r['area_sqm'] > 0 ? $r['area_sqm'] : (float) $r['luas_master']),
+            'nilai'   => (float) $r['total_amount'],
+            'dp'      => (float) $r['dp_amount'],
+            'deposit' => (float) $r['deposit_amount'],
+        ];
+    }
+    return $out;
+}
+
 function offer_items(PDO $pdo, int $offerId): array
 {
     $st = $pdo->prepare('SELECT * FROM offer_items WHERE offer_id = ? ORDER BY sort_order ASC, id ASC');
@@ -1091,7 +1139,7 @@ function offer_view(PDO $pdo): void
             . "Tautan ini aman dan khusus untuk Anda. Terima kasih.";
     }
 
-    layout('Penawaran ' . ($offer['offer_no'] ?: ''), function () use ($pdo, $offer, $editable, $days, $rp, $signUrl, $waMsg) {
+    layout('Penawaran ' . ($offer['offer_no'] ?: ''), function () use ($pdo, $pid, $offer, $editable, $days, $rp, $signUrl, $waMsg) {
         $badge = [
             'draft'     => ['Draft', '#64748b', '#f1f5f9'],
             'sent'      => ['Terkirim', '#0369a1', '#e0f2fe'],
@@ -1227,17 +1275,27 @@ function offer_view(PDO $pdo): void
             ?>
         </div>
 
-        <?php if ($isBundle):
-            $segLbl = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
-            $items  = offer_items($pdo, (int)$offer['id']); ?>
+        <?php
+        // Patokannya ADA TIDAKNYA komponen, bukan penanda is_bundle: penandanya
+        // bisa tidak tersimpan (penawaran lama / jalur lain) padahal komponennya
+        // jelas ada, dan kalau patokannya penanda, surat empat titik tetap
+        // terlihat seperti surat satu titik.
+        $items  = offer_items_detail($pdo, (int) $offer['id'], $pid);
+        $segLbl = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
+        $luasTotal = array_sum(array_column($items, 'luas'));
+        ?>
+        <?php if ($items): ?>
         <div class="panel" style="margin-top:12px">
-            <h3 style="margin-top:0">Komponen Paket</h3>
+            <h3 style="margin-top:0">Komponen Paket <span style="font-weight:400;font-size:12.5px;color:var(--muted)">&mdash; <?= count($items) ?> lokasi, total <?= number_format($luasTotal, 2, ',', '.') ?> m²</span></h3>
             <div style="overflow-x:auto">
             <table class="table" style="width:100%;border-collapse:collapse;font-size:13px">
                 <thead>
                     <tr style="text-align:left;border-bottom:2px solid #e2e8f0">
+                        <th style="padding:8px 10px">Kode</th>
                         <th style="padding:8px 10px">Nama / Titik</th>
                         <th style="padding:8px 10px">Segmen</th>
+                        <th style="padding:8px 10px">Lantai</th>
+                        <th style="padding:8px 10px;text-align:right">Luas (m²)</th>
                         <th style="padding:8px 10px;text-align:right">Harga / periode</th>
                         <th style="padding:8px 10px;text-align:right">DP</th>
                         <th style="padding:8px 10px;text-align:right">Deposit</th>
@@ -1246,28 +1304,42 @@ function offer_view(PDO $pdo): void
                 <tbody>
                     <?php foreach ($items as $it): ?>
                     <tr style="border-bottom:1px solid #f1f5f9">
-                        <td style="padding:8px 10px"><strong><?= h($it['name_snapshot'] ?: $it['master_code']) ?></strong><?= $it['name_snapshot'] && $it['master_code'] ? ' <span style="color:var(--muted);font-size:11px">' . h($it['master_code']) . '</span>' : '' ?></td>
+                        <td style="padding:8px 10px"><strong><?= h($it['kode']) ?></strong></td>
+                        <td style="padding:8px 10px"><?= h($it['nama']) ?></td>
                         <td style="padding:8px 10px"><?= h($segLbl[$it['segment']] ?? $it['segment']) ?></td>
-                        <td style="padding:8px 10px;text-align:right"><?= $rp($it['total_amount']) ?></td>
-                        <td style="padding:8px 10px;text-align:right"><?= $rp($it['dp_amount']) ?></td>
-                        <td style="padding:8px 10px;text-align:right"><?= $rp($it['deposit_amount']) ?></td>
+                        <td style="padding:8px 10px"><?= h($it['lantai']) ?></td>
+                        <td style="padding:8px 10px;text-align:right"><?= number_format($it['luas'], 2, ',', '.') ?></td>
+                        <td style="padding:8px 10px;text-align:right"><?= $rp($it['nilai']) ?></td>
+                        <td style="padding:8px 10px;text-align:right"><?= $rp($it['dp']) ?></td>
+                        <td style="padding:8px 10px;text-align:right"><?= $rp($it['deposit']) ?></td>
                     </tr>
                     <?php endforeach; ?>
-                    <?php if (!$items): ?>
-                    <tr><td colspan="5" style="padding:10px;color:var(--muted)">Tidak ada komponen.</td></tr>
-                    <?php endif; ?>
                 </tbody>
                 <tfoot>
                     <tr style="border-top:2px solid #e2e8f0;font-weight:700;background:#f8fafc">
-                        <td style="padding:9px 10px" colspan="2">Total Paket</td>
+                        <td style="padding:9px 10px" colspan="4">Total Paket</td>
+                        <td style="padding:9px 10px;text-align:right"><?= number_format($luasTotal, 2, ',', '.') ?></td>
                         <td style="padding:9px 10px;text-align:right"><?= $rp($offer['total_calculated'] ?: $offer['monthly_amount']) ?></td>
                         <td style="padding:9px 10px;text-align:right"><?= $rp($offer['dp_amount']) ?></td>
                         <td style="padding:9px 10px;text-align:right"><?= $rp($offer['deposit_amount']) ?></td>
                     </tr>
+                    <?php /* Jumlah per komponen bisa berbeda dari Total Paket bila harganya
+                             ditetapkan di tingkat paket (tarif bertingkat per m²). Selisihnya
+                             disebut, bukan dibiarkan jadi teka-teki. */ ?>
+                    <?php $jml = array_sum(array_column($items, 'nilai'));
+                          $tot = (float) ($offer['total_calculated'] ?: $offer['monthly_amount']);
+                          if (abs($jml - $tot) >= 1): ?>
+                    <tr><td colspan="8" style="padding:8px 10px;font-size:11.5px;color:#92400e;background:#fffbeb">
+                        Jumlah per komponen <?= $rp($jml) ?> berbeda <?= $rp(abs($jml - $tot)) ?> dari Total Paket
+                        &mdash; biasanya karena harganya ditetapkan di tingkat paket, bukan per lokasi.
+                    </td></tr>
+                    <?php endif; ?>
                 </tfoot>
             </table>
             </div>
         </div>
+        <?php endif; ?>
+
         <?php
             // Transaksi turunan paket (terbit setelah SKP approve) + batal sebagian.
             $btx = $pdo->prepare('SELECT id, module, master_code, final_amount, deleted_at, cancel_reason
@@ -1316,7 +1388,6 @@ function offer_view(PDO $pdo): void
             </table>
             </div>
         </div>
-        <?php endif; ?>
         <?php endif; ?>
         <?php
     });
