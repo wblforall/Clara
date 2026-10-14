@@ -148,6 +148,7 @@ function layout(string $title, callable $body, array $opts = []): void
         ['', 'renewals', 'Renewal Kontrak', 'view_renewals'],
         ['', 'client_analysis', 'Analisa Market Client', 'view_master'],
         ['', 'pic_report', 'Laporan PIC', 'view_pic_report'],
+        ['', 'rekon', 'Rekonsiliasi Excel', 'view_pic_report'],
         ['', 'pic_performance', 'Performa PIC', 'view_pic_report'],
         ['', 'pic_pipeline', 'Aktivitas & Pipeline PIC', 'view_pic_report'],
         ['', 'pic_reward', 'Rewarding PIC', 'view_pic_report'],
