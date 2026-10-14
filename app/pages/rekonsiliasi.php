@@ -146,6 +146,130 @@ function _rekon_tahun_sheet(string $nama): int
     return preg_match('/(20\d{2})/', $nama, $m) ? (int) $m[1] : (int) date('Y');
 }
 
+/**
+ * Saring hasil pencocokan untuk SATU PIC saja.
+ *
+ * Pencocokannya tetap dijalankan atas SELURUH baris lebih dulu, baru hasilnya
+ * disaring. Kalau disaring sebelum dicocokkan, sewa yang di CLARA terlanjur
+ * tercatat atas nama orang lain tidak akan pernah ketemu pasangannya — ia malah
+ * muncul sebagai "belum diinput" di satu orang dan "hanya di CLARA" di orang
+ * lain, dan dua-duanya salah.
+ *
+ * Baris "beda PIC" sengaja ikut bila SALAH SATU sisinya milik PIC ini: yang
+ * kehilangan income dan yang kelebihan sama-sama perlu melihatnya.
+ */
+function _rekon_saring_pic(array $hasil, string $pic): array
+{
+    if ($pic === '') return $hasil;
+    $sama = fn($a) => ReconCL::normal((string) ($a ?? '')) === ReconCL::normal($pic);
+
+    foreach (['cocok', 'nilai', 'pic'] as $k) {
+        $hasil[$k] = array_values(array_filter($hasil[$k], fn($b) => $sama($b['excel']['pic'] ?? '') || $sama($b['clara']['pic'] ?? '')));
+    }
+    foreach (['input', 'lebih'] as $k) {
+        $hasil[$k] = array_values(array_filter($hasil[$k], fn($b) => $sama($b['pic'] ?? '')));
+    }
+    foreach (['dobel_excel', 'dobel_clara'] as $k) {
+        $hasil[$k] = array_values(array_filter($hasil[$k], fn($d) => $sama($d['baris'][0]['pic'] ?? '')));
+    }
+
+    $R = $hasil['ringkas'];
+    $R['n_cocok'] = count($hasil['cocok']);
+    $R['n_nilai'] = count($hasil['nilai']);
+    $R['n_pic']   = count($hasil['pic']);
+    $R['n_input'] = count($hasil['input']);
+    $R['n_lebih'] = count($hasil['lebih']);
+    $R['rp_nilai'] = array_sum(array_column($hasil['nilai'], 'selisih'));
+    $R['rp_input'] = array_sum(array_column($hasil['input'], 'nilai'));
+    $R['rp_lebih'] = array_sum(array_column($hasil['lebih'], 'nilai'));
+    $hasil['ringkas'] = $R;
+    return $hasil;
+}
+
+/**
+ * Langkah perbaikan untuk tiap jenis temuan.
+ *
+ * Ditulis memakai nama menu dan tulisan tombol yang BENAR-BENAR ada di layar
+ * (sudah dicocokkan satu per satu dengan halamannya), supaya orang yang
+ * membacanya tidak perlu bertanya "yang mana tombolnya". Langkah yang menyebut
+ * tombol yang tidak ada lebih buruk daripada tidak ada langkah sama sekali.
+ *
+ * @return array{judul:string,arti:string,langkah:array<int,string>,catatan:string}
+ */
+function _rekon_langkah(string $jenis): array
+{
+    $peta = [
+        'nilai' => [
+            'judul' => 'Nominalnya beda',
+            'arti'  => 'Penyewa yang sama ketemu di kedua sisi, tapi angkanya tidak sama. Salah satu salah ketik — belum tentu CLARA yang salah.',
+            'langkah' => [
+                'Tekan <strong>Buka transaksi</strong> di baris yang mau dibetulkan (langsung ke halaman <em>Edit Transaksi</em>).',
+                'Bandingkan dulu dengan dokumennya: <strong>SKP</strong>/invoice yang ditandatangani client. Yang benar adalah yang tertulis di dokumen, bukan yang paling besar.',
+                'Kalau yang salah di CLARA: betulkan nilainya, lalu <strong>Simpan</strong>.',
+                'Kalau nilainya berbeda hanya pada SATU bulan (mis. sewa dimulai di tengah bulan), betulkan di kotak nominal <strong>per bulan</strong> — bukan di total.',
+                'Kalau yang salah justru di Excel: betulkan angkanya di spreadsheet tim, tidak perlu menyentuh CLARA.',
+                'Buka lagi halaman ini dan unggah ulang berkasnya untuk memastikan barisnya sudah hilang dari daftar.',
+            ],
+            'catatan' => 'Kalau kotak nominal per bulan terisi, angka itulah yang dipakai — ia menang atas kotak “Override Aktual”. Mengubah total saja tidak akan mengubah income bulan itu.',
+        ],
+        'input' => [
+            'judul' => 'Ada di Excel, belum ada di CLARA',
+            'arti'  => 'Sewanya tercatat di spreadsheet tapi belum ada di sistem — atau sudah ada tapi belum ditandatangani client.',
+            'langkah' => [
+                '<strong>Periksa dulu:</strong> buka menu <strong>SKP Pameran</strong> dan cari nama penyewanya. Kalau dokumennya sudah ada tapi belum ber-TTD client, <u>jangan dibuat ulang</u> — income memang baru diakui setelah client menandatangani. Kejar tanda tangannya.',
+                'Kalau benar-benar belum ada, cek clientnya lebih dulu: menu <strong>Master Client</strong>, ketik namanya di pencarian.',
+                'Client belum terdaftar? Tekan <strong>+ Tambah Client</strong>, isi <strong>Nama Perusahaan</strong>, <strong>Provinsi</strong>, dan <strong>Kota</strong> (tiga ini wajib), lalu Simpan.',
+                'Buka menu <strong>Surat Penawaran</strong> → tekan <strong>+ Buat Penawaran Exhibition</strong> (atau Media/Gudang sesuai jenisnya).',
+                'Di kolom <strong>Client / Perusahaan</strong>, ketik nama atau brand-nya lalu pilih dari daftar yang muncul.',
+                'Isi unit/lokasi, periode sewa, dan harganya sesuai yang tertulis di Excel. Simpan.',
+                'Kalau client sudah setuju, ubah status penawaran menjadi <strong>DEAL</strong>.',
+                'Dari halaman penawaran itu, tekan <strong>→ Buat SKP (Konfirmasi)</strong>, lengkapi datanya, lalu kirim untuk disetujui.',
+                'Setelah disetujui dan <strong>ditandatangani client</strong>, nilainya otomatis masuk ke income bulan yang bersangkutan.',
+            ],
+            'catatan' => 'Input transaksi langsung sudah dimatikan (mode offer-first). Semua sewa baru harus lewat Surat Penawaran → SKP, supaya ada dokumennya.',
+        ],
+        'lebih' => [
+            'judul' => 'Ada di CLARA, tidak ada di Excel',
+            'arti'  => 'Sistem punya, spreadsheet tidak. Belum tentu salah — bisa jadi Excel yang belum diperbarui.',
+            'langkah' => [
+                'Tekan <strong>Buka transaksi</strong> untuk melihat isinya: client, unit, periode, dan nilainya.',
+                'Cocokkan dengan dokumen fisik. <strong>Kalau sewanya memang ada</strong> → tambahkan barisnya di spreadsheet tim, selesai; CLARA sudah benar.',
+                'Kalau ternyata <strong>kembar</strong> dengan baris lain (unit, periode, dan nilai sama) → lihat bagian “Dugaan dobel” di bawah, lalu ajukan penghapusan.',
+                'Kalau sewanya <strong>batal</strong> atau tidak pernah terjadi → ajukan penghapusan lewat menu <strong>Pengajuan Hapus Data</strong> dengan jenis alasan <strong>Client batal</strong>.',
+            ],
+            'catatan' => 'Jangan langsung menghapus hanya karena tidak ada di Excel. Spreadsheet juga bisa tertinggal.',
+        ],
+        'pic' => [
+            'judul' => 'Tercatat atas nama PIC berbeda',
+            'arti'  => 'Nilainya sama, tapi sales-nya tidak sama. Satu baris salah orang mengubah pencapaian DUA orang sekaligus.',
+            'langkah' => [
+                'Pastikan dulu siapa yang benar — lihat siapa yang menandatangani Surat Penawaran/SKP-nya.',
+                'Tekan <strong>Buka transaksi</strong>, ubah kolom <strong>PIC</strong> ke nama yang benar, lalu Simpan.',
+                'Kalau sewanya memang dikerjakan berdua, pakai <strong>pembagian income per PIC</strong> di halaman transaksi itu — jumlah pembagiannya harus pas dengan nilai kontrak.',
+                'Periksa hasilnya di menu <strong>Laporan PIC</strong> pada bulan yang sama.',
+            ],
+            'catatan' => 'Menyimpan transaksi menulis ulang seluruh alokasi bulanannya, jadi nama PIC di laporan ikut berubah sendiri. Tapi periksa juga nominal per bulannya setelah disimpan — jangan sampai ikut berubah.',
+        ],
+        'dobel' => [
+            'judul' => 'Dugaan dobel',
+            'arti'  => 'Penyewa, unit, nominal, dan bulan sama persis lebih dari sekali. Belum tentu salah — bisa dua periode berbeda.',
+            'langkah' => [
+                'Buka kedua transaksinya dan bandingkan <strong>tanggal mulai dan selesainya</strong>. Kalau periodenya berbeda, itu dua sewa yang sah — abaikan.',
+                'Kalau benar-benar kembar, catat dulu <strong>nomor transaksi</strong> yang mau dihapus (mis. #1776). Sisakan yang paling lengkap dokumennya.',
+                'Buka menu <strong>Pengajuan Hapus Data</strong>.',
+                'Di blok <strong>Ajukan penghapusan</strong>, ketik nomor transaksi atau nama client itu di kotak <em>“Cari nomor SKP / transaksi, client, atau unit…”</em>.',
+                'Centang baris yang mau dihapus (boleh lebih dari satu sekaligus).',
+                'Pilih <strong>Jenis alasan</strong> → <strong>Dobel / duplikat</strong>.',
+                'Tulis <strong>Alasan dihapus</strong> dengan jelas, sebutkan kembarannya — mis. “dobel dengan transaksi #1776, unit dan periode sama persis”.',
+                'Tekan <strong>Kirim Pengajuan</strong>, lalu beri tahu pemutusnya (manager) untuk menyetujui.',
+                'Begitu disetujui, datanya langsung terhapus dan income bulan itu ikut turun sesuai nilainya.',
+            ],
+            'catatan' => 'Penghapusan masih bisa dipulihkan lewat riwayat di halaman yang sama bila ternyata keliru — tapi lebih baik diperiksa dulu daripada dipulihkan kemudian.',
+        ],
+    ];
+    return $peta[$jenis] ?? ['judul' => '', 'arti' => '', 'langkah' => [], 'catatan' => ''];
+}
+
 function rekonsiliasi_page(PDO $pdo): void
 {
     require_permission('view_pic_report');
@@ -176,6 +300,7 @@ function rekonsiliasi_page(PDO $pdo): void
     }
 
     $hasil = null; $perPic = []; $peta = []; $isi = null; $periode = (string) getv('periode', '');
+    $pilihPic = ''; $daftarPic = [];
     if ($x && $pilihSheet !== '' && isset($sheets[$pilihSheet])) {
         $s = $sheets[$pilihSheet];
         $tahun = _rekon_tahun_sheet($pilihSheet);
@@ -207,9 +332,28 @@ function rekonsiliasi_page(PDO $pdo): void
         }
         $hasil  = ReconMatch::cocokkan($isi['baris'], $clara);
         $perPic = ReconMatch::perPic($isi['baris'], $clara);
+
+        // Pilihan PIC: daftarnya diambil dari kedua sisi, supaya PIC yang hanya
+        // ada di salah satunya (mis. sudah tidak aktif) tetap bisa diperiksa.
+        $daftarPic = [];
+        foreach ($perPic as $pp) $daftarPic[$pp['pic']] = $pp;
+        $pilihPic = (string) getv('pic', '');
+        if ($pilihPic !== '' && !isset($daftarPic[$pilihPic])) $pilihPic = '';
+        if ($pilihPic !== '') {
+            $hasil = _rekon_saring_pic($hasil, $pilihPic);
+            $angkaPic = $daftarPic[$pilihPic];
+            // Angka ringkasan ikut jadi milik PIC itu saja; kalau tidak, kartu
+            // di atas akan menyebut angka setim sementara tabel di bawahnya
+            // hanya memuat satu orang — dua angka yang bertengkar di satu layar.
+            $hasil['ringkas']['total_excel'] = $angkaPic['excel'];
+            $hasil['ringkas']['total_clara'] = $angkaPic['clara'];
+            $hasil['ringkas']['selisih']     = $angkaPic['selisih'];
+            $hasil['ringkas']['n_excel']     = $angkaPic['n_excel'];
+            $hasil['ringkas']['n_clara']     = $angkaPic['n_clara'];
+        }
     }
 
-    layout('Rekonsiliasi Excel', function () use ($berkas, $sheets, $pilihSheet, $periode, $isi, $hasil, $perPic, $peta, $pesan, $prop) {
+    layout('Rekonsiliasi Excel', function () use ($berkas, $sheets, $pilihSheet, $periode, $isi, $hasil, $perPic, $peta, $pesan, $prop, $pilihPic, $daftarPic) {
         $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
         $bulanNama = function (string $p): string {
             if (!preg_match('/^(\d{4})-(\d{2})$/', $p, $m)) return $p;
@@ -227,6 +371,11 @@ function rekonsiliasi_page(PDO $pdo): void
         .rk-form{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
         .rk-rinci summary{cursor:pointer;font-weight:700;padding:9px 0}
         .rk-rinci table{width:100%;font-size:13px}
+        .rk-langkah{background:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #0D9488;border-radius:10px;padding:10px 14px;margin:6px 0 10px}
+        .rk-langkah .jd{font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#0f766e;margin-bottom:4px}
+        .rk-langkah ol{margin:0 0 0 18px;padding:0}
+        .rk-langkah li{margin-bottom:5px;line-height:1.55;font-size:12.5px}
+        .rk-langkah .ct{margin-top:7px;font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 9px}
         @media(max-width:768px){.rk-form{flex-direction:column;align-items:stretch}}
         </style>
 
@@ -279,6 +428,16 @@ function rekonsiliasi_page(PDO $pdo): void
                         <?php endforeach; ?>
                     </select>
                 </div>
+                <div>
+                    <label style="display:block;font-size:12px;font-weight:700">PIC</label>
+                    <select name="pic" onchange="this.form.submit()">
+                        <option value="">Semua PIC (seluruh tim)</option>
+                        <?php foreach ($daftarPic as $nm => $pp): ?>
+                        <option value="<?= h($nm) ?>" <?= $nm === $pilihPic ? 'selected' : '' ?>>
+                            <?= h($nm) ?><?= abs($pp['selisih']) < 1 ? ' — sudah cocok' : ' — selisih ' . $rp($pp['selisih']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
                 <div class="help">Properti aktif: <strong><?= h($prop['name'] ?? '-') ?></strong></div>
             </form>
             <?php if ($peta): ?>
@@ -324,6 +483,13 @@ function rekonsiliasi_page(PDO $pdo): void
         <?php endif; ?>
 
         <?php if ($hasil): $R = $hasil['ringkas']; ?>
+        <?php if ($pilihPic !== ''): ?>
+        <div class="panel" style="border-left:4px solid #0D9488;margin-bottom:12px">
+            <h3 style="margin:0">Berkas kerja <?= h($pilihPic) ?> — <?= h($bulanNama($periode)) ?></h3>
+            <p class="help" style="margin:4px 0 0">Seluruh angka di bawah ini hanya milik <?= h($pilihPic) ?>.
+               Ganti ke <em>Semua PIC</em> di atas untuk melihat satu tim.</p>
+        </div>
+        <?php endif; ?>
         <div class="rk-kartu">
             <div class="k"><span>Menurut Excel</span><b><?= $rp($R['total_excel']) ?></b>
                 <span><?= (int) $R['n_excel'] ?> baris</span></div>
@@ -354,7 +520,11 @@ function rekonsiliasi_page(PDO $pdo): void
                 <tbody>
                 <?php foreach ($perPic as $p): ?>
                 <tr>
-                    <td data-label="PIC"><strong><?= h($p['pic']) ?></strong>
+                    <td data-label="PIC">
+                        <?php /* Nama PIC jadi tautan: inilah cara tercepat masuk ke berkas
+                                 kerja satu orang — tanpa harus turun ke pemilih di atas. */ ?>
+                        <a href="?r=rekon&amp;sheet=<?= urlencode($pilihSheet) ?>&amp;periode=<?= urlencode($periode) ?>&amp;pic=<?= urlencode($p['pic']) ?>"
+                           style="font-weight:700;<?= $p['pic'] === $pilihPic ? 'color:#0f766e' : '' ?>"><?= h($p['pic']) ?></a>
                         <span class="help">(<?= (int) $p['n_excel'] ?> / <?= (int) $p['n_clara'] ?> baris)</span></td>
                     <td data-label="Excel" style="text-align:right"><?= $rp($p['excel']) ?></td>
                     <td data-label="CLARA" style="text-align:right"><?= $rp($p['clara']) ?></td>
@@ -389,11 +559,21 @@ function rekonsiliasi_page(PDO $pdo): void
             ?>
             <details class="rk-rinci" <?= $kunci === 'nilai' ? 'open' : '' ?>>
                 <summary><?= h($judul) ?> — <?= $n ?> baris<?= $nilai !== '' ? ' (' . $nilai . ')' : '' ?></summary>
-                <p class="help" style="margin:0 0 6px"><?= h($ket) ?></p>
+                <?php $L = _rekon_langkah($kunci); ?>
+                <p class="help" style="margin:0 0 6px"><?= h($L['arti'] ?: $ket) ?></p>
+                <?php if ($L['langkah']): ?>
+                <div class="rk-langkah">
+                    <div class="jd">Yang harus dikerjakan</div>
+                    <ol><?php foreach ($L['langkah'] as $lk): ?><li><?= $lk ?></li><?php endforeach; ?></ol>
+                    <?php if ($L['catatan'] !== ''): ?>
+                    <div class="ct">⚠ <?= $L['catatan'] ?></div>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
                 <table>
                     <thead><tr><th>Penyewa</th><th>Unit</th><th>PIC</th>
                         <th style="text-align:right">Excel</th><th style="text-align:right">CLARA</th>
-                        <th style="text-align:right">Selisih</th><th>Letak</th></tr></thead>
+                        <th style="text-align:right">Selisih</th><th>Letak</th><th>Tindakan</th></tr></thead>
                     <tbody>
                     <?php foreach ($baris as $b):
                         $e = $b['excel'] ?? ($kunci === 'input' ? $b : null);
@@ -412,6 +592,21 @@ function rekonsiliasi_page(PDO $pdo): void
                         <td data-label="CLARA" style="text-align:right"><?= $c ? $rp($c['nilai']) : '—' ?></td>
                         <td data-label="Selisih" style="text-align:right"><?= $rp($sel) ?></td>
                         <td data-label="Letak"><span class="help"><?= h(($e['rujukan'] ?? '') . ($e && $c ? ' / ' : '') . ($c['rujukan'] ?? '')) ?></span></td>
+                        <?php
+                        /* Tautan langsung ke layar tempat baris ini diperbaiki.
+                           Nomor transaksi CLARA disimpan sebagai "#1776" pada
+                           rujukan, jadi tinggal diambil angkanya. */
+                        $trxId = preg_match('/#(\d+)/', (string) ($c['rujukan'] ?? ''), $mm) ? (int) $mm[1] : 0;
+                        ?>
+                        <td data-label="Tindakan">
+                            <?php if ($trxId): ?>
+                            <a class="btn light" style="font-size:11.5px;padding:3px 9px" target="_blank"
+                               href="?r=transaction_edit&amp;id=<?= $trxId ?>">Buka transaksi</a>
+                            <?php elseif ($kunci === 'input'): ?>
+                            <a class="btn light" style="font-size:11.5px;padding:3px 9px" target="_blank"
+                               href="?r=clients">Cek client</a>
+                            <?php endif; ?>
+                        </td>
                     </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -423,7 +618,14 @@ function rekonsiliasi_page(PDO $pdo): void
                 if (empty($hasil[$k])) continue; ?>
             <details class="rk-rinci">
                 <summary><?= h($judul) ?> — <?= count($hasil[$k]) ?> kelompok</summary>
-                <p class="help" style="margin:0 0 6px">Penyewa, unit, nominal, dan bulan sama persis lebih dari satu kali. Perlu dicek, belum tentu salah.</p>
+                <?php $L = _rekon_langkah('dobel'); ?>
+                <p class="help" style="margin:0 0 6px"><?= h($L['arti']) ?></p>
+                <div class="rk-langkah">
+                    <div class="jd">Yang harus dikerjakan</div>
+                    <ol><?php foreach ($L['langkah'] as $lk): ?><li><?= $lk ?></li><?php endforeach; ?></ol>
+                    <div class="ct">⚠ <?= $L['catatan'] ?></div>
+                    <div style="margin-top:8px"><a class="btn" href="?r=deletion_request" target="_blank">Buka Pengajuan Hapus Data</a></div>
+                </div>
                 <table>
                     <thead><tr><th>Penyewa</th><th>Unit</th><th>Nominal</th><th>Berulang</th><th style="text-align:right">Kelebihan bila dobel</th></tr></thead>
                     <tbody>
