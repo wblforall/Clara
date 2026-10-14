@@ -747,8 +747,13 @@ function skp_form(PDO $pdo): void
                    && empty($src['is_bundle']) && _skp_komponen_tunggal($pdo, $pid, $skp, $trxId);
     $satuanTarif = _skp_satuan_tarif((string) ($src['pricing_type'] ?? ''));
     // Komponen paket — dipakai menggantikan satu baris Lokasi/Luas yang menyesatkan.
-    $komponenPaket = (!empty($src['is_bundle']) && $offerId)
-        ? _skp_komponen_paket($pdo, $offerId, $pid) : [];
+    //
+    // Patokannya ADA TIDAKNYA komponen, bukan penanda is_bundle. Penanda itu bisa
+    // saja tidak tersimpan (penawaran lama, atau dibuat lewat jalur lain) padahal
+    // komponennya jelas ada empat — dan kalau patokannya penanda, dokumen seperti
+    // itu tetap tampil sebagai satu lokasi. Yang nyata adalah barisnya.
+    $komponenPaket = $offerId ? _skp_komponen_paket($pdo, $offerId, $pid) : [];
+    if (count($komponenPaket) < 2) $komponenPaket = [];   // satu komponen = bukan paket
     $luasPaket = array_sum(array_column($komponenPaket, 'luas'));
     // Batas unggah yang BENAR-BENAR berlaku (aturan aplikasi vs setelan PHP server).
     $batasUnggahMb = number_format(_skp_batas_unggah() / 1048576, 1, ',', '.') . ' MB';
