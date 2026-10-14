@@ -277,6 +277,13 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
          lagi di sini: ada surat paket yang penandanya tidak tersimpan, dan
          suratnya lalu tercetak satu baris saja. */ ?>
 <?php $isBundle = count($items) >= 2;
+    /* Disiapkan di LUAR cabang paket/satuan. Pengisiannya memang hanya terjadi
+       di cabang satuan, tetapi pembacaannya ada SESUDAH tabel ditutup — di luar
+       kedua cabang. Untuk surat paket variabelnya jadi tidak pernah ada, dan
+       PHP 8 menerbitkan peringatan tepat di tengah keluaran: dengan
+       APP_DEBUG menyala, teks peringatan itu ikut tercetak ke dalam PDF yang
+       diterima client, lengkap dengan jalur berkas di server. */
+    $ketBullet = [];
     $segLbl = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
     $sumDp = $isBundle ? array_sum(array_column($items, 'dp_amount')) : (float) $o['dp_amount']; ?>
     <?php if ($LAYOUT === 'rincian'): ?>
