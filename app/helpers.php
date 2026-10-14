@@ -584,8 +584,6 @@ function permission_for_route(string $route): string
         'm_exec' => 'view_exec_summary',
         'm_offers' => 'manage_offers',
         'm_skp' => 'manage_skp',
-        'stock_reports', 'stock_sheet' => 'view_stock_report',
-        'stock_report_form', 'stock_report_save', 'stock_report_delete', 'stock_sheet_api' => 'manage_stock_report',
         'lookup_manage', 'lookup_save', 'lookup_delete' => 'manage_master',
         'trend', 'comparison' => 'view_dashboard',
         'switch_property', 'select_property', 'set_property' => 'view_dashboard',
