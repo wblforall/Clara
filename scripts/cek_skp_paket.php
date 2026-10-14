@@ -128,9 +128,15 @@ $items = $ambilKomponen($pdo, (int) $o['id'], $pid);
 
 echo "\n3. Komponen yang sebenarnya tersimpan: " . count($items) . "\n";
 if (!$items) {
-    echo "   TIDAK ADA satu pun baris di offer_items.\n";
-    echo "   Artinya penawaran ini memang tersimpan sebagai satu lokasi — yang perlu\n";
-    echo "   diperiksa bukan SKP-nya, melainkan cara penawarannya dibuat.\n";
+    echo "   TIDAK ADA satu pun baris di offer_items.\n\n";
+    echo "   Artinya penawaran ini TERSIMPAN sebagai satu lokasi (" . ($o['master_code'] ?: '-') . "),\n";
+    echo "   bukan sebagai paket. Perbaikan tampilan tidak akan memunculkan lokasi\n";
+    echo "   yang memang tidak ada datanya — yang perlu diperbaiki penawarannya.\n\n";
+    echo "   Cara memperbaiki (penawaran berstatus deal terkunci, minta admin buka dulu):\n";
+    echo "     1. Buka Surat Penawaran " . ($o['offer_no'] ?: '#' . $o['id']) . " → Edit\n";
+    echo "     2. Centang \"Penawaran Paket (gabungan beberapa booth/titik media)\"\n";
+    echo "     3. Masukkan SEMUA lokasinya beserta nilainya, lalu Simpan\n";
+    echo "     4. Jalankan lagi perintah ini — komponennya harus terbaca\n";
     exit(0);
 }
 printf("   %-10s %-28s %-8s %10s %16s\n", 'KODE', 'LOKASI', 'LANTAI', 'LUAS', 'NILAI');
