@@ -58,6 +58,7 @@ public/report_recurring.pdf
 # Laporan jadi + aset screenshot: memuat nama & dokumen klien nyata.
 # Sumber pembangunnya (scripts/build_*.php) boleh di-commit, hasilnya tidak.
 docs/*.pdf
+docs/rekonsiliasi_assets/
 docs/*_assets/
 /Laporan_*.pdf
 # Berkas klien / dokumen contoh yang tertinggal di root repo.
