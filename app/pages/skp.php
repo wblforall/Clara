@@ -510,35 +510,11 @@ function _skp_komponen_tunggal(PDO $pdo, int $pid, ?array $skp, int $trxId): boo
  */
 function _skp_komponen_paket(PDO $pdo, int $offerId, int $pid): array
 {
-    if ($offerId <= 0) return [];
-    $st = $pdo->prepare(
-        "SELECT oi.segment, oi.master_code, oi.name_snapshot, oi.area_sqm, oi.total_amount,
-                COALESCE(u.location_name, g.name, CONCAT_WS(' - ', m.media_type, m.location, NULLIF(m.point, ''))) AS lokasi,
-                COALESCE(u.floor, g.location, m.location) AS lantai,
-                COALESCE(u.area_sqm, g.area_sqm)                                           AS luas_master
-           FROM offer_items oi
-           LEFT JOIN master_cl_units u ON u.code = oi.master_code AND u.property_id = ? AND oi.segment = 'cl'
-           LEFT JOIN master_gudang   g ON g.code = oi.master_code AND g.property_id = ? AND oi.segment = 'gudang'
-           LEFT JOIN master_media    m ON m.code = oi.master_code AND m.property_id = ? AND oi.segment = 'media'
-          WHERE oi.offer_id = ?
-          ORDER BY oi.sort_order ASC, oi.id ASC"
-    );
-    $st->execute([$pid, $pid, $pid, $offerId]);
-    $out = [];
-    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
-        $out[] = [
-            'segment' => (string) $r['segment'],
-            'kode'    => (string) $r['master_code'],
-            // Nama yang dicatat saat penawaran dibuat lebih dipercaya daripada
-            // master: kalau unitnya kemudian diganti nama, surat yang sudah
-            // terbit tetap harus terbaca seperti saat ditandatangani.
-            'nama'    => (string) ($r['name_snapshot'] ?: ($r['lokasi'] ?: $r['master_code'])),
-            'lantai'  => (string) ($r['lantai'] ?: '-'),
-            'luas'    => (float) ($r['area_sqm'] > 0 ? $r['area_sqm'] : (float) $r['luas_master']),
-            'nilai'   => (float) $r['total_amount'],
-        ];
-    }
-    return $out;
+    // Satu pemuat dipakai bersama halaman Penawaran — kalau tiap halaman punya
+    // kuerinya sendiri, cepat atau lambat keduanya menampilkan luas yang berbeda
+    // untuk dokumen yang sama, dan tidak ada yang tahu mana yang benar.
+    if (!function_exists('offer_items_detail')) require_once __DIR__ . '/offers.php';
+    return offer_items_detail($pdo, $offerId, $pid);
 }
 
 /** Label tarif sesuai cara kontrak ini dihargai — satuannya ikut pricing_type. */
