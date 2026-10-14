@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 function print_dashboard(PDO $pdo): void
 {
-    $period = getv('period', date('Y-m'));
+    $period = periode_bulan();
 
     // — ambil semua data sama seperti dashboard —
     $pid = current_property_id();
@@ -435,7 +435,7 @@ td.money { text-align: right; font-weight: 600; }
 
 function print_exec(PDO $pdo): void
 {
-    $period = getv('period', date('Y-m'));
+    $period = periode_bulan();
 
     $pid         = current_property_id();
     $monthNames  = ['01'=>'Januari','02'=>'Februari','03'=>'Maret','04'=>'April','05'=>'Mei','06'=>'Juni','07'=>'Juli','08'=>'Agustus','09'=>'September','10'=>'Oktober','11'=>'November','12'=>'Desember'];
@@ -798,7 +798,7 @@ function print_exec_summary(PDO $pdo): void
 {
     require_permission('view_exec_summary');
 
-    $period = getv('period', date('Y-m'));
+    $period = periode_bulan();
     $monthNames = ['01'=>'Januari','02'=>'Februari','03'=>'Maret','04'=>'April','05'=>'Mei','06'=>'Juni',
                    '07'=>'Juli','08'=>'Agustus','09'=>'September','10'=>'Oktober','11'=>'November','12'=>'Desember'];
     $periodLabel = ($monthNames[substr($period,5,2)] ?? substr($period,5,2)) . ' ' . substr($period,0,4);
@@ -1658,7 +1658,7 @@ new Chart(document.getElementById('chartSeg'), {
 
 function export_summary(PDO $pdo): void
 {
-    $period = getv('period', date('Y-m'));
+    $period = periode_bulan();
     audit($pdo, 'export_summary_csv', 'transaction_allocations', $period, ['period' => $period], [], 'reporting');
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="summary-' . $period . '.csv"');
@@ -1726,7 +1726,7 @@ function export_transactions_xlsx(PDO $pdo): void
 function export_pic_report_xlsx(PDO $pdo): void
 {
     require_permission('view_pic_report');
-    $period = getv('period', date('Y-m'));
+    $period = periode_bulan();
     $pid    = current_property_id();
     $target = (float) ($pdo->query('SELECT target_amount FROM targets_monthly WHERE period_key=' . $pdo->quote($period) . " AND property_id=$pid")->fetchColumn() ?: 0);
 

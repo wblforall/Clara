@@ -6,7 +6,7 @@ require_once dirname(__DIR__) . '/ApprovalLine.php';
 
 function dashboard(PDO $pdo): void
 {
-    $period = getv('period', date('Y-m'));
+    $period = periode_bulan();
     $pid = current_property_id();
     // Hanya yang berhak mengubah master yang perlu tahu — dan yang bisa memperbaikinya.
     $masterIssues = can('manage_master') ? master_data_issues($pdo, $pid) : [];
@@ -692,7 +692,7 @@ function dashboard(PDO $pdo): void
 
 function display_json(PDO $pdo): void
 {
-    $period = getv('period', date('Y-m'));
+    $period = periode_bulan();
     $pid    = (int) getv('pid', 0) ?: null;
 
     // Cache ringan: data display jarang berubah & di-polling banyak panel/TV.
@@ -724,7 +724,7 @@ function display_json(PDO $pdo): void
 
 function display_page(PDO $pdo, array $config): void
 {
-    $period     = getv('period', date('Y-m'));
+    $period     = periode_bulan();
     $token      = getv('token', '');
     $periods    = periods($pdo);
     $properties = $pdo->query("SELECT id, name FROM properties WHERE status='active' ORDER BY id")->fetchAll();

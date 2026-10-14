@@ -2706,7 +2706,7 @@ function transaction_overlaps_page(PDO $pdo): void
 {
     $pid          = current_property_id();
     $moduleFilter = getv('module', '');
-    $periodFilter = getv('period', '');  // YYYY-MM
+    $periodFilter = periode_bulan('period', '');  // YYYY-MM
     $moduleLabel  = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
 
     $params = [$pid];

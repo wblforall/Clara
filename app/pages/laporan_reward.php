@@ -33,7 +33,7 @@ function pic_reward_page(PDO $pdo): void
                    '07'=>'Juli','08'=>'Agustus','09'=>'September','10'=>'Oktober','11'=>'November','12'=>'Desember'];
 
     $startPeriod = (string)($pdo->query("SELECT value FROM settings WHERE `key`='reward_start_period'")->fetchColumn() ?: '');
-    $period      = getv('period', date('Y-m'));
+    $period      = periode_bulan();
     $periodLabel = ($monthNames[substr($period, 5, 2)] ?? substr($period, 5, 2)) . ' ' . substr($period, 0, 4);
 
     $availPeriods = $pdo->query(

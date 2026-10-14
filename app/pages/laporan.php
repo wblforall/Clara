@@ -228,7 +228,7 @@ function pic_report_page(PDO $pdo): void
 {
     require_permission('view_pic_report');
 
-    $period  = getv('period', date('Y-m'));
+    $period  = periode_bulan();
     $periods = $pdo->query("SELECT period_key, MAX(label) label FROM periods GROUP BY period_key ORDER BY period_key DESC")->fetchAll();
     $props   = allowed_properties();
     $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
@@ -280,7 +280,7 @@ function pic_report_print(PDO $pdo): void
 {
     require_permission('view_pic_report');
 
-    $period  = getv('period', date('Y-m'));
+    $period  = periode_bulan();
     $pid     = current_property_id();
     $monthNames = ['01'=>'Januari','02'=>'Februari','03'=>'Maret','04'=>'April','05'=>'Mei','06'=>'Juni','07'=>'Juli','08'=>'Agustus','09'=>'September','10'=>'Oktober','11'=>'November','12'=>'Desember'];
     $periodLabel = ($monthNames[substr($period,5,2)] ?? substr($period,5,2)) . ' ' . substr($period,0,4);

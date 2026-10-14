@@ -513,6 +513,24 @@ function pwa_head(): void
     <?php
 }
 
+/**
+ * Periode bulanan dari URL, dipastikan berbentuk YYYY-MM yang masuk akal.
+ *
+ * Nilainya datang langsung dari alamat halaman dan selama ini dipakai apa
+ * adanya. "?period=2026-13" membuat strtotime() mengembalikan false, lalu
+ * date('t', false) melempar TypeError di PHP 8 — satu halaman penuh berubah
+ * jadi layar putih hanya karena satu karakter di URL, dan siapa pun yang bisa
+ * membuka halaman itu bisa memicunya.
+ *
+ * $bawaan '' dipakai untuk halaman yang memang boleh tanpa filter periode.
+ */
+function periode_bulan(string $kunci = 'period', ?string $bawaan = null): string
+{
+    $v = trim((string) getv($kunci, ''));
+    if (preg_match('/^\d{4}-(\d{2})$/', $v, $m) && (int) $m[1] >= 1 && (int) $m[1] <= 12) return $v;
+    return $bawaan ?? date('Y-m');
+}
+
 function permission_for_route(string $route): string
 {
     return match ($route) {

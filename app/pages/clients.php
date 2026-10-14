@@ -391,7 +391,7 @@ function client_analysis_page(PDO $pdo): void
 
     $opts           = client_options($pdo);
     $geoProvinces   = array_keys(clients_geo_data());
-    $period         = getv('period', date('Y-m'));
+    $period         = periode_bulan();
     $filterType     = getv('business_type', '');
     $filterScale    = getv('business_scale', '');
     $filterSegment  = getv('target_segment', '');
