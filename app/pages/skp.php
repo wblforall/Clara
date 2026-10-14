@@ -3282,6 +3282,28 @@ function skp_sign_upload(PDO $pdo): void
 }
 
 // ─── Cetak / PDF ─────────────────────────────────────────────────────────────
+/**
+ * Lengkapi snapshot dokumen dengan komponen paketnya bila belum ada.
+ *
+ * Dokumen yang disetujui sebelum komponen ikut dibekukan punya snapshot tanpa
+ * daftar lokasi, sehingga cetakannya tampil satu lokasi padahal penawarannya
+ * gabungan. Rinciannya diambil langsung dari Surat Penawaran — HANYA untuk
+ * ditampilkan. Seluruh angka pembayaran tetap memakai snapshot yang
+ * ditandatangani, tidak ada yang dihitung ulang.
+ */
+function _skp_lengkapi_komponen(PDO $pdo, array $skp, array $d, int $pid): array
+{
+    if (count($d['bundle_items'] ?? []) >= 2 || empty($skp['offer_id'])) return $d;
+    $kmp = _skp_komponen_paket($pdo, (int) $skp['offer_id'], $pid);
+    if (count($kmp) < 2) return $d;
+    $d['bundle_items'] = array_map(fn($k) => [
+        'segment' => $k['segment'], 'master_code' => $k['kode'], 'name' => $k['nama'],
+        'lantai'  => $k['lantai'], 'luas' => (float) $k['luas'], 'total' => (float) $k['nilai'],
+    ], $kmp);
+    $d['bundle_susulan'] = 1;
+    return $d;
+}
+
 function skp_print(PDO $pdo): void
 {
     require_permission('manage_skp');
@@ -3293,21 +3315,7 @@ function skp_print(PDO $pdo): void
     if (!$skp || !in_array($skp['status'], ['approved', 'signed'], true) || empty($skp['snapshot_json'])) {
         http_response_code(404); exit('SKP belum disetujui / tidak ditemukan.');
     }
-    $d = json_decode($skp['snapshot_json'], true) ?: [];
-    // Dokumen yang SUDAH disetujui sebelum perbaikan ini: snapshotnya terbit
-    // tanpa komponen, jadi cetakannya tetap satu lokasi. Rinciannya diambil
-    // langsung dari Surat Penawaran — HANYA untuk ditampilkan. Seluruh angka
-    // pembayaran tetap memakai snapshot yang ditandatangani, tidak dihitung ulang.
-    if (count($d['bundle_items'] ?? []) < 2 && !empty($skp['offer_id'])) {
-        $kmpLive = _skp_komponen_paket($pdo, (int) $skp['offer_id'], $pid);
-        if (count($kmpLive) >= 2) {
-            $d['bundle_items'] = array_map(fn($k) => [
-                'segment' => $k['segment'], 'master_code' => $k['kode'], 'name' => $k['nama'],
-                'lantai'  => $k['lantai'], 'luas' => (float) $k['luas'], 'total' => (float) $k['nilai'],
-            ], $kmpLive);
-            $d['bundle_susulan'] = 1;
-        }
-    }
+    $d = _skp_lengkapi_komponen($pdo, $skp, json_decode($skp['snapshot_json'], true) ?: [], $pid);
     $a = $d['amounts'] ?? [];
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
     // ■/□ dipakai (bukan ☑/☐) karena font PDF (DejaVu) tak punya glyph ballot-box.
@@ -3409,11 +3417,15 @@ function skp_sign_page(PDO $pdo): void
         http_response_code(410);
         exit('Tautan tanda tangan sudah kedaluwarsa. Hubungi sales untuk link baru.');
     }
-    $d = json_decode($skp['snapshot_json'], true) ?: [];
+    $d = _skp_lengkapi_komponen($pdo, $skp, json_decode($skp['snapshot_json'], true) ?: [],
+                                (int) $skp['property_id']);
     $a = $d['amounts'] ?? [];
     $signed = $skp['status'] === 'signed';
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
     $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+    // Dipakai isi dokumen (skp_print_body) — halaman ini sekarang menampilkan
+    // dokumen yang sama persis dengan PDF-nya, bukan ringkasan versinya sendiri.
+    $chk = fn($b) => !empty($b) ? '<span style="color:#0D9488">■</span>' : '<span style="color:#9ca3af">□</span>';
     include __DIR__ . '/skp_sign_template.php';
 }
 

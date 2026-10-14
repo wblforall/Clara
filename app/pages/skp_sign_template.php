@@ -59,54 +59,12 @@ ol.tnc li{font-size:12px;color:#374151;margin-bottom:4px;line-height:1.5;text-al
         <div class="title"><?= $h($docTitle) ?></div>
         <div class="no">No. <?= $h($skp['skp_no']) ?></div>
 
-        <div class="sec">Identitas Penyewa</div>
-        <table class="kv">
-            <tr><td class="l">Nama Perusahaan</td><td class="v"><?= $h($d['company_name'] ?? '-') ?></td></tr>
-            <tr><td class="l">Penanggung Jawab</td><td class="v"><?= $h($d['cp_name'] ?? '-') ?></td></tr>
-        </table>
-
-        <div class="sec">Tempat & Periode</div>
-        <table class="kv">
-            <tr><td class="l"><?= $sgTipe === 'fu' ? 'Titik Media' : 'Lokasi' ?></td><td class="v"><?= $h($d['location'] ?? '-') ?><?= $sgTipe === 'fu' ? '' : ' — Lt. ' . $h($d['floor'] ?? '-') ?></td></tr>
-            <?php if ($sgTipe !== 'fu'): /* titik media dijual per hari, bukan per m² */ ?>
-            <tr><td class="l">Luas Area</td><td class="v"><?= number_format((float)($d['area'] ?? 0), 2, ',', '.') ?> m²</td></tr>
-            <?php endif; ?>
-            <tr><td class="l">Masa Sewa</td><td class="v"><?= $h(date('d/m/Y', strtotime($d['start_date'])) . ' s/d ' . date('d/m/Y', strtotime($d['end_date']))) ?> (<?= (int)($d['days'] ?? 0) ?> hari)</td></tr>
-            <?php if ($sgTipe === 'fu' && trim((string) ($sgDet['lokasi_kegiatan'] ?? '')) !== ''): ?>
-            <tr><td class="l">Lokasi Kegiatan</td><td class="v"><?= $h($sgDet['lokasi_kegiatan']) ?></td></tr>
-            <?php endif; ?>
-            <tr><td class="l">Produk</td><td class="v"><?= $h(($d['produk'] ?? '') ?: ($d['brand_name'] ?? '-')) ?></td></tr>
-        </table>
-
-        <div class="sec">Rincian <?= $sgTipe === 'fu' ? 'Biaya' : 'Pembayaran' ?></div>
-        <table class="pay">
-            <tr><td>Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
-            <tr><td>PPN 12%</td><td class="amt"><?= $rp($sgPpn) ?></td></tr>
-            <?php if ($sgTipe === 'fu'): ?>
-            <tr class="grand"><td>Total Biaya Sewa + PPN 12%</td><td class="amt"><?= $rp($sgGrand) ?></td></tr>
-            <?php else: ?>
-            <tr><td>Jaminan / Security Deposit</td><td class="amt"><?= $rp($a['deposit'] ?? 0) ?></td></tr>
-            <tr class="grand"><td>Grand Total</td><td class="amt"><?= $rp($a['grand_total'] ?? 0) ?></td></tr>
-            <?php endif; ?>
-        </table>
-
-        <?php
-        $att = $d['attachments'] ?? [];
-        $labels = ['ktp' => 'Copy KTP', 'npwp' => 'Copy NPWP', 'siup' => 'Copy SIUP', 'bukti_transfer' => 'Bukti Transfer', 'pengajuan' => 'Dokumen Pengajuan'];
-        if (!empty($d['offer_no']) || $att): ?>
-        <div class="sec">Lampiran Dokumen</div>
-        <table class="kv">
-            <?php if (!empty($d['offer_no'])): ?><tr><td class="l">Surat Penawaran Final</td><td class="v">☑ No. <?= $h($d['offer_no']) ?></td></tr><?php endif; ?>
-            <?php foreach ($labels as $k => $lbl): if (isset($att[$k])): ?>
-            <tr><td class="l"><?= $h($lbl) ?></td><td class="v">☑ <span class="muted"><?= $h($att[$k]) ?></span></td></tr>
-            <?php endif; endforeach; ?>
-        </table>
-        <?php endif; ?>
-
-        <?php if ($sgTerms): ?>
-        <div class="sec"><?= $sgTipe === 'sks' ? 'Peraturan Sewa Gudang' : 'Ketentuan / Note' ?></div>
-        <ol class="tnc"><?php foreach ($sgTerms as $t): ?><li><?= $h($t) ?></li><?php endforeach; ?></ol>
-        <?php endif; ?>
+        <?php /* Isi dokumen di bawah ini DIRENDER dari berkas yang sama dengan
+                 PDF-nya (skp_print_body.php). Sebelumnya halaman ini menyusun
+                 ringkasannya sendiri, sehingga yang ditandatangani client tidak
+                 selengkap dokumen yang dibaca pemeriksa: ketentuan, rincian
+                 pembayaran, dan komponen paketnya tidak ikut tampil. */ ?>
+        <?php include __DIR__ . '/skp_print_body.php'; ?>
     </div>
 
     <div class="card">
@@ -187,6 +145,22 @@ ol.tnc li{font-size:12px;color:#374151;margin-bottom:4px;line-height:1.5;text-al
 })();
 </script>
 <?php endif; ?>
+<?php /* QR "Scan untuk validasi" di dalam dokumen digambar di sisi browser —
+         halaman ini memakai isi dokumen yang sama dengan cetakannya. */ ?>
+<script src="assets/qrcode.min.js"></script>
+<script>
+(function () {
+    if (typeof qrcode !== 'function') return;
+    document.querySelectorAll('.qrbox[data-qr]').forEach(function (box) {
+        try {
+            var qr = qrcode(0, 'M');
+            qr.addData(box.getAttribute('data-qr'));
+            qr.make();
+            box.innerHTML = qr.createSvgTag({ cellSize: 2, margin: 0, scalable: true });
+        } catch (e) {}
+    });
+})();
+</script>
 </body>
 </html>
 <?php exit; ?>
