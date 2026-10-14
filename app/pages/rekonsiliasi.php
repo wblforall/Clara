@@ -170,7 +170,14 @@ function _rekon_saring_pic(array $hasil, string $pic): array
         $hasil[$k] = array_values(array_filter($hasil[$k], fn($b) => $sama($b['pic'] ?? '')));
     }
     foreach (['dobel_excel', 'dobel_clara'] as $k) {
-        $hasil[$k] = array_values(array_filter($hasil[$k], fn($d) => $sama($d['baris'][0]['pic'] ?? '')));
+        // Satu kelompok dobel bisa berisi baris milik BEBERAPA PIC (unit yang
+        // sama diinput dua orang). Dulu yang diperiksa hanya baris pertama,
+        // sehingga kelompok yang baris pertamanya milik orang lain hilang dari
+        // layar PIC ini — padahal justru dia yang kelebihan income.
+        $hasil[$k] = array_values(array_filter($hasil[$k], function ($d) use ($sama) {
+            foreach ($d['baris'] as $b) if ($sama($b['pic'] ?? '')) return true;
+            return false;
+        }));
     }
 
     $R = $hasil['ringkas'];
@@ -203,30 +210,31 @@ function _rekon_langkah(string $jenis): array
             'judul' => 'Nominalnya beda',
             'arti'  => 'Penyewa yang sama ketemu di kedua sisi, tapi angkanya tidak sama. Salah satu salah ketik — belum tentu CLARA yang salah.',
             'langkah' => [
-                'Tekan <strong>Buka transaksi</strong> di baris yang mau dibetulkan (langsung ke halaman <em>Edit Transaksi</em>).',
+                'Tekan <strong>Buka transaksi</strong> di baris yang mau dibetulkan — langsung ke halaman <em>Edit Transaksi</em>. (Kotak pencarian di daftar transaksi tidak bisa mencari nomor, jadi tombol ini memang jalan tercepat.)',
                 'Bandingkan dulu dengan dokumennya: <strong>SKP</strong>/invoice yang ditandatangani client. Yang benar adalah yang tertulis di dokumen, bukan yang paling besar.',
-                'Kalau yang salah di CLARA: betulkan nilainya, lalu <strong>Simpan</strong>.',
-                'Kalau nilainya berbeda hanya pada SATU bulan (mis. sewa dimulai di tengah bulan), betulkan di kotak nominal <strong>per bulan</strong> — bukan di total.',
-                'Kalau yang salah justru di Excel: betulkan angkanya di spreadsheet tim, tidak perlu menyentuh CLARA.',
-                'Buka lagi halaman ini dan unggah ulang berkasnya untuk memastikan barisnya sudah hilang dari daftar.',
+                'Kalau yang salah di CLARA: betulkan kotak <strong>Override Aktual</strong> — itulah kotak yang dipakai hampir semua transaksi di sistem ini, bukan kotak “Rate”.',
+                '<strong>Khusus sewa bulanan/recurring:</strong> kotak nominal <strong>per bulan</strong> sudah terisi angka lama begitu form dibuka, dan angka itu MENANG atas Override Aktual. Setelah mengubah Override, tekan <strong>Kalkulasi Total</strong> lalu <strong>Pakai Semua Baru</strong> — kalau tidak, income tidak bergeser sama sekali meski sudah disimpan.',
+                'Kalau yang beda hanya pada SATU bulan (mis. sewa mulai di tengah bulan), cukup betulkan kotak bulan itu saja.',
+                'Simpan, lalu periksa hasilnya di menu <strong>Laporan PIC</strong> pada bulan yang sama.',
+                'Kalau yang salah justru di Excel: betulkan angkanya di spreadsheet tim, CLARA tidak perlu disentuh.',
             ],
-            'catatan' => 'Kalau kotak nominal per bulan terisi, angka itulah yang dipakai — ia menang atas kotak “Override Aktual”. Mengubah total saja tidak akan mengubah income bulan itu.',
+            'catatan' => 'Urutan yang menang: kotak per bulan → Override Aktual → Rate. Kalau dokumennya sudah BER-TTD client, nilainya terkunci: yang bisa dilakukan hanya “Jadwal Harga → Terapkan” untuk bulan yang belum lewat, atau hapus dokumennya lalu terbitkan ulang.',
         ],
         'input' => [
             'judul' => 'Ada di Excel, belum ada di CLARA',
             'arti'  => 'Sewanya tercatat di spreadsheet tapi belum ada di sistem — atau sudah ada tapi belum ditandatangani client.',
             'langkah' => [
-                '<strong>Periksa dulu:</strong> buka menu <strong>SKP Pameran</strong> dan cari nama penyewanya. Kalau dokumennya sudah ada tapi belum ber-TTD client, <u>jangan dibuat ulang</u> — income memang baru diakui setelah client menandatangani. Kejar tanda tangannya.',
-                'Kalau benar-benar belum ada, cek clientnya lebih dulu: menu <strong>Master Client</strong>, ketik namanya di pencarian.',
-                'Client belum terdaftar? Tekan <strong>+ Tambah Client</strong>, isi <strong>Nama Perusahaan</strong>, <strong>Provinsi</strong>, dan <strong>Kota</strong> (tiga ini wajib), lalu Simpan.',
-                'Buka menu <strong>Surat Penawaran</strong> → tekan <strong>+ Buat Penawaran Exhibition</strong> (atau Media/Gudang sesuai jenisnya).',
-                'Di kolom <strong>Client / Perusahaan</strong>, ketik nama atau brand-nya lalu pilih dari daftar yang muncul.',
-                'Isi unit/lokasi, periode sewa, dan harganya sesuai yang tertulis di Excel. Simpan.',
-                'Kalau client sudah setuju, ubah status penawaran menjadi <strong>DEAL</strong>.',
-                'Dari halaman penawaran itu, tekan <strong>→ Buat SKP (Konfirmasi)</strong>, lengkapi datanya, lalu kirim untuk disetujui.',
-                'Setelah disetujui dan <strong>ditandatangani client</strong>, nilainya otomatis masuk ke income bulan yang bersangkutan.',
+                '<strong>Periksa dulu:</strong> buka menu <strong>SKP Pameran</strong> dan cari nama penyewanya. Kalau dokumennya sudah ada tapi belum ber-TTD client, <u>jangan dibuat ulang</u> — income memang baru diakui saat client menandatangani, bukan saat manager menyetujui. Kejar tanda tangannya.',
+                'Kalau benar-benar belum ada, siapkan clientnya lebih dulu: menu <strong>Master Client</strong>, ketik namanya di pencarian. <em>Client tidak bisa ditambahkan dari dalam formulir penawaran</em>, jadi harus dari sini.',
+                'Client belum terdaftar? Tekan <strong>Tambah Client</strong>, isi <strong>Nama Perusahaan</strong>, <strong>Provinsi</strong>, dan <strong>Kota</strong> (tiga ini wajib, sisanya boleh menyusul), lalu Simpan. Kontak orangnya ditambahkan lewat <strong>+ Tambah Kontak</strong> yang baru muncul SESUDAH client tersimpan.',
+                '<strong>Kalau ini sewa Exhibition:</strong> buka <strong>Surat Penawaran</strong> → <strong>+ Buat Penawaran Exhibition</strong>. Di kolom <strong>Client / Perusahaan</strong>, ketik nama atau brand-nya lalu pilih dari daftar yang muncul. Isi unit, periode, dan harganya, lalu Simpan.',
+                'Setelah client setuju, tandai penawarannya <strong>DEAL</strong>, lalu tekan <strong>→ Buat SKP (Konfirmasi)</strong>.',
+                '<strong>Kalau ini sewa Gudang atau Media:</strong> jangan lewat Surat Penawaran. Buka <strong>SKP Pameran</strong> → <strong>+ Buat Dokumen ▾</strong> → pilih <strong>SKS Gudang</strong> atau <strong>Form Utilities</strong> (Media).',
+                'Lengkapi dokumennya, lalu tekan <strong>Simpan &amp; Submit untuk Approval</strong>.',
+                'Dokumen diparaf <strong>Asst. Manager</strong>, lalu disetujui <strong>Manager</strong>.',
+                'Terakhir, minta <strong>tanda tangan client</strong>. Begitu ditandatangani, nilainya otomatis masuk ke income bulan yang bersangkutan.',
             ],
-            'catatan' => 'Input transaksi langsung sudah dimatikan (mode offer-first). Semua sewa baru harus lewat Surat Penawaran → SKP, supaya ada dokumennya.',
+            'catatan' => 'Input transaksi langsung sudah dimatikan (mode offer-first) — satu-satunya pengecualian adalah tombol Perpanjang pada kontrak yang sudah ada. Selama belum ber-TTD, wajar kalau transaksinya sudah terlihat tapi income-nya masih nol.',
         ],
         'lebih' => [
             'judul' => 'Ada di CLARA, tidak ada di Excel',
@@ -235,7 +243,7 @@ function _rekon_langkah(string $jenis): array
                 'Tekan <strong>Buka transaksi</strong> untuk melihat isinya: client, unit, periode, dan nilainya.',
                 'Cocokkan dengan dokumen fisik. <strong>Kalau sewanya memang ada</strong> → tambahkan barisnya di spreadsheet tim, selesai; CLARA sudah benar.',
                 'Kalau ternyata <strong>kembar</strong> dengan baris lain (unit, periode, dan nilai sama) → lihat bagian “Dugaan dobel” di bawah, lalu ajukan penghapusan.',
-                'Kalau sewanya <strong>batal</strong> atau tidak pernah terjadi → ajukan penghapusan lewat menu <strong>Pengajuan Hapus Data</strong> dengan jenis alasan <strong>Client batal</strong>.',
+                'Kalau sewanya <strong>batal</strong> atau tidak pernah terjadi → ajukan penghapusan lewat <strong>Input → Pengajuan Hapus Data</strong> dengan jenis alasan <strong>Client batal</strong>.',
             ],
             'catatan' => 'Jangan langsung menghapus hanya karena tidak ada di Excel. Spreadsheet juga bisa tertinggal.',
         ],
@@ -244,27 +252,29 @@ function _rekon_langkah(string $jenis): array
             'arti'  => 'Nilainya sama, tapi sales-nya tidak sama. Satu baris salah orang mengubah pencapaian DUA orang sekaligus.',
             'langkah' => [
                 'Pastikan dulu siapa yang benar — lihat siapa yang menandatangani Surat Penawaran/SKP-nya.',
-                'Tekan <strong>Buka transaksi</strong>, ubah kolom <strong>PIC</strong> ke nama yang benar, lalu Simpan.',
-                'Kalau sewanya memang dikerjakan berdua, pakai <strong>pembagian income per PIC</strong> di halaman transaksi itu — jumlah pembagiannya harus pas dengan nilai kontrak.',
-                'Periksa hasilnya di menu <strong>Laporan PIC</strong> pada bulan yang sama.',
+                'Tekan <strong>Buka transaksi</strong>, ubah kolom <strong>PIC Dealing</strong> ke nama yang benar, lalu Simpan.',
+                'Periksa hasilnya di menu <strong>Laporan PIC</strong> pada bulan yang sama — namanya harus sudah berpindah.',
+                '<strong>Kalau di Laporan PIC belum berpindah juga</strong>, berarti transaksinya terkunci (dokumennya sudah ber-TTD) dan alokasinya tidak ikut ditulis ulang. Minta <strong>Manager</strong> membuka transaksi itu, mengosongkan panel <strong>Pembagian Income per PIC</strong>, lalu menekan <strong>Simpan Pembagian</strong> — itu yang menulis ulang nama PIC di laporan.',
             ],
-            'catatan' => 'Menyimpan transaksi menulis ulang seluruh alokasi bulanannya, jadi nama PIC di laporan ikut berubah sendiri. Tapi periksa juga nominal per bulannya setelah disimpan — jangan sampai ikut berubah.',
+            'catatan' => 'Pembagian ke beberapa PIC butuh izin Approve SKP (sales tidak punya) dan jumlahnya WAJIB pas dengan nilai kontrak — kalau tidak pas, pembagiannya diabaikan diam-diam tanpa pesan kesalahan.',
         ],
         'dobel' => [
             'judul' => 'Dugaan dobel',
             'arti'  => 'Penyewa, unit, nominal, dan bulan sama persis lebih dari sekali. Belum tentu salah — bisa dua periode berbeda.',
             'langkah' => [
-                'Buka kedua transaksinya dan bandingkan <strong>tanggal mulai dan selesainya</strong>. Kalau periodenya berbeda, itu dua sewa yang sah — abaikan.',
-                'Kalau benar-benar kembar, catat dulu <strong>nomor transaksi</strong> yang mau dihapus (mis. #1776). Sisakan yang paling lengkap dokumennya.',
-                'Buka menu <strong>Pengajuan Hapus Data</strong>.',
-                'Di blok <strong>Ajukan penghapusan</strong>, ketik nomor transaksi atau nama client itu di kotak <em>“Cari nomor SKP / transaksi, client, atau unit…”</em>.',
-                'Centang baris yang mau dihapus (boleh lebih dari satu sekaligus).',
+                'Buka kedua transaksinya lewat tombol <strong>Buka transaksi</strong> dan bandingkan <strong>tanggal mulai dan selesainya</strong>. Kalau periodenya berbeda, itu dua sewa yang sah — abaikan.',
+                'Kalau benar-benar kembar, tentukan mana yang <strong>dipertahankan</strong>: yang dokumennya paling lengkap (berlencana <em>Ber-TTD Client</em>) selalu disisakan; yang <em>Draft</em> atau <em>Dikembalikan</em> yang dihapus.',
+                'Catat <strong>nama client</strong> dan <strong>kode unit</strong>-nya (mis. “Resita Cecilia Achwan”, “UG-005”).',
+                'Buka sidebar grup <strong>Input</strong> → menu <strong>Pengajuan Hapus Data</strong>.',
+                'Gulir ke panel <strong>Ajukan penghapusan</strong>, lalu ketik <strong>nama client</strong> atau <strong>kode unit</strong> tadi di kotak <em>“Cari nomor SKP / transaksi, client, atau unit…”</em>.',
+                '<strong>Jangan mengetik nomor transaksi</strong> (mis. 2094) untuk data yang sudah berdokumen — kolom yang dicari memuat nomor SKP, bukan nomor transaksi, jadi hasilnya akan kosong padahal datanya ada.',
+                'Centang baris yang mau dihapus. Boleh beberapa sekaligus dalam satu pengajuan.',
                 'Pilih <strong>Jenis alasan</strong> → <strong>Dobel / duplikat</strong>.',
-                'Tulis <strong>Alasan dihapus</strong> dengan jelas, sebutkan kembarannya — mis. “dobel dengan transaksi #1776, unit dan periode sama persis”.',
-                'Tekan <strong>Kirim Pengajuan</strong>, lalu beri tahu pemutusnya (manager) untuk menyetujui.',
-                'Begitu disetujui, datanya langsung terhapus dan income bulan itu ikut turun sesuai nilainya.',
+                'Tulis <strong>Alasan dihapus</strong> dengan jelas, sebutkan kembarannya — mis. “dobel dengan dokumen SKP/EW/2026/067, unit dan periode sama persis”.',
+                'Tekan <strong>Kirim Pengajuan</strong>, lalu beri tahu <strong>Manager</strong> untuk menekan <strong>✓ Setujui &amp; Hapus</strong>.',
+                'Begitu disetujui, datanya langsung terhapus saat itu juga dan income bulan itu ikut turun.',
             ],
-            'catatan' => 'Penghapusan masih bisa dipulihkan lewat riwayat di halaman yang sama bila ternyata keliru — tapi lebih baik diperiksa dulu daripada dipulihkan kemudian.',
+            'catatan' => 'Sales hanya melihat data atas namanya sendiri di halaman itu. Kalau keliru hapus, masih ada tombol ↩ Pulihkan di panel Riwayat — tapi yang bisa menekannya hanya Manager/superadmin, bukan yang mengajukan.',
         ],
     ];
     return $peta[$jenis] ?? ['judul' => '', 'arti' => '', 'langkah' => [], 'catatan' => ''];
