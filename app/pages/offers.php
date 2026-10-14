@@ -2240,7 +2240,30 @@ function offer_form(PDO $pdo): void
                 var sel = clone.querySelector('select[name="item_segment[]"]'); if (sel) sel.selectedIndex = 0;
                 body.appendChild(clone); wireRow(clone);
             });
-            if (bundleChk) bundleChk.addEventListener('change', applyBundleMode);
+            // Mematikan centang hanya menyembunyikan editornya, isiannya tetap
+            // terkirim. Supaya tidak ada komponen yang hilang diam-diam,
+            // mematikannya ditanya dulu lalu barisnya benar-benar dikosongkan.
+            function komponenTerisi() {
+                var n = 0;
+                document.querySelectorAll('#bundle-body .bundle-row').forEach(function (tr) {
+                    var k = tr.querySelector('input[name="item_master_code[]"]');
+                    var m = tr.querySelector('input[name="item_name[]"]');
+                    if ((k && k.value.trim()) || (m && m.value.trim())) n++;
+                });
+                return n;
+            }
+            if (bundleChk) bundleChk.addEventListener('change', function () {
+                if (!bundleChk.checked) {
+                    var n = komponenTerisi();
+                    if (n > 0) {
+                        if (!confirm('Hapus ' + n + ' komponen paket dari penawaran ini?\n\nKalau Batal, penawaran tetap berupa Paket.')) {
+                            bundleChk.checked = true; applyBundleMode(); return;
+                        }
+                        document.querySelectorAll('#bundle-body .bundle-row input').forEach(function (i) { i.value = ''; });
+                    }
+                }
+                applyBundleMode();
+            });
             applyBundleMode();
 
             // ── Tarif bertingkat per m² (harga melekat ke PAKET) ─────────────
@@ -2970,8 +2993,21 @@ function offer_save(PDO $pdo): void
         redirect_to('offer_form', $id ? ['id' => $id] : ($isBundleAwal ? ['bundle' => 1] : []));
     }
 
-    $isBundle = post('is_bundle') === '1';
-    $bundleItems = $isBundle ? _offer_parse_bundle_items($months) : [];
+    // Komponen SELALU dibaca, walau kotak "Penawaran Paket" tidak tercentang.
+    // Mematikan centangnya cuma MENYEMBUNYIKAN editornya (display:none) —
+    // isiannya tetap ikut terkirim. Dulu isian itu dibuang tanpa sebaris pun
+    // pemberitahuan: penawaran 4 lokasi tersimpan sebagai 1 lokasi, dan baru
+    // ketahuan saat suratnya dicetak (019/QT-CL/e-Walk/BSB-BPN/X/2026 — 4 lokasi
+    // yang dipilih sales hilang seluruhnya, tanpa jejak di mana pun).
+    $isBundle    = post('is_bundle') === '1';
+    $bundleItems = _offer_parse_bundle_items($months);
+    if (!$isBundle && count($bundleItems) >= 2) {
+        $isBundle = true;
+        flash('Terbaca ' . count($bundleItems) . ' komponen, jadi penawaran ini disimpan sebagai Paket. '
+            . 'Kalau yang dimaksud satu lokasi saja, buka Edit lalu kosongkan daftar komponennya.');
+    }
+    // Satu komponen tanpa centang = memang bukan paket.
+    if (!$isBundle) $bundleItems = [];
     // Tarif bertingkat per m²: nilai paket dihitung dari luas × tarif × hari,
     // lalu dibagi ke tiap komponen menurut luasnya. Dipakai saat harga memang
     // melekat ke paket, bukan ke lokasi satu per satu.

@@ -132,11 +132,19 @@ if (!$items) {
     echo "   Artinya penawaran ini TERSIMPAN sebagai satu lokasi (" . ($o['master_code'] ?: '-') . "),\n";
     echo "   bukan sebagai paket. Perbaikan tampilan tidak akan memunculkan lokasi\n";
     echo "   yang memang tidak ada datanya — yang perlu diperbaiki penawarannya.\n\n";
-    echo "   Cara memperbaiki (penawaran berstatus deal terkunci, minta admin buka dulu):\n";
-    echo "     1. Buka Surat Penawaran " . ($o['offer_no'] ?: '#' . $o['id']) . " → Edit\n";
-    echo "     2. Centang \"Penawaran Paket (gabungan beberapa booth/titik media)\"\n";
-    echo "     3. Masukkan SEMUA lokasinya beserta nilainya, lalu Simpan\n";
-    echo "     4. Jalankan lagi perintah ini — komponennya harus terbaca\n";
+    if (in_array($o['status'], ['deal', 'cancelled'], true)) {
+        echo "   Penawaran berstatus '" . $o['status'] . "' TIDAK bisa diedit lagi lewat aplikasi\n";
+        echo "   (offer_status menolaknya: \"Status terkunci.\"), jadi perbaikannya lewat skrip:\n\n";
+        echo "     php scripts/perbaiki_komponen_penawaran.php --offer=" . $o['id'] . " \\\n";
+        echo "        --kode=KODE1,KODE2,KODE3,KODE4\n\n";
+        echo "   Tanpa --terapkan skrip itu hanya MENAMPILKAN rencananya, belum menulis.\n";
+    } else {
+        echo "   Cara memperbaiki:\n";
+        echo "     1. Buka Surat Penawaran " . ($o['offer_no'] ?: '#' . $o['id']) . " → Edit\n";
+        echo "     2. Centang \"Penawaran Paket (gabungan beberapa booth/titik media)\"\n";
+        echo "     3. Masukkan SEMUA lokasinya beserta nilainya, lalu Simpan\n";
+        echo "     4. Jalankan lagi perintah ini — komponennya harus terbaca\n";
+    }
     exit(0);
 }
 printf("   %-10s %-28s %-8s %10s %16s\n", 'KODE', 'LOKASI', 'LANTAI', 'LUAS', 'NILAI');
