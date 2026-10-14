@@ -885,6 +885,15 @@ function offer_items_detail(PDO $pdo, int $offerId, int $pid): array
             'nilai'   => (float) $r['total_amount'],
             'dp'      => (float) $r['dp_amount'],
             'deposit' => (float) $r['deposit_amount'],
+            // Nama kolom aslinya ikut dibawa supaya template cetak yang sudah
+            // memakai baris offer_items mentah bisa memakai fungsi ini apa
+            // adanya — satu sumber angka untuk layar maupun kertas.
+            'master_code'    => (string) $r['master_code'],
+            'name_snapshot'  => (string) $r['name_snapshot'],
+            'area_sqm'       => (float) ($r['area_sqm'] > 0 ? $r['area_sqm'] : (float) $r['luas_master']),
+            'total_amount'   => (float) $r['total_amount'],
+            'dp_amount'      => (float) $r['dp_amount'],
+            'deposit_amount' => (float) $r['deposit_amount'],
         ];
     }
     return $out;
@@ -1021,7 +1030,9 @@ function offers_list_page(PDO $pdo): void
 
     $in = implode(',', array_fill(0, count($tabStatuses[$tab]), '?'));
     $stmt = $pdo->prepare(
-        "SELECT o.*, c.company_name FROM offers o LEFT JOIN master_clients c ON c.id = o.client_id
+        "SELECT o.*, c.company_name,
+                (SELECT COUNT(*) FROM offer_items oi WHERE oi.offer_id = o.id) AS komponen
+         FROM offers o LEFT JOIN master_clients c ON c.id = o.client_id
          WHERE o.property_id = ? AND o.status IN ($in)" . ($module ? ' AND o.module = ?' : '') . $scopeSql . " ORDER BY o.id DESC"
     );
     $stmt->execute(array_merge([$pid], $tabStatuses[$tab], $module ? [$module] : [], $scopeP));
@@ -1075,7 +1086,12 @@ function offers_list_page(PDO $pdo): void
                     <?php foreach ($rows as $r): $b = $badge[$r['status']] ?? $badge['draft']; $href = '?r=offer_view&id=' . (int)$r['id']; ?>
                         <tr style="cursor:pointer" onclick="if(!event.target.closest('a'))location.href='<?= $href ?>'">
                             <td style="white-space:nowrap;font-weight:600"><a href="<?= $href ?>" style="color:#0369a1;text-decoration:none"><?= h($r['offer_no'] ?? '—') ?></a></td>
-                            <td><?php [$ml, $mc, $mbg] = _offer_module_badge($r['module']); ?><span class="badge" style="color:<?= $mc ?>;background:<?= $mbg ?>"><?= h($ml) ?></span></td>
+                            <?php /* Penawaran berkomponen >=2 adalah paket, walau kolom
+                                     module-nya masih 'cl' (penanda lama tidak tersimpan).
+                                     Jumlah lokasinya disebut supaya terbaca sekali lihat. */ ?>
+                            <td><?php $kmp = (int) ($r['komponen'] ?? 0);
+                                      [$ml, $mc, $mbg] = _offer_module_badge($kmp >= 2 ? 'bundle' : $r['module']); ?>
+                                <span class="badge" style="color:<?= $mc ?>;background:<?= $mbg ?>"><?= h($ml) ?><?= $kmp >= 2 ? ' · ' . $kmp . ' lokasi' : '' ?></span></td>
                             <td><?= h($r['company_name'] ?? '-') ?></td>
                             <td style="white-space:nowrap;font-size:11.5px"><?= $r['start_date'] ? h(date('d/m/y', strtotime($r['start_date'])) . '–' . date('d/m/y', strtotime($r['end_date']))) : '—' ?></td>
                             <td style="white-space:nowrap"><?= money($r['monthly_amount']) ?></td>
@@ -1250,7 +1266,12 @@ function offer_view(PDO $pdo): void
         </div>
         <?php endif; ?>
 
-        <?php $isBundle = !empty($offer['is_bundle']); ?>
+        <?php
+        // Patokannya ADA TIDAKNYA komponen, bukan penanda is_bundle — lihat
+        // catatan di tabel Komponen Paket di bawah.
+        $items    = offer_items_detail($pdo, (int) $offer['id'], $pid);
+        $isBundle = count($items) >= 2;
+        ?>
         <div class="panel" style="margin-top:12px">
             <h3 style="margin-top:0">Ringkasan Penawaran</h3>
             <?php
@@ -1279,8 +1300,7 @@ function offer_view(PDO $pdo): void
         // Patokannya ADA TIDAKNYA komponen, bukan penanda is_bundle: penandanya
         // bisa tidak tersimpan (penawaran lama / jalur lain) padahal komponennya
         // jelas ada, dan kalau patokannya penanda, surat empat titik tetap
-        // terlihat seperti surat satu titik.
-        $items  = offer_items_detail($pdo, (int) $offer['id'], $pid);
+        // terlihat seperti surat satu titik. $items sudah dimuat di atas.
         $segLbl = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
         $luasTotal = array_sum(array_column($items, 'luas'));
         ?>
@@ -3200,14 +3220,18 @@ function offer_print(PDO $pdo): void
     }
     $prop = current_property();
     $letter = offer_letter($pdo, $o);   // isi surat per jenis booth (snapshot/template)
-    $items = !empty($o['is_bundle']) ? offer_items($pdo, (int) $o['id']) : []; // komponen paket
+    // Komponen dibaca dari BARISNYA, bukan penanda is_bundle. Penandanya bisa
+    // tidak tersimpan (penawaran lama / dikembalikan ke satuan lalu dinaikkan
+    // lagi), dan kalau suratnya ikut penanda, paket 4 lokasi tercetak seperti
+    // satu lokasi — persis keluhan di 019/QT-CL/e-Walk/BSB-BPN/X/2026.
+    $items = offer_items_detail($pdo, (int) $o['id'], (int) $o['property_id']);
     // Jadwal harga bertahap ikut tercetak supaya perubahan harga di tahun
     // berikutnya sudah tercantum sejak surat pertama.
     require_once dirname(__DIR__) . '/AllocationService.php';
     $tahapHarga = AllocationService::priceSteps($pdo, null, (int) $o['id']);
     // Tarif bertingkat per m² (paket) ikut dicetak supaya client melihat asal
     // angkanya — persis seperti rincian di kertas yang selama ini dipakai.
-    $tierHarga = !empty($o['is_bundle']) ? offer_area_tiers($pdo, (int) $o['id']) : [];
+    $tierHarga = count($items) >= 2 ? offer_area_tiers($pdo, (int) $o['id']) : [];
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
@@ -3469,7 +3493,11 @@ function offer_sign_page(PDO $pdo): void
     }
     $a = $d['amounts'] ?? [];
     $letter = offer_letter($pdo, $o);   // isi surat per jenis booth (snapshot/template)
-    $items = !empty($o['is_bundle']) ? offer_items($pdo, (int) $o['id']) : []; // komponen paket
+    // Komponen dibaca dari BARISNYA, bukan penanda is_bundle. Penandanya bisa
+    // tidak tersimpan (penawaran lama / dikembalikan ke satuan lalu dinaikkan
+    // lagi), dan kalau suratnya ikut penanda, paket 4 lokasi tercetak seperti
+    // satu lokasi — persis keluhan di 019/QT-CL/e-Walk/BSB-BPN/X/2026.
+    $items = offer_items_detail($pdo, (int) $o['id'], (int) $o['property_id']);
     // Jadwal harga bertahap ikut tercetak supaya perubahan harga di tahun
     // berikutnya sudah tercantum sejak surat pertama.
     require_once dirname(__DIR__) . '/AllocationService.php';
