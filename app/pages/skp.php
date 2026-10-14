@@ -498,6 +498,49 @@ function _skp_komponen_tunggal(PDO $pdo, int $pid, ?array $skp, int $trxId): boo
     return (int) $q->fetchColumn() === 1;
 }
 
+/**
+ * Komponen Penawaran Paket, lengkap dengan lantai & luas dari master.
+ *
+ * Dokumen paket menyimpan SATU master_code di penawarannya, jadi formulir SKP
+ * hanya menampilkan satu lokasi dan satu luas — padahal isinya bisa empat titik.
+ * Yang mereview (Asst. Manager & Manager) membaca formulir ini, bukan dokumen
+ * cetaknya, sehingga mereka menyetujui tanpa pernah melihat tiga lokasi lainnya.
+ *
+ * @return array<int,array{segment:string,kode:string,nama:string,lantai:string,luas:float,nilai:float}>
+ */
+function _skp_komponen_paket(PDO $pdo, int $offerId, int $pid): array
+{
+    if ($offerId <= 0) return [];
+    $st = $pdo->prepare(
+        "SELECT oi.segment, oi.master_code, oi.name_snapshot, oi.area_sqm, oi.total_amount,
+                COALESCE(u.location_name, g.name, CONCAT_WS(' - ', m.media_type, m.location, NULLIF(m.point, ''))) AS lokasi,
+                COALESCE(u.floor, g.location, m.location) AS lantai,
+                COALESCE(u.area_sqm, g.area_sqm)                                           AS luas_master
+           FROM offer_items oi
+           LEFT JOIN master_cl_units u ON u.code = oi.master_code AND u.property_id = ? AND oi.segment = 'cl'
+           LEFT JOIN master_gudang   g ON g.code = oi.master_code AND g.property_id = ? AND oi.segment = 'gudang'
+           LEFT JOIN master_media    m ON m.code = oi.master_code AND m.property_id = ? AND oi.segment = 'media'
+          WHERE oi.offer_id = ?
+          ORDER BY oi.sort_order ASC, oi.id ASC"
+    );
+    $st->execute([$pid, $pid, $pid, $offerId]);
+    $out = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $out[] = [
+            'segment' => (string) $r['segment'],
+            'kode'    => (string) $r['master_code'],
+            // Nama yang dicatat saat penawaran dibuat lebih dipercaya daripada
+            // master: kalau unitnya kemudian diganti nama, surat yang sudah
+            // terbit tetap harus terbaca seperti saat ditandatangani.
+            'nama'    => (string) ($r['name_snapshot'] ?: ($r['lokasi'] ?: $r['master_code'])),
+            'lantai'  => (string) ($r['lantai'] ?: '-'),
+            'luas'    => (float) ($r['area_sqm'] > 0 ? $r['area_sqm'] : (float) $r['luas_master']),
+            'nilai'   => (float) $r['total_amount'],
+        ];
+    }
+    return $out;
+}
+
 /** Label tarif sesuai cara kontrak ini dihargai — satuannya ikut pricing_type. */
 function _skp_satuan_tarif(string $pricingType): string
 {
@@ -703,6 +746,10 @@ function skp_form(PDO $pdo): void
     $ubahPeriode = $editable && $skp && $trxId && !$offerId && !$standalone && !$sumberHilang
                    && empty($src['is_bundle']) && _skp_komponen_tunggal($pdo, $pid, $skp, $trxId);
     $satuanTarif = _skp_satuan_tarif((string) ($src['pricing_type'] ?? ''));
+    // Komponen paket — dipakai menggantikan satu baris Lokasi/Luas yang menyesatkan.
+    $komponenPaket = (!empty($src['is_bundle']) && $offerId)
+        ? _skp_komponen_paket($pdo, $offerId, $pid) : [];
+    $luasPaket = array_sum(array_column($komponenPaket, 'luas'));
     // Batas unggah yang BENAR-BENAR berlaku (aturan aplikasi vs setelan PHP server).
     $batasUnggahMb = number_format(_skp_batas_unggah() / 1048576, 1, ',', '.') . ' MB';
     // Kotak Total hanya terisi bila nilai kontraknya memang pernah ditetapkan
@@ -718,7 +765,7 @@ function skp_form(PDO $pdo): void
         ? '?r=transaction_edit&id=' . $trxId . '&skp=' . (int) $skp['id'] : '';
 
 
-    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir, $revTahap, $revPending, $revRiwayat, $revBolehAjukan, $revBolehPutus, $dibatalkan, $sumberHilang, $ubahPeriode, $satuanTarif, $ubahTrxUrl, $tampilTotalManual, $batasUnggahMb) {
+    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir, $revTahap, $revPending, $revRiwayat, $revBolehAjukan, $revBolehPutus, $dibatalkan, $sumberHilang, $ubahPeriode, $satuanTarif, $ubahTrxUrl, $tampilTotalManual, $batasUnggahMb, $komponenPaket, $luasPaket) {
         $statusSewaDefault = ($isRenew || (!empty($src['renewal_status']) && $src['renewal_status'] !== 'none')) ? 'Perpanjangan' : 'Baru';
         ?>
         <?php /* Sumbernya hilang → tombol kembali ke sumber ikut buntu, jadi
@@ -863,12 +910,24 @@ function skp_form(PDO $pdo): void
 
             <h3>Spesifikasi Tempat & Periode</h3>
             <div class="form-grid">
+                <?php if ($komponenPaket): ?>
+                <?php /* Paket: satu baris Lokasi/Lantai/Luas tidak cukup — isinya
+                         beberapa titik. Ringkasannya di sini, rinciannya di tabel
+                         di bawah blok ini. */ ?>
+                <div><label>Lokasi</label><input id="spec-lokasi" value="Paket — <?= count($komponenPaket) ?> lokasi" disabled></div>
+                <div><label>Lantai</label><input id="spec-lantai" value="<?= h(implode(', ', array_values(array_unique(array_filter(array_column($komponenPaket, 'lantai'), fn($x) => $x !== '-'))) ?: ['-'])) ?>" disabled></div>
+                <?php else: ?>
                 <div><label>Lokasi</label><input id="spec-lokasi" value="<?= h($src['location_name'] ?? $src['master_code']) ?>" disabled></div>
                 <div><label>Lantai</label><input id="spec-lantai" value="<?= h($src['floor'] ?? '-') ?>" disabled></div>
+                <?php endif; ?>
                 <?php /* Titik media dijual per hari/titik — luas area & seating
                          tidak dipakai, jadi kolomnya tidak ditampilkan di Media. */ ?>
                 <?php if ($docType !== 'fu'): ?>
-                <div><label>Luas Area (m²)</label><input id="spec-luas" value="<?= number_format($area, 2, ',', '.') ?>" disabled></div>
+                <?php /* Luas paket = jumlah seluruh komponen. Menampilkan luas satu
+                         unit saja (20 m² dari empat titik) membuat yang mereview
+                         mengira kontraknya jauh lebih kecil dari sebenarnya. */ ?>
+                <div><label>Luas Area (m²)<?= $komponenPaket ? ' <span class="muted" style="font-weight:400">(total ' . count($komponenPaket) . ' lokasi)</span>' : '' ?></label>
+                    <input id="spec-luas" value="<?= number_format($komponenPaket ? $luasPaket : $area, 2, ',', '.') ?>" disabled></div>
                 <div><label>Luas Seating Area (m²)</label><input name="seating_area" value="<?= $val('seating_area') ?>" inputmode="decimal" placeholder="opsional" <?= $editable ? '' : 'disabled' ?>></div>
                 <?php endif; ?>
                 <?php if ($ubahPeriode): ?>
@@ -905,6 +964,47 @@ function skp_form(PDO $pdo): void
                 <div><label>Jenis Usaha / Kegiatan</label><input id="spec-usaha" value="<?= h($src['business_type'] ?? '-') ?>" disabled></div>
                 <div><label>Produk <span class="muted" style="font-weight:400">(nama brand client)</span></label><input name="produk" value="<?= $val('produk', $src['brand_name'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></div>
             </div>
+
+            <?php /* Rincian komponen paket — inilah yang dicari pemeriksa. Tanpa ini
+                     halaman hanya menampilkan satu lokasi dan satu luas, dan dokumen
+                     empat titik terlihat seperti dokumen satu titik. */ ?>
+            <?php if ($komponenPaket): ?>
+            <div style="border:1px solid #bae6fd;background:#f0f9ff;border-radius:9px;padding:12px 14px;margin-top:4px">
+                <div style="font-weight:800;color:#075985;font-size:13px;margin-bottom:8px">
+                    Dokumen ini gabungan <?= count($komponenPaket) ?> lokasi (Penawaran Paket)
+                </div>
+                <div class="table-wrap" style="background:#fff">
+                    <table style="font-size:12.5px">
+                        <thead><tr>
+                            <th>Modul</th><th>Kode</th><th>Lokasi</th><th>Lantai</th>
+                            <th style="text-align:right">Luas (m²)</th><th style="text-align:right">Nilai</th>
+                        </tr></thead>
+                        <tbody>
+                        <?php $segL = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang']; ?>
+                        <?php foreach ($komponenPaket as $k): ?>
+                            <tr>
+                                <td><?= h($segL[$k['segment']] ?? $k['segment']) ?></td>
+                                <td><strong><?= h($k['kode']) ?></strong></td>
+                                <td><?= h($k['nama']) ?></td>
+                                <td><?= h($k['lantai']) ?></td>
+                                <td style="text-align:right"><?= number_format($k['luas'], 2, ',', '.') ?></td>
+                                <td style="text-align:right;white-space:nowrap"><?= h(money($k['nilai'])) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                        <tfoot><tr style="background:#f1f5f9;font-weight:700">
+                            <td colspan="4">TOTAL</td>
+                            <td style="text-align:right"><?= number_format($luasPaket, 2, ',', '.') ?></td>
+                            <td style="text-align:right;white-space:nowrap"><?= h(money(array_sum(array_column($komponenPaket, 'nilai')))) ?></td>
+                        </tr></tfoot>
+                    </table>
+                </div>
+                <p class="help" style="margin:8px 0 0">
+                    Nilai per komponen di atas berasal dari Surat Penawaran. Setelah dokumen ini disetujui,
+                    tiap komponen terbit sebagai transaksinya sendiri.
+                </p>
+            </div>
+            <?php endif; ?>
 
             <?php /* Harga sewa disisipkan di dalam rincian modul, tepat setelah
                      data client/kegiatan — supaya angka uang berkumpul di bawah. */ ?>
