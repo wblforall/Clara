@@ -27,7 +27,13 @@ function master_page(PDO $pdo, array $masterConfig): void
         $cariSql    = ' AND (' . implode(' OR ', $polos) . ')';
         $cariSqlPic = ' AND (' . implode(' OR ', $beralias) . ')';
     }
-    if ($type === 'pic' && in_array($picStatus, ['active', 'inactive', 'archived', ''], true)) {
+    if ($type === 'pic') {
+        // Nilai pic_status di luar daftar (mis. diketik sendiri di alamat halaman)
+        // dianggap "semua". Dulu nilai asing menjatuhkan halaman ini ke kueri
+        // SELECT * yang TIDAK punya kolom user_name, sehingga kolom "User Akun"
+        // salah isi DAN PHP menerbitkan satu peringatan per baris — tercetak di
+        // badan halaman begitu APP_DEBUG menyala.
+        if (!in_array($picStatus, ['active', 'inactive', 'archived'], true)) $picStatus = '';
         $statusWhere = $picStatus !== '' ? ' AND p.status = ' . $pdo->quote($picStatus) : '';
         $stmt = $pdo->prepare(
             "SELECT p.*, u.name AS user_name FROM master_pic p
@@ -107,7 +113,7 @@ function master_page(PDO $pdo, array $masterConfig): void
                             <?php $isUserId = $col === 'user_id'; ?>
                             <td><?php
                                 if ($isUserId) {
-                                    echo $row['user_name'] ? '<span class="badge" style="background:#e0f2fe;color:#0369a1">' . h($row['user_name']) . '</span>' : '<span style="color:var(--muted)">—</span>';
+                                    echo !empty($row['user_name']) ? '<span class="badge" style="background:#e0f2fe;color:#0369a1">' . h($row['user_name']) . '</span>' : '<span style="color:var(--muted)">—</span>';
                                 } elseif ($isShare) {
                                     echo pct((float)($row[$col] ?? 0));
                                 } elseif ($isMoney) {
