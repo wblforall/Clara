@@ -224,7 +224,7 @@ function _m_quick_actions(): void
 function mobile_home_page(PDO $pdo): void
 {
     require_permission('view_dashboard');
-    $period  = getv('period', date('Y-m'));
+    $period  = periode_bulan();
     $user    = $_SESSION['user'] ?? [];
     $uname   = $user['name'] ?? 'User';
     $allowed = allowed_properties();
@@ -415,7 +415,7 @@ function mobile_exec_page(PDO $pdo): void
     // Helper data exec dipakai ulang dari halaman desktop (tidak menggandakan query).
     require_once APP_ROOT . '/app/pages/exec_dashboard.php';
 
-    $period     = getv('period', date('Y-m'));
+    $period     = periode_bulan();
     $periodDays = (int) date('t', strtotime($period . '-01'));
     $properties = $pdo->query("SELECT id, name FROM properties WHERE status='active' ORDER BY id")->fetchAll();
 

@@ -134,7 +134,7 @@ function commission_sim(PDO $pdo): void
 {
     require_permission('view_commission_sim');
 
-    $period = getv('period', date('Y-m'));
+    $period = periode_bulan();
     $pid    = current_property_id();
 
     if (getv('action') === 'print') {

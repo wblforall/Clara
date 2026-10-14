@@ -5,7 +5,7 @@ function exec_dashboard(PDO $pdo): void
 {
     require_permission('view_exec_summary');
 
-    $period = getv('period', date('Y-m'));
+    $period = periode_bulan();
 
     // Load all active properties
     $properties = $pdo->query("SELECT id, name FROM properties WHERE status='active' ORDER BY id")->fetchAll();
