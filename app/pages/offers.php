@@ -899,6 +899,39 @@ function offer_items_detail(PDO $pdo, int $offerId, int $pid): array
     return $out;
 }
 
+/**
+ * Isi Surat Penawaran sebagai HTML — PERSIS yang dicetak menjadi PDF.
+ *
+ * Halaman tanda tangan dulu menyusun ulang isinya sendiri dengan susunan yang
+ * jauh lebih ringkas. Akibatnya kolom Keterangan, Media Promosi, jadwal harga
+ * bertahap, tarif bertingkat per m², nomor rekening milik template, sampai
+ * kalimat penutup tidak pernah sampai ke client yang menandatangani: yang
+ * dipegang client berbeda dari yang dipegang PIC. Sekarang keduanya membaca
+ * berkas yang sama, jadi tidak bisa berbeda lagi.
+ *
+ * Gaya cetaknya sengaja dibuang — halaman TTD dibuka di HP dan menatanya
+ * sendiri supaya terbaca di layar kecil.
+ */
+function offer_surat_html(PDO $pdo, array $o, array $letter, array $items, array $tahapHarga, array $tierHarga): string
+{
+    $prop = ['key' => '', 'name' => ''];
+    try {
+        $pq = $pdo->prepare('SELECT * FROM properties WHERE id = ?');
+        $pq->execute([(int) ($o['property_id'] ?? 0)]);
+        $prop = $pq->fetch() ?: $prop;
+    } catch (Throwable $e) { /* properti tak terbaca: cukup nama bawaan */ }
+    if (!function_exists('clara_qr_img')) require_once dirname(__DIR__) . '/pdf.php';
+    $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
+    $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+    // Mode PDF = tanpa kerangka <html>/<head>, dan berhenti tepat sesudah isi
+    // suratnya (template-nya return di situ).
+    $PDF_MODE = true;
+    ob_start();
+    include __DIR__ . '/offer_print_template.php';
+    $html = (string) ob_get_clean();
+    return (string) preg_replace('~<style>.*?</style>~s', '', $html, 1);
+}
+
 function offer_items(PDO $pdo, int $offerId): array
 {
     $st = $pdo->prepare('SELECT * FROM offer_items WHERE offer_id = ? ORDER BY sort_order ASC, id ASC');
@@ -3538,8 +3571,12 @@ function offer_sign_page(PDO $pdo): void
     // berikutnya sudah tercantum sejak surat pertama.
     require_once dirname(__DIR__) . '/AllocationService.php';
     $tahapHarga = AllocationService::priceSteps($pdo, null, (int) $o['id']);
+    $tierHarga  = count($items) >= 2 ? offer_area_tiers($pdo, (int) $o['id']) : [];
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+    // Isi suratnya diambil dari template cetak yang SAMA dengan PDF milik PIC —
+    // halaman ini tidak lagi menyusun versinya sendiri.
+    $SURAT_HTML = offer_surat_html($pdo, $o, $letter, $items, $tahapHarga, $tierHarga);
     include __DIR__ . '/offer_sign_template.php';
 }
 

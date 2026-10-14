@@ -49,6 +49,46 @@ input[type=text]{flex:1;min-width:200px;padding:10px 12px;border:1px solid #cbd5
 ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
 .lst li{font-size:12.5px;color:#374151;margin-bottom:4px;line-height:1.5;text-align:justify}
 .rek{background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-top:8px;font-size:12px;line-height:1.7;color:#374151}
+/* ── Isi surat (dirender dari template cetak yang sama dengan PDF) ─────────
+   Gaya cetaknya sengaja tidak ikut dibawa: ukurannya untuk kertas A4, tidak
+   terbaca di HP. Kelas-kelas di bawah ini menata isi yang sama untuk layar. */
+.surat{font-size:12.5px;line-height:1.55;color:#111;margin-top:10px}
+.surat .meta{margin:10px 0;line-height:1.7}
+.surat p{margin:8px 0}
+.surat .intro,.surat .closing{text-align:justify}
+.surat table.obj{width:100%;border-collapse:collapse;margin:10px 0}
+.surat table.obj th,.surat table.obj td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left;font-size:12px;vertical-align:top}
+.surat table.obj th{background:#f1f5f9}
+.surat table.rinci{width:100%;border-collapse:collapse;margin:10px 0}
+.surat table.rinci td{border:1px solid #334155;padding:5px 7px;font-size:12px;vertical-align:top;line-height:1.45}
+.surat table.rinci td.no{width:7%;text-align:center;font-weight:700}
+.surat table.rinci td.lbl{width:26%}
+.surat table.rinci td.sep{width:3%;text-align:center}
+.surat table.cost{width:100%;border-collapse:collapse;margin:8px 0}
+.surat table.cost td{border:1px solid #e5e7eb;padding:6px 10px;font-size:12px}
+.surat table.cost td.lbl{width:58%;color:#374151}
+.surat table.cost td.amt{text-align:right;font-weight:700;white-space:nowrap}
+.surat table.cost tr.sub td{background:#f8fafc}
+.surat table.cost tr.tot td{background:#f1f5f9;font-weight:700}
+.surat table.cost tr.grand td{background:#f0fdfa;color:#0f766e;font-weight:800}
+.surat .validbox{display:inline-block;background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:600;margin-top:6px}
+.surat .secrom{font-weight:800;color:#111;font-size:12.5px;margin:14px 0 5px}
+.surat ul,.surat ol{margin:4px 0 0 18px;padding:0}
+.surat li{margin-bottom:4px;line-height:1.5;text-align:justify;font-size:12.5px}
+.surat .tnc li{color:#374151}
+.surat table.sign{width:100%;border-collapse:collapse;margin-top:18px;table-layout:fixed}
+.surat table.sign td.col{width:50%;vertical-align:top;padding:0 6px;font-size:12px}
+.surat .sigarea{min-height:70px}
+.surat .ttd-img{height:58px;width:auto}
+.surat .nm{font-weight:700;border-top:1px solid #111;display:inline-block;padding-top:3px;min-width:140px;margin-top:4px}
+.surat .qrbox{width:70px;height:70px;margin:6px 0 3px}
+.surat .qrbox img,.surat .qrbox svg{width:70px!important;height:70px!important;display:block}
+.surat .qrhint{font-size:9px;color:#6b7280}
+@media (max-width:560px){
+  .surat{font-size:12px}
+  .surat table.obj th,.surat table.obj td{padding:5px 6px;font-size:11.5px}
+  .surat table.sign td.col{display:block;width:100%;padding:0 0 14px}
+}
 </style>
 </head>
 <body>
@@ -58,127 +98,13 @@ ul.lst,ol.lst{margin:4px 0 0 18px;padding:0}
         <div class="title">Surat Penawaran</div>
         <div class="no">No. <?= $h($o['offer_no']) ?></div>
 
-        <div class="sec">Identitas Calon Penyewa</div>
-        <table class="kv">
-            <tr><td class="l">Nama Perusahaan</td><td class="v"><?= $h($d['company_name'] ?? '-') ?></td></tr>
-            <?php if (!empty($d['cp_name'])): ?><tr><td class="l">Penanggung Jawab</td><td class="v"><?= $h($d['cp_name']) ?></td></tr><?php endif; ?>
-        </table>
-
-<?php
-        // Paket dikenali dari komponennya, bukan penanda is_bundle — sama
-        // seperti surat cetaknya.
-        $isBundle = count($items) >= 2;
-        $segLabels = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
-        if ($isBundle):
-        ?>
-        <div class="sec">Komponen Paket</div>
-        <table class="pay">
-            <tr><td><strong>Nama Booth / Item</strong></td><td><strong>Jenis</strong></td><td class="amt"><strong>Nilai Sewa</strong></td><td><strong>Kode</strong></td></tr>
-            <?php foreach ($items as $it): ?>
-            <tr>
-                <td><?= $h($it['name_snapshot'] ?: $it['master_code']) ?><?php
-                    $lt = trim((string) ($it['lantai'] ?? ''));
-                    if ($lt !== '' && $lt !== '-') echo ' (Lt. ' . $h($lt) . ')'; ?></td>
-                <td><?= $h($segLabels[$it['segment']] ?? $it['segment']) ?><?= (float) ($it['area_sqm'] ?? 0) > 0
-                        ? ' · ' . $h(rtrim(rtrim(number_format((float) $it['area_sqm'], 2, ',', '.'), '0'), ',')) . ' m²' : '' ?></td>
-                <td class="amt"><?= $rp($it['total_amount'] ?? 0) ?></td>
-                <td><?= $h($it['master_code']) ?></td>
-            </tr>
-            <?php endforeach; ?>
-            <?php $luasTtd = array_sum(array_map(fn($x) => (float) ($x['area_sqm'] ?? 0), $items)); ?>
-            <tr style="font-weight:700">
-                <td>TOTAL <?= count($items) ?> lokasi</td>
-                <td><?= $luasTtd > 0 ? $h(rtrim(rtrim(number_format($luasTtd, 2, ',', '.'), '0'), ',')) . ' m²' : '' ?></td>
-                <td class="amt"><?= $rp(array_sum(array_map(fn($x) => (float) ($x['total_amount'] ?? 0), $items))) ?></td>
-                <td></td>
-            </tr>
-        </table>
-        <table class="kv" style="margin-top:8px">
-            <tr><td class="l">Periode Sewa</td><td class="v"><?= $h($d['periode'] ?? '-') ?><?= !empty($d['days']) ? ' (' . (int)$d['days'] . ' hari)' : '' ?></td></tr>
-        </table>
-
-        <?php
-        $total   = (float)$o['total_calculated'];
-        $ppn     = round($total * $PPN_TARIF);
-        $afterPpn = $total + $ppn;
-        $deposit = (float)$o['deposit_amount'];
-        $grand   = $afterPpn + $deposit;
-        $sumDp   = array_sum(array_column($items, 'dp_amount'));
-        ?>
-        <div class="sec">Rincian Biaya</div>
-        <table class="pay">
-            <?php foreach ($items as $it): ?>
-            <tr><td><?= $h($it['name_snapshot'] ?: $it['master_code']) ?> <span class="muted">(<?= $h($segLabels[$it['segment']] ?? $it['segment']) ?>)</span></td><td class="amt"><?= $rp($it['total_amount'] ?? 0) ?></td></tr>
-            <?php endforeach; ?>
-            <?php /* Selisih nego dicetak sebagai barisnya sendiri — halaman ini
-                     dibaca client, jadi angkanya harus bisa dijumlah sendiri. */ ?>
-            <?php $jmlKomp = array_sum(array_map(fn($x) => (float) ($x['total_amount'] ?? 0), $items));
-                  $selisih = $total - $jmlKomp; ?>
-            <?php if (abs($selisih) >= 1): ?>
-            <tr><td>Jumlah daftar harga <?= count($items) ?> lokasi</td><td class="amt"><?= $rp($jmlKomp) ?></td></tr>
-            <tr><td><?= $selisih < 0 ? 'Penyesuaian harga paket' : 'Tambahan harga paket' ?></td>
-                <td class="amt"><?= ($selisih < 0 ? '- ' : '') . $rp(abs($selisih)) ?></td></tr>
-            <?php endif; ?>
-            <tr><td>Subtotal sewa paket</td><td class="amt"><?= $rp($total) ?></td></tr>
-            <tr><td><?= $PPN_LABEL ?><?= $PPN_HINT ?></td><td class="amt"><?= $rp($ppn) ?></td></tr>
-            <tr><td>Total setelah PPN</td><td class="amt"><?= $rp($afterPpn) ?></td></tr>
-            <?php if ($sumDp > 0): ?>
-            <tr><td>DP / Uang Muka</td><td class="amt"><?= $rp($sumDp) ?></td></tr>
-            <?php endif; ?>
-            <tr><td>Security Deposit</td><td class="amt"><?= $rp($deposit) ?></td></tr>
-            <tr class="grand"><td>Grand Total</td><td class="amt"><?= $rp($grand) ?></td></tr>
-        </table>
-        <?php else: ?>
-        <div class="sec">Tempat & Periode</div>
-        <table class="kv">
-            <tr><td class="l">Lokasi</td><td class="v"><?= $h($d['location'] ?? '-') ?></td></tr>
-            <tr><td class="l">Luas Area</td><td class="v"><?= number_format((float)($d['area'] ?? 0), 2, ',', '.') ?> m²</td></tr>
-            <tr><td class="l">Periode Sewa</td><td class="v"><?= $h($d['periode'] ?? '-') ?><?= !empty($d['days']) ? ' (' . (int)$d['days'] . ' hari)' : '' ?></td></tr>
-        </table>
-
-        <div class="sec">Rincian Biaya</div>
-        <table class="pay">
-            <?php if (($a['listrik'] ?? 0) > 0): ?>
-            <tr><td>Nilai Sewa</td><td class="amt"><?= $rp($a['sewa'] ?? 0) ?></td></tr>
-            <tr><td><?= $PPN_LABEL ?> Sewa<?= $PPN_HINT ?></td><td class="amt"><?= $rp($a['ppn_sewa'] ?? 0) ?></td></tr>
-            <tr><td>Biaya Listrik<?= !empty($a['listrik_hari']) ? ' <span class="muted" style="font-weight:400">(' . (int) $a['listrik_hari'] . ' hari)</span>' : '' ?></td><td class="amt"><?= $rp($a['listrik']) ?></td></tr>
-            <tr><td><?= $PPN_LABEL ?> Listrik<?= $PPN_HINT ?></td><td class="amt"><?= $rp($a['ppn_listrik'] ?? 0) ?></td></tr>
-            <tr><td>Total Biaya Sewa + PPN</td><td class="amt"><?= $rp(($a['total'] ?? 0) + ($a['ppn'] ?? 0)) ?></td></tr>
-            <?php else: ?>
-            <tr><td>Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
-            <tr><td><?= $PPN_LABEL ?><?= $PPN_HINT ?></td><td class="amt"><?= $rp($a['ppn'] ?? 0) ?></td></tr>
-            <?php endif; ?>
-            <tr><td>DP <span class="muted">(<?= $h($a['dp_bln'] ?? '0') ?> bln)</span></td><td class="amt"><?= $rp($a['dp'] ?? 0) ?></td></tr>
-            <tr><td>Deposit / Jaminan <span class="muted">(<?= $h($a['dep_bln'] ?? '0') ?> bln)</span></td><td class="amt"><?= $rp($a['deposit'] ?? 0) ?></td></tr>
-            <tr class="grand"><td>Grand Total</td><td class="amt"><?= $rp($a['grand'] ?? 0) ?></td></tr>
-        </table>
-        <?php endif; ?>
-        <?php if (!$signed && !empty($d['berlaku'])): ?>
-        <div class="valid">Penawaran ini berlaku s/d <strong><?= $h($d['berlaku']) ?></strong>.</div>
-        <?php endif; ?>
-
-        <?php
-        $L = $letter ?? ['fasilitas' => [], 'payment' => [], 'terms' => []];
-        $facil = ($L['fasilitas'] ?? []) ?: offer_facilities();
-        $payList = $L['payment'] ?? [];
-        $payWa = $o['pic_phone'] ?? ''; $payWa = $payWa !== '' ? $payWa : '0542-8520555';
-        ?>
-        <div class="sec">Fasilitas</div>
-        <ul class="lst"><?php foreach ($facil as $f): ?><li><?= clara_format_bold($f) ?></li><?php endforeach; ?></ul>
-
-        <?php if ($payList): ?>
-        <div class="sec">Cara Pembayaran</div>
-        <ol class="lst"><?php foreach ($payList as $p): ?><li><?= clara_format_bold(offer_letter_fill((string) $p, $a)) ?></li><?php endforeach; ?></ol>
-        <?php endif; ?>
-        <div class="rek">
-            Pembayaran ditransfer ke rekening:<br>
-            <strong>PT. Wulandari Bangun Laksana</strong> · Bank Rakyat Indonesia (BRI) · No. Rek <strong>2078-01-000560-30-4</strong><br>
-            Bukti pembayaran dikirim via WhatsApp ke <strong><?= $h($payWa) ?></strong><?= !empty($o['pic_email']) ? ' atau email <strong>' . $h($o['pic_email']) . '</strong>' : '' ?>.
-        </div>
-
-        <?php $termList = ($L['terms'] ?? []) ?: offer_terms(); ?>
-        <div class="sec">Ketentuan &amp; Persyaratan</div>
-        <ol class="lst tnc"><?php foreach ($termList as $t): ?><li><?= clara_format_bold($t) ?></li><?php endforeach; ?></ol>
+        <?php /* Isi surat di bawah ini DIRENDER dari berkas yang sama dengan PDF
+                 milik PIC (offer_print_template.php). Sebelumnya halaman ini
+                 menyusun ulang versinya sendiri yang lebih ringkas, sehingga
+                 client menandatangani surat yang isinya berbeda — kolom
+                 Keterangan, Media Promosi, jadwal harga, tarif bertingkat, dan
+                 nomor rekening milik template semuanya tidak ikut tampil. */ ?>
+        <div class="surat"><?= $SURAT_HTML ?? "" ?></div>
     </div>
 
     <div class="card">
