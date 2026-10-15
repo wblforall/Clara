@@ -125,6 +125,42 @@ function dashboard(PDO $pdo): void
     );
     $pic->execute([$period, $pid, $pid, $period, $pid, $pid]);
 
+    /*
+     * Nilai kontrak yang MULAI bulan ini, per PIC.
+     *
+     * Kolom "Aktual" adalah income yang DIAKUI bulan ini: sewa setahun diakui
+     * sebulan demi sebulan sepanjang masa sewanya. Spreadsheet tim menulis
+     * sebaliknya — seluruh nilai kontrak ditaruh di bulan mulainya. Karena itu
+     * dua angka yang sama-sama benar tidak pernah bertemu, dan PIC yang baru
+     * menutup kontrak panjang terlihat seolah pencapaiannya kecil. Contoh nyata
+     * Oktober 2026: Muslimin menutup GRAB Rp 150.000.000 untuk 1 Okt 2026 s/d
+     * 31 Agu 2027, yang diakui Rp 13.636.363 bulan ini — di spreadsheet
+     * tercatat Rp 150.000.000.
+     *
+     * Dijumlahkan dari ALOKASI, bukan dari final_amount, supaya kontrak yang
+     * dibagi ke beberapa PIC terhitung sesuai porsi masing-masing dan tidak
+     * ada yang dihitung dua kali.
+     */
+    $kontrakBaru = [];
+    try {
+        $kb = $pdo->prepare(
+            "SELECT COALESCE(NULLIF(a.pic_name,''), t.pic_name) pic_name, SUM(a.amount) nilai
+               FROM transaction_allocations a
+               JOIN transactions t ON t.id = a.transaction_id
+              WHERE a.property_id = ? AND t.property_id = ? AND t.deleted_at IS NULL
+                AND t.start_date >= ? AND t.start_date < ?
+              GROUP BY 1"
+        );
+        $awalBulan = $period . '-01';
+        $bulanDepan = date('Y-m-01', strtotime($awalBulan . ' +1 month'));
+        $kb->execute([$pid, $pid, $awalBulan, $bulanDepan]);
+        foreach ($kb->fetchAll() as $r) {
+            if (($r['pic_name'] ?? '') !== '') $kontrakBaru[$r['pic_name']] = (float) $r['nilai'];
+        }
+    } catch (Throwable $e) {
+        $kontrakBaru = [];   // kolomnya hilang, dashboard tetap jalan
+    }
+
     $ncStmt = $pdo->prepare(
         "SELECT COUNT(DISTINCT t.client_id)
          FROM transaction_allocations a
@@ -166,7 +202,7 @@ function dashboard(PDO $pdo): void
         $monthsByYear[$y][] = $m;
     }
 
-    layout('Dashboard Bulanan', function () use ($pdo, $period, $target, $projection, $actual, $capacity, $occupancy, $totalProjection, $totalActual, $totalRecurring, $detail, $detailCl, $detailGudang, $pic, $periodDays, $years, $monthsByYear, $periodYear, $periodMonth, $monthNames, $mediaRates, $totalNewClients, $masterIssues, $antreanSaya) {
+    layout('Dashboard Bulanan', function () use ($pdo, $period, $target, $projection, $actual, $capacity, $occupancy, $totalProjection, $totalActual, $totalRecurring, $detail, $detailCl, $detailGudang, $pic, $periodDays, $years, $monthsByYear, $periodYear, $periodMonth, $monthNames, $mediaRates, $totalNewClients, $masterIssues, $antreanSaya, $kontrakBaru) {
         $achPct   = $totalProjection > 0 ? $totalActual / $totalProjection : 0;
         $achClass = $achPct >= 1.0 ? 'kpi-good' : ($achPct >= 0.8 ? 'kpi-warn' : 'kpi-bad');
         $gi       = 0;
@@ -411,7 +447,9 @@ function dashboard(PDO $pdo): void
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>#</th><th>PIC</th><th>Posisi</th><th>Target Posisi</th><th>Aktual</th><th style="color:#0369a1">Rec %</th><th>% vs Target Posisi</th><th>% thd Target Bulanan</th><th>Client Baru</th></tr></thead>
+                    <thead><tr><th>#</th><th>PIC</th><th>Posisi</th><th>Target Posisi</th><th>Aktual</th>
+                        <th title="Jumlah nilai kontrak yang masa sewanya MULAI bulan ini — inilah angka yang dipakai spreadsheet tim">Kontrak Baru Bulan Ini</th>
+                        <th style="color:#0369a1">Rec %</th><th>% vs Target Posisi</th><th>% thd Target Bulanan</th><th>Client Baru</th></tr></thead>
                     <tbody>
                     <?php
                     $picRows   = $pic->fetchAll();
@@ -439,6 +477,36 @@ function dashboard(PDO $pdo): void
                             <td><?= h($row['role_name']) ?></td>
                             <td><?= money($picTarget) ?></td>
                             <td data-countup="<?= (int)$row['actual'] ?>"><?= money((float)$row['actual']) ?></td>
+                            <?php
+                            // Angka yang sebanding dengan spreadsheet tim. Dibedakan
+                            // warnanya hanya bila berbeda dari "Aktual", supaya yang
+                            // tidak punya kontrak panjang tidak terlihat ramai.
+                            $kbPic  = (float) ($kontrakBaru[$row['pic_name']] ?? 0);
+                            $kbBeda = abs($kbPic - (float) $row['actual']) >= 1000;
+                            ?>
+                            <td<?= $kbBeda ? ' style="color:#0f766e;font-weight:700"' : '' ?>>
+                                <?= $kbPic > 0 ? money($kbPic) : '—' ?>
+                                <?php if ($kbBeda): ?>
+                                <?php
+                                /* Dua arah, dan artinya berbeda. Lebih besar dari
+                                   "Aktual" = kontrak panjang yang baru ditutup, sisa
+                                   nilainya diakui bulan-bulan berikutnya. Lebih kecil
+                                   = income bulan ini sebagian datang dari kontrak yang
+                                   mulainya bulan-bulan sebelumnya. Satu kalimat untuk
+                                   dua keadaan hanya akan menyesatkan. */
+                                $kbSelisih = $kbPic - (float) $row['actual'];
+                                ?>
+                                <div style="font-size:11px;color:var(--muted);font-weight:400">
+                                    <?php if ($kbSelisih > 0): ?>
+                                    <?= money($kbSelisih) ?> dari kontrak panjang yang baru ditutup &mdash;
+                                    diakui pada bulan-bulan berikutnya
+                                    <?php else: ?>
+                                    <?= money(-$kbSelisih) ?> income bulan ini berasal dari kontrak
+                                    yang mulai pada bulan sebelumnya
+                                    <?php endif; ?>
+                                </div>
+                                <?php endif; ?>
+                            </td>
                             <?php $recPicPct = (float)$row['actual'] > 0 ? (float)$row['actual_recurring'] / (float)$row['actual'] : 0; ?>
                             <td style="color:#0369a1;font-weight:700"><?= (float)$row['actual'] > 0 ? pct($recPicPct) : '—' ?></td>
                             <td><span class="ach-badge <?= $achPicClass ?>"><?= pct($achPicPct) ?></span></td>
