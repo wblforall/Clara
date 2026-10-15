@@ -120,30 +120,37 @@ function _lap_skp(PDO $pdo, int $skpId, bool $diskonOn): array
     return _lap_tabel((string) ob_get_clean(), 'Rincian Pembayaran Sewa');
 }
 
-/** Dua tabel bersanding: sebelum vs sesudah, baris baru ditandai. */
-function _lap_banding(array $sebelum, array $sesudah, callable $h): string
+/**
+ * SATU tabel: tiap baris dokumen disandingkan sebelum vs sesudah.
+ *
+ * Dulu dibuat dua tabel bersanding, dan lebarnya memaksa mPDF memutar seluruh
+ * halaman jadi miring sehingga tidak terbaca. Digabung begini juga lebih mudah
+ * dibandingkan: mata cukup bergerak ke kanan pada baris yang sama.
+ */
+function _lap_banding(array $sebelum, array $sesudah, callable $h, callable $rp): string
 {
-    $lamaLbl = array_map(fn($r) => preg_replace('~^[a-z]\. ~', '', $r[0]), $sebelum);
-    $o = '<table class="bdg"><tr><th style="width:50%">SEBELUM &mdash; tanpa harga diskon</th>'
-       . '<th style="width:50%">SESUDAH &mdash; harga diskon dinyalakan</th></tr><tr><td>';
-    $baris = function (array $rows, array $lamaLbl, bool $tandai) use ($h): string {
-        $t = '<table class="dlm">';
-        foreach ($rows as $r) {
-            $bersih = preg_replace('~^[a-z]\. ~', '', $r[0]);
-            $baru = $tandai && !in_array($bersih, $lamaLbl, true);
-            $t .= '<tr class="' . ($baru ? 'baru' : '') . '"><td>' . $h($r[0])
-                . ($baru ? ' <span class="tag">BARU</span>' : '') . '</td>'
-                . '<td class="n">' . $h($r[1]) . '</td></tr>';
-        }
-        return $t . '</table>';
-    };
-    $o .= $baris($sebelum, [], false) . '</td><td>' . $baris($sesudah, $lamaLbl, true) . '</td></tr></table>';
-    return $o;
+    $tanpaHuruf = fn(string $t) => preg_replace('~^[a-z]\. ~', '', $t);
+    $lama = [];
+    foreach ($sebelum as $r) $lama[$tanpaHuruf($r[0])] = $r[1];
+
+    $o = '<table class="bdg"><tr><th style="width:46%">Baris di dokumen</th>'
+       . '<th class="n" style="width:27%">SEBELUM</th>'
+       . '<th class="n" style="width:27%">SESUDAH</th></tr>';
+    foreach ($sesudah as $r) {
+        $kunci = $tanpaHuruf($r[0]);
+        $baru  = !array_key_exists($kunci, $lama);
+        $nilaiLama = $baru ? '&mdash;' : $h($lama[$kunci]);
+        $o .= '<tr' . ($baru ? ' class="baru"' : '') . '>'
+            . '<td>' . $h($r[0]) . ($baru ? ' <span class="tag">BARIS BARU</span>' : '') . '</td>'
+            . '<td class="n">' . $nilaiLama . '</td>'
+            . '<td class="n">' . $h($r[1]) . '</td></tr>';
+    }
+    return $o . '</table>';
 }
 
-
-// ── Angka nyata dari dokumen contoh ──────────────────────────────────────────
-$po = $pdo->prepare('SELECT o.*, c.company_name FROM offers o LEFT JOIN master_clients c ON c.id = o.client_id WHERE o.id = ?');
+// ── Dokumen contoh ─────────────────────────────────────────────────────────
+$po = $pdo->prepare('SELECT o.*, c.company_name FROM offers o
+                     LEFT JOIN master_clients c ON c.id = o.client_id WHERE o.id = ?');
 $po->execute([(int) $opt['penawaran']]);
 $offer = $po->fetch() ?: [];
 
@@ -152,16 +159,17 @@ $ps = $pdo->prepare('SELECT d.*, c.company_name FROM skp_documents d
                      LEFT JOIN master_clients c ON c.id = t.client_id WHERE d.id = ?');
 $ps->execute([(int) $opt['skp']]);
 $skp  = $ps->fetch() ?: [];
-$snap = $skp && !empty($skp['snapshot_json']) ? (json_decode((string) $skp['snapshot_json'], true) ?: []) : [];
-$amt  = $snap['amounts'] ?? [];
+$amt  = ($skp && !empty($skp['snapshot_json']))
+    ? ((json_decode((string) $skp['snapshot_json'], true) ?: [])['amounts'] ?? []) : [];
 
-// ── Berapa dokumen yang sudah ada, dan berapa yang memakai fitur ini ─────────
-$nOffer   = (int) $pdo->query('SELECT COUNT(*) FROM offers')->fetchColumn();
-$nOfferD  = (int) $pdo->query('SELECT COUNT(*) FROM offers WHERE diskon_aktif = 1')->fetchColumn();
-$nSkp     = (int) $pdo->query('SELECT COUNT(*) FROM skp_documents')->fetchColumn();
-$nSkpD    = (int) $pdo->query('SELECT COUNT(*) FROM skp_documents WHERE diskon_aktif = 1')->fetchColumn();
-$nSigned  = (int) $pdo->query("SELECT COUNT(*) FROM skp_documents WHERE status = 'signed'")->fetchColumn();
+// ── Berapa dokumen yang ada, dan berapa yang memakai fitur ini ─────────────
+$nOffer  = (int) $pdo->query('SELECT COUNT(*) FROM offers')->fetchColumn();
+$nOfferD = (int) $pdo->query('SELECT COUNT(*) FROM offers WHERE diskon_aktif = 1')->fetchColumn();
+$nSkp    = (int) $pdo->query('SELECT COUNT(*) FROM skp_documents')->fetchColumn();
+$nSkpD   = (int) $pdo->query('SELECT COUNT(*) FROM skp_documents WHERE diskon_aktif = 1')->fetchColumn();
+$nSigned = (int) $pdo->query("SELECT COUNT(*) FROM skp_documents WHERE status = 'signed'")->fetchColumn();
 
+// ── Angka ringkas untuk kalimat di bawah tabel ─────────────────────────────
 $diskonOffer = (float) ($offer['harga_publish'] ?? 0) - (float) ($offer['total_calculated'] ?? 0);
 $pctOffer    = (float) ($offer['harga_publish'] ?? 0) > 0
     ? $diskonOffer / (float) $offer['harga_publish'] * 100 : 0.0;
@@ -189,12 +197,10 @@ ob_start(); ?>
     .muted { color: #666; }
     .tebal { font-weight: 700; }
     .merah { color: #b91c1c; }
-    table.bdg { border: 0; margin: 4px 0 12px; }
-    table.bdg > tr > th { background: #0f766e; color: #fff; font-size: 9.5pt; padding: 4px 7px; }
-    table.bdg > tr > td { vertical-align: top; padding: 0; border: 1px solid #cbd5e1; }
-    table.dlm { border: 0; margin: 0; font-size: 9.5pt; }
-    table.dlm td { border: 0; border-bottom: 1px solid #e5e7eb; padding: 4px 7px; }
-    table.dlm tr.baru td { background: #ecfdf5; font-weight: 700; }
+    table.bdg { margin: 4px 0 10px; font-size: 9.5pt; }
+    table.bdg th { background: #0f766e; color: #fff; font-size: 9pt; padding: 4px 7px; }
+    table.bdg td { padding: 4px 7px; }
+    table.bdg tr.baru td { background: #ecfdf5; font-weight: 700; }
     .tag { background: #0D9488; color: #fff; font-size: 7pt; padding: 1px 4px; border-radius: 3px; }
     ol, ul { margin: 4px 0 8px 17px; padding: 0; }
     li { margin-bottom: 3px; }
@@ -205,20 +211,21 @@ ob_start(); ?>
     seluruh angka diambil langsung dari database dan dokumen yang tercetak</div>
 
 <h2>Contoh hasilnya &mdash; sebelum &amp; sesudah</h2>
-<p>Dua tabel di bawah ini dirender oleh <b>kode cetak yang sama</b> dengan yang dipakai PDF client,
-bukan diketik ulang untuk laporan ini. Kolom kiri adalah dokumen yang sama dengan saklar diskon
-dimatikan, kolom kanan dengan saklar dinyalakan. Baris bertanda <span class="tag">BARU</span>
-adalah satu-satunya yang bertambah.</p>
+<p>Tabel di bawah ini dirender oleh <b>kode cetak yang sama</b> dengan yang dipakai PDF client &mdash;
+bukan diketik ulang untuk laporan ini. Tiap baris dokumen disandingkan: kolom <b>SEBELUM</b> adalah
+dokumen yang sama dengan saklar diskon dimatikan, kolom <b>SESUDAH</b> dengan saklar dinyalakan.
+Baris berlatar hijau bertanda <span class="tag">BARIS BARU</span> adalah satu-satunya yang bertambah;
+baris lainnya angkanya sama persis di kedua kolom.</p>
 
 <h3>A. Surat Penawaran &mdash; <?= $h($offer['company_name'] ?? '-') ?></h3>
-<?= _lap_banding($spSebelum, $spSesudah, $h) ?>
+<?= _lap_banding($spSebelum, $spSesudah, $h, $rp) ?>
 <p class="muted" style="margin-top:-6px">Harga publish <?= $rp($offer['harga_publish'] ?? 0) ?>,
 harga akhir <?= $rp($offer['total_calculated'] ?? 0) ?>, jadi diskon
 <?= $rp($diskonOffer) ?> (<?= $h($pctTeks($pctOffer)) ?>%).
 <b>PPN dan Grand Total tidak bergeser satu rupiah pun.</b></p>
 
 <h3>B. SKP <?= $h($skp['skp_no'] ?? '-') ?> &mdash; <?= $h($skp['company_name'] ?? '-') ?></h3>
-<?= _lap_banding($skpSebelum, $skpSesudah, $h) ?>
+<?= _lap_banding($skpSebelum, $skpSesudah, $h, $rp) ?>
 <p class="muted" style="margin-top:-6px">Harga publish <?= $rp($amt['publish'] ?? 0) ?>,
 Total Biaya Sewa <?= $rp($amt['total'] ?? 0) ?>, jadi diskon <?= $rp($amt['diskon'] ?? 0) ?> (<?= $h($pctTeks((float) ($amt['diskon_pct'] ?? 0))) ?>%). Huruf urutnya tetap runtut &mdash;
 penomoran dokumen tidak meloncat karena dua baris baru ini.</p>
