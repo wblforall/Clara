@@ -116,7 +116,7 @@ function skp_listrik_satuan(array $skp, string $start = '', string $end = ''): i
  * $listrik = bagian biaya listrik yang SUDAH termasuk di dalam $total — dipakai
  * hanya untuk menampilkannya sebagai baris terpisah.
  */
-function _skp_amounts(float $total, float $ratePerM, float $deposit, float $listrik = 0.0, bool $depositLunas = false, bool $kenaPpn = true, float $scPerBulan = 0.0, int $scBulan = 1): array
+function _skp_amounts(float $total, float $ratePerM, float $deposit, float $listrik = 0.0, bool $depositLunas = false, bool $kenaPpn = true, float $scPerBulan = 0.0, int $scBulan = 1, float $hargaPublish = 0.0, bool $diskonAktif = false): array
 {
     // PPN dihitung per komponen (sewa & listrik) supaya bisa dirinci; jumlahnya
     // dipakai sebagai PPN total agar penjumlahan di dokumen selalu pas.
@@ -132,9 +132,22 @@ function _skp_amounts(float $total, float $ratePerM, float $deposit, float $list
     $scPpnBulan = $kenaPpn ? round($scPerBulan * 11 / 12 * 0.12) : 0.0;
     $scPerBulanPpn = $scPerBulan + $scPpnBulan;
     $scTotal    = $scPerBulan > 0 ? $scPerBulanPpn * $scBulan : 0.0;
+    // Harga publish & diskon SENGAJA hanya ditambahkan sebagai keterangan di
+    // bawah ini — tidak satu pun rumus di atas boleh menyentuhnya. Besar diskon
+    // dihitung dari selisihnya, bukan disimpan: kalau keduanya disimpan, suatu
+    // saat angkanya akan berbeda dan dokumen menyebut potongan yang tidak cocok
+    // dengan totalnya sendiri. Baris diskon hanya berlaku bila harga publishnya
+    // memang LEBIH BESAR daripada total — kalau tidak, diskonnya negatif dan
+    // dokumen jadi bohong.
+    $publishSah = $diskonAktif && $hargaPublish > $total;
+    $diskonRp   = $publishSah ? round($hargaPublish - $total, 2) : 0.0;
     return [
         'rate_m_day'  => $ratePerM,
         'kena_ppn'    => $kenaPpn ? 1 : 0,
+        'publish_on'  => $publishSah ? 1 : 0,
+        'publish'     => $publishSah ? round($hargaPublish, 2) : 0.0,
+        'diskon'      => $diskonRp,
+        'diskon_pct'  => $publishSah && $hargaPublish > 0 ? round($diskonRp / $hargaPublish * 100, 2) : 0.0,
         'sewa'        => $sewa,
         'listrik'     => $listrik,
         'ppn_sewa'    => $ppnSewa,
@@ -657,8 +670,12 @@ function skp_form(PDO $pdo): void
     // Listrik: dari penawaran (bila ada) atau yang dicatat di dokumen ini.
     $listrikSkp = $skp ? skp_listrik($skp, (string) $src['start_date'], (string) $src['end_date']) : 0.0;
     $listrikAll = (float) ($src['electricity'] ?? 0) + $listrikSkp;
+    // Harga publish: dokumen lama pakai nilainya sendiri, dokumen baru ikut
+    // penawarannya (bila ada) — pola yang sama dengan PPN dan Service Charge.
+    $defDiskon = $skp ? !empty($skp['diskon_aktif']) : !empty($src['diskon_aktif']);
+    $defPublish = (float) ($skp['harga_publish'] ?? $src['harga_publish'] ?? 0);
     $amt      = _skp_amounts($total + $listrikSkp, (float) $src['unit_rate'], $defDeposit, $listrikAll, $defDepPaid, $defPpn,
-        $defSc ? $defScRp : 0.0, $scBulan);
+        $defSc ? $defScRp : 0.0, $scBulan, $defDiskon ? $defPublish : 0.0, $defDiskon);
     $area     = (float) ($src['area_sqm'] ?: $src['unit_area']);
     // Isi khusus modul: tabel harga Gudang / daftar centang Form Utilities Media.
     // Teksnya (intro, peraturan, catatan kaki, daftar item) datang dari Template
@@ -746,7 +763,7 @@ function skp_form(PDO $pdo): void
         ? '?r=transaction_edit&id=' . $trxId . '&skp=' . (int) $skp['id'] : '';
 
 
-    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir, $revTahap, $revPending, $revRiwayat, $revBolehAjukan, $revBolehPutus, $dibatalkan, $sumberHilang, $ubahPeriode, $satuanTarif, $ubahTrxUrl, $tampilTotalManual, $batasUnggahMb, $komponenPaket, $luasPaket) {
+    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir, $revTahap, $revPending, $revRiwayat, $revBolehAjukan, $revBolehPutus, $dibatalkan, $sumberHilang, $ubahPeriode, $satuanTarif, $ubahTrxUrl, $tampilTotalManual, $batasUnggahMb, $komponenPaket, $luasPaket, $defDiskon, $defPublish, $listrikAll) {
         $statusSewaDefault = ($isRenew || (!empty($src['renewal_status']) && $src['renewal_status'] !== 'none')) ? 'Perpanjangan' : 'Baru';
         ?>
         <?php /* Sumbernya hilang → tombol kembali ke sumber ikut buntu, jadi
@@ -1065,6 +1082,36 @@ function skp_form(PDO $pdo): void
                             <label>Masa Sewa</label>
                             <input value="<?= (int) $scBulan ?> bulan" disabled>
                             <div class="help">Dihitung dari periode sewa &mdash; dipakai sebagai pengali Service Charge.</div>
+                        </div>
+                    </div>
+                </div>
+                <?php /* Harga publish: permintaan tim Casual Leasing & Legal supaya
+                         client, legal, dan finance sama-sama MELIHAT di dokumennya
+                         bahwa harga yang diberikan adalah harga diskon — bukan hanya
+                         tahu angka akhirnya. Harga akhirnya sendiri tidak berubah. */ ?>
+                <div style="grid-column:1/-1;border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:12px 14px;background:#fafafa">
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400;margin:0">
+                        <input type="checkbox" name="diskon_aktif" id="skp_diskon_on" value="1" style="width:15px;height:15px;flex:none;margin:0"
+                               <?= $defDiskon ? 'checked' : '' ?> <?= $editable ? '' : 'disabled' ?>>
+                        <span><strong>Tampilkan harga diskon</strong> <span class="muted">&mdash; dokumen akan memuat Harga Publish, besar diskon, dan persentasenya</span></span>
+                    </label>
+                    <div id="skp_diskon_box" class="form-grid" style="margin-top:8px">
+                        <div>
+                            <label>Harga Publish <span class="muted">(sebelum diskon)</span></label>
+                            <div style="display:flex;align-items:stretch">
+                                <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
+                                <input type="text" inputmode="numeric" id="skp_publish_rp" value="<?= $defPublish > 0 ? number_format($defPublish, 0, ',', '.') : '' ?>" placeholder="0"
+                                       style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= $editable ? '' : 'disabled' ?>>
+                                <input type="hidden" name="harga_publish" id="skp_publish_val" value="<?= (int) $defPublish ?>">
+                            </div>
+                            <div class="help">Dibandingkan dengan <strong>Total Biaya Sewa</strong> di dokumen
+                                <?= ($listrikAll > 0) ? '(sudah termasuk biaya listrik yang ditagih)' : '' ?>.
+                                Harus lebih besar dari total, kalau tidak barisnya tidak dicetak.</div>
+                        </div>
+                        <div>
+                            <label>Hasilnya di dokumen</label>
+                            <input id="skp_diskon_info" value="—" disabled>
+                            <div class="help">Besar diskon dihitung otomatis dari selisihnya &mdash; tidak diketik, supaya tidak pernah berbeda dengan totalnya.</div>
                         </div>
                     </div>
                 </div>
@@ -1594,6 +1641,27 @@ function skp_form(PDO $pdo): void
                                    : (rupiah(scPakai) + ' per bulan · '))
                           + '<b>' + SC_BULAN + ' bulan = ' + rupiah(scTotal) + '</b>';
                 }
+                // Harga publish & diskon: hanya keterangan, tidak mengubah satu pun
+                // angka di bawah. Besar diskonnya dihitung dari selisih terhadap
+                // Total Biaya Sewa yang tercetak — persis seperti di PHP.
+                var dsOn = document.getElementById('skp_diskon_on'),
+                    dsTx = document.getElementById('skp_publish_rp'),
+                    dsVal = document.getElementById('skp_publish_val'),
+                    dsBox = document.getElementById('skp_diskon_box'),
+                    dsInfo = document.getElementById('skp_diskon_info');
+                if (dsOn) {
+                    if (dsBox) dsBox.style.display = dsOn.checked ? '' : 'none';
+                    var pub = dsOn.checked ? (parseInt((dsTx.value || '').replace(/\D/g, ''), 10) || 0) : 0;
+                    if (dsVal) dsVal.value = pub;
+                    if (dsInfo) {
+                        if (!dsOn.checked || pub <= 0) dsInfo.value = '—';
+                        else if (pub <= total) dsInfo.value = 'Harga publish harus lebih besar dari ' + rupiah(total);
+                        else {
+                            var pot = pub - total, pct = Math.round(pot / pub * 10000) / 100;
+                            dsInfo.value = rupiah(pub) + ' − ' + rupiah(pot) + ' (' + String(pct).replace('.', ',') + '%) = ' + rupiah(total);
+                        }
+                    }
+                }
                 var sudah = !!(lunas && lunas.checked);
                 elTot.value = rupiah(total);
                 if (elPpn) elPpn.value = rupiah(ppn);
@@ -1613,6 +1681,13 @@ function skp_form(PDO $pdo): void
             if (cbPpn) cbPpn.addEventListener('change', hitungRincian);
             var cbSc = document.getElementById('skp_sc'), txSc = document.getElementById('skp_sc_rp');
             if (cbSc) cbSc.addEventListener('change', hitungRincian);
+            var cbDs = document.getElementById('skp_diskon_on'), txDs = document.getElementById('skp_publish_rp');
+            if (cbDs) cbDs.addEventListener('change', hitungRincian);
+            if (txDs) txDs.addEventListener('input', function () {
+                var raw = this.value.replace(/\D/g, '');
+                this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                hitungRincian();
+            });
             if (txSc) txSc.addEventListener('input', function () {
                 var raw = this.value.replace(/\D/g, '');
                 this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
@@ -2192,6 +2267,10 @@ function skp_save(PDO $pdo): void
         // Service Charge bulanan (kosong = tidak dikenakan).
         'sc_flag'       => post('sc_flag') ? 1 : 0,
         'sc_monthly'    => parse_rupiah((string) post('sc_monthly', '0')) ?: null,
+        // Harga publish: harga sebelum diskon, dicetak di dokumen supaya client,
+        // legal, dan finance sama-sama melihat bahwa harganya memang diskon.
+        'diskon_aktif'  => post('diskon_aktif') ? 1 : 0,
+        'harga_publish' => parse_rupiah((string) post('harga_publish', '0')) ?: null,
         // Listrik yang dicatat di dokumen ini (kosong = tidak menagih listrik).
         'electricity_flag'    => post('electricity_flag') ? 1 : 0,
         'electricity_monthly' => parse_rupiah((string) post('electricity_monthly', '0')) ?: null,
@@ -2593,7 +2672,11 @@ function skp_approve(PDO $pdo): void
     $amt   = _skp_amounts($total + $listrikSkp, (float) $src['unit_rate'], (float) $skp['deposit_amount'],
         (float) ($src['electricity'] ?? 0) + $listrikSkp, !empty($skp['deposit_paid']), !empty($skp['ppn_flag']),
         !empty($skp['sc_flag']) ? (float) $skp['sc_monthly'] : 0.0,
-        _skp_bulan($src['start_date'] ?? null, $src['end_date'] ?? null));
+        _skp_bulan($src['start_date'] ?? null, $src['end_date'] ?? null),
+        // Diambil dari KOLOM DOKUMEN, bukan dari penawaran: inilah angka yang
+        // dibekukan ke snapshot dan jadi isi dokumen selamanya.
+        !empty($skp['diskon_aktif']) ? (float) $skp['harga_publish'] : 0.0,
+        !empty($skp['diskon_aktif']));
     // Paket: lokasi & komponen utk ditampilkan di dokumen SKP.
     $bundleLoc = $bundleTampil ? ('Paket — ' . count($bundleRows) . ' lokasi') : '';
     // Lantai & luas tiap komponen ikut dibekukan: tanpanya pemeriksa cuma

@@ -2202,6 +2202,26 @@ function offer_form(PDO $pdo): void
                     <span><strong style="color:#166534">Security Deposit sudah dibayarkan</strong> <span class="muted">&mdash; tetap tercantum di surat, tapi tidak ditambahkan ke Grand Total</span></span>
                 </label>
             </div>
+            <?php /* Harga publish: permintaan tim Casual Leasing & Legal supaya client,
+                     legal, dan finance sama-sama MELIHAT di suratnya bahwa harga yang
+                     diberikan adalah harga diskon — bukan hanya tahu angka akhirnya.
+                     Harga akhirnya sendiri tidak berubah sedikit pun. */ ?>
+            <div style="margin-top:10px;border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:12px 14px;background:#fafafa">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400;margin:0">
+                    <input type="checkbox" name="diskon_aktif" id="diskon_aktif" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= !empty($offer['diskon_aktif']) ? 'checked' : '' ?> <?= $disabled ?>>
+                    <span><strong>Tampilkan harga diskon</strong> <span class="muted">&mdash; surat akan memuat Harga Publish, besar diskon, dan persentasenya</span></span>
+                </label>
+                <div id="diskon_box" style="margin-top:8px;max-width:420px">
+                    <label>Harga Publish <span class="muted">(sebelum diskon)</span></label>
+                    <div style="display:flex;align-items:stretch">
+                        <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
+                        <input type="text" inputmode="numeric" id="publish_fmt" value="<?= (float) ($offer['harga_publish'] ?? 0) > 0 ? number_format((float) $offer['harga_publish'], 0, ',', '.') : '' ?>" placeholder="0"
+                               style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= $disabled ?>>
+                        <input type="hidden" name="harga_publish" id="harga_publish" value="<?= (int) ($offer['harga_publish'] ?? 0) ?>">
+                    </div>
+                    <div class="help" id="diskon_info">Harus lebih besar dari harga sewa periode. Besar diskonnya dihitung otomatis &mdash; tidak diketik, supaya tidak pernah berbeda dengan totalnya.</div>
+                </div>
+            </div>
 
             <?php /* Ringkasan yang dibaca client di surat: sewa, PPN, service charge,
                      dan deposit, sampai Grand Total. Rumusnya disamakan dengan
@@ -2682,6 +2702,26 @@ function offer_form(PDO $pdo): void
                 if (el) el.addEventListener('change', gambarSc);
             });
             gambarSc();
+            // Harga publish: kotak rupiah diformat sambil diketik dan nilainya
+            // disalin ke field tersembunyi — pola yang sama dengan Service Charge.
+            (function () {
+                var cb = document.getElementById('diskon_aktif'),
+                    fmt = document.getElementById('publish_fmt'),
+                    val = document.getElementById('harga_publish'),
+                    box = document.getElementById('diskon_box');
+                var segar = function () { if (typeof claraRingkasBiaya === 'function') claraRingkasBiaya(); };
+                if (box && cb) box.style.display = cb.checked ? '' : 'none';
+                if (cb) cb.addEventListener('change', function () {
+                    if (box) box.style.display = cb.checked ? '' : 'none';
+                    segar();
+                });
+                if (fmt) fmt.addEventListener('input', function () {
+                    var raw = this.value.replace(/\D/g, '');
+                    this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
+                    if (val) val.value = raw || 0;
+                    segar();
+                });
+            })();
             /**
              * Total sewa dengan patokan bulan kalender — kembaran
              * AllocationService::monthlyCalendarAllocations() di server.
@@ -2784,6 +2824,8 @@ function offer_form(PDO $pdo): void
              * di layar dan di surat akan berbeda — dan yang dipegang client
              * adalah suratnya.
              */
+            // Dipanggil juga dari pengatur harga publish di bawah.
+            window.claraRingkasBiaya = function () { if (typeof hitung === 'function') hitung(); };
             function ringkasBiaya(total, months) {
                 var kotak = document.getElementById('ringkas-biaya'),
                     isi   = document.getElementById('ringkas-isi'),
@@ -2824,6 +2866,31 @@ function offer_form(PDO $pdo): void
                              + '</td><td style="padding:3px 0;text-align:right;white-space:nowrap'
                              + (tebal ? ';font-weight:800;border-top:1px solid #cbd5e1;padding-top:6px' : '') + '">' + rp(nilaiRp) + '</td></tr>');
                 };
+                // Harga publish & diskon: keterangan saja, tidak ikut dijumlahkan.
+                // Rumusnya sama persis dengan offer_print_template.php supaya
+                // angka di layar tidak pernah berbeda dengan yang tercetak.
+                var dsOn = document.getElementById('diskon_aktif'),
+                    dsFmt = document.getElementById('publish_fmt'),
+                    dsVal = document.getElementById('harga_publish'),
+                    dsBox = document.getElementById('diskon_box'),
+                    dsInfo = document.getElementById('diskon_info');
+                if (dsBox) dsBox.style.display = (dsOn && dsOn.checked) ? '' : 'none';
+                var pub = (dsOn && dsOn.checked && dsFmt)
+                    ? (parseInt((dsFmt.value || '').replace(/\D/g, ''), 10) || 0) : 0;
+                if (dsVal) dsVal.value = pub;
+                var diskonRp = pub > total ? pub - total : 0;
+                if (dsInfo) {
+                    dsInfo.innerHTML = !(dsOn && dsOn.checked) || pub <= 0
+                        ? 'Harus lebih besar dari harga sewa periode. Besar diskonnya dihitung otomatis.'
+                        : (pub <= total
+                            ? '<span style="color:#b91c1c">Harga publish harus lebih besar dari ' + rp(total) + ' &mdash; baris diskon tidak akan dicetak.</span>'
+                            : '<b>' + rp(pub) + ' &minus; ' + rp(diskonRp) + ' ('
+                              + String(Math.round(diskonRp / pub * 10000) / 100).replace('.', ',') + '%) = ' + rp(total) + '</b>');
+                }
+                if (diskonRp > 0) {
+                    tambah('Harga Publish (sebelum diskon)', pub);
+                    tambah('Diskon (' + String(Math.round(diskonRp / pub * 10000) / 100).replace('.', ',') + '%)', -diskonRp);
+                }
                 tambah('Biaya sewa (' + months + ' bulan)', total);
                 if (listrik > 0) tambah('Biaya listrik', listrik);
                 if (kena) tambah('PPN' + (listrik > 0 ? ' (sewa + listrik)' : ''), ppnSewa + ppnListrik);
@@ -3098,6 +3165,13 @@ function offer_save(PDO $pdo): void
         // Service Charge bulanan (kosong = tidak dikenakan).
         'sc_flag'         => post('sc_flag') ? 1 : 0,
         'sc_monthly'      => parse_rupiah((string) post('sc_monthly', '0')) ?: null,
+        // Harga publish: harga sebelum diskon, dicetak di surat supaya client,
+        // legal, dan finance sama-sama melihat bahwa harganya memang diskon.
+        // Disimpan hanya bila LEBIH BESAR dari harga akhir — kalau tidak,
+        // diskonnya negatif dan suratnya jadi bohong.
+        'diskon_aktif'    => post('diskon_aktif') ? 1 : 0,
+        'harga_publish'   => (post('diskon_aktif') && parse_rupiah((string) post('harga_publish', '0')) > $final)
+                              ? parse_rupiah((string) post('harga_publish', '0')) : null,
         // Listrik: hanya berlaku untuk Exhibition. Nominalnya tarif PER BULAN —
         // dikalikan jumlah bulan saat dicetak & saat nilainya diteruskan ke SKP.
         'electricity_flag'    => ($module === 'cl' && post('electricity_flag')) ? 1 : 0,
@@ -4282,6 +4356,9 @@ function offer_template_preview(PDO $pdo): void
         'total_calculated' => 7000000, 'monthly_amount' => 7000000, 'override_amount' => null,
         'dp_months' => 1, 'dp_amount' => 2100000, 'deposit_months' => 1, 'deposit_amount' => 1000000,
         'deposit_paid' => 0, 'ppn_flag' => 1, 'sc_flag' => 0, 'sc_monthly' => 0,
+        // Pratinjau template tidak punya penawaran sungguhan; kuncinya tetap
+        // disebut supaya pembaca berikutnya tahu templat memang membacanya.
+        'diskon_aktif' => 0, 'harga_publish' => 0,
         'electricity_flag' => 0, 'electricity_monthly' => 0, 'electricity_units' => 0, 'electricity_amount' => 0,
         'sign_token' => str_repeat('0', 40), 'signed_at' => null, 'signature_data' => null,
         'sign_name' => null, 'sign_method' => 'online',

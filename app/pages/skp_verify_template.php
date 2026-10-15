@@ -52,6 +52,14 @@ table.kv td.v{font-weight:600;text-align:right}
                 <tr><td class="l">Penyewa</td><td class="v"><?= $h($d['company_name'] ?? '-') ?></td></tr>
                 <tr><td class="l">Periode</td><td class="v"><?= $h(date('d/m/Y', strtotime($d['start_date'] ?? 'now')) . ' s/d ' . date('d/m/Y', strtotime($d['end_date'] ?? 'now'))) ?></td></tr>
                 <tr><td class="l">Nilai (Grand Total)</td><td class="v"><?= $rp($a['grand_total'] ?? 0) ?></td></tr>
+        <?php /* Halaman QR ini menyalin barisnya sendiri, tidak ikut
+                 skp_print_body.php. Kalau diskonnya tidak disebut di sini, client
+                 yang memindai QR melihat angka yang berbeda dari PDF-nya. */ ?>
+        <?php if (!empty($a['publish_on']) && (float) ($a['diskon'] ?? 0) > 0): ?>
+        <tr><td class="l">Harga Publish</td><td class="v"><?= $rp($a['publish']) ?></td></tr>
+        <tr><td class="l">Diskon</td><td class="v" style="color:#b91c1c">- <?= $rp($a['diskon']) ?>
+            (<?= h(rtrim(rtrim(number_format((float) $a['diskon_pct'], 2, ',', '.'), '0'), ',')) ?>%)</td></tr>
+        <?php endif; ?>
                 <tr><td class="l">Dibuat oleh (Sales)</td><td class="v"><?= $h($d['sales'] ?? '-') ?> <span class="chip <?= $salesReg ? 'ok' : 'no' ?>"><?= $salesReg ? 'TTD terdaftar ✓' : 'tanpa TTD' ?></span></td></tr>
                 <?php /* Pemeriksa tahap sebelumnya ikut ditampilkan supaya client
                          yang memindai QR bisa melihat rantai pemeriksaannya utuh,
