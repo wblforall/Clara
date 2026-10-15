@@ -352,6 +352,20 @@ function rekonsiliasi_page(PDO $pdo): void
         $hasil  = ReconMatch::cocokkan($isi['baris'], $clara);
         $perPic = ReconMatch::perPic($isi['baris'], $clara);
 
+        // Efek "kontrak panjang" per PIC, dihitung SEBELUM penyaringan PIC.
+        // Tanpa ini, tabel rekap menyebut selisih kotor — angka yang membuat
+        // orang mengejar 141 juta padahal yang benar-benar perlu dikerjakan
+        // cuma 5 juta, sisanya beda cara mencatat.
+        foreach ($hasil['kontrak'] as $kk) {
+            $nm = ReconCL::normal((string) ($kk['clara']['pic'] ?: ($kk['excel']['pic'] ?? '')));
+            if ($nm === '') continue;
+            $perPic[$nm]['kontrak'] = ($perPic[$nm]['kontrak'] ?? 0) + (float) $kk['selisih'];
+        }
+        foreach ($perPic as $kk => $vv) {
+            $perPic[$kk]['kontrak'] = (float) ($vv['kontrak'] ?? 0);
+            $perPic[$kk]['kerja']   = $vv['selisih'] - $perPic[$kk]['kontrak'];
+        }
+
         // Pilihan PIC: daftarnya diambil dari kedua sisi, supaya PIC yang hanya
         // ada di salah satunya (mis. sudah tidak aktif) tetap bisa diperiksa.
         $daftarPic = [];
@@ -453,7 +467,8 @@ function rekonsiliasi_page(PDO $pdo): void
                         <option value="">Semua PIC (seluruh tim)</option>
                         <?php foreach ($daftarPic as $nm => $pp): ?>
                         <option value="<?= h($nm) ?>" <?= $nm === $pilihPic ? 'selected' : '' ?>>
-                            <?= h($nm) ?><?= abs($pp['selisih']) < 1 ? ' — sudah cocok' : ' — selisih ' . $rp($pp['selisih']) ?></option>
+                            <?php $kj = (float) ($pp['kerja'] ?? $pp['selisih']); ?>
+                            <?= h($nm) ?><?= abs($kj) < 1 ? ' — sudah cocok' : ' — perlu dikerjakan ' . $rp($kj) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -514,28 +529,26 @@ function rekonsiliasi_page(PDO $pdo): void
                 <span><?= (int) $R['n_excel'] ?> baris</span></div>
             <div class="k"><span>Tercatat di CLARA</span><b><?= $rp($R['total_clara']) ?></b>
                 <span><?= (int) $R['n_clara'] ?> baris</span></div>
-            <div class="k"><span>Selisih</span>
-                <b class="<?= abs($R['selisih']) < 1 ? 'rk-ok' : ($R['selisih'] < 0 ? 'rk-kurang' : 'rk-lebih') ?>">
-                    <?= abs($R['selisih']) < 1 ? 'Rp 0 — sama' : $rp($R['selisih']) ?></b>
-                <span><?= $R['selisih'] < 0 ? 'CLARA lebih kecil' : ($R['selisih'] > 0 ? 'CLARA lebih besar' : 'tidak ada beda') ?></span></div>
-            <div class="k"><span>Baris sudah cocok</span><b class="rk-ok"><?= (int) $R['n_cocok'] + (int) ($R['n_gabungan'] ?? 0) ?></b>
-                <span>dari <?= (int) $R['n_excel'] ?> baris Excel</span></div>
             <?php
-            /* Selisih kotor memasukkan kontrak panjang, yang di spreadsheet
-               ditulis sekali sebesar nilai utuhnya sementara CLARA mengakuinya
-               sebulan demi sebulan. Itu beda cara mencatat, bukan pekerjaan.
-               Angka inilah yang benar-benar harus dikejar. */
-            $rpKontrak = (float) ($R['rp_kontrak'] ?? 0);
+            /* Angka yang DITONJOLKAN adalah yang benar-benar perlu dikerjakan:
+               selisih kotor dikurangi kontrak panjang, yang di spreadsheet
+               ditulis utuh sekali sementara CLARA mengakuinya per bulan.
+               Selisih kotornya tetap ditulis di bawahnya, supaya tidak ada
+               angka yang disembunyikan. */
+            $rpKontrak  = (float) ($R['rp_kontrak'] ?? 0);
             $perluKerja = $R['selisih'] - $rpKontrak;
             ?>
-            <?php if (abs($rpKontrak) >= 1): ?>
-            <div class="k" style="border-color:#0D9488">
-                <span>Perlu dikerjakan</span>
-                <b class="<?= abs($perluKerja) < 1 ? 'rk-ok' : 'rk-kurang' ?>">
+            <div class="k" style="<?= abs($rpKontrak) >= 1 ? 'border-color:#0D9488;border-width:2px' : '' ?>">
+                <span><?= abs($rpKontrak) >= 1 ? 'Selisih yang perlu dikerjakan' : 'Selisih' ?></span>
+                <b class="<?= abs($perluKerja) < 1 ? 'rk-ok' : ($perluKerja < 0 ? 'rk-kurang' : 'rk-lebih') ?>">
                     <?= abs($perluKerja) < 1 ? 'Rp 0 — beres' : $rp($perluKerja) ?></b>
-                <span>di luar <?= $rp(abs($rpKontrak)) ?> kontrak panjang</span>
-            </div>
-            <?php endif; ?>
+                <span><?php if (abs($rpKontrak) >= 1): ?>
+                    selisih kotor <?= $rp($R['selisih']) ?>, <?= $rp(abs($rpKontrak)) ?> di antaranya kontrak panjang
+                <?php else: ?>
+                    <?= $R['selisih'] < 0 ? 'CLARA lebih kecil' : ($R['selisih'] > 0 ? 'CLARA lebih besar' : 'tidak ada beda') ?>
+                <?php endif; ?></span></div>
+            <div class="k"><span>Baris sudah cocok</span><b class="rk-ok"><?= (int) $R['n_cocok'] + (int) ($R['n_gabungan'] ?? 0) ?></b>
+                <span>dari <?= (int) $R['n_excel'] ?> baris Excel</span></div>
         </div>
 
         <?php if ((int) $R['n_clara'] === 0): ?>
@@ -549,9 +562,13 @@ function rekonsiliasi_page(PDO $pdo): void
 
         <div class="panel">
             <h3 style="margin-top:0">Rekap per PIC — <?= h($bulanNama($periode)) ?></h3>
+            <p class="help" style="margin:0 0 6px">Kolom terakhir sudah dikurangi selisih <strong>kontrak panjang</strong>
+               — sewa yang di spreadsheet ditulis utuh sekali, sedangkan CLARA mengakuinya per bulan.
+               Itu beda cara mencatat, bukan data yang hilang.</p>
             <table>
                 <thead><tr><th>PIC</th><th style="text-align:right">Menurut Excel</th>
-                    <th style="text-align:right">Tercatat di CLARA</th><th style="text-align:right">Selisih</th></tr></thead>
+                    <th style="text-align:right">Tercatat di CLARA</th>
+                    <th style="text-align:right">Perlu dikerjakan</th></tr></thead>
                 <tbody>
                 <?php foreach ($perPic as $p): ?>
                 <tr>
@@ -563,9 +580,14 @@ function rekonsiliasi_page(PDO $pdo): void
                         <span class="help">(<?= (int) $p['n_excel'] ?> / <?= (int) $p['n_clara'] ?> baris)</span></td>
                     <td data-label="Excel" style="text-align:right"><?= $rp($p['excel']) ?></td>
                     <td data-label="CLARA" style="text-align:right"><?= $rp($p['clara']) ?></td>
+                    <?php $kerja = (float) ($p['kerja'] ?? $p['selisih']); $kon = (float) ($p['kontrak'] ?? 0); ?>
                     <td data-label="Selisih" style="text-align:right">
-                        <span class="rk-pil <?= abs($p['selisih']) < 1 ? 'rk-nol' : 'rk-beda' ?>">
-                            <?= abs($p['selisih']) < 1 ? 'sama' : $rp($p['selisih']) ?></span></td>
+                        <span class="rk-pil <?= abs($kerja) < 1 ? 'rk-nol' : 'rk-beda' ?>">
+                            <?= abs($kerja) < 1 ? 'sama' : $rp($kerja) ?></span>
+                        <?php if (abs($kon) >= 1): ?>
+                        <div class="help" style="margin-top:3px">kotor <?= $rp($p['selisih']) ?> ·
+                            <?= $rp(abs($kon)) ?> kontrak panjang</div>
+                        <?php endif; ?></td>
                 </tr>
                 <?php endforeach; ?>
                 </tbody>
