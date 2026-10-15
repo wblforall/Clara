@@ -71,11 +71,18 @@ $total    = (float) $o['total_calculated'];
  * merakit $o dengan tangan, dan kunci yang tidak ada di sana akan mencetak
  * peringatan PHP ke DALAM PDF yang dikirim ke client.
  */
-$hargaPublish = (float) ($o['harga_publish'] ?? 0);
-$diskonAktif  = !empty($o['diskon_aktif']) && $hargaPublish > $total + 0.5;
-$diskonRp     = $diskonAktif ? $hargaPublish - $total : 0.0;
+$tarifPakai   = (float) ($o['unit_rate'] ?? 0);
+$tarifPublish = (float) ($o['tarif_publish'] ?? 0);
+// Pengali diambil dari nilai sewa yang dicetak di dokumen ini, jadi harga
+// publish memakai dasar yang sama persis dengan harga akhirnya — tidak pernah
+// ada sisa pembulatan, apa pun jenis harganya.
+$pengaliSewa  = $tarifPakai > 0 ? $total / $tarifPakai : 0.0;
+$diskonAktif  = !empty($o['diskon_aktif']) && $tarifPakai > 0 && $pengaliSewa > 0
+              && $tarifPublish > $tarifPakai;
+$publishRp    = $diskonAktif ? round($tarifPublish * $pengaliSewa) : 0.0;
+$diskonRp     = $diskonAktif ? round(($tarifPublish - $tarifPakai) * $pengaliSewa) : 0.0;
 $diskonTeks   = $diskonAktif
-    ? rtrim(rtrim(number_format($diskonRp / $hargaPublish * 100, 2, ',', '.'), '0'), ',')
+    ? rtrim(rtrim(number_format(($tarifPublish - $tarifPakai) / $tarifPublish * 100, 2, ',', '.'), '0'), ',')
     : '';
 // Biaya listrik (Exhibition): tarif per bulan × jumlah bulan, kena PPN 12% juga.
 // Nol untuk penawaran yang tidak mencentangnya — barisnya pun tidak dicetak.
@@ -120,11 +127,13 @@ $grand    = $afterPpn + $scTotal + ($depLunas ? 0 : $deposit);
  * kalau markupnya disalin tiga kali, cepat atau lambat satu cabang tertinggal
  * dan separuh penawaran kehilangan keterangan diskonnya.
  */
-$BARIS_DISKON = function () use (&$diskonAktif, &$hargaPublish, &$diskonRp, &$diskonTeks, $rp): string {
+$BARIS_DISKON = function () use (&$diskonAktif, &$tarifPublish, &$tarifPakai, &$publishRp, &$diskonRp, &$diskonTeks, $rp): string {
     if (!$diskonAktif) return '';
-    return '<tr><td class="lbl">Harga Publish <span class="muted" style="font-weight:400">(sebelum diskon)</span></td>'
-         . '<td class="amt"><span style="text-decoration:line-through">' . $rp($hargaPublish) . '</span></td></tr>'
-         . '<tr><td class="lbl">Diskon (' . $diskonTeks . '%)</td>'
+    return '<tr><td class="lbl">Harga Sewa sebelum diskon <span class="muted" style="font-weight:400">(tarif '
+         . $rp($tarifPublish) . ')</span></td>'
+         . '<td class="amt"><span style="text-decoration:line-through">' . $rp($publishRp) . '</span></td></tr>'
+         . '<tr><td class="lbl">Diskon ' . $diskonTeks . '% <span class="muted" style="font-weight:400">(tarif jadi '
+         . $rp($tarifPakai) . ')</span></td>'
          . '<td class="amt">- ' . $rp($diskonRp) . '</td></tr>';
 };
 $dpBulan  = rtrim(rtrim(number_format((float) $o['dp_months'], 1, ',', ''), '0'), ',');

@@ -56,9 +56,12 @@ table.kv td.v{font-weight:600;text-align:right}
                  skp_print_body.php. Kalau diskonnya tidak disebut di sini, client
                  yang memindai QR melihat angka yang berbeda dari PDF-nya. */ ?>
         <?php if (!empty($a['publish_on']) && (float) ($a['diskon'] ?? 0) > 0): ?>
-        <tr><td class="l">Harga Publish</td><td class="v"><?= $rp($a['publish']) ?></td></tr>
+        <?php $pakaiTarif = (float) ($a['tarif_publish'] ?? 0) > 0 && (float) ($a['tarif_pakai'] ?? 0) > 0; ?>
+        <tr><td class="l"><?= $pakaiTarif ? 'Tarif sebelum diskon' : 'Harga Publish' ?></td>
+            <td class="v"><?= $rp($pakaiTarif ? $a['tarif_publish'] : $a['publish']) ?></td></tr>
         <tr><td class="l">Diskon</td><td class="v" style="color:#b91c1c">- <?= $rp($a['diskon']) ?>
-            (<?= h(rtrim(rtrim(number_format((float) $a['diskon_pct'], 2, ',', '.'), '0'), ',')) ?>%)</td></tr>
+            (<?= h(rtrim(rtrim(number_format((float) $a['diskon_pct'], 2, ',', '.'), '0'), ',')) ?>%<?php
+            if ($pakaiTarif): ?> &mdash; tarif jadi <?= $rp($a['tarif_pakai']) ?><?php endif; ?>)</td></tr>
         <?php endif; ?>
                 <tr><td class="l">Dibuat oleh (Sales)</td><td class="v"><?= $h($d['sales'] ?? '-') ?> <span class="chip <?= $salesReg ? 'ok' : 'no' ?>"><?= $salesReg ? 'TTD terdaftar ✓' : 'tanpa TTD' ?></span></td></tr>
                 <?php /* Pemeriksa tahap sebelumnya ikut ditampilkan supaya client

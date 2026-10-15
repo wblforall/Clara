@@ -281,11 +281,27 @@ $skpHasQr = !empty($skp['sign_token']);
         if (empty($a['publish_on']) || (float) ($a['diskon'] ?? 0) <= 0) return '';
         $pct = (float) ($a['diskon_pct'] ?? 0);
         $pctTxt = rtrim(rtrim(number_format($pct, 2, ',', '.'), '0'), ',');
-        return '<tr><td class="lbl">&nbsp;&nbsp;&nbsp;' . $ab() . 'Harga Publish '
-             . '<span class="muted">(sebelum diskon)</span></td>'
+        // Dokumen yang dibekukan SEBELUM harga publish berbasis tarif tidak punya
+        // kunci tarifnya. Dokumen itu harus tercetak persis seperti saat
+        // ditandatangani — kalau dipaksa memakai kata-kata baru, yang muncul
+        // "tarif Rp 0" di dokumen client.
+        $pakaiTarif = (float) ($a['tarif_publish'] ?? 0) > 0 && (float) ($a['tarif_pakai'] ?? 0) > 0;
+        if (!$pakaiTarif) {
+            return '<tr><td class="lbl">&nbsp;&nbsp;&nbsp;' . $ab() . 'Harga Publish '
+                 . '<span class="muted">(sebelum diskon)</span></td>'
+                 . '<td class="amt">' . $rp($a['publish']) . '</td></tr>'
+                 . '<tr><td class="lbl" style="color:#b91c1c">&nbsp;&nbsp;&nbsp;' . $ab() . 'Diskon '
+                 . '<span class="muted">(' . $h($pctTxt) . '%)</span></td>'
+                 . '<td class="amt" style="color:#b91c1c">- ' . $rp($a['diskon']) . '</td></tr>';
+        }
+        // Nilai sewa SEBELUM diskon, lalu potongannya — berikut tarifnya, supaya
+        // client melihat tarif turun dari berapa ke berapa sekaligus berapa
+        // rupiah yang dipotong dari nilai sewanya.
+        return '<tr><td class="lbl">&nbsp;&nbsp;&nbsp;' . $ab() . 'Nilai Sewa sebelum diskon '
+             . '<span class="muted">(tarif ' . $rp($a['tarif_publish']) . ')</span></td>'
              . '<td class="amt">' . $rp($a['publish']) . '</td></tr>'
              . '<tr><td class="lbl" style="color:#b91c1c">&nbsp;&nbsp;&nbsp;' . $ab() . 'Diskon '
-             . '<span class="muted">(' . $h($pctTxt) . '%)</span></td>'
+             . '<span class="muted">(' . $h($pctTxt) . '% &mdash; tarif jadi ' . $rp($a['tarif_pakai']) . ')</span></td>'
              . '<td class="amt" style="color:#b91c1c">- ' . $rp($a['diskon']) . '</td></tr>';
     };
     ?>

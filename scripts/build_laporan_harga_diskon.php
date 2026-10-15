@@ -27,7 +27,7 @@ require_once $root . '/app/Database.php';
 // render contohnya berhenti di tengah dan laporannya tidak pernah terbentuk.
 require_once $root . '/app/helpers.php';
 
-$opt = ['penawaran' => '38', 'skp' => '185', 'keluar' => $root . '/docs/Laporan_Harga_Publish_Diskon.pdf'];
+$opt = ['penawaran' => '51', 'skp' => '82', 'keluar' => $root . '/docs/Laporan_Harga_Publish_Diskon.pdf'];
 foreach ($argv as $a) if (preg_match('/^--([a-z0-9]+)=(.*)$/i', $a, $m)) $opt[$m[1]] = $m[2];
 
 $pdo = Database::connect();
@@ -170,9 +170,12 @@ $nSkpD   = (int) $pdo->query('SELECT COUNT(*) FROM skp_documents WHERE diskon_ak
 $nSigned = (int) $pdo->query("SELECT COUNT(*) FROM skp_documents WHERE status = 'signed'")->fetchColumn();
 
 // ── Angka ringkas untuk kalimat di bawah tabel ─────────────────────────────
-$diskonOffer = (float) ($offer['harga_publish'] ?? 0) - (float) ($offer['total_calculated'] ?? 0);
-$pctOffer    = (float) ($offer['harga_publish'] ?? 0) > 0
-    ? $diskonOffer / (float) $offer['harga_publish'] * 100 : 0.0;
+$tarifPakai   = (float) ($offer['unit_rate'] ?? 0);
+$tarifPublish = (float) ($offer['tarif_publish'] ?? 0);
+$pengaliOffer = $tarifPakai > 0 ? (float) $offer['total_calculated'] / $tarifPakai : 0.0;
+$publishOffer = round($tarifPublish * $pengaliOffer);
+$diskonOffer  = round(($tarifPublish - $tarifPakai) * $pengaliOffer);
+$pctOffer     = $tarifPublish > 0 ? ($tarifPublish - $tarifPakai) / $tarifPublish * 100 : 0.0;
 $pctTeks     = fn(float $p) => rtrim(rtrim(number_format($p, 2, ',', '.'), '0'), ',');
 
 // ── Contoh nyata: dirender dua kali oleh kode cetak yang sama ───────────────
@@ -180,6 +183,11 @@ $spSebelum  = _lap_surat_penawaran($pdo, (int) $opt['penawaran'], false);
 $spSesudah  = _lap_surat_penawaran($pdo, (int) $opt['penawaran'], true);
 $skpSebelum = _lap_skp($pdo, (int) $opt['skp'], false);
 $skpSesudah = _lap_skp($pdo, (int) $opt['skp'], true);
+
+// Gambar halaman dokumen aslinya, dibuat dari PDF yang benar-benar tercetak.
+$gbrDir = $root . '/docs/contoh_diskon_assets';
+$gbrSp  = is_file("$gbrDir/surat_penawaran-1.png") ? "$gbrDir/surat_penawaran-1.png" : '';
+$gbrSkp = is_file("$gbrDir/skp-1.png") ? "$gbrDir/skp-1.png" : '';
 
 ob_start(); ?>
 <style>
@@ -219,16 +227,30 @@ baris lainnya angkanya sama persis di kedua kolom.</p>
 
 <h3>A. Surat Penawaran &mdash; <?= $h($offer['company_name'] ?? '-') ?></h3>
 <?= _lap_banding($spSebelum, $spSesudah, $h, $rp) ?>
-<p class="muted" style="margin-top:-6px">Harga publish <?= $rp($offer['harga_publish'] ?? 0) ?>,
-harga akhir <?= $rp($offer['total_calculated'] ?? 0) ?>, jadi diskon
-<?= $rp($diskonOffer) ?> (<?= $h($pctTeks($pctOffer)) ?>%).
-<b>PPN dan Grand Total tidak bergeser satu rupiah pun.</b></p>
+<p class="muted" style="margin-top:-6px">Tarif diturunkan dari <b><?= $rp($tarifPublish) ?></b>
+menjadi <b><?= $rp($tarifPakai) ?></b> &mdash; diskon <b><?= $h($pctTeks($pctOffer)) ?>%</b>.
+Pengalinya <?= $h(rtrim(rtrim(number_format($pengaliOffer, 4, ',', '.'), '0'), ',')) ?>, jadi
+<?= $rp($publishOffer) ?> &minus; <?= $rp($diskonOffer) ?> = <?= $rp($offer['total_calculated'] ?? 0) ?>
+&mdash; pas, tanpa sisa pembulatan. <b>PPN dan Grand Total tidak bergeser satu rupiah pun.</b></p>
+<?php if ($gbrSp !== ''): ?>
+<div style="text-align:center;margin:6px 0 12px">
+    <img src="<?= $h($gbrSp) ?>" style="width:150mm;border:1px solid #cbd5e1">
+    <div class="muted" style="font-size:8.5pt;margin-top:3px">Halaman 1 Surat Penawaran yang benar-benar tercetak</div>
+</div>
+<?php endif; ?>
 
 <h3>B. SKP <?= $h($skp['skp_no'] ?? '-') ?> &mdash; <?= $h($skp['company_name'] ?? '-') ?></h3>
 <?= _lap_banding($skpSebelum, $skpSesudah, $h, $rp) ?>
-<p class="muted" style="margin-top:-6px">Harga publish <?= $rp($amt['publish'] ?? 0) ?>,
-Total Biaya Sewa <?= $rp($amt['total'] ?? 0) ?>, jadi diskon <?= $rp($amt['diskon'] ?? 0) ?> (<?= $h($pctTeks((float) ($amt['diskon_pct'] ?? 0))) ?>%). Huruf urutnya tetap runtut &mdash;
-penomoran dokumen tidak meloncat karena dua baris baru ini.</p>
+<p class="muted" style="margin-top:-6px">Tarif diturunkan dari <b><?= $rp($amt['tarif_publish'] ?? 0) ?></b>
+menjadi <b><?= $rp($amt['tarif_pakai'] ?? 0) ?></b> &mdash; diskon
+<b><?= $h($pctTeks((float) ($amt['diskon_pct'] ?? 0))) ?>%</b> atau <?= $rp($amt['diskon'] ?? 0) ?>.
+Huruf urutnya tetap runtut &mdash; penomoran dokumen tidak meloncat karena dua baris baru ini.</p>
+<?php if ($gbrSkp !== ''): ?>
+<div style="text-align:center;margin:6px 0 12px">
+    <img src="<?= $h($gbrSkp) ?>" style="width:150mm;border:1px solid #cbd5e1">
+    <div class="muted" style="font-size:8.5pt;margin-top:3px">Halaman 1 SKP yang benar-benar tercetak</div>
+</div>
+<?php endif; ?>
 
 <h2>1. Yang diminta</h2>
 <p>Tim Casual Leasing dan Legal meminta agar harga diskon <b>terlihat di dokumennya sendiri</b>,
@@ -239,19 +261,45 @@ kolom keterangan; yang diminta adalah ditampilkan <b>eksplisit di tabel harganya
 <h2>2. Cara kerjanya</h2>
 <p>Di formulir Surat Penawaran dan SKP, di bawah blok harga, ada centang
 <b>&ldquo;Tampilkan harga diskon&rdquo;</b>. Begitu dinyalakan, muncul satu isian:
-<b>Harga Publish</b> &mdash; harga sebelum diskon.</p>
+<b>tarif sebelum diskon</b> &mdash; bukan totalnya, melainkan <b>tarifnya</b>.
+Misalnya tarif diturunkan dari Rp 165.000 menjadi Rp 145.000: yang diketik
+Rp 165.000, sisanya dihitung sendiri.</p>
 
 <div class="box">
-    <p style="margin:0 0 4px"><span class="tebal">Yang disimpan hanya harga publish.</span>
+    <p style="margin:0 0 4px"><span class="tebal">Yang disimpan hanya tarif publish.</span>
     Besar diskon <span class="tebal">tidak disimpan</span>, melainkan dihitung saat dokumen dicetak:</p>
     <p style="margin:0;font-family:monospace;font-size:10pt">
-        diskon&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= harga publish &minus; harga akhir<br>
-        diskon&nbsp;(%)&nbsp;= diskon &divide; harga publish &times; 100
+        pengali&nbsp;= nilai sewa &divide; tarif<br>
+        publish&nbsp;= tarif publish &times; pengali<br>
+        diskon&nbsp;&nbsp;= (tarif publish &minus; tarif) &times; pengali<br>
+        persen&nbsp;&nbsp;= (tarif publish &minus; tarif) &divide; tarif publish &times; 100
     </p>
-    <p style="margin:5px 0 0" class="muted">Disengaja begitu. Kalau besar diskon ikut disimpan, suatu
-    saat kedua angka itu akan berbeda &mdash; dan dokumen akan menyebut potongan yang tidak cocok
-    dengan totalnya sendiri. Dengan cara ini, hal itu mustahil terjadi.</p>
+    <p style="margin:5px 0 0" class="muted">Pengalinya diambil dari <b>nilai sewa yang memang
+    tercetak di dokumen itu</b>, jadi harga publish memakai dasar yang sama persis dengan harga
+    akhirnya. Hasilnya tidak pernah ada sisa pembulatan &mdash; tidak peduli harganya harian atau
+    bulanan, memakai nilai override atau tidak, prorata atau tidak.</p>
+    <p style="margin:5px 0 0" class="muted">Diskon berlaku pada <b>sewa saja</b>. Biaya listrik,
+    service charge, dan deposit ditagih apa adanya dan tidak ikut didiskon.</p>
 </div>
+
+<h3>Kenapa tarif, bukan total</h3>
+<p>Versi pertama meminta <b>total</b> sebelum diskon. Cara itu keliru pada dokumen yang menagih
+listrik, dan ini bukan dugaan &mdash; angkanya diambil dari dokumen nyata:</p>
+<table>
+    <tr><th style="width:52%">Dokumen dengan tarif Rp 145.000, pengali 186</th><th class="n">Nilai</th></tr>
+    <tr><td>Nilai sewa <span class="muted">(145.000 &times; 186)</span></td><td class="n">Rp 26.970.000</td></tr>
+    <tr><td>Biaya listrik</td><td class="n">Rp 2.577.960</td></tr>
+    <tr><td>Total Biaya Sewa</td><td class="n">Rp 29.547.960</td></tr>
+    <tr><td>Total publish yang diketik <span class="muted">(165.000 &times; 186)</span></td><td class="n">Rp 30.690.000</td></tr>
+    <tr class="baru"><td>Diskon versi TOTAL <span class="merah">&mdash; salah</span></td>
+        <td class="n merah">Rp 1.142.040 (3,72%)</td></tr>
+    <tr class="baru"><td>Diskon versi TARIF <span class="tebal">&mdash; benar</span></td>
+        <td class="n tebal">Rp 3.720.000 (12,12%)</td></tr>
+    <tr><td>Selisihnya</td><td class="n">Rp 2.577.960 &mdash; persis biaya listriknya</td></tr>
+</table>
+<p class="muted" style="margin-top:-4px">Sebabnya harga publish (sewa saja) dibandingkan dengan
+total yang sudah memuat listrik. Dengan tarif, hal itu tidak mungkin terjadi &mdash; listrik tidak
+pernah ikut masuk hitungan diskon.</p>
 
 <h3>Harga akhir tidak berubah sedikit pun</h3>
 <p>Fitur ini hanya <b>menambah dua baris keterangan</b> di atas baris total yang sudah ada.
@@ -275,14 +323,15 @@ Tidak ada rumus biaya, PPN, deposit, atau Grand Total yang disentuh.</p>
 
 <h2>4. Dokumen lama dijamin tidak berubah</h2>
 <p>Kolom barunya bernilai bawaan kosong/mati, dan baris diskon hanya dicetak bila centangnya menyala
-<b>dan</b> harga publishnya lebih besar daripada harga akhir. Jadi dokumen yang sudah terbit tercetak
-persis seperti sebelumnya.</p>
+<b>dan</b> tarif publishnya lebih besar daripada tarif yang dipakai. Dokumen yang dibekukan sebelum
+perubahan ini pun tetap tercetak dengan kata-kata lamanya, karena snapshot-nya tidak memuat tarif.</p>
 <p>Dibuktikan, bukan diyakini: seluruh dokumen dicetak ulang sebelum dan sesudah perubahan, lalu
 dibandingkan satu per satu.</p>
 <table>
     <tr><th>Yang diperiksa</th><th class="n">Jumlah</th></tr>
-    <tr><td>Dokumen dicetak ulang &amp; dibandingkan (dua properti)</td><td class="n">522</td></tr>
-    <tr><td>Dokumen yang berubah isinya</td><td class="n tebal">1 &mdash; hanya yang sengaja dinyalakan diskonnya</td></tr>
+    <tr><td>Dokumen dicetak ulang &amp; dibandingkan (dua properti)</td><td class="n">524</td></tr>
+    <tr><td>Dokumen yang berubah isinya</td><td class="n tebal">3 &mdash; hanya dokumen uji yang sengaja diubah</td></tr>
+    <tr><td>Surat penawaran yang angkanya berubah</td><td class="n tebal">0 dari 53</td></tr>
     <tr><td>SKP berstatus sudah ditandatangani client</td><td class="n"><?= $nSigned ?></td></tr>
     <tr><td>Peringatan PHP di seluruh pengujian</td><td class="n tebal">0</td></tr>
 </table>
@@ -304,8 +353,12 @@ dibandingkan satu per satu.</p>
         yang berbeda dari SKP Exhibition. Untuk Media bisa ditambahkan satu baris keterangan;
         untuk Gudang tabel harganya diketik manual sehingga tidak bisa disuntik otomatis.
         Perlu dipastikan dulu apakah dua modul ini juga membutuhkannya.</li>
-    <li><span class="tebal">Paket (bundle).</span> Harga publish berlaku untuk satu dokumen, bukan
-        per lokasi. Untuk penawaran paket, angka yang dibandingkan adalah subtotal paketnya.</li>
+    <li><span class="tebal">Paket (bundle).</span> Tarif publish berlaku untuk satu dokumen, bukan
+        per lokasi. Untuk penawaran paket, yang dibandingkan adalah subtotal paketnya.</li>
+    <li><span class="tebal">Dokumen tanpa tarif.</span> 96 dari 1.805 transaksi nilainya diketik manual
+        tanpa tarif (<code>unit_rate</code> = 0) &mdash; GRAB salah satunya. Untuk dokumen seperti itu
+        harga diskon tidak bisa dihitung dari tarif, dan formulirnya menyebutkan hal itu apa adanya
+        alih-alih menampilkan angka yang menyesatkan.</li>
 </ol>
 
 <div class="box warn">
