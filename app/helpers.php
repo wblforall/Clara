@@ -566,7 +566,6 @@ function permission_for_route(string $route): string
         // Rekonsiliasi membaca angka yang sama dengan Laporan PIC, jadi izinnya
         // ikut yang itu — menambah nama izin baru berisiko terhapus sendiri
         // (daftarnya ada di dua tempat terpisah di users.php).
-        'rekon' => 'view_pic_report',
         'pic_reward', 'pic_reward_save'  => 'view_pic_report',
         'pic_performance', 'pic_pipeline' => 'view_pic_report',
         'offer_close', 'offer_sign_upload' => 'manage_offers',
