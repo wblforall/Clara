@@ -319,7 +319,7 @@ function rekonsiliasi_page(PDO $pdo): void
     }
 
     $hasil = null; $perPic = []; $peta = []; $isi = null; $periode = (string) getv('periode', '');
-    $pilihPic = ''; $daftarPic = [];
+    $pilihPic = ''; $daftarPic = []; $unitAsing = [];
     if ($x && $pilihSheet !== '' && isset($sheets[$pilihSheet])) {
         $s = $sheets[$pilihSheet];
         $tahun = _rekon_tahun_sheet($pilihSheet);
@@ -349,6 +349,11 @@ function rekonsiliasi_page(PDO $pdo): void
         foreach ($isi['baris'] as $i => $b) {
             if (($peta[$b['pic']] ?? '') !== '') $isi['baris'][$i]['pic'] = $peta[$b['pic']];
         }
+        // Nama unit yang tidak dikenali Master = petunjuk terkuat pencocokan
+        // hilang untuk baris itu. Dilaporkan terpisah supaya bisa dibereskan
+        // sekali di Master, bukan ditelusuri ulang tiap bulan.
+        $unitAsing = ReconCL::unitTakDikenal($pdo, $pid,
+            array_values(array_filter(array_column($isi['baris'], 'kode'))));
         $hasil  = ReconMatch::cocokkan($isi['baris'], $clara);
         $perPic = ReconMatch::perPic($isi['baris'], $clara);
 
@@ -386,7 +391,7 @@ function rekonsiliasi_page(PDO $pdo): void
         }
     }
 
-    layout('Rekonsiliasi Excel', function () use ($berkas, $sheets, $pilihSheet, $periode, $isi, $hasil, $perPic, $peta, $pesan, $prop, $pilihPic, $daftarPic) {
+    layout('Rekonsiliasi Excel', function () use ($berkas, $sheets, $pilihSheet, $periode, $isi, $hasil, $perPic, $peta, $pesan, $prop, $pilihPic, $daftarPic, $unitAsing) {
         $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
         $bulanNama = function (string $p): string {
             if (!preg_match('/^(\d{4})-(\d{2})$/', $p, $m)) return $p;
@@ -509,6 +514,22 @@ function rekonsiliasi_page(PDO $pdo): void
                 <?php endif; ?>
                 <?php endif; ?>
             </div>
+            <?php endif; ?>
+            <?php if ($unitAsing): ?>
+            <details class="help" style="margin-top:6px">
+                <summary style="cursor:pointer;color:#b45309"><strong><?= count($unitAsing) ?> nama unit di Excel tidak dikenali Master</strong>
+                    — baris ini sulit dicocokkan otomatis</summary>
+                <p style="margin:4px 0">Mesin mencocokkan terutama lewat nama unit. Kalau namanya berbeda antara
+                   spreadsheet dan Master (mis. Excel menulis <em>ATRIUM UTAMA</em> sedangkan Master menyimpan
+                   <em>MAIN ATRIUM</em>), barisnya hanya bisa ditebak dari nama penyewa — dan sering gagal.
+                   Samakan salah satu namanya sekali saja, lalu seterusnya cocok sendiri.</p>
+                <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:4px">
+                    <?php foreach (array_slice($unitAsing, 0, 40, true) as $nm => $n): ?>
+                    <span class="rk-pil rk-beda"><?= h($nm) ?><?= $n > 1 ? ' ×' . (int) $n : '' ?></span>
+                    <?php endforeach; ?>
+                    <?php if (count($unitAsing) > 40): ?><span class="help">…dan <?= count($unitAsing) - 40 ?> lagi</span><?php endif; ?>
+                </div>
+            </details>
             <?php endif; ?>
             <?php foreach (($isi['peringatan'] ?? []) as $p): ?>
             <div class="help" style="color:#b45309">⚠ <?= h($p) ?></div>
