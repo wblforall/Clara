@@ -461,10 +461,14 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             <?= $BARIS_DISKON() ?>
             <tr class="sub"><td class="lbl">Subtotal sewa paket</td><td class="amt"><?= $rp($total) ?></td></tr>
         <?php else: ?>
+            <?php /* Satu angka, satu baris. Dulu nilai sewa yang sama dicetak DUA
+                     KALI — "Harga Sewa / Periode" lalu "Subtotal sewa" — padahal
+                     isinya persis sama, ditambah baris "Masa sewa" yang sudah
+                     tertulis tepat di atas tabel ini. Tiga baris untuk satu
+                     informasi membuat client menghitung ulang mencari bedanya,
+                     dan tidak ada bedanya. Tabel SKP sudah lama ringkas begini. */ ?>
             <?= $BARIS_DISKON() ?>
-            <tr><td class="lbl">Harga Sewa / Periode</td><td class="amt"><?= $rp($total) ?></td></tr>
-            <tr><td class="lbl">Masa sewa</td><td class="amt"><?= $h($durasi) ?></td></tr>
-            <tr class="sub"><td class="lbl">Subtotal sewa</td><td class="amt"><?= $rp($total) ?></td></tr>
+            <tr class="sub"><td class="lbl">Harga Sewa / Periode</td><td class="amt"><?= $rp($total) ?></td></tr>
         <?php endif; ?>
         <?php if ($listrik > 0): ?>
             <?php /* Dirinci per komponen: sewa dan listrik masing-masing dengan
