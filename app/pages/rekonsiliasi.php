@@ -527,8 +527,17 @@ function rekonsiliasi_page(PDO $pdo): void
         <div class="rk-kartu">
             <div class="k"><span>Menurut Excel</span><b><?= $rp($R['total_excel']) ?></b>
                 <span><?= (int) $R['n_excel'] ?> baris</span></div>
+            <?php
+            /* Angka CLARA adalah income yang DIAKUI bulan ini. Untuk sewa jangka
+               panjang, spreadsheet menulis nilai kontrak utuh di bulan mulainya,
+               jadi dua angka ini tidak setara. "Setara" di bawah menyamakan
+               dasarnya supaya bisa dibandingkan langsung tanpa salah sangka. */
+            $setara = $R['total_clara'] - (float) ($R['rp_kontrak'] ?? 0);
+            ?>
             <div class="k"><span>Tercatat di CLARA</span><b><?= $rp($R['total_clara']) ?></b>
-                <span><?= (int) $R['n_clara'] ?> baris</span></div>
+                <span><?= (int) $R['n_clara'] ?> baris<?php if (abs((float) ($R['rp_kontrak'] ?? 0)) >= 1): ?>
+                    <br>setara <strong><?= $rp($setara) ?></strong> bila kontrak panjang dihitung utuh seperti di Excel
+                <?php endif; ?></span></div>
             <?php
             /* Angka yang DITONJOLKAN adalah yang benar-benar perlu dikerjakan:
                selisih kotor dikurangi kontrak panjang, yang di spreadsheet
