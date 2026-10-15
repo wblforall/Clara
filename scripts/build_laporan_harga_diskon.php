@@ -188,6 +188,10 @@ $skpSesudah = _lap_skp($pdo, (int) $opt['skp'], true);
 $gbrDir = $root . '/docs/contoh_diskon_assets';
 $gbrSp  = is_file("$gbrDir/surat_penawaran-1.png") ? "$gbrDir/surat_penawaran-1.png" : '';
 $gbrSkp = is_file("$gbrDir/skp-1.png") ? "$gbrDir/skp-1.png" : '';
+// Tangkapan layar formulirnya sendiri — diambil dari halaman yang benar-benar
+// dirender aplikasi, bukan gambar yang dibuat untuk laporan ini.
+$gbrFrmSp  = is_file("$gbrDir/form_sp.png")  ? "$gbrDir/form_sp.png"  : '';
+$gbrFrmSkp = is_file("$gbrDir/form_skp.png") ? "$gbrDir/form_skp.png" : '';
 
 ob_start(); ?>
 <style>
@@ -230,8 +234,7 @@ baris lainnya angkanya sama persis di kedua kolom.</p>
 <p class="muted" style="margin-top:-6px">Tarif diturunkan dari <b><?= $rp($tarifPublish) ?></b>
 menjadi <b><?= $rp($tarifPakai) ?></b> &mdash; diskon <b><?= $h($pctTeks($pctOffer)) ?>%</b>.
 Pengalinya <?= $h(rtrim(rtrim(number_format($pengaliOffer, 4, ',', '.'), '0'), ',')) ?>, jadi
-<?= $rp($publishOffer) ?> &minus; <?= $rp($diskonOffer) ?> = <?= $rp($offer['total_calculated'] ?? 0) ?>
-&mdash; pas, tanpa sisa pembulatan. <b>PPN dan Grand Total tidak bergeser satu rupiah pun.</b></p>
+<?= $rp($publishOffer) ?> &minus; <?= $rp($diskonOffer) ?> = <?= $rp($offer['total_calculated'] ?? 0) ?>&nbsp;&mdash; pas, tanpa sisa pembulatan. <b>PPN dan Grand Total tidak bergeser satu rupiah pun.</b></p>
 <?php if ($gbrSp !== ''): ?>
 <div style="text-align:center;margin:6px 0 12px">
     <img src="<?= $h($gbrSp) ?>" style="width:150mm;border:1px solid #cbd5e1">
@@ -260,14 +263,25 @@ kolom keterangan; yang diminta adalah ditampilkan <b>eksplisit di tabel harganya
 
 <h2>2. Cara kerjanya</h2>
 <p>Di formulir Surat Penawaran dan SKP, di bawah blok harga, ada centang
-<b>&ldquo;Tampilkan harga diskon&rdquo;</b>. Begitu dinyalakan, muncul satu isian:
-<b>tarif sebelum diskon</b> &mdash; bukan totalnya, melainkan <b>tarifnya</b>.
-Misalnya tarif diturunkan dari Rp 165.000 menjadi Rp 145.000: yang diketik
-Rp 165.000, sisanya dihitung sendiri.</p>
+<b>&ldquo;Tampilkan harga diskon&rdquo;</b>. Begitu dinyalakan, kotak <b>Rate</b> yang sudah ada di
+atas diperlakukan sebagai <b>tarif publish</b> (harga daftar), dan muncul satu isian baru:
+<b>tarif setelah diskon</b> &mdash; harga nego untuk client.</p>
+<p>Jadi persis seperti cara orang menyebutnya: <b>&ldquo;dari Rp 165.000 turun ke Rp 145.000&rdquo;</b>.
+Rp 165.000 sudah ada di kotak Rate, Rp 145.000 diketik di kotak diskon. Tidak ada lagi angka total
+yang perlu diketik tangan.</p>
+
+<div class="box warn">
+    <p style="margin:0 0 4px"><span class="tebal">Totalnya ikut terhitung ulang sendiri.</span>
+    Begitu tarif nego diisi, seluruh nilai kontrak dihitung dari tarif itu &mdash; dan kotak
+    <i>Harga Nego Final</i> (override manual) sengaja diabaikan selama diskon menyala.
+    Inilah yang menghilangkan <b>selisih seribu&ndash;dua ribu rupiah</b> yang selama ini muncul:
+    dulu tarif dan total diketik terpisah, jadi keduanya bisa tidak cocok. Sekarang tidak bisa lagi.</p>
+</div>
 
 <div class="box">
     <p style="margin:0 0 4px"><span class="tebal">Yang disimpan hanya tarif publish.</span>
-    Besar diskon <span class="tebal">tidak disimpan</span>, melainkan dihitung saat dokumen dicetak:</p>
+    Tarif nego menjadi tarif dokumennya sendiri. Besar diskon <span class="tebal">tidak disimpan</span>,
+    melainkan dihitung saat dokumen dicetak:</p>
     <p style="margin:0;font-family:monospace;font-size:10pt">
         pengali&nbsp;= nilai sewa &divide; tarif<br>
         publish&nbsp;= tarif publish &times; pengali<br>
@@ -281,6 +295,48 @@ Rp 165.000, sisanya dihitung sendiri.</p>
     <p style="margin:5px 0 0" class="muted">Diskon berlaku pada <b>sewa saja</b>. Biaya listrik,
     service charge, dan deposit ditagih apa adanya dan tidak ikut didiskon.</p>
 </div>
+
+<?php if ($gbrFrmSp !== '' || $gbrFrmSkp !== ''): ?>
+<h3>Tampilan isiannya</h3>
+<p class="muted" style="margin-top:-2px">Tangkapan layar di bawah diambil langsung dari halaman
+aplikasi &mdash; termasuk baris keterangan dan Ringkasan Biaya yang ikut berubah seketika begitu
+tarif negonya diketik, tanpa perlu disimpan dulu.</p>
+<?php if ($gbrFrmSp !== ''): ?>
+<p style="margin:6px 0 2px"><b>Surat Penawaran</b></p>
+<img src="<?= $h($gbrFrmSp) ?>" style="width:150mm;border:1px solid #cbd5e1">
+<?php endif; ?>
+<?php if ($gbrFrmSkp !== ''): ?>
+<p style="margin:10px 0 2px"><b>SKP</b> <span class="muted">&mdash; Rincian Pembayaran ikut turun
+mengikuti tarif nego; sebelumnya angka ini diam sampai dokumennya disimpan</span></p>
+<img src="<?= $h($gbrFrmSkp) ?>" style="width:125mm;border:1px solid #cbd5e1">
+<?php endif; ?>
+<?php endif; ?>
+
+<h3>Kenapa yang diketik tarif setelah diskon</h3>
+<p>Percobaan sebelumnya meminta kebalikannya: kotak Rate diisi tarif hasil nego, dan kotak diskon
+diisi tarif publish. Itu terbalik dari cara kerja sehari-hari &mdash; yang dipegang adalah harga
+daftar, dan yang dinegosiasikan adalah harga turunnya. Akibatnya isian yang justru paling wajar
+(&ldquo;Rate Rp 165.000, diskon jadi Rp 145.000&rdquo;) malah ditolak dengan pesan
+<i>&ldquo;tarif publish harus lebih besar&rdquo;</i>.</p>
+<p>Akibat keduanya lebih serius, dan ini terbaca pada dokumen yang sudah ada: kotak Rate
+<b>sering dibiarkan di harga publish</b>, lalu hasil negonya diketik sebagai total di
+<i>Harga Nego Final</i>. Dengan susunan yang lama, diskonnya akan terhitung <b>nol</b> &mdash;
+tepat pada kasus yang jadi asal permintaan ini:</p>
+<table>
+    <tr><th style="width:52%">Penawaran nyata di data (id 36)</th><th class="n">Nilai</th></tr>
+    <tr><td>Tarif yang tertulis di kotak Rate</td><td class="n">Rp 165.000</td></tr>
+    <tr><td>Total yang diketik di Harga Nego Final</td><td class="n">Rp 26.970.000</td></tr>
+    <tr><td>Pengali dokumen <span class="muted">(luas &times; hari)</span></td><td class="n">186</td></tr>
+    <tr><td>Tarif yang <b>sebenarnya</b> dipakai <span class="muted">(26.970.000 &divide; 186)</span></td>
+        <td class="n tebal">Rp 145.000</td></tr>
+    <tr class="baru"><td>Diskon bila kotak Rate dianggap tarif nego
+        <span class="merah">&mdash; salah</span></td><td class="n merah">Rp 0</td></tr>
+    <tr class="baru"><td>Diskon dengan susunan sekarang
+        <span class="tebal">&mdash; benar</span></td><td class="n tebal">Rp 3.720.000 (12,12%)</td></tr>
+</table>
+<p class="muted" style="margin-top:-4px">Sekarang kotak Rate selalu berarti tarif publish, tarif nego
+diketik di kotak diskon, dan totalnya dihitung dari tarif nego itu &mdash; jadi tidak ada lagi jalan
+untuk tarif dan total menjadi tidak cocok.</p>
 
 <h3>Kenapa tarif, bukan total</h3>
 <p>Versi pertama meminta <b>total</b> sebelum diskon. Cara itu keliru pada dokumen yang menagih
@@ -301,9 +357,15 @@ listrik, dan ini bukan dugaan &mdash; angkanya diambil dari dokumen nyata:</p>
 total yang sudah memuat listrik. Dengan tarif, hal itu tidak mungkin terjadi &mdash; listrik tidak
 pernah ikut masuk hitungan diskon.</p>
 
-<h3>Harga akhir tidak berubah sedikit pun</h3>
-<p>Fitur ini hanya <b>menambah dua baris keterangan</b> di atas baris total yang sudah ada.
-Tidak ada rumus biaya, PPN, deposit, atau Grand Total yang disentuh.</p>
+<h3>Yang berubah dan yang tidak</h3>
+<p><b>Rumusnya tidak disentuh.</b> PPN, Service Charge, deposit, dan Grand Total tetap dihitung
+dengan cara yang sama persis seperti sebelumnya. Yang ditambahkan di tabel harga hanya
+<b>dua baris keterangan</b> di atas baris total yang sudah ada.</p>
+<p><b>Yang memang berubah &mdash; dan ini disengaja:</b> begitu harga diskon dinyalakan, nilai sewanya
+dihitung dari tarif nego, bukan dari angka total yang diketik tangan. Itulah inti permintaannya:
+cukup set tarifnya, sisanya dihitung sendiri. Untuk dokumen yang <b>tidak</b> memakai harga diskon,
+tidak ada satu pun angka yang berubah &mdash; terbukti dari 524 dokumen yang dicetak ulang di
+bagian 4.</p>
 
 <h2>3. Dokumen mana saja yang ikut</h2>
 <table>
@@ -326,12 +388,18 @@ Tidak ada rumus biaya, PPN, deposit, atau Grand Total yang disentuh.</p>
 <b>dan</b> tarif publishnya lebih besar daripada tarif yang dipakai. Dokumen yang dibekukan sebelum
 perubahan ini pun tetap tercetak dengan kata-kata lamanya, karena snapshot-nya tidak memuat tarif.</p>
 <p>Dibuktikan, bukan diyakini: seluruh dokumen dicetak ulang sebelum dan sesudah perubahan, lalu
-dibandingkan satu per satu.</p>
+dibandingkan satu per satu. Pembalikan susunan isian yang terakhir hanya menyentuh formulir dan
+jalur simpan &mdash; kode pencetaknya tidak disentuh sama sekali, dan hasil perbandingannya memang
+nol dokumen berubah.</p>
+<p>Bentuk datanya juga tidak berubah: tarif yang dipakai tetap tersimpan di <code>unit_rate</code>
+dan tarif publishnya di <code>tarif_publish</code>. Dokumen yang sudah terlanjur dibuat dengan
+susunan isian yang lama tetap tercetak benar tanpa perlu diperbaiki satu pun.</p>
 <table>
     <tr><th>Yang diperiksa</th><th class="n">Jumlah</th></tr>
     <tr><td>Dokumen dicetak ulang &amp; dibandingkan (dua properti)</td><td class="n">524</td></tr>
-    <tr><td>Dokumen yang berubah isinya</td><td class="n tebal">3 &mdash; hanya dokumen uji yang sengaja diubah</td></tr>
-    <tr><td>Surat penawaran yang angkanya berubah</td><td class="n tebal">0 dari 53</td></tr>
+    <tr><td>Berubah isinya setelah susunan isian dibalik</td><td class="n tebal">0 dari 524</td></tr>
+    <tr><td>Berubah isinya dibanding sebelum fitur ini ada</td><td class="n tebal">5 &mdash; seluruhnya dokumen uji lokal</td></tr>
+    <tr><td>Surat penawaran milik client yang angkanya berubah</td><td class="n tebal">0 dari 53</td></tr>
     <tr><td>SKP berstatus sudah ditandatangani client</td><td class="n"><?= $nSigned ?></td></tr>
     <tr><td>Peringatan PHP di seluruh pengujian</td><td class="n tebal">0</td></tr>
 </table>
