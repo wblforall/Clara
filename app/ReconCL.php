@@ -367,19 +367,31 @@ final class ReconCL
      */
     public static function dariClara(PDO $pdo, int $pid, string $periode): array
     {
+        // Nama lokasi unit ikut diambil: spreadsheet menulis "12/GF ISLAND",
+        // sedangkan transaksi menyimpan kodenya "GF-013". Tanpa jembatan ini,
+        // dua sewa pada unit yang sama tidak bisa dikenali sebagai satu baris
+        // kalender. Nilai kontrak & lama sewa juga dibawa, untuk mengenali
+        // kontrak panjang yang di spreadsheet ditulis sekali sebagai nilai utuh.
         $st = $pdo->prepare(
             "SELECT t.id, t.module, t.master_code, t.invoice_no,
                     COALESCE(c.company_name, '-') company_name,
                     COALESCE(c.brand_name, '') brand_name,
                     t.start_date, t.end_date,
+                    COALESCE(t.final_amount, t.total_calculated, 0) nilai_kontrak,
+                    COALESCE(u.location_name, g.name, CONCAT_WS(' - ', m.media_type, m.location, NULLIF(m.point, ''))) lokasi,
                     COALESCE(NULLIF(a.pic_name, ''), t.pic_name, 'Tanpa PIC') pic_name,
                     COALESCE(SUM(a.amount), 0) period_amount
                FROM transactions t
                LEFT JOIN master_clients c ON c.id = t.client_id
+               LEFT JOIN master_cl_units u ON u.code = t.master_code AND u.property_id = t.property_id AND t.module = 'cl'
+               LEFT JOIN master_gudang   g ON g.code = t.master_code AND g.property_id = t.property_id AND t.module = 'gudang'
+               LEFT JOIN master_media    m ON m.code = t.master_code AND m.property_id = t.property_id AND t.module = 'media'
                JOIN transaction_allocations a ON a.transaction_id = t.id AND a.period_key = ? AND a.property_id = ?
               WHERE t.deleted_at IS NULL AND t.property_id = ?
               GROUP BY t.id, t.module, t.master_code, t.invoice_no, c.company_name, c.brand_name,
-                       t.start_date, t.end_date, COALESCE(NULLIF(a.pic_name, ''), t.pic_name, 'Tanpa PIC')
+                       t.start_date, t.end_date, t.final_amount, t.total_calculated, u.location_name,
+                       g.name, m.media_type, m.location, m.point,
+                       COALESCE(NULLIF(a.pic_name, ''), t.pic_name, 'Tanpa PIC')
               HAVING period_amount <> 0
               ORDER BY period_amount DESC"
         );
@@ -390,7 +402,9 @@ final class ReconCL
                 'klien'   => (string) $r['company_name'],
                 'brand'   => (string) $r['brand_name'],
                 'kode'    => (string) $r['master_code'],
+                'lokasi'  => (string) ($r['lokasi'] ?? ''),
                 'nilai'   => (float) $r['period_amount'],
+                'kontrak' => (float) $r['nilai_kontrak'],
                 'mulai'   => $r['start_date'],
                 'selesai' => $r['end_date'],
                 'pic'     => (string) $r['pic_name'],

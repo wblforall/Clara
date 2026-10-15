@@ -63,7 +63,51 @@ final class ReconMatch
             }
         }
 
-        // ── Putaran 3 — nama mirip, PIC sama, nilai BEDA → salah nominal ────
+        // ── Putaran 3 — SATU baris Excel = BEBERAPA transaksi CLARA ─────────
+        //
+        // Kalender tim menulis satu baris per UNIT per bulan. Kalau unit itu
+        // dipakai dua penyewa dalam bulan yang sama (mis. 5–18 lalu 19–31),
+        // CLARA punya dua transaksi sedangkan Excel hanya satu baris berisi
+        // jumlah keduanya. Tanpa putaran ini, yang satu dianggap "beda nominal"
+        // dan sisanya "ada di CLARA saja" — dua temuan palsu sekaligus, padahal
+        // datanya sudah benar di kedua sisi.
+        $gabungan = [];
+        foreach ($excel as $i => $e) {
+            if (isset($pakaiE[$i]) || $e['nilai'] <= 0) continue;
+            $calon = [];
+            foreach ($clara as $j => $c) {
+                if (isset($pakaiC[$j]) || !self::picSama($e, $c) || !self::unitSama($e, $c)) continue;
+                $calon[$j] = $c;
+            }
+            if (count($calon) < 2) continue;
+            $jml = array_sum(array_column($calon, 'nilai'));
+            if (abs($jml - $e['nilai']) > self::TOLERANSI) continue;
+            foreach ($calon as $j => $c) $pakaiC[$j] = true;
+            $pakaiE[$i] = true;
+            $gabungan[] = ['excel' => $e, 'clara' => array_values($calon), 'jumlah' => $jml, 'selisih' => $jml - $e['nilai']];
+        }
+
+        // ── Putaran 4 — kontrak panjang: nilai UTUH vs porsi bulan ini ──────
+        //
+        // Sewa setahun ditulis sekali di spreadsheet sebesar nilai kontraknya,
+        // sedangkan CLARA mengakuinya sebulan demi sebulan. Angkanya memang
+        // berbeda jauh, tapi itu beda CARA MENCATAT — bukan data yang hilang.
+        $kontrak = [];
+        foreach ($excel as $i => $e) {
+            if (isset($pakaiE[$i]) || $e['nilai'] <= 0) continue;
+            foreach ($clara as $j => $c) {
+                if (isset($pakaiC[$j]) || !self::picSama($e, $c)) continue;
+                if ((float) ($c['kontrak'] ?? 0) <= 0) continue;
+                if (abs($e['nilai'] - (float) $c['kontrak']) > self::TOLERANSI) continue;
+                if (abs((float) $c['nilai'] - (float) $c['kontrak']) <= self::TOLERANSI) continue;
+                if (!self::unitSama($e, $c) && self::miripBaris($e, $c) < self::AMBANG_NAMA) continue;
+                $pakaiE[$i] = true; $pakaiC[$j] = true;
+                $kontrak[] = ['excel' => $e, 'clara' => $c, 'selisih' => (float) $c['nilai'] - $e['nilai']];
+                break;
+            }
+        }
+
+        // ── Putaran 5 — nama mirip, PIC sama, nilai BEDA → salah nominal ────
         foreach ($excel as $i => $e) {
             if (isset($pakaiE[$i])) continue;
             $terbaik = -1; $skor = self::AMBANG_NAMA;
@@ -79,7 +123,7 @@ final class ReconMatch
             }
         }
 
-        // ── Putaran 4 — cocok, tapi PIC-nya BERBEDA ─────────────────────────
+        // ── Putaran 6 — cocok, tapi PIC-nya BERBEDA ─────────────────────────
         // Dikerjakan paling akhir supaya tidak mencuri pasangan milik PIC yang
         // benar. Baris seperti ini bukan selisih uang properti, melainkan
         // salah orang — dan itu mengubah pencapaian dua PIC sekaligus.
@@ -112,6 +156,9 @@ final class ReconMatch
             'total_clara'   => $totalC,
             'selisih'       => $totalC - $totalE,
             'n_cocok'       => count($cocok),
+            'n_gabungan'    => count($gabungan),
+            'n_kontrak'     => count($kontrak),
+            'rp_kontrak'    => array_sum(array_column($kontrak, 'selisih')),
             'n_nilai'       => count($bedaNilai),
             'n_pic'         => count($bedaPic),
             'n_input'       => count($input),
@@ -123,6 +170,8 @@ final class ReconMatch
 
         return [
             'cocok'       => $cocok,
+            'gabungan'    => $gabungan,
+            'kontrak'     => $kontrak,
             'nilai'       => $bedaNilai,
             'pic'         => $bedaPic,
             'input'       => $input,
@@ -186,11 +235,33 @@ final class ReconMatch
         return strlen($pendek) >= 3 && str_starts_with($panjang, $pendek);
     }
 
+    /**
+     * Dua baris menunjuk UNIT yang sama?
+     *
+     * Spreadsheet menulis nama lokasinya ("12/GF ISLAND"), CLARA menyimpan
+     * kodenya ("GF-013") — jadi dibandingkan silang terhadap keduanya.
+     */
+    private static function unitSama(array $e, array $c): bool
+    {
+        $a = ReconCL::normal((string) ($e['kode'] ?? ''));
+        if ($a === '') return false;
+        foreach ([$c['lokasi'] ?? '', $c['kode'] ?? ''] as $b) {
+            $b = ReconCL::normal((string) $b);
+            if ($b !== '' && $a === $b) return true;
+        }
+        return false;
+    }
+
     /** Kemiripan 0..1 dua baris, dicari silang antara kolom klien & brand. */
     private static function miripBaris(array $e, array $c): float
     {
         $skor = 0.0;
-        foreach ([$e['klien'], $e['brand']] as $a) {
+        // Kolom identitas di kalender tidak selalu berisi unit: baris sponsor &
+        // media sering menulis nama penyewanya di situ ("GRAB", "BLUE BIRD"),
+        // sedangkan nama penyewanya malah berisi periode. Jadi kolom itu ikut
+        // dicoba sebagai nama — kalau tidak, baris seperti itu tidak akan
+        // pernah ketemu pasangannya.
+        foreach ([$e['klien'], $e['brand'], $e['kode'] ?? ''] as $a) {
             foreach ([$c['klien'], $c['brand']] as $b) {
                 $s = self::mirip((string) $a, (string) $b);
                 if ($s > $skor) $skor = $s;
