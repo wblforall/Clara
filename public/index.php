@@ -7,6 +7,7 @@ define('CSS_VER',    filemtime(__DIR__ . '/assets/app.css'));
 
 require_once __DIR__ . '/../app/helpers.php';
 require_once __DIR__ . '/../app/Database.php';
+require_once __DIR__ . '/../app/AiNarasi.php';
 require_once __DIR__ . '/../app/ViewAs.php';
 require_once __DIR__ . '/../app/AllocationService.php';
 require_once __DIR__ . '/../app/DashboardService.php';
@@ -363,6 +364,7 @@ if (mobile_view_active()) {
 $pageFiles = [
     'dashboard'                   => 'dashboard.php',
     'exec_dashboard'              => 'exec_dashboard.php',
+    'exec_narasi_ai'              => 'exec_dashboard.php',
     'master'                      => 'master.php',
     'master_form'                 => 'master.php',
     'master_save'                 => 'master.php',
@@ -489,6 +491,7 @@ try {
 match ($route) {
     'dashboard'                   => dashboard($pdo),
     'exec_dashboard'              => exec_dashboard($pdo),
+    'exec_narasi_ai'              => exec_narasi_ai($pdo),
     'master'                      => master_page($pdo, $masterConfig),
     'master_form'                 => master_form($pdo, $masterConfig),
     'master_save'                 => master_save($pdo, $masterConfig),

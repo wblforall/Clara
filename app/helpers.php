@@ -554,7 +554,7 @@ function permission_for_route(string $route): string
         'master' => 'view_master',
         'master_form', 'master_save', 'generate_periods' => 'manage_master',
         'import_media', 'import_template' => 'import_master',
-        'exec_dashboard', 'print_exec_summary' => 'view_exec_summary',
+        'exec_dashboard', 'exec_narasi_ai', 'print_exec_summary' => 'view_exec_summary',
         'export_summary', 'print_dashboard', 'print_exec', 'print_trend' => 'export_reports',
         'export_transactions_xlsx', 'export_pic_report_xlsx', 'export_client_analysis_xlsx' => 'export_reports',
         'audit' => 'view_logs',

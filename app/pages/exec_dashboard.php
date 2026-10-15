@@ -81,7 +81,10 @@ function exec_dashboard(PDO $pdo): void
         $dailyOccByProp[$pid] = ['name' => $prop['name'], 'cl' => $cl, 'media' => $med];
     }
 
-    layout('Executive Summary', function () use ($period, $periodLabel, $periodDays, $propData, $combined, $allPeriods, $monthNames, $dailyOccByProp) {
+    $narasi = AiNarasi::ambil($pdo, AiNarasi::JENIS_EXEC, $period);
+    $aiSiap = AiNarasi::terkonfigurasi();
+
+    layout('Executive Summary', function () use ($period, $periodLabel, $periodDays, $propData, $combined, $allPeriods, $monthNames, $dailyOccByProp, $narasi, $aiSiap) {
         ?>
         <style>
             .exec-toolbar { position:sticky;top:0;z-index:50;background:var(--bg,#f8fafc);box-shadow:0 1px 0 var(--line,#e2e8f0);padding:10px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap; }
@@ -159,6 +162,40 @@ function exec_dashboard(PDO $pdo): void
                    style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:#0d9488;color:#fff;border-radius:7px;font-size:12px;font-weight:700;text-decoration:none">
                     🖨 Cetak / PDF
                 </a>
+            </div>
+        </div>
+
+        <!-- Analisa AI -->
+        <div style="padding:16px 20px 0">
+            <div style="background:#fff;border:1px solid var(--line,#e2e8f0);border-left:4px solid #7c3aed;border-radius:10px;padding:14px 18px">
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+                    <div class="section-title" style="margin:0;padding:0;border:0">Analisa AI <?= h($periodLabel) ?></div>
+                    <span style="background:#ede9fe;color:#6d28d9;font-size:10px;font-weight:800;letter-spacing:.06em;padding:2px 8px;border-radius:99px">DITULIS AI</span>
+                    <?php if ($narasi): ?>
+                    <span title="Engine AI yang menulis analisa ini (id: <?= h($narasi['model']) ?>)" style="background:#f1f5f9;color:#334155;font-size:11px;font-weight:700;padding:2px 9px;border-radius:99px;border:1px solid #e2e8f0">⚙ <?= h(AiNarasi::namaTampil((string) $narasi['model'])) ?> · <?= h($narasi['penyedia'] ?? 'Anthropic') ?></span>
+                    <?php endif; ?>
+                    <?php if ($aiSiap && can('view_exec_summary')): ?>
+                    <form method="post" action="?r=exec_narasi_ai" style="margin-left:auto">
+                        <input type="hidden" name="_csrf" value="<?= h(csrf_token()) ?>">
+                        <input type="hidden" name="period" value="<?= h($period) ?>">
+                        <button type="submit" style="padding:6px 12px;background:#7c3aed;color:#fff;border:0;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">
+                            <?= $narasi ? '↻ Perbarui Analisa AI' : '✨ Analisa AI' ?>
+                        </button>
+                    </form>
+                    <?php endif; ?>
+                </div>
+                <?php if ($narasi): ?>
+                    <div style="font-size:13.5px;line-height:1.7;color:var(--ink,#0f172a)"><?= nl2br(h($narasi['teks'])) ?></div>
+                    <div style="margin-top:10px;font-size:11px;color:var(--muted,#64748b)">
+                        Dihasilkan <?= h(date('d M Y H:i', strtotime($narasi['dibuat_pada']))) ?> oleh engine <b><?= h(AiNarasi::namaTampil((string) $narasi['model'])) ?></b> (<?= h($narasi['model']) ?>, <?= h($narasi['penyedia'] ?? 'Anthropic') ?>) ·
+                        dasar: angka pada halaman ini dan bulan sebelumnya. AI hanya menjelaskan angka, bukan menghitung; periksa sebelum dikutip.
+                        Bila data diperbarui, tekan <b>Perbarui Analisa AI</b>.
+                    </div>
+                <?php elseif ($aiSiap): ?>
+                    <div style="font-size:13px;color:var(--muted,#64748b)">Belum ada analisa untuk periode ini. Tekan <b>Analisa AI</b> — dihasilkan sekali lalu disimpan.</div>
+                <?php else: ?>
+                    <div style="font-size:13px;color:var(--muted,#64748b)">Fitur Analisa AI belum diaktifkan di server ini.</div>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -779,4 +816,67 @@ function _exec_combine(array $propData): array
         $recurring  += $d['recurring'];
     }
     return compact('target', 'projection', 'actual', 'recurring');
+}
+
+/**
+ * POST ?r=exec_narasi_ai — buat/perbarui Analisa AI untuk satu periode.
+ * Memanggil AI hanya bila angkanya berubah sejak narasi terakhir.
+ */
+function exec_narasi_ai(PDO $pdo): void
+{
+    require_permission('view_exec_summary');
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+        redirect_to('exec_dashboard');
+    }
+    verify_csrf();
+
+    $period = (string) post('period', '');
+    if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $period)) {
+        flash('Periode tidak valid.');
+        redirect_to('exec_dashboard');
+    }
+    $balik = ['period' => $period];
+
+    if (!AiNarasi::terkonfigurasi()) {
+        flash('Fitur Analisa AI belum diaktifkan di server ini.');
+        redirect_to('exec_dashboard', $balik);
+    }
+
+    $properties = $pdo->query("SELECT id, name FROM properties WHERE status='active' ORDER BY id")->fetchAll();
+    $kumpul = function (string $per) use ($pdo, $properties): array {
+        $hari = (int) date('t', strtotime($per . '-01'));
+        $out = [];
+        foreach ($properties as $prop) {
+            $pid = (int) $prop['id'];
+            $out[$pid] = _exec_fetch_prop_data($pdo, $pid, $per, $hari);
+            $out[$pid]['name'] = $prop['name'];
+        }
+        return $out;
+    };
+
+    $prevPeriod = date('Y-m', strtotime($period . '-01 -1 month'));
+    $fakta = AiNarasi::faktaExec($period, $kumpul($period), $prevPeriod, $kumpul($prevPeriod));
+    $hash  = AiNarasi::hash($fakta);
+
+    $ada = AiNarasi::ambil($pdo, AiNarasi::JENIS_EXEC, $period);
+    if ($ada && hash_equals((string) $ada['fakta_hash'], $hash)) {
+        flash('Analisa AI sudah sesuai dengan angka terbaru — tidak perlu diperbarui.');
+        redirect_to('exec_dashboard', $balik);
+    }
+
+    $bulan = ['01'=>'Januari','02'=>'Februari','03'=>'Maret','04'=>'April','05'=>'Mei','06'=>'Juni',
+              '07'=>'Juli','08'=>'Agustus','09'=>'September','10'=>'Oktober','11'=>'November','12'=>'Desember'];
+    $label = ($bulan[substr($period, 5, 2)] ?? '') . ' ' . substr($period, 0, 4);
+
+    try {
+        [$teks, $masuk, $keluar] = AiNarasi::tulisExec($fakta, $label);
+    } catch (RuntimeException $e) {
+        flash($e->getMessage());
+        redirect_to('exec_dashboard', $balik);
+    }
+
+    AiNarasi::simpan($pdo, AiNarasi::JENIS_EXEC, $period, $teks, AiNarasi::model(), $hash, $masuk, $keluar, ($_SESSION['user']['id'] ?? null));
+    audit($pdo, 'generate', 'ai_narasi', $period, ['model' => AiNarasi::model(), 'token_masuk' => $masuk, 'token_keluar' => $keluar], [], 'reporting');
+    flash('Analisa AI untuk ' . $label . ' dibuat.');
+    redirect_to('exec_dashboard', $balik);
 }

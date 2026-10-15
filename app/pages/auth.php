@@ -81,77 +81,134 @@ function login_page(PDO $pdo): void
         <?php pwa_head(); ?>
         <link rel="stylesheet" href="assets/app.css?v=<?= CSS_VER ?>">
         <style>
-            @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+            @keyframes fadeInUp{from{opacity:0;transform:translateY(24px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
             @keyframes shake{0%,100%{transform:translateX(0)}15%,45%,75%{transform:translateX(-7px)}30%,60%,90%{transform:translateX(7px)}}
             @keyframes spin{to{transform:rotate(360deg)}}
-            @keyframes bgShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
-            @keyframes blob1{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(60px,-40px) scale(1.12)}66%{transform:translate(-30px,50px) scale(0.92)}}
-            @keyframes blob2{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(-70px,30px) scale(1.08)}66%{transform:translate(40px,-60px) scale(1.15)}}
-            @keyframes blob3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(50px,40px) scale(0.9)}}
+            @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+            @keyframes blobA{0%,100%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(60px,40px,0) scale(1.18)}}
+            @keyframes blobB{0%,100%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(-70px,-30px,0) scale(1.12)}}
+            @keyframes ring{0%{transform:scale(.8);opacity:.55}100%{transform:scale(1.55);opacity:0}}
+            @keyframes shine{0%,62%{transform:translateX(-130%) skewX(-18deg)}100%{transform:translateX(330%) skewX(-18deg)}}
+            @keyframes sweep{0%{background-position:0% 50%}100%{background-position:200% 50%}}
 
-            .login{
-                background:linear-gradient(-45deg,#115E59,#0D9488,#0891B2,#0369A1,#0D9488,#115E59) !important;
-                background-size:400% 400% !important;
-                animation:bgShift 18s ease infinite;
-                position:relative;
-                overflow:hidden;
-            }
-            .login::before,.login::after,.login-blob3{
-                content:'';
-                position:absolute;
-                border-radius:50%;
-                filter:blur(90px);
-                opacity:.22;
-                pointer-events:none;
-                z-index:0;
-            }
-            .login::before{
-                width:520px;height:520px;
-                background:radial-gradient(circle,#99F6E4,#2DD4BF);
-                top:-140px;left:-160px;
-                animation:blob1 20s ease-in-out infinite;
-            }
-            .login::after{
-                width:440px;height:440px;
-                background:radial-gradient(circle,#BAE6FD,#38BDF8);
-                bottom:-120px;right:-120px;
-                animation:blob2 25s ease-in-out infinite;
-            }
-            .login-blob3{
-                width:360px;height:360px;
-                background:radial-gradient(circle,#A7F3D0,#6EE7B7);
-                top:45%;left:55%;
-                animation:blob3 30s ease-in-out infinite;
-            }
-            .login .panel{
-                position:relative;
-                z-index:1;
-                background:rgba(255,255,255,.97) !important;
-                box-shadow:0 24px 64px rgba(0,0,0,.22),0 2px 8px rgba(0,0,0,.12),inset 0 1px 0 rgba(255,255,255,.9) !important;
-                border:1px solid rgba(255,255,255,.6);
-                backdrop-filter:blur(4px);
-            }
-            .login-spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .65s linear infinite;vertical-align:middle;margin-right:8px}
-            #submit-btn:disabled{opacity:.75;cursor:not-allowed}
+            /* ---- latar luar: pastel teal bergerak ---- */
+            .login-baru{min-height:100vh;display:grid;place-items:center;padding:28px;position:relative;overflow:hidden;
+                background:linear-gradient(135deg,#CFF3EE 0%,#C6E9F3 45%,#D5E3FA 100%) !important}
+            .bg-blob{position:absolute;border-radius:50%;filter:blur(70px);pointer-events:none;z-index:0}
+            .bg-blob.a{width:520px;height:520px;left:-120px;top:-140px;background:radial-gradient(circle,#2DD4BF,rgba(45,212,191,0));opacity:.55;animation:blobA 18s ease-in-out infinite}
+            .bg-blob.b{width:560px;height:560px;right:-160px;bottom:-180px;background:radial-gradient(circle,#38BDF8,rgba(56,189,248,0));opacity:.55;animation:blobB 22s ease-in-out infinite}
+            .bg-blob.c{width:380px;height:380px;right:18%;top:-120px;background:radial-gradient(circle,#A5B4FC,rgba(165,180,252,0));opacity:.45;animation:blobA 26s ease-in-out infinite reverse}
+
+            /* ---- bingkai kartu ---- */
+            .shell{position:relative;z-index:2;width:min(1040px,100%);display:grid;grid-template-columns:1.05fr 1fr;gap:14px;padding:14px;border-radius:34px;
+                background:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.8);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+                box-shadow:0 40px 90px rgba(11,94,88,.28),0 4px 14px rgba(11,94,88,.12),inset 0 1px 0 rgba(255,255,255,.9);animation:fadeInUp .7s ease both}
+
+            /* ---- panel visual kiri ---- */
+            .visual{position:relative;overflow:hidden;border-radius:24px;min-height:560px;color:#fff;isolation:isolate;
+                background:linear-gradient(160deg,#0B5E58 0%,#0D9488 38%,#0891B2 72%,#0369A1 100%)}
+            .visual .m{position:absolute;border-radius:50%;filter:blur(46px);z-index:-1}
+            .visual .m1{width:340px;height:340px;left:-80px;top:-60px;background:#5EEAD4;opacity:.65;animation:blobA 14s ease-in-out infinite}
+            .visual .m2{width:380px;height:380px;right:-110px;top:30%;background:#22D3EE;opacity:.55;animation:blobB 17s ease-in-out infinite}
+            .visual .m3{width:300px;height:300px;left:12%;bottom:-120px;background:#A7F3D0;opacity:.5;animation:blobA 20s ease-in-out infinite reverse}
+            .visual::after{content:'';position:absolute;inset:0;z-index:-1;background:repeating-linear-gradient(115deg,rgba(255,255,255,.05) 0 2px,transparent 2px 38px)}
+            .visual .big{position:absolute;left:30px;top:96px;font-size:clamp(54px,8.2vw,92px);font-weight:800;letter-spacing:-.03em;line-height:.95;text-shadow:0 8px 30px rgba(3,40,38,.35);
+                transform:translate3d(calc(var(--mx,0)*-14px),calc(var(--my,0)*-10px),0);transition:transform .35s ease-out}
+            .visual .big small{display:block;margin-top:10px;font-size:.2em;font-weight:600;letter-spacing:.34em;opacity:.55}
+            .visual .badge-top{position:absolute;left:30px;top:28px;display:inline-flex;align-items:center;gap:8px;padding:7px 13px;border-radius:99px;font-size:12px;font-weight:600;
+                background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35);backdrop-filter:blur(8px)}
+            .visual .badge-top i{width:8px;height:8px;border-radius:50%;background:#A7F3D0;box-shadow:0 0 0 0 rgba(167,243,208,.7);animation:ring 2.2s ease-out infinite}
+
+            /* kartu foto gedung */
+            @keyframes phFloat{0%,100%{transform:translateY(0) rotate(var(--rot,0deg))}50%{transform:translateY(-10px) rotate(calc(var(--rot,0deg) + .8deg))}}
+            @keyframes kenburns{0%{transform:scale(1.02) translate(0,0)}100%{transform:scale(1.13) translate(-2.5%,-1.5%)}}
+            .ph{position:absolute;width:262px;transform:translate3d(calc(var(--mx,0)*var(--d,16px)),calc(var(--my,0)*var(--d,16px)),0);transition:transform .35s ease-out}
+            .ph .card{position:relative;border-radius:18px;padding:6px;background:rgba(255,255,255,.92);box-shadow:0 26px 46px rgba(2,36,40,.42),0 0 0 1px rgba(255,255,255,.55);animation:phFloat var(--t,8s) ease-in-out infinite;animation-delay:var(--w,0s)}
+            .ph .img{position:relative;overflow:hidden;border-radius:13px;aspect-ratio:1040/614}
+            .ph .img img{display:block;width:100%;height:100%;object-fit:cover;animation:kenburns 16s ease-in-out infinite alternate}
+            .ph .img::after{content:'';position:absolute;inset:0;background:linear-gradient(115deg,rgba(255,255,255,.28),transparent 40%);pointer-events:none}
+            .ph .tag{position:absolute;left:14px;bottom:14px;z-index:2;display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:99px;font-size:11px;font-weight:700;color:#0F1623;background:rgba(255,255,255,.9);backdrop-filter:blur(6px);box-shadow:0 4px 12px rgba(2,36,40,.25)}
+            .ph .tag i{width:7px;height:7px;border-radius:50%;background:var(--c,#0D9488)}
+            .ph1{right:24px;top:232px;--rot:2.2deg;--d:22px;--t:8s}
+            .ph1 .tag{left:auto;right:14px}
+            .ph2{left:24px;top:342px;--rot:-2.6deg;--d:34px;--t:9.5s;--w:-3s;--c:#0891B2}
+            .ph2 .img img{animation-delay:-6s}
+
+            .visual .cap{position:absolute;left:30px;right:30px;bottom:28px}
+            .visual .cap h2{margin:0 0 6px;color:#fff;font-size:19px;font-weight:700;letter-spacing:-.01em}
+            .visual .cap p{margin:0;font-size:12.5px;line-height:1.55;color:rgba(255,255,255,.82);max-width:380px}
+
+            /* ---- panel formulir kanan ---- */
+            .form-side{position:relative;border-radius:24px;padding:34px 38px 26px;display:flex;flex-direction:column;
+                background:linear-gradient(160deg,rgba(255,255,255,.86),rgba(236,253,250,.78));
+                box-shadow:inset 0 1px 0 rgba(255,255,255,.9);background-image:linear-gradient(160deg,rgba(255,255,255,.86),rgba(236,253,250,.78)),conic-gradient(rgba(13,148,136,.04) 25%,transparent 0 50%,rgba(13,148,136,.04) 0 75%,transparent 0);background-size:auto,28px 28px}
+            .logo-chip{width:128px;padding:5px 7px;border-radius:14px;background:#fff;box-shadow:0 8px 22px rgba(11,94,88,.16);animation:rise .6s .2s ease both}
+            .logo-chip img{width:100%;display:block;border-radius:9px}
+            .form-side h1{margin:26px 0 4px;color:#0F1623;font-size:31px;font-weight:800;letter-spacing:-.4px;animation:rise .6s .28s ease both}
+            .form-side .sub{margin:0 0 22px;color:#5B6B7C;font-size:13.5px;animation:rise .6s .34s ease both}
+            .form-side label{display:block;margin:0 0 6px;color:#25303F;font-size:12.5px;font-weight:600}
+            .form-side .fld{margin:0 0 14px;animation:rise .6s ease both}
+            .form-side .fld:nth-of-type(1){animation-delay:.4s}.form-side .fld:nth-of-type(2){animation-delay:.48s}
+            .inp{position:relative;display:block}
+            .inp > svg.ic{position:absolute;z-index:3;left:14px;top:50%;margin-top:-9px;width:18px;height:18px;color:#6B7C8C;pointer-events:none;transition:color .2s}
+            .inp:focus-within > svg.ic{color:#0D9488}
+            .form-side input[type=email],.form-side input[type=password],.form-side input[type=text]{
+                width:100%;box-sizing:border-box;padding:13px 44px 13px 42px;border:1px solid #D5E3E8;border-radius:14px;background:rgba(255,255,255,.92);color:#0F1623;font-size:14.5px;outline:none;
+                transition:box-shadow .2s,border-color .2s,transform .2s}
+            .form-side input:focus{border-color:#14B8A6;box-shadow:0 0 0 4px rgba(20,184,166,.18);transform:translateY(-1px)}
+            .form-side .inp button{position:absolute !important;z-index:3;right:6px !important;left:auto !important;top:50% !important;bottom:auto !important;transform:translateY(-50%) !important;margin:0 !important;width:34px;height:34px;padding:0 !important;display:grid;place-items:center;background:transparent !important;border:0 !important;box-shadow:none !important;cursor:pointer;color:#6B7C8C}
+            .form-side #submit-btn{position:relative;overflow:hidden;width:100%;justify-content:center;margin-top:8px;padding:14px 16px;border:0;border-radius:14px;color:#fff;font-size:15.5px;font-weight:700;letter-spacing:.02em;cursor:pointer;
+                background:linear-gradient(110deg,#0F766E,#0D9488,#0891B2,#0D9488,#0F766E) !important;background-size:240% 100% !important;animation:rise .6s .56s ease both,sweep 7s linear infinite;
+                box-shadow:0 14px 28px rgba(13,148,136,.38),inset 0 1px 0 rgba(255,255,255,.3);transition:transform .15s,box-shadow .2s,filter .2s}
+            .form-side #submit-btn::after{content:'';position:absolute;top:0;bottom:0;left:0;width:34%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.34),transparent);animation:shine 5.5s ease-in-out infinite}
+            .form-side #submit-btn:hover:not(:disabled){transform:translateY(-2px);filter:brightness(1.07);box-shadow:0 18px 34px rgba(13,148,136,.46),inset 0 1px 0 rgba(255,255,255,.34)}
+            .form-side #submit-btn:active:not(:disabled){transform:translateY(0)}
+            .form-side #submit-btn:disabled{opacity:.75;cursor:not-allowed}
+            .form-side .flash{background:#FEE2E2;color:#991B1B;border:1px solid #FCA5A5;border-radius:12px;padding:10px 12px;font-size:13px;margin:0 0 14px}
+            .props{margin-top:auto;padding-top:22px;animation:rise .6s .64s ease both}
+            .props .chip{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:16px;background:rgba(255,255,255,.7);border:1px solid rgba(13,148,136,.16);box-shadow:0 6px 18px rgba(11,94,88,.08)}
+            .props .dots{display:flex}.props .dots b{width:30px;height:30px;border-radius:50%;border:2px solid #fff;display:grid;place-items:center;font-size:9.5px;font-weight:800;color:#fff;margin-left:-5px}
+            .props .dots b:first-child{margin-left:0;background:linear-gradient(135deg,#0D9488,#115E59)}.props .dots b:last-child{background:linear-gradient(135deg,#0891B2,#0369A1)}
+            .props .t{font-size:12.5px;line-height:1.35;color:#25303F}.props .t span{display:block;color:#7C8B9A;font-size:11.5px}
+            .login-spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .65s linear infinite;vertical-align:-3px;margin-right:8px}
             #lock-countdown{font-variant-numeric:tabular-nums;font-weight:700}
+
+            @media (max-width:880px){
+                .shell{grid-template-columns:1fr;border-radius:28px}
+                .visual{min-height:250px}
+                .visual .big{top:70px;left:22px;font-size:54px}
+                .ph{width:158px}.ph1{right:18px;top:132px}.ph2{display:none}.ph .tag{display:none}
+                .visual .big small{display:none}
+                .visual .cap{display:none}
+                .visual .badge-top{left:22px;top:20px}
+                .form-side{padding:26px 22px 22px}
+            }
+            @media (prefers-reduced-motion:reduce){
+                .login-baru *,.login-baru *::before,.login-baru *::after{animation:none !important;transition:none !important}
+            }
         </style>
     </head>
     <body>
-    <div class="login">
-        <div class="login-blob3"></div>
-        <form class="panel" method="post" id="login-form">
-            <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
-            <img class="login-logo" src="assets/clara-logo.png" alt="CLARA" onerror="this.hidden=true;this.nextElementSibling.style.display='flex'">
-            <div style="display:none;align-items:center;gap:10px;margin-bottom:20px">
-                <div class="brand-icon">CL</div>
-                <div>
-                    <div style="font-weight:800;font-size:16px;color:var(--ink)"><?= h(env_value('APP_NAME', 'CLARA')) ?></div>
-                    <div style="font-size:12px;color:var(--muted);line-height:1.5">Casual Leasing Achievement<br>& Revenue Analytics</div>
+    <div class="login login-baru" id="login-root">
+        <div class="bg-blob a"></div><div class="bg-blob b"></div><div class="bg-blob c"></div>
+        <div class="shell">
+            <div class="visual" aria-hidden="true">
+                <i class="m m1"></i><i class="m m2"></i><i class="m m3"></i>
+                <span class="badge-top"><i></i> Revenue Analytics</span>
+                <div class="big">CLARA<small>LEASING · MEDIA · GUDANG</small></div>
+                <div class="ph ph1"><div class="card"><div class="img"><img src="assets/login-ewalk.jpg" alt="" width="960" height="567" loading="eager"></div><span class="tag"><i></i>e-Walk Simply FUNtastic</span></div></div>
+                <div class="ph ph2"><div class="card"><div class="img"><img src="assets/login-pentacity.jpg" alt="" width="960" height="577" loading="eager"></div><span class="tag"><i></i>Pentacity Shopping Venue</span></div></div>
+                <div class="cap">
+                    <h2>Casual Leasing Achievement &amp; Revenue Analytics</h2>
+                    <p>Pantau target, okupansi, dan pendapatan sewa Pentacity &amp; E-Walk dalam satu tempat.</p>
                 </div>
             </div>
-            <h1 style="margin-bottom:4px">Masuk</h1>
-            <p class="muted" style="margin-bottom:20px">Silakan masuk dengan akun Anda</p>
-            <?php if ($hasError): ?>
+            <form class="form-side" method="post" id="login-form">
+                <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                <div class="logo-chip"><img src="assets/clara-logo.png" alt="CLARA"></div>
+                <h1>Selamat datang kembali</h1>
+                <p class="sub">Masuk dengan akun Anda untuk membuka dashboard CLARA.</p>
+                <?php if ($hasError): ?>
                 <div class="flash">
                     <?php if ($isLocked): ?>
                         Terlalu banyak percobaan login. Coba lagi dalam <strong id="lock-countdown"></strong>.
@@ -160,19 +217,23 @@ function login_page(PDO $pdo): void
                     <?php endif; ?>
                 </div>
             <?php endif; ?>
-            <p style="margin-bottom:14px">
-                <label>Email</label>
-                <input name="email" type="email" required autocomplete="username" autofocus>
-            </p>
-            <p style="margin-bottom:20px">
-                <label>Password</label>
-                <span style="position:relative;display:block">
-                    <input id="pw" name="password" type="password" required autocomplete="current-password" style="width:100%;padding-right:42px;box-sizing:border-box">
-                    <button type="button" onclick="var i=document.getElementById('pw');i.type=i.type==='password'?'text':'password';this.innerHTML=i.type==='password'?'<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'18\' height=\'18\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'><path d=\'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z\'/><circle cx=\'12\' cy=\'12\' r=\'3\'/></svg>':'<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'18\' height=\'18\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'><path d=\'M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94\'/><path d=\'M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19\'/><line x1=\'1\' y1=\'1\' x2=\'23\' y2=\'23\'/></svg>'" style="position:absolute;right:0;top:0;height:100%;width:40px;background:none;border:none;cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center;padding:0"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
-                </span>
-            </p>
-            <button type="submit" id="submit-btn" style="width:100%;justify-content:center">Masuk</button>
-        </form>
+                <div class="fld">
+                    <label for="em">Email</label>
+                    <span class="inp"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></svg><input id="em" name="email" type="email" required autocomplete="username" autofocus placeholder="nama@perusahaan.com"></span>
+                </div>
+                <div class="fld" style="margin-bottom:20px">
+                    <label for="pw">Password</label>
+                    <span class="inp"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="3"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg><input id="pw" name="password" type="password" required autocomplete="current-password" placeholder="Masukkan password">
+                        <button type="button" onclick="var i=document.getElementById('pw');i.type=i.type==='password'?'text':'password';this.innerHTML=i.type==='password'?'<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'18\' height=\'18\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'><path d=\'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z\'/><circle cx=\'12\' cy=\'12\' r=\'3\'/></svg>':'<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'18\' height=\'18\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'><path d=\'M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94\'/><path d=\'M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19\'/><line x1=\'1\' y1=\'1\' x2=\'23\' y2=\'23\'/></svg>'" style="position:absolute;right:0;top:0;height:100%;width:40px;background:none;border:none;cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center;padding:0"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                    </span>
+                </div>
+                <button type="submit" id="submit-btn">Masuk</button>
+                <div class="props"><div class="chip">
+                    <div class="dots"><b>PC</b><b>EW</b></div>
+                    <div class="t">Pentacity Shopping Venue · E-Walk Simply FUNtastic<span>Dua properti, satu sistem pelaporan</span></div>
+                </div></div>
+            </form>
+        </div>
     </div>
     <script>
     (function(){
@@ -182,6 +243,13 @@ function login_page(PDO $pdo): void
         else{form.style.animation='fadeInUp .35s ease both';form.addEventListener('animationend',function(){form.style.animation='';},{once:true});}
         if(lockSec>0){btn.disabled=true;var el=document.getElementById('lock-countdown');function tick(){if(lockSec<=0){btn.disabled=false;btn.textContent='Masuk';if(el)el.closest('.flash').textContent='Silakan coba lagi.';return;}var m=Math.floor(lockSec/60),s=lockSec%60;if(el)el.textContent=m+':'+String(s).padStart(2,'0');lockSec--;setTimeout(tick,1000);}tick();}
         form.addEventListener('submit',function(){if(btn.disabled)return false;btn.disabled=true;btn.innerHTML='<span class="login-spinner"></span>Memuat…';});
+        var root=document.getElementById('login-root');
+        if(root&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+            window.addEventListener('pointermove',function(ev){
+                root.style.setProperty('--mx',((ev.clientX/window.innerWidth)-.5).toFixed(3));
+                root.style.setProperty('--my',((ev.clientY/window.innerHeight)-.5).toFixed(3));
+            },{passive:true});
+        }
     })();
     </script>
     </body>
