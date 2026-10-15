@@ -116,6 +116,25 @@ function skp_listrik_satuan(array $skp, string $start = '', string $end = ''): i
  * $listrik = bagian biaya listrik yang SUDAH termasuk di dalam $total — dipakai
  * hanya untuk menampilkannya sebagai baris terpisah.
  */
+/**
+ * Tarif publish yang disimpan di dokumen SKP.
+ *
+ * Kotak tarif di form adalah tarif PUBLISH; tarif hasil nego diketik di kotak
+ * diskon dan tarif itulah yang jadi unit_rate transaksinya. Kolom ini cuma
+ * pembandingnya, dan hanya sah bila benar-benar lebih besar — kalau tidak,
+ * diskonnya negatif dan dokumennya berbohong. Untuk SKP yang tarifnya tidak
+ * bisa diubah (sumbernya Surat Penawaran), patokannya ikut dari penawaran itu.
+ */
+function _skp_tarif_publish_post(): float
+{
+    if (!post('diskon_aktif')) return 0.0;
+    $publish = (float) (parse_rupiah((string) post('p_unit_rate', '0'))
+             ?: parse_rupiah((string) post('s_unit_rate', '0'))
+             ?: parse_rupiah((string) post('tarif_publish_src', '0')));
+    $diskon  = (float) parse_rupiah((string) post('tarif_diskon', '0'));
+    return ($publish > 0 && $diskon > 0 && $diskon < $publish) ? $publish : 0.0;
+}
+
 function _skp_amounts(float $total, float $ratePerM, float $deposit, float $listrik = 0.0, bool $depositLunas = false, bool $kenaPpn = true, float $scPerBulan = 0.0, int $scBulan = 1, float $tarifPublish = 0.0, bool $diskonAktif = false): array
 {
     // PPN dihitung per komponen (sewa & listrik) supaya bisa dirinci; jumlahnya
@@ -948,7 +967,9 @@ function skp_form(PDO $pdo): void
                 <?php if ($ubahPeriode): ?>
                 <div><label>Tanggal Mulai <span style="color:#dc2626">*</span></label><input type="date" name="p_start_date" value="<?= h((string) $src['start_date']) ?>" required></div>
                 <div><label>Tanggal Selesai <span style="color:#dc2626">*</span></label><input type="date" name="p_end_date" value="<?= h((string) $src['end_date']) ?>" required></div>
-                <div><label><?= h($satuanTarif) ?> <span style="color:#dc2626">*</span></label><?php skp_input_rp('p_unit_rate', (float) ($src['unit_rate'] ?? 0), '', true); ?></div>
+                <?php /* Bila harga diskon dipakai, kotak ini adalah TARIF PUBLISH; tarif hasil
+                         nego diketik di kotak diskon dan itulah yang menghitung nilai sewa. */ ?>
+                <div><label><?= h($satuanTarif) ?> <span style="color:#dc2626">*</span></label><?php skp_input_rp('p_unit_rate', $defDiskon && $defPublish > 0 ? $defPublish : (float) ($src['unit_rate'] ?? 0), '', true); ?></div>
                 <?php if (($src['pricing_type'] ?? '') === 'monthly'): ?>
                 <div><label>Jumlah Bulan Kontrak</label><input name="p_contract_months" value="<?= (int) ($src['contract_months'] ?? 0) ?: '' ?>" inputmode="numeric" placeholder="kosong = ikut tanggal"></div>
                 <?php endif; ?>
@@ -1089,20 +1110,32 @@ function skp_form(PDO $pdo): void
                              Bentuknya disamakan dengan centang lain di kelompok ini. */ ?>
                     <label style="display:flex;align-items:center;gap:8px;margin-top:9px;cursor:pointer;font-weight:400">
                         <input type="checkbox" name="diskon_aktif" id="skp_diskon_on" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= $defDiskon ? 'checked' : '' ?> <?= $editable ? '' : 'disabled' ?>>
-                        <span><strong>Tampilkan harga diskon</strong> <span class="muted">&mdash; dokumen memuat tarif publish, tarif setelah diskon, dan persentasenya</span></span>
+                        <span><strong>Tampilkan harga diskon</strong> <span class="muted">&mdash; tarif di atas jadi tarif publish, dokumen memuat potongan dan persentasenya</span></span>
                     </label>
-                    <?php /* Yang diisi adalah TARIF, bukan total. Totalnya dihitung
-                             sendiri dengan pengali yang sama seperti nilai sewa, jadi
-                             tidak pernah ada selisih pembulatan. */ ?>
+                    <?php /* Yang diisi adalah TARIF hasil nego, bukan total. Nilai sewanya
+                             dihitung sendiri dengan pengali yang sama, jadi tidak pernah
+                             ada selisih pembulatan seperti kalau totalnya diketik. */ ?>
+                    <?php /* Tarifnya hanya bisa diubah di SKP yang tidak berasal dari
+                             Surat Penawaran. Kalau asalnya SP, diskonnya ikut SP —
+                             kalau di sini boleh beda, dokumennya tidak lagi cocok
+                             dengan surat yang sudah disetujui. */ ?>
+                    <?php $tarifBisaUbah = $ubahPeriode || $standalone; ?>
                     <div id="skp_diskon_box" style="margin-top:8px;max-width:360px">
-                        <label><?= h($satuanTarif) ?> sebelum diskon <span class="muted">(tarif publish)</span></label>
+                        <label><?= h($satuanTarif) ?> setelah diskon <span class="muted">(harga nego untuk client)</span></label>
                         <div style="display:flex;align-items:stretch">
                             <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
-                            <input type="text" inputmode="numeric" id="skp_publish_rp" value="<?= $defPublish > 0 ? number_format($defPublish, 0, ',', '.') : '' ?>" placeholder="0"
-                                   style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= $editable ? '' : 'disabled' ?>>
-                            <input type="hidden" name="tarif_publish" id="skp_publish_val" value="<?= (int) $defPublish ?>">
+                            <input type="text" inputmode="numeric" id="skp_publish_rp" value="<?= $defDiskon && (float) ($src['unit_rate'] ?? 0) > 0 ? number_format((float) $src['unit_rate'], 0, ',', '.') : '' ?>" placeholder="0"
+                                   style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= ($editable && $tarifBisaUbah) ? '' : 'disabled' ?>>
+                            <input type="hidden" name="tarif_diskon" id="skp_publish_val" value="<?= (int) ($src['unit_rate'] ?? 0) ?>">
+                            <?php /* Patokan tarif publish untuk SKP yang tarifnya ikut penawaran. */ ?>
+                            <input type="hidden" name="tarif_publish_src" value="<?= (int) ($defPublish > 0 ? $defPublish : (float) ($src['unit_rate'] ?? 0)) ?>">
                         </div>
                         <div class="help" id="skp_diskon_info"></div>
+                        <?php if ($editable && !$tarifBisaUbah): ?>
+                        <div class="help"><?= $offerId
+                            ? 'Tarifnya mengikuti Surat Penawaran &mdash; untuk mengubah diskonnya, ubah di Surat Penawarannya.'
+                            : 'Tarif dokumen ini tidak bisa diubah dari sini, jadi diskonnya ikut yang sudah tercatat.' ?></div>
+                        <?php endif; ?>
                     </div>
                     <div id="skp_sc_box" class="form-grid" style="margin-top:8px">
                         <div>
@@ -1612,7 +1645,13 @@ function skp_form(PDO $pdo): void
             var elTot = document.getElementById('skp-total');
             if (!elTot) return;
             var DASAR = <?= (int) round((float) $total) ?>,
-                L_OFFER = <?= (int) round((float) ($src['electricity'] ?? 0)) ?>;
+                L_OFFER = <?= (int) round((float) ($src['electricity'] ?? 0)) ?>,
+                TARIF0 = <?= (int) round((float) ($src['unit_rate'] ?? 0)) ?>;
+            // Pengali (m2 x hari, slot x hari, atau hari) diturunkan dari nilai
+            // sewa tersimpan dibagi tarifnya. Dengan pengali ini, mengubah tarif
+            // langsung mengubah nilai sewa di layar — dulu angkanya diam saja
+            // sampai disimpan, jadi orang tidak tahu hasilnya sebelum terlanjur.
+            var PENGALI = TARIF0 > 0 ? (DASAR - L_OFFER) / TARIF0 : 0;
             function rupiah(x) { return 'Rp ' + Math.round(x || 0).toLocaleString('id-ID'); }
             function listrikDokumen() {
                 var on = document.getElementById('skp_listrik_on');
@@ -1628,7 +1667,34 @@ function skp_form(PDO $pdo): void
                     elGr = document.getElementById('skp-grand'),
                     lunas = document.getElementById('skp_dep_paid'),
                     bantu = document.getElementById('skp_dep_help');
-                var lSkp = listrikDokumen(), total = DASAR + lSkp, lAll = L_OFFER + lSkp, sewa = total - lAll;
+                var lSkp = listrikDokumen(), lAll = L_OFFER + lSkp;
+                // Harga diskon: kotak tarif di atas adalah tarif PUBLISH, dan yang
+                // diketik di kotak diskon adalah tarif hasil nego. Tarif nego itulah
+                // yang menghitung nilai sewa, dengan pengali yang sama seperti
+                // tersimpan — jadi tidak pernah ada selisih pembulatan.
+                var dsOn = document.getElementById('skp_diskon_on'),
+                    dsTx = document.getElementById('skp_publish_rp'),
+                    dsVal = document.getElementById('skp_publish_val'),
+                    dsBox = document.getElementById('skp_diskon_box'),
+                    dsInfo = document.getElementById('skp_diskon_info');
+                // Kotak tarif dibuat skp_input_rp() tanpa id dan nilainya berformat
+                // ribuan, jadi dicari lewat name lalu dibersihkan.
+                var elTarif = document.querySelector('[name="p_unit_rate"]')
+                           || document.querySelector('[name="s_unit_rate"]');
+                var tarifPub  = elTarif ? (parseInt(String(elTarif.value).replace(/\D/g, ''), 10) || 0) : TARIF0;
+                var tarifNego = (dsOn && dsOn.checked && dsTx)
+                    ? (parseInt((dsTx.value || '').replace(/\D/g, ''), 10) || 0) : 0;
+                if (dsVal && dsOn && dsOn.checked) dsVal.value = tarifNego;
+                var adaDiskon = tarifPub > 0 && tarifNego > 0 && tarifNego < tarifPub;
+                var tarif = adaDiskon ? tarifNego : tarifPub;
+                // Harga nego final yang diketik tetap menang, kecuali saat diskon
+                // dipakai — di situ totalnya wajib ikut tarif (lihat sisi PHP-nya).
+                var elKetik = document.querySelector('[name="p_total"]');
+                var totalKetik = (elKetik && !adaDiskon)
+                    ? (parseInt(String(elKetik.value).replace(/\D/g, ''), 10) || 0) : 0;
+                var sewa = totalKetik > 0 ? totalKetik
+                         : ((PENGALI > 0 && tarif > 0) ? Math.round(tarif * PENGALI) : (DASAR - L_OFFER));
+                var total = sewa + lAll;
                 var elPpnOn = document.getElementById('skp_ppn');
                 var kenaPpn = !elPpnOn || elPpnOn.checked;
                 var ppn = kenaPpn ? (Math.round(sewa * 11 / 12 * 0.12) + Math.round(lAll * 11 / 12 * 0.12)) : 0;
@@ -1648,43 +1714,28 @@ function skp_form(PDO $pdo): void
                                    : (rupiah(scPakai) + ' per bulan · '))
                           + '<b>' + SC_BULAN + ' bulan = ' + rupiah(scTotal) + '</b>';
                 }
-                // Harga publish & diskon: hanya keterangan, tidak mengubah satu pun
-                // angka di bawah. Besar diskonnya dihitung dari selisih terhadap
-                // Total Biaya Sewa yang tercetak — persis seperti di PHP.
-                var dsOn = document.getElementById('skp_diskon_on'),
-                    dsTx = document.getElementById('skp_publish_rp'),
-                    dsVal = document.getElementById('skp_publish_val'),
-                    dsBox = document.getElementById('skp_diskon_box'),
-                    dsInfo = document.getElementById('skp_diskon_info');
+                // Keterangan diskon: angkanya memakai tarif & pengali yang sama
+                // dengan nilai sewa di atas, jadi publish - diskon selalu pas.
                 if (dsOn) {
                     if (dsBox) dsBox.style.display = dsOn.checked ? '' : 'none';
-                    // Yang diketik TARIF. Pengalinya diambil dari nilai sewa yang
-                    // tercetak di dokumen, sama persis dengan hitungan di PHP.
-                    // Kotak tarif dibuat skp_input_rp() tanpa id dan nilainya
-                    // berformat ribuan, jadi dicari lewat name lalu dibersihkan.
-                    var elTarif = document.querySelector('[name="p_unit_rate"]')
-                               || document.querySelector('[name="s_unit_rate"]');
-                    var tarif = elTarif ? (parseInt(String(elTarif.value).replace(/\D/g, ''), 10) || 0) : 0;
-                    var pub = dsOn.checked ? (parseInt((dsTx.value || '').replace(/\D/g, ''), 10) || 0) : 0;
-                    if (dsVal) dsVal.value = pub;
-                    var pengali = tarif > 0 ? (sewa / tarif) : 0;
                     if (dsInfo) {
-                        if (tarif <= 0) {
-                            dsInfo.innerHTML = '<span style="color:#b45309">Dokumen ini tidak punya tarif '
-                                + '(nilainya diketik manual), jadi harga diskon tidak bisa dihitung dari tarif.</span>';
-                        } else if (!dsOn.checked || pub <= 0) {
-                            dsInfo.innerHTML = 'Tarif sekarang <b>' + rupiah(tarif) + '</b>. '
-                                + 'Isi tarif sebelum diskon di atas &mdash; potongannya dihitung otomatis.';
-                        } else if (pub <= tarif) {
-                            dsInfo.innerHTML = '<span style="color:#b91c1c">Tarif publish harus lebih besar dari '
-                                + rupiah(tarif) + ' &mdash; baris diskon tidak akan dicetak.</span>';
+                        if (tarifPub <= 0) {
+                            dsInfo.innerHTML = '<span style="color:#b45309">Tarif di atas masih kosong '
+                                + '&mdash; isi dulu tarif publishnya.</span>';
+                        } else if (!dsOn.checked || tarifNego <= 0) {
+                            dsInfo.innerHTML = 'Tarif publish <b>' + rupiah(tarifPub) + '</b> (dari kotak tarif '
+                                + 'di atas). Isi tarif setelah diskon &mdash; potongan dan nilai sewanya '
+                                + 'dihitung otomatis.';
+                        } else if (tarifNego >= tarifPub) {
+                            dsInfo.innerHTML = '<span style="color:#b91c1c">Tarif setelah diskon harus lebih KECIL '
+                                + 'dari ' + rupiah(tarifPub) + ' &mdash; baris diskon tidak akan dicetak.</span>';
                         } else {
-                            var potTarif = pub - tarif;
-                            var pct = Math.round(potTarif / pub * 10000) / 100;
-                            dsInfo.innerHTML = '<b>' + rupiah(pub) + ' &rarr; ' + rupiah(tarif)
+                            var potTarif = tarifPub - tarifNego;
+                            var pct = Math.round(potTarif / tarifPub * 10000) / 100;
+                            dsInfo.innerHTML = '<b>' + rupiah(tarifPub) + ' &rarr; ' + rupiah(tarifNego)
                                 + ' (diskon ' + String(pct).replace('.', ',') + '%)</b><br>'
-                                + 'Nilai sewa: ' + rupiah(Math.round(pub * pengali)) + ' &minus; '
-                                + rupiah(Math.round(potTarif * pengali)) + ' = <b>' + rupiah(Math.round(sewa)) + '</b>';
+                                + 'Nilai sewa: ' + rupiah(Math.round(tarifPub * PENGALI)) + ' &minus; '
+                                + rupiah(Math.round(potTarif * PENGALI)) + ' = <b>' + rupiah(sewa) + '</b>';
                         }
                     }
                 }
@@ -2100,9 +2151,19 @@ function _skp_simpan_periode(PDO $pdo, int $pid, int $trxId, ?array $skp, array 
 
     $mulai   = trim((string) post('p_start_date', ''));
     $selesai = trim((string) post('p_end_date', ''));
-    $tarif   = parse_rupiah((string) post('p_unit_rate', '0'));
+    // Harga diskon: kotak tarif di atas adalah tarif PUBLISH, yang diketik di
+    // kotak diskon adalah tarif hasil nego. Tarif nego itulah yang dipakai
+    // menghitung nilai sewa — totalnya ikut turun sendiri, tanpa override.
+    $tarifPublishKtk = parse_rupiah((string) post('p_unit_rate', '0'));
+    $tarifDiskonKtk  = parse_rupiah((string) post('tarif_diskon', '0'));
+    $tarif   = (post('diskon_aktif') && $tarifDiskonKtk > 0 && $tarifPublishKtk > 0
+                && $tarifDiskonKtk < $tarifPublishKtk) ? $tarifDiskonKtk : $tarifPublishKtk;
     // Kosong = biarkan sistem menghitung. Diisi = itu harga kesepakatannya.
     $totalKetik = parse_rupiah((string) post('p_total', '0'));
+    // Diskon dipakai = total ikut kalkulasi tarif nego, bukan angka ketikan —
+    // supaya tarif yang tercetak selalu cocok dengan totalnya.
+    if (post('diskon_aktif') && $tarifDiskonKtk > 0 && $tarifPublishKtk > 0
+        && $tarifDiskonKtk < $tarifPublishKtk) $totalKetik = 0.0;
     $sah = function (string $t): bool {
         $d = DateTimeImmutable::createFromFormat('Y-m-d', $t);
         return $d instanceof DateTimeImmutable && $d->format('Y-m-d') === $t;
@@ -2254,7 +2315,13 @@ function skp_save(PDO $pdo): void
             'master_code'  => trim((string) post('s_master_code', '')) ?: null,
             'start_date'   => trim((string) post('s_start_date', '')) ?: null,
             'end_date'     => trim((string) post('s_end_date', '')) ?: null,
-            'unit_rate'    => parse_rupiah((string) post('s_unit_rate', '0')),
+            // Tarif yang DIPAKAI — kotak di atas tarif publish, kotak diskon
+            // tarif hasil nego. Lihat _skp_tarif_publish_post().
+            'unit_rate'    => (function () {
+                $pub = (float) parse_rupiah((string) post('s_unit_rate', '0'));
+                $dis = (float) parse_rupiah((string) post('tarif_diskon', '0'));
+                return (post('diskon_aktif') && $dis > 0 && $pub > 0 && $dis < $pub) ? $dis : $pub;
+            })(),
             'total_amount' => parse_rupiah((string) post('s_total_amount', '0')),
             'pic_name'     => trim((string) post('s_pic_name', '')) ?: null,
         ];
@@ -2295,10 +2362,12 @@ function skp_save(PDO $pdo): void
         // Service Charge bulanan (kosong = tidak dikenakan).
         'sc_flag'       => post('sc_flag') ? 1 : 0,
         'sc_monthly'    => parse_rupiah((string) post('sc_monthly', '0')) ?: null,
-        // Harga publish: harga sebelum diskon, dicetak di dokumen supaya client,
+        // Harga publish: tarif sebelum diskon, dicetak di dokumen supaya client,
         // legal, dan finance sama-sama melihat bahwa harganya memang diskon.
+        // Tarif yang DIPAKAI tersimpan di unit_rate transaksinya; kolom ini
+        // hanya pembandingnya, dan hanya sah bila benar-benar lebih besar.
         'diskon_aktif'  => post('diskon_aktif') ? 1 : 0,
-        'tarif_publish' => parse_rupiah((string) post('tarif_publish', '0')) ?: null,
+        'tarif_publish' => _skp_tarif_publish_post() ?: null,
         // Listrik yang dicatat di dokumen ini (kosong = tidak menagih listrik).
         'electricity_flag'    => post('electricity_flag') ? 1 : 0,
         'electricity_monthly' => parse_rupiah((string) post('electricity_monthly', '0')) ?: null,
