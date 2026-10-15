@@ -180,9 +180,9 @@ function dashboard(PDO $pdo): void
             .group-hdr:hover td { filter:brightness(.97); }
             .group-hdr td:first-child::before { content:'▾  ';font-size:11px;color:#64748b; }
             .group-hdr.is-collapsed td:first-child::before { content:'▸  '; }
-            .dash-anchors { display:flex;gap:6px;align-self:flex-end; }
-            .dash-anchors a { font-size:12px;padding:3px 10px;border-radius:4px;background:var(--bg2,#f1f5f9);color:var(--ink2,#475569);text-decoration:none;border:1px solid var(--line,#e2e8f0);white-space:nowrap; }
-            .dash-anchors a:hover { background:var(--line,#e2e8f0); }
+            .dash-anchors { display:flex;gap:8px;align-self:flex-end; }
+            .dash-anchors a { display:inline-flex;align-items:center;height:38px;box-sizing:border-box;font-size:13px;font-weight:600;padding:0 14px;border-radius:var(--r,10px);background:#fff;color:var(--ink2,#475569);text-decoration:none;border:1px solid var(--line,#e2e8f0);white-space:nowrap;transition:background .15s,border-color .15s,color .15s; }
+            .dash-anchors a:hover { background:#E6F7F5;border-color:#99E0D8;color:#0F766E; }
             .pic-rank { font-weight:800;font-size:15px;color:#cbd5e1;width:36px;text-align:center;vertical-align:middle; }
             .pic-rank.r1 { color:#f59e0b; }
             .pic-rank.r2 { color:#94a3b8; }

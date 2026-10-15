@@ -355,7 +355,7 @@ if (isset($_GET['view'])) {
 }
 if (mobile_view_active()) {
     if ($route === 'dashboard')      redirect_to('m_home');
-    if ($route === 'exec_dashboard') redirect_to('m_exec');
+    if ($route === 'exec_dashboard') redirect_to('m_exec', isset($_GET['period']) ? ['period' => (string) $_GET['period']] : []);
     if ($route === 'offers')         redirect_to('m_offers');
     if ($route === 'skp')            redirect_to('m_skp');
 }
@@ -462,6 +462,10 @@ $pageFiles = [
     'lookup_save'                 => 'lookup.php',
     'lookup_delete'               => 'lookup.php',
     'trend'                       => 'analytics.php',
+    'unit_analysis'               => 'unit_analysis.php',
+    'unit_analysis_detail'        => 'unit_analysis.php',
+    'unit_analysis_csv'           => 'unit_analysis.php',
+    'unit_analysis_ai'            => 'unit_analysis.php',
     'comparison'                  => 'analytics.php',
     'daily_occupancy'             => 'daily_occupancy.php',
     'recurring_candidates'        => 'recurring_candidates.php',
@@ -589,6 +593,10 @@ match ($route) {
     'roles_save'                  => roles_save($pdo),
     'audit'                       => audit_page($pdo),
     'trend'                       => trend_page($pdo),
+    'unit_analysis'               => unit_analysis_page($pdo),
+    'unit_analysis_detail'        => unit_analysis_detail_page($pdo),
+    'unit_analysis_csv'           => unit_analysis_csv($pdo),
+    'unit_analysis_ai'            => unit_analysis_ai($pdo),
     'comparison'                  => comparison_page($pdo),
     'daily_occupancy'             => daily_occupancy_page($pdo),
     'recurring_candidates'        => recurring_candidates_page($pdo),

@@ -1033,6 +1033,8 @@ body{font-family:'Inter',sans-serif;font-size:10px;color:#0f1623;background:#fff
 .section{margin-bottom:12px}
 .section-title{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#0d9488;padding-bottom:4px;border-bottom:1px solid #e4e9f0;margin-bottom:7px;display:flex;align-items:center;gap:5px}
 .section-title::before{content:'';width:2px;height:10px;background:#0d9488;border-radius:99px;display:block}
+.ai-box{border:1px solid #e4e9f0;border-left:3px solid #7c3aed;border-radius:6px;padding:8px 11px;font-size:9.5px;line-height:1.55;color:#1e293b;margin-bottom:12px;break-inside:avoid;page-break-inside:avoid}
+.ai-meta{margin-top:6px;font-size:8px;color:#64748b;line-height:1.4}
 /* Tables */
 table{width:100%;border-collapse:collapse;font-size:9px}
 th{background:#f8fafc;color:#344054;font-weight:700;text-transform:uppercase;font-size:8px;letter-spacing:.03em;padding:5px 7px;border:1px solid #e4e9f0;text-align:left;white-space:nowrap}
@@ -1096,6 +1098,16 @@ $combPotAch = $combProjection > 0 ? $combActual / $combProjection : 0;
         </div>
     </div>
 </div>
+<?php $analisaAi = AiNarasi::ambil($pdo, AiNarasi::JENIS_EXEC, $period); if ($analisaAi): ?>
+<!-- ANALISA AI (hanya bila sudah dibuat di halaman Exec Summary) -->
+<div class="section">
+    <div class="section-title">Analisa AI</div>
+    <div class="ai-box">
+        <div><?= nl2br(h($analisaAi['teks'])) ?></div>
+        <div class="ai-meta">Ditulis AI oleh engine <?= h(AiNarasi::namaTampil((string) $analisaAi['model'])) ?> (<?= h($analisaAi['model']) ?>, <?= h($analisaAi['penyedia'] ?? 'Anthropic') ?>) · <?= h(date('d/m/Y H:i', strtotime($analisaAi['dibuat_pada']))) ?>. AI hanya menjelaskan angka pada laporan ini dan bukan perhitungan resmi; periksa sebelum dikutip.</div>
+    </div>
+</div>
+<?php endif; ?>
 <!-- PER-PROPERTY CARDS -->
 <div class="section">
     <div class="section-title">Per Properti</div>

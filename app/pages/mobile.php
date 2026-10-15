@@ -441,7 +441,10 @@ function mobile_exec_page(PDO $pdo): void
     $recPct = $combined['actual'] > 0 ? (int) round($combined['recurring'] / $combined['actual'] * 100) : 0;
     $gap    = $combined['actual'] - $combined['target'];
 
-    layout('Executive Summary', function () use ($period, $periodDays, $combined, $propData, $segAct, $segProj, $newClients, $achPct, $recPct, $gap) {
+    $analisaAi = AiNarasi::ambil($pdo, AiNarasi::JENIS_EXEC, $period);
+    $aiSiap    = AiNarasi::terkonfigurasi();
+
+    layout('Executive Summary', function () use ($period, $periodDays, $combined, $propData, $segAct, $segProj, $newClients, $achPct, $recPct, $gap, $analisaAi, $aiSiap) {
         _m_home_styles();
         ?>
         <style>
@@ -460,6 +463,28 @@ function mobile_exec_page(PDO $pdo): void
             <div class="m-kpi"><div class="l">Klien Baru</div><div class="v"><?= $newClients ?> klien</div></div>
             <div class="m-kpi"><div class="l"><?= $gap >= 0 ? 'Surplus' : 'Kurang Target' ?></div><div class="v" style="color:<?= $gap >= 0 ? 'var(--green)' : 'var(--accent)' ?>"><?= money(abs($gap)) ?></div></div>
         </div>
+
+        <?php if ($analisaAi || $aiSiap): ?>
+        <div class="m-sec-title">Analisa AI</div>
+        <div class="m-card" style="border-left:3px solid #7c3aed">
+            <?php if ($analisaAi): ?>
+                <div style="font-size:13px;line-height:1.65;color:var(--ink)"><?= nl2br(h($analisaAi['teks'])) ?></div>
+                <div style="margin-top:9px;font-size:10.5px;line-height:1.45;color:var(--muted)">
+                    Ditulis AI · <b><?= h(AiNarasi::namaTampil((string) $analisaAi['model'])) ?></b> (<?= h($analisaAi['penyedia'] ?? 'Anthropic') ?>) ·
+                    <?= h(date('d/m/Y H:i', strtotime($analisaAi['dibuat_pada']))) ?>. Periksa sebelum dikutip.
+                </div>
+            <?php else: ?>
+                <div style="font-size:12.5px;color:var(--muted)">Belum ada analisa untuk periode ini.</div>
+            <?php endif; ?>
+            <?php if ($aiSiap): ?>
+            <form method="post" action="?r=exec_narasi_ai" style="margin-top:10px">
+                <input type="hidden" name="_csrf" value="<?= h(csrf_token()) ?>">
+                <input type="hidden" name="period" value="<?= h($period) ?>">
+                <button type="submit" onclick="this.disabled=true;this.textContent='Menganalisa… (±20 dtk)';this.form.submit();" style="width:100%;padding:11px;background:#7c3aed;color:#fff;border:0;border-radius:10px;font-size:13px;font-weight:700"><?= $analisaAi ? '↻ Perbarui Analisa AI' : '✨ Analisa AI' ?></button>
+            </form>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
 
         <div class="m-sec-title">Per Segmen (gabungan)</div>
         <div class="m-card">
