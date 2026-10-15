@@ -3,7 +3,20 @@ declare(strict_types=1);
 
 function login_page(PDO $pdo): void
 {
+    $isAjax = ($_SERVER['HTTP_X_LOGIN_AJAX'] ?? '') === '1';
+    $ajaxJson = static function (array $payload): never {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+        echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+        exit;
+    };
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        if ($isAjax && !hash_equals((string) ($_SESSION['csrf'] ?? ''), (string) ($_POST['_csrf'] ?? ''))) {
+            // sama dengan verify_csrf(), tetapi membalas JSON agar flash tidak terkonsumsi respons fetch
+            unset($_SESSION['csrf']);
+            flash('Sesi form sudah kedaluwarsa. Silakan coba lagi.');
+            $ajaxJson(['ok' => false]);
+        }
         verify_csrf();
         $lockUntil = $_SESSION['_login_lock_until'] ?? 0;
         if ($lockUntil > time()) {
@@ -48,7 +61,13 @@ function login_page(PDO $pdo): void
 
                 if ($user['must_change_password']) {
                     $_SESSION['_must_change_pw'] = true;
+                    if ($isAjax) {
+                        $ajaxJson(['ok' => true, 'to' => '?r=change_password', 'name' => (string) $user['name']]);
+                    }
                     redirect_to('change_password');
+                }
+                if ($isAjax) {
+                    $ajaxJson(['ok' => true, 'to' => '?r=dashboard', 'name' => (string) $user['name']]);
                 }
                 redirect_to('dashboard');
             } else {
@@ -63,6 +82,9 @@ function login_page(PDO $pdo): void
                     flash('Login gagal. Cek email dan password. (Percobaan ' . $attempts . '/5)');
                 }
             }
+        }
+        if ($isAjax) {
+            $ajaxJson(['ok' => false]); // flash sudah terisi; klien memuat ulang halaman login
         }
     }
 
@@ -173,6 +195,43 @@ function login_page(PDO $pdo): void
             .login-spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .65s linear infinite;vertical-align:-3px;margin-right:8px}
             #lock-countdown{font-variant-numeric:tabular-nums;font-weight:700}
 
+
+            /* ---- transisi setelah login berhasil ---- */
+            @keyframes okPop{0%{transform:scale(.6);opacity:0}60%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+            @keyframes okDraw{to{stroke-dashoffset:0}}
+            @keyframes tileBeat{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+            @keyframes tileRing{0%{transform:scale(.9);opacity:.5}100%{transform:scale(1.7);opacity:0}}
+            @keyframes wRise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+            #go-ov{position:fixed;inset:0;z-index:9999;pointer-events:none;visibility:hidden;color:#fff;display:grid;place-items:center;text-align:center;
+                background:radial-gradient(120% 120% at 30% 20%,#0D9488 0%,#115E59 55%,#0B4F4A 100%);clip-path:circle(0px at var(--ox,50%) var(--oy,50%))}
+            #go-ov .tile{position:relative;width:96px;height:96px;border-radius:26px;background:#fff;display:grid;place-items:center;margin:0 auto 22px;opacity:0;box-shadow:0 18px 50px rgba(2,36,40,.35)}
+            #go-ov .tile img{width:72px;height:auto;display:block}
+            #go-ov .tile::after{content:'';position:absolute;inset:0;border-radius:26px;border:2px solid #5EEAD4;opacity:0}
+            #go-ov h2{margin:0;color:#fff;font-size:clamp(22px,4.4vw,34px);font-weight:800;letter-spacing:-.02em;opacity:0}
+            #go-ov p{margin:8px 0 0;color:rgba(255,255,255,.78);font-size:14px;opacity:0}
+            body.go-run #go-ov{visibility:visible}
+            body.go-run #go-ov{animation:goGrow .55s .32s cubic-bezier(.65,0,.25,1) forwards}
+            body.go-run #go-ov .tile{animation:okPop .4s .8s cubic-bezier(.2,.9,.3,1.3) forwards}
+            body.go-run #go-ov .tile::after{animation:tileRing 1.1s .95s ease-out infinite}
+            body.go-run #go-ov h2{animation:wRise .45s .9s ease forwards}
+            body.go-run #go-ov p{animation:wRise .45s 1.0s ease forwards}
+            @keyframes goGrow{to{clip-path:circle(150vmax at var(--ox,50%) var(--oy,50%))}}
+            @keyframes goShell{to{transform:scale(.92);opacity:0;filter:blur(6px)}}
+            @keyframes goBig{to{transform:translate3d(-60px,-30px,0) scale(1.6);opacity:0}}
+            @keyframes goPh1{to{transform:translate3d(160px,-70px,0) scale(1.3) rotate(6deg);opacity:0}}
+            @keyframes goPh2{to{transform:translate3d(-160px,90px,0) scale(1.3) rotate(-6deg);opacity:0}}
+            body.go-run .shell{animation:goShell .6s .15s cubic-bezier(.5,0,.75,0) forwards}
+            body.go-run .visual .big{animation:goBig .55s ease-in forwards;transition:none}
+            body.go-run .ph1{animation:goPh1 .55s ease-in forwards}
+            body.go-run .ph2{animation:goPh2 .55s ease-in forwards}
+            body.go-run .login-baru{overflow:hidden}
+            #submit-btn.ok{background:linear-gradient(110deg,#10B981,#0D9488) !important;animation:none !important;opacity:1 !important;cursor:default}
+            #submit-btn.ok svg{width:20px;height:20px;vertical-align:-4px;margin-right:8px}
+            #submit-btn.ok svg path{stroke-dasharray:24;stroke-dashoffset:24;animation:okDraw .35s .05s ease forwards}
+            body.go-quick #go-ov{visibility:visible;clip-path:none;opacity:0;animation:wpFade .18s ease forwards}
+            @keyframes wpFade{to{opacity:1}}
+            body.go-quick #go-ov .tile,body.go-quick #go-ov h2,body.go-quick #go-ov p{opacity:1;animation:none}
+
             @media (max-width:880px){
                 .shell{grid-template-columns:1fr;border-radius:28px}
                 .visual{min-height:250px}
@@ -185,6 +244,7 @@ function login_page(PDO $pdo): void
             }
             @media (prefers-reduced-motion:reduce){
                 .login-baru *,.login-baru *::before,.login-baru *::after{animation:none !important;transition:none !important}
+                body.go-quick #go-ov{animation:wpFade .18s ease forwards !important}
             }
         </style>
     </head>
@@ -235,6 +295,7 @@ function login_page(PDO $pdo): void
             </form>
         </div>
     </div>
+    <div id="go-ov" aria-live="polite" aria-hidden="true"><div><div class="tile"><img src="assets/clara-logo.png" alt=""></div><h2 id="go-h"></h2><p>Menyiapkan dashboard Anda…</p></div></div>
     <script>
     (function(){
         var form=document.getElementById('login-form'),btn=document.getElementById('submit-btn');
@@ -242,7 +303,30 @@ function login_page(PDO $pdo): void
         if(hasError&&!isLocked){form.style.animation='shake .45s ease';form.addEventListener('animationend',function(){form.style.animation='';},{once:true});}
         else{form.style.animation='fadeInUp .35s ease both';form.addEventListener('animationend',function(){form.style.animation='';},{once:true});}
         if(lockSec>0){btn.disabled=true;var el=document.getElementById('lock-countdown');function tick(){if(lockSec<=0){btn.disabled=false;btn.textContent='Masuk';if(el)el.closest('.flash').textContent='Silakan coba lagi.';return;}var m=Math.floor(lockSec/60),s=lockSec%60;if(el)el.textContent=m+':'+String(s).padStart(2,'0');lockSec--;setTimeout(tick,1000);}tick();}
-        form.addEventListener('submit',function(){if(btn.disabled)return false;btn.disabled=true;btn.innerHTML='<span class="login-spinner"></span>Memuat…';});
+        var busy=false,reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        function reloadLogin(){location.replace(location.pathname+location.search);}
+        function success(d,ev){
+            var first=String(d.name||'').trim().split(/\s+/)[0]||'';
+            document.getElementById('go-h').textContent='Halo'+(first?', '+first:'');
+            btn.classList.add('ok');btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Berhasil';
+            Array.prototype.forEach.call(form.elements,function(e){if(e!==btn)e.readOnly=true;});
+            var go=function(){try{sessionStorage.setItem('clara_from_login','1')}catch(e){}location.replace(d.to);};
+            if(reduce){document.body.classList.add('go-quick');setTimeout(go,220);return;}
+            var r=btn.getBoundingClientRect();
+            var ov=document.getElementById('go-ov');
+            ov.style.setProperty('--ox',(r.left+r.width/2)+'px');ov.style.setProperty('--oy',(r.top+r.height/2)+'px');
+            setTimeout(function(){document.body.classList.add('go-run');setTimeout(go,1900);},200);
+        }
+        form.addEventListener('submit',function(ev){
+            if(btn.disabled||busy){ev.preventDefault();return false;}
+            btn.disabled=true;btn.innerHTML='<span class="login-spinner"></span>Memuat…';
+            if(!window.fetch||!window.FormData){return;} /* tanpa fetch: kirim biasa */
+            ev.preventDefault();busy=true;
+            fetch(location.href,{method:'POST',body:new FormData(form),credentials:'same-origin',headers:{'X-Login-Ajax':'1','Accept':'application/json'}})
+            .then(function(r){var ct=r.headers.get('content-type')||'';if(ct.indexOf('application/json')<0)throw 0;return r.json();})
+            .then(function(d){if(d&&d.ok===true&&typeof d.to==='string'&&d.to.indexOf('?r=')===0){btn.disabled=false;success(d);btn.disabled=true;}else reloadLogin();})
+            .catch(reloadLogin);
+        });
         var root=document.getElementById('login-root');
         if(root&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
             window.addEventListener('pointermove',function(ev){

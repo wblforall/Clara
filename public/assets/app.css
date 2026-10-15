@@ -18,6 +18,14 @@
     --sidebar:      #0F1623;
     --sidebar2:     #1A2436;
     --r:            10px;
+    /* token gaya baru (serasi dengan halaman login) */
+    --r-lg:         14px;
+    --r-xl:         18px;
+    --teal-deep:    #115E59;
+    --shadow-1:     0 1px 2px rgba(11,94,88,.06), 0 4px 14px rgba(11,94,88,.07);
+    --shadow-2:     0 2px 6px rgba(11,94,88,.10), 0 12px 28px rgba(11,94,88,.16);
+    --ring:         0 0 0 3px rgba(13,148,136,.2);
+    --ease:         cubic-bezier(.4,0,.2,1);
 }
 
 /* ===== RESET ===== */
@@ -91,7 +99,7 @@ a { color: inherit; text-decoration: none; }
     display: flex; align-items: center; gap: 9px;
     padding: 9px 10px; border-radius: 8px;
     color: #7A9AB8; font-weight: 500; font-size: 13.5px;
-    transition: all .15s;
+    transition: background-color .2s var(--ease), color .2s var(--ease), box-shadow .2s var(--ease);
 }
 .nav a:hover { background: var(--sidebar2); color: #E2E8F0; }
 .nav a.active {
@@ -186,16 +194,18 @@ h3 { font-size: 14.5px; font-weight: 700; margin: 20px 0 10px; color: var(--ink)
     font-weight: 700;
     font-size: 13.5px;
     font-family: inherit;
-    background: linear-gradient(135deg, var(--primary), var(--primary2));
+    background: var(--btn-grad, linear-gradient(135deg, var(--primary), var(--primary2)));
     color: #fff;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    transition: opacity .15s, box-shadow .15s;
-    box-shadow: 0 2px 8px rgba(13,148,136,.25);
+    transition: opacity .15s, box-shadow .2s, transform .15s var(--ease);
+    box-shadow: var(--btn-shadow, 0 2px 8px rgba(13,148,136,.25));
 }
-.btn:hover, button:hover { opacity: .92; box-shadow: 0 4px 14px rgba(13,148,136,.3); }
+.btn:hover, button:hover { opacity: .92; box-shadow: var(--btn-shadow-h, 0 4px 14px rgba(13,148,136,.3)); }
+.btn:hover { transform: var(--btn-lift, none); }
+.btn:active { transform: none; }
 .btn.secondary { background: #475467; box-shadow: none; }
 .btn.light { background: var(--soft); color: var(--primary-dark); box-shadow: none; border: 1px solid rgba(13,148,136,.2); }
 .btn.warn { background: linear-gradient(135deg, #EF4444, #F87171); box-shadow: 0 2px 8px rgba(239,68,68,.25); }
@@ -978,3 +988,101 @@ div[style*="height:10px"] > div {
 .form-anim > *:nth-child(10) { animation-delay:.50s }
 .form-anim > *:nth-child(11) { animation-delay:.55s }
 .form-anim > *:nth-child(12) { animation-delay:.60s }
+
+
+/* =====================================================================
+   RAPIKAN RINGAN — serasi dengan halaman login (hanya layout desktop `.app`;
+   tampilan mobile `.m-shell`, cetak, dan TV tidak tersentuh)
+   ===================================================================== */
+.app {
+    --btn-grad: linear-gradient(110deg, #0F766E, #0D9488 55%, #0891B2);
+    --btn-shadow: 0 4px 12px rgba(13,148,136,.28);
+    --btn-shadow-h: 0 8px 20px rgba(13,148,136,.38);
+    --btn-lift: translateY(-1px);
+}
+
+/* kartu & panel */
+.app .panel, .app .card {
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-1);
+    transition: transform .2s var(--ease), box-shadow .2s var(--ease);
+}
+.app .combined-kpi, .app .prop-card {
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-1);
+    transition: transform .2s var(--ease), box-shadow .2s var(--ease);
+}
+.app .prop-card { border-radius: var(--r-xl); }
+.app .prop-kpi { border-radius: 10px; }
+.app .table-wrap { border-radius: var(--r-lg); }
+.app a.card:hover, .app a.panel:hover, .app .card[onclick]:hover, .app .panel[onclick]:hover,
+.app .card[data-href]:hover, .app .panel[data-href]:hover, .app .prop-card[onclick]:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-2);
+}
+.app a.card, .app a.panel, .app .card[onclick], .app .panel[onclick] { cursor: pointer; }
+
+/* sidebar: tetap gelap; item aktif berbentuk pil dengan aksen teal di kiri */
+.app .nav a { position: relative; border-radius: 12px; }
+.app .nav a::before {
+    content: ''; position: absolute; left: 3px; top: 50%;
+    width: 3px; height: 0; border-radius: 99px;
+    background: linear-gradient(180deg, #5EEAD4, #0D9488);
+    box-shadow: 0 0 10px rgba(94,234,212,.65);
+    transform: translateY(-50%);
+    opacity: 0;
+    transition: height .22s var(--ease), opacity .2s var(--ease);
+    pointer-events: none;
+}
+.app .nav a:hover { box-shadow: inset 0 0 0 1px rgba(94,234,212,.06); }
+.app .nav a.active {
+    border-radius: 999px;
+    box-shadow: 0 0 20px rgba(13,148,136,.16), inset 0 1px 0 rgba(255,255,255,.05);
+}
+.app .nav a.active::before { height: 18px; opacity: 1; }
+.app .nav-logout a:hover { box-shadow: none; }
+.app .brand {
+    position: relative;
+    border-bottom-color: rgba(94,234,212,.12);
+}
+.app .brand-logo { filter: drop-shadow(0 4px 14px rgba(13,148,136,.28)); }
+
+/* topbar: sapuan kaca halus + garis bawah lembut (posisi isi tetap: tinggi total sama) */
+.app .topbar {
+    padding-bottom: 14px;
+    margin-bottom: 7px;
+    border-bottom: 1px solid rgba(13,148,136,.13);
+    background: linear-gradient(180deg, rgba(255,255,255,0), rgba(255,255,255,.5));
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+}
+.app .topbar .badge {
+    background: rgba(230,247,245,.78);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 2px 8px rgba(11,94,88,.08);
+}
+
+/* isian: cincin fokus teal */
+.app input:focus, .app select:focus, .app textarea:focus {
+    border-color: var(--primary);
+    box-shadow: var(--ring);
+}
+
+/* masuk halaman: konten utama muncul ringan (dilewati bila halaman sudah punya animasi masuk sendiri) */
+@keyframes claraMainIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.app .main:not(:has(.panel-anim, .kpi-anim, .form-anim, .combined-strip)) {
+    animation: claraMainIn .28s var(--ease) backwards;
+}
+
+@media (max-width: 768px) {
+    .app .topbar { padding-bottom: 12px; margin-bottom: 3px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app .main, .app .nav a, .app .nav a::before, .app .panel, .app .card,
+    .app .combined-kpi, .app .prop-card, .app .btn, .app button,
+    .app input, .app select, .app textarea { animation: none !important; transition: none !important; }
+    .app a.card:hover, .app a.panel:hover, .app .card[onclick]:hover, .app .panel[onclick]:hover,
+    .app .btn:hover { transform: none !important; }
+}

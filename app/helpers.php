@@ -585,6 +585,8 @@ function permission_for_route(string $route): string
         'm_skp' => 'manage_skp',
         'lookup_manage', 'lookup_save', 'lookup_delete' => 'manage_master',
         'trend', 'comparison' => 'view_dashboard',
+        'unit_analysis', 'unit_analysis_detail', 'unit_analysis_ai' => 'view_dashboard',
+        'unit_analysis_csv' => 'export_reports',
         'switch_property', 'select_property', 'set_property' => 'view_dashboard',
         default => 'view_dashboard',
     };

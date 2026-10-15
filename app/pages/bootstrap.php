@@ -126,6 +126,7 @@ function layout(string $title, callable $body, array $opts = []): void
         ['', 'dashboard', 'Dashboard', 'view_dashboard'],
         ['', 'exec_dashboard', 'Executive Summary', 'view_exec_summary'],
         ['', 'trend', 'Trend Revenue', 'view_dashboard'],
+        ['', 'unit_analysis', 'Analisa Unit', 'view_dashboard'],
         ['', 'comparison', 'Perbandingan Periode', 'view_dashboard'],
         ['Input', 'offers', 'Surat Penawaran', 'manage_offers'],
         ['', 'skp', 'SKP Pameran', 'manage_skp'],
@@ -181,6 +182,7 @@ function layout(string $title, callable $body, array $opts = []): void
         <?php pwa_head(); ?>
         <link rel="stylesheet" href="assets/app.css?v=<?= CSS_VER ?>">
         <link rel="stylesheet" href="assets/flatpickr.min.css">
+        <script src="assets/count-up.js?v=<?= (int) @filemtime(__DIR__ . '/../../public/assets/count-up.js') ?>" defer></script>
         <style>
         /* Flatpickr custom theme — compact */
         .flatpickr-input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:32px!important;cursor:pointer}
@@ -282,6 +284,20 @@ function layout(string $title, callable $body, array $opts = []): void
         <?php endif; ?>
     </head>
     <body>
+    <script>
+    /* Kontinuitas dari layar transisi login: tirai teal memudar (tanpa JS / reduced-motion: tidak ada) */
+    (function(){try{
+        if(sessionStorage.getItem('clara_from_login')!=='1')return;
+        sessionStorage.removeItem('clara_from_login');
+        if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+        var o=document.createElement('div');o.id='clara-from-login';o.setAttribute('aria-hidden','true');
+        o.style.cssText='position:fixed;top:0;right:0;bottom:0;left:0;z-index:99999;pointer-events:none;opacity:1;background:linear-gradient(135deg,#0D9488,#115E59);transition:opacity .45s ease';
+        document.body.appendChild(o);
+        var kill=function(){if(o.parentNode)o.parentNode.removeChild(o);};
+        requestAnimationFrame(function(){requestAnimationFrame(function(){o.style.opacity='0';});});
+        o.addEventListener('transitionend',kill);setTimeout(kill,900);
+    }catch(e){}})();
+    </script>
     <?php ViewAs::banner(); ?>
     <?php $isMobile = mobile_view_active(); ?>
     <?php if ($isMobile): ?>
@@ -550,7 +566,7 @@ function layout(string $title, callable $body, array $opts = []): void
         <div id="wp-card">
             <button id="wp-close" onclick="wpClose()">&#x2715;</button>
             <div id="wp-head">
-                <h2>Selamat datang, <?= h($wpName) ?>! &nbsp;&#128075;</h2>
+                <h2>Ringkasan Anda hari ini</h2>
                 <p><?= h($wpHeading) ?> &middot; <?= h($wpMonth) ?><?= $wpSubject !== '' ? ' &middot; ' . h($wpSubject) : '' ?></p>
             </div>
             <div id="wp-body">
