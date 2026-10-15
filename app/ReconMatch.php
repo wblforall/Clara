@@ -270,7 +270,15 @@ final class ReconMatch
         if ($a === '') return false;
         foreach ([$c['lokasi'] ?? '', $c['kode'] ?? ''] as $b) {
             $b = ReconCL::normal((string) $b);
-            if ($b !== '' && $a === $b) return true;
+            if ($b === '') continue;
+            if ($a === $b) return true;
+            // Nama unit yang sama ditulis beda panjang di dua tempat:
+            // kalender menulis "MAIN ATRIUM", master menulis "GF - Main Atrium".
+            // Yang pendek harus cukup panjang supaya "LG" tidak mencocoki semua
+            // unit yang kebetulan memuat huruf itu.
+            $pendek  = strlen($a) <= strlen($b) ? $a : $b;
+            $panjang = $pendek === $a ? $b : $a;
+            if (strlen($pendek) >= 6 && str_contains($panjang, $pendek)) return true;
         }
         return false;
     }
