@@ -268,7 +268,12 @@ final class ReconMatch
     {
         $a = ReconCL::normal((string) ($e['kode'] ?? ''));
         if ($a === '') return false;
+        // Dibandingkan juga sebagai KUMPULAN KATA: Master menulis
+        // "01/LG Fashion Booth", kalender menulis "1/FASHION BOOTH LG".
+        $ka = ReconCL::unitKunci((string) ($e['kode'] ?? ''));
         foreach ([$c['lokasi'] ?? '', $c['kode'] ?? ''] as $b) {
+            $kb = ReconCL::unitKunci((string) $b);
+            if ($ka !== '' && $ka === $kb) return true;
             $b = ReconCL::normal((string) $b);
             if ($b === '') continue;
             if ($a === $b) return true;

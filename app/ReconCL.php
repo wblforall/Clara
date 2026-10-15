@@ -68,6 +68,32 @@ final class ReconCL
     }
 
     /**
+     * Kunci unit: kumpulan kata yang diurutkan, bukan teks berurutan.
+     *
+     * Satu unit yang sama ditulis berbeda di dua tempat — Master menyimpan
+     * "01/LG Fashion Booth", kalender menulis "1/FASHION BOOTH LG". Kata-katanya
+     * persis sama, hanya urutannya ditukar dan nolnya dibuang. Dibandingkan apa
+     * adanya keduanya tidak pernah bertemu, dan seluruh baris unit itu lalu
+     * terbaca sebagai sewa yang belum diinput.
+     *
+     * Angka dinormalkan (01 → 1) supaya "01" dan "1" tidak dianggap dua unit.
+     */
+    public static function unitKunci(string $s): string
+    {
+        $n = self::normal($s);
+        if ($n === '') return '';
+        $kata = [];
+        foreach (explode(' ', $n) as $k) {
+            if ($k === '') continue;
+            if (ctype_digit($k)) $k = (string) (int) $k;     // 01 → 1
+            $kata[] = $k;
+        }
+        if (!$kata) return '';
+        sort($kata);
+        return implode(' ', $kata);
+    }
+
+    /**
      * Jenis sheet: 'monitoring' | 'kalender' | 'rekap' | '' (tidak dikenali).
      *
      * @param array<int,array<string,string>> $awal beberapa baris pertama
@@ -347,6 +373,52 @@ final class ReconCL
             // dua nama yang sama-sama mirip lebih baik ditanyakan ke pengguna.
             $out[$e] = ($nilai >= 0.55 && ($nilai - $kedua) >= 0.08) ? (string) $terbaik : '';
         }
+        return $out;
+    }
+
+    /**
+     * Label unit di spreadsheet yang TIDAK dikenali Master mana pun.
+     *
+     * Kalau nama unitnya tidak dikenali, mesin pencocokan kehilangan petunjuk
+     * terkuatnya dan hanya bisa menebak dari nama penyewa — di situlah baris
+     * sah mulai terbaca sebagai "belum diinput". Daftar ini membuat sebabnya
+     * kelihatan, karena menyamakan satu nama di Master jauh lebih murah
+     * daripada menelusuri selisihnya tiap bulan.
+     *
+     * @param array<int,string> $label nama unit dari kalender
+     * @return array<string,int> nama yang tak dikenali => berapa baris memakainya
+     */
+    public static function unitTakDikenal(PDO $pdo, int $pid, array $label): array
+    {
+        $master = [];
+        try {
+            $sql = "SELECT location_name n FROM master_cl_units WHERE property_id = ?
+                    UNION ALL SELECT name FROM master_gudang WHERE property_id = ?
+                    UNION ALL SELECT location FROM master_media WHERE property_id = ?
+                    UNION ALL SELECT code FROM master_cl_units WHERE property_id = ?";
+            $st = $pdo->prepare($sql);
+            $st->execute([$pid, $pid, $pid, $pid]);
+            foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $n) {
+                $k = self::unitKunci((string) $n);
+                if ($k !== '') $master[$k] = true;
+            }
+        } catch (Throwable $e) { return []; }
+        if (!$master) return [];
+
+        $out = [];
+        foreach ($label as $l) {
+            $n = self::unitKunci((string) $l);
+            if ($n === '') continue;
+            if (isset($master[$n])) continue;
+            $ketemu = false;
+            foreach (array_keys($master) as $m) {
+                $pendek  = strlen($n) <= strlen($m) ? $n : $m;
+                $panjang = $pendek === $n ? $m : $n;
+                if (strlen($pendek) >= 6 && str_contains($panjang, $pendek)) { $ketemu = true; break; }
+            }
+            if (!$ketemu) $out[(string) $l] = ($out[(string) $l] ?? 0) + 1;
+        }
+        arsort($out);
         return $out;
     }
 
