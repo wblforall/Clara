@@ -54,6 +54,12 @@ final class ReconMatch
                     $batas = $toleransi === 0.0 ? self::TOLERANSI : max(self::TOLERANSI, $e['nilai'] * $toleransi);
                     if (abs($e['nilai'] - $c['nilai']) > $batas) continue;
                     $s = self::miripBaris($e, $c);
+                    // Nilai yang sama saja TIDAK cukup. Nominal bulat seperti
+                    // Rp 10.000.000 dipakai banyak sewa sekaligus, dan tanpa
+                    // syarat ini baris "MAIN ATRIUM" bisa mencuri transaksi
+                    // "Railing Lantai 1" hanya karena angkanya kebetulan sama —
+                    // lalu baris yang sah dilaporkan "belum diinput".
+                    if ($s < self::AMBANG_NAMA && !self::unitSama($e, $c)) continue;
                     if ($s > $skor) { $skor = $s; $terbaik = $j; }
                 }
                 if ($terbaik >= 0) {
@@ -140,6 +146,23 @@ final class ReconMatch
                 $pakaiE[$i] = true; $pakaiC[$terbaik] = true;
                 $bedaPic[] = ['excel' => $e, 'clara' => $clara[$terbaik],
                               'selisih' => $clara[$terbaik]['nilai'] - $e['nilai']];
+            }
+        }
+
+        // ── Putaran 7 — nilai sama, tanpa bukti nama maupun unit ───────────
+        //
+        // Upaya terakhir, sengaja paling belakang: baris yang namanya memang
+        // tidak terbaca (sel kalender berisi tanggal, singkatan, atau kosong)
+        // tetap bisa dipasangkan — tetapi hanya dengan sisa yang sudah tidak
+        // diperebutkan baris lain yang buktinya lebih kuat.
+        foreach ($excel as $i => $e) {
+            if (isset($pakaiE[$i])) continue;
+            foreach ($clara as $j => $c) {
+                if (isset($pakaiC[$j]) || !self::picSama($e, $c)) continue;
+                if (abs($e['nilai'] - $c['nilai']) > self::TOLERANSI) continue;
+                $pakaiE[$i] = true; $pakaiC[$j] = true;
+                $cocok[] = ['excel' => $e, 'clara' => $c, 'selisih' => 0.0, 'lemah' => true];
+                break;
             }
         }
 
