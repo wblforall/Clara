@@ -61,6 +61,22 @@ $durasi = $days > 0 ? ($days . ' hari') : ($contractMonths . ' bulan');
 $perihal = $letter['perihal'] ?: ('Surat Penawaran Sewa Area Pameran' . ($days > 0 ? ' ' . $days . ' Hari' : ''));
 // Rincian biaya
 $total    = (float) $o['total_calculated'];
+/*
+ * Harga publish: HANYA TAMPILAN. $total tidak pernah disentuh, jadi tidak ada
+ * satu pun angka — PPN, deposit, Grand Total — yang bergeser gara-gara fitur
+ * ini. Besar diskonnya dihitung dari selisih, bukan disimpan, supaya mustahil
+ * berbeda dengan total yang tercetak di bawahnya.
+ *
+ * Pakai ?? dan !empty(), JANGAN akses langsung: rute pratinjau template
+ * merakit $o dengan tangan, dan kunci yang tidak ada di sana akan mencetak
+ * peringatan PHP ke DALAM PDF yang dikirim ke client.
+ */
+$hargaPublish = (float) ($o['harga_publish'] ?? 0);
+$diskonAktif  = !empty($o['diskon_aktif']) && $hargaPublish > $total + 0.5;
+$diskonRp     = $diskonAktif ? $hargaPublish - $total : 0.0;
+$diskonTeks   = $diskonAktif
+    ? rtrim(rtrim(number_format($diskonRp / $hargaPublish * 100, 2, ',', '.'), '0'), ',')
+    : '';
 // Biaya listrik (Exhibition): tarif per bulan × jumlah bulan, kena PPN 12% juga.
 // Nol untuk penawaran yang tidak mencentangnya — barisnya pun tidak dicetak.
 $listrikBln = (float) ($o['electricity_monthly'] ?? 0);
@@ -98,6 +114,19 @@ $deposit  = (float) $o['deposit_amount'];
 // catatan, tapi tidak ditagih ulang sehingga di luar Grand Total.
 $depLunas = !empty($o['deposit_paid']);
 $grand    = $afterPpn + $scTotal + ($depLunas ? 0 : $deposit);
+/**
+ * Dua baris "Harga Publish" + "Diskon (x%)". Ditulis SEKALI sebagai closure
+ * karena tabel biaya punya tiga cabang (paket bertingkat, paket biasa, satuan);
+ * kalau markupnya disalin tiga kali, cepat atau lambat satu cabang tertinggal
+ * dan separuh penawaran kehilangan keterangan diskonnya.
+ */
+$BARIS_DISKON = function () use (&$diskonAktif, &$hargaPublish, &$diskonRp, &$diskonTeks, $rp): string {
+    if (!$diskonAktif) return '';
+    return '<tr><td class="lbl">Harga Publish <span class="muted" style="font-weight:400">(sebelum diskon)</span></td>'
+         . '<td class="amt"><span style="text-decoration:line-through">' . $rp($hargaPublish) . '</span></td></tr>'
+         . '<tr><td class="lbl">Diskon (' . $diskonTeks . '%)</td>'
+         . '<td class="amt">- ' . $rp($diskonRp) . '</td></tr>';
+};
 $dpBulan  = rtrim(rtrim(number_format((float) $o['dp_months'], 1, ',', ''), '0'), ',');
 $depBulan = rtrim(rtrim(number_format((float) $o['deposit_months'], 1, ',', ''), '0'), ',');
 // Masa berlaku penawaran: 7 hari sejak tanggal penawaran
@@ -412,6 +441,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             <tr><td class="lbl">Total luas dasar perhitungan<?php if ($luasUnit > 0 && abs($luasUnit - $luasTier) >= 0.01): ?>
                 <span class="muted" style="font-weight:400">(luas terukur tiap titik <?= $h(rtrim(rtrim(number_format($luasUnit, 2, ',', '.'), '0'), ',')) ?> m²)</span>
                 <?php endif; ?></td><td class="amt"><?= $h(rtrim(rtrim(number_format($luasTier, 2, ',', '.'), '0'), ',')) ?> m²</td></tr>
+            <?= $BARIS_DISKON() ?>
             <tr class="sub"><td class="lbl">Biaya Sewa</td><td class="amt"><?= $rp($total) ?></td></tr>
         <?php elseif ($isBundle): ?>
             <?php foreach ($items as $it): ?>
@@ -428,8 +458,10 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             <tr><td class="lbl"><?= $selisih < 0 ? 'Penyesuaian harga paket' : 'Tambahan harga paket' ?></td>
                 <td class="amt"><?= ($selisih < 0 ? '- ' : '') . $rp(abs($selisih)) ?></td></tr>
             <?php endif; ?>
+            <?= $BARIS_DISKON() ?>
             <tr class="sub"><td class="lbl">Subtotal sewa paket</td><td class="amt"><?= $rp($total) ?></td></tr>
         <?php else: ?>
+            <?= $BARIS_DISKON() ?>
             <tr><td class="lbl">Harga Sewa / Periode</td><td class="amt"><?= $rp($total) ?></td></tr>
             <tr><td class="lbl">Masa sewa</td><td class="amt"><?= $h($durasi) ?></td></tr>
             <tr class="sub"><td class="lbl">Subtotal sewa</td><td class="amt"><?= $rp($total) ?></td></tr>

@@ -263,6 +263,31 @@ $skpHasQr = !empty($skp['sign_token']);
     // tidak dicetak.
     $abjad = 0;
     $ab = function () use (&$abjad) { return chr(97 + $abjad++) . '. '; };
+    /*
+     * Harga publish & diskon. Ditulis SEKALI sebagai closure karena baris
+     * "Total Biaya Sewa" ada di DUA cabang (ada listrik / tidak) — kalau
+     * HTML-nya disalin dua kali, cepat atau lambat salah satunya tertinggal
+     * dan separuh dokumen kehilangan keterangan diskonnya.
+     *
+     * Penjaganya ketat: dokumen lama tidak punya kunci ini sama sekali, dan
+     * tanpa penjaga ini ratusan dokumen yang sudah ditandatangani akan
+     * mendadak memuat baris "Harga Publish Rp 0 / Diskon 0%".
+     *
+     * Tanda minus ditulis sebagai teks di luar angka, bukan dikirim ke $rp():
+     * "Rp -15.000.000" sulit dibaca, dan tanda minus tipografis tidak ada
+     * glyph-nya di font PDF yang dipakai.
+     */
+    $barisDiskon = function () use ($a, $rp, $h, $ab) {
+        if (empty($a['publish_on']) || (float) ($a['diskon'] ?? 0) <= 0) return '';
+        $pct = (float) ($a['diskon_pct'] ?? 0);
+        $pctTxt = rtrim(rtrim(number_format($pct, 2, ',', '.'), '0'), ',');
+        return '<tr><td class="lbl">&nbsp;&nbsp;&nbsp;' . $ab() . 'Harga Publish '
+             . '<span class="muted">(sebelum diskon)</span></td>'
+             . '<td class="amt">' . $rp($a['publish']) . '</td></tr>'
+             . '<tr><td class="lbl" style="color:#b91c1c">&nbsp;&nbsp;&nbsp;' . $ab() . 'Diskon '
+             . '<span class="muted">(' . $h($pctTxt) . '%)</span></td>'
+             . '<td class="amt" style="color:#b91c1c">- ' . $rp($a['diskon']) . '</td></tr>';
+    };
     ?>
     <div class="sec">Rincian Pembayaran Sewa</div>
     <table class="pay">
@@ -292,9 +317,11 @@ $skpHasQr = !empty($skp['sign_token']);
         <?php if ($kenaPpn): ?><tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>PPN 12% Sewa <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn_sewa'] ?? 0) ?></td></tr><?php endif; ?>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Biaya Listrik <span class="muted">(sesuai penawaran)</span></td><td class="amt"><?= $rp($a['listrik']) ?></td></tr>
         <?php if ($kenaPpn): ?><tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>PPN 12% Listrik <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn_listrik'] ?? 0) ?></td></tr><?php endif; ?>
+        <?= $barisDiskon() ?>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
         <?php if ($kenaPpn): ?><tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Biaya Sewa Setelah PPN</td><td class="amt"><?= $rp($a['after_ppn'] ?? 0) ?></td></tr><?php endif; ?>
         <?php else: ?>
+        <?= $barisDiskon() ?>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
         <?php if ($kenaPpn): ?>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>PPN 12% <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn'] ?? 0) ?></td></tr>

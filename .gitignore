@@ -60,6 +60,8 @@ public/report_recurring.pdf
 docs/*.pdf
 docs/rekonsiliasi_assets/
 docs/*_assets/
+# Contoh dokumen hasil fitur — memuat nama klien asli, repo ini publik.
+docs/contoh_*/
 /Laporan_*.pdf
 # Berkas klien / dokumen contoh yang tertinggal di root repo.
 /*.pdf
