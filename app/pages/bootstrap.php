@@ -713,9 +713,28 @@ function layout(string $title, callable $body, array $opts = []): void
             onYearChange:  function(_d, _s, fp){ _fpMark(fp); }
         };
 
-        document.querySelectorAll('input[type=date]').forEach(function(el){
+        /* Pemasang kalender yang bisa dipanggil ulang.
+           flatpickr MENGUBAH input tanggal menjadi text + readonly dan memasang
+           kalendernya pada elemen itu sendiri. Baris tabel yang digandakan lewat
+           cloneNode() ikut membawa bentuk hasil ubahan itu, tetapi TIDAK membawa
+           kalendernya — hasilnya kolom tanggal di baris baru readonly dan tidak
+           bereaksi sama sekali saat diklik. Di sini bentuknya dikembalikan dulu
+           ke input tanggal biasa, baru dipasangi kalender lagi. */
+        function pasangTanggal(el) {
+            if (!el || el._flatpickr) return;
+            if (el.classList.contains('flatpickr-input')) {
+                el.classList.remove('flatpickr-input');
+                el.removeAttribute('readonly');
+                el.readOnly = false;
+                try { el.type = 'date'; } catch (e) {}
+            }
             flatpickr(el, Object.assign({}, fpCfg));
-        });
+        }
+        window.claraTanggal = function (scope) {
+            (scope || document).querySelectorAll('input[type=date], input.flatpickr-input')
+                .forEach(pasangTanggal);
+        };
+        window.claraTanggal(document);
     })();
     </script>
     </body>
