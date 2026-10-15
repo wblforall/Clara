@@ -96,32 +96,109 @@ function renderSpreadTable() {
               + ' <button type="button" onclick="clearSpreadOvr(\''+m.key+'\')" style="font-size:10px;padding:1px 6px;margin-left:2px;background:#0ea5e9;color:#fff;border:none;border-radius:3px;cursor:pointer">Pakai</button>'
               + '</td>'
             : '<td></td>';
-        rows += '<tr>'
-              + '<td style="padding:3px 8px 3px 0;color:#374151;white-space:nowrap">'+m.label+badge+rst+'</td>'
+        rows += '<tr data-row="'+m.key+'">'
+              + '<td data-sel="label" style="padding:3px 8px 3px 0;color:#374151;white-space:nowrap">'+m.label+badge+rst+'</td>'
               + '<td style="padding:3px 0;text-align:right"><input type="text" inputmode="numeric" data-period="'+m.key+'" value="'+amt.toLocaleString('id-ID')+'" '
               + 'style="text-align:right;width:140px;font-size:13px;'+ibg+'" '
               + 'onchange="setSpreadOvr(\''+m.key+'\',this.value)" oninput="fmtSpreadInp(this)"></td>'
-              + diffCell
+              + diffCell.replace('<td', '<td data-sel="diff"')
               + '</tr>';
     });
 
+    var newTotal = months.reduce(function(s,m){ return s+(newBase[m.key]||0); }, 0);
     var header = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">'
-        + '<span style="font-weight:700;color:#0369a1">Spread ('+months.length+' bulan) | Total: Rp '+grand.toLocaleString('id-ID')+'</span>';
-    if (hasDiff) {
-        var newTotal = months.reduce(function(s,m){ return s+(newBase[m.key]||0); }, 0);
-        header += '<button type="button" onclick="useAllNewBase()" style="font-size:11px;padding:2px 10px;background:#0ea5e9;color:#fff;border:none;border-radius:4px;cursor:pointer">'
-            + 'Pakai Semua Baru (Rp '+newTotal.toLocaleString('id-ID')+')</button>';
-    }
-    header += '</div>';
+        + '<span data-sel="judul" style="font-weight:700;color:#0369a1">Spread ('+months.length+' bulan) | Total: Rp '+grand.toLocaleString('id-ID')+'</span>'
+        + '<button type="button" data-sel="pakai-semua" onclick="useAllNewBase()" style="font-size:11px;padding:2px 10px;background:#0ea5e9;color:#fff;border:none;border-radius:4px;cursor:pointer'
+        + (hasDiff ? '' : ';display:none') + '">Pakai Semua Baru (Rp '+newTotal.toLocaleString('id-ID')+')</button>'
+        + '</div>';
 
     spreadDiv.innerHTML = header + '<table style="border-collapse:collapse;background:transparent;width:100%">'+rows+'</table>';
     spreadDiv.style.display = 'block';
     syncOvrInputs();
 }
 
-function fmtSpreadInp(inp) { var r=inp.value.replace(/\D/g,''); inp.value=r?parseInt(r,10).toLocaleString('id-ID'):''; }
-function setSpreadOvr(k,v) { var r=String(v).replace(/\D/g,''); if(!r){clearSpreadOvr(k);return;} spreadOverrides[k]=parseInt(r,10); renderSpreadTable(); }
-function clearSpreadOvr(k) { delete spreadOverrides[k]; renderSpreadTable(); }
+/* Memformat ribuan sambil diketik TANPA melemparkan kursor ke ujung. Dulu
+   nilainya ditulis ulang apa adanya, sehingga menyisipkan satu angka di tengah
+   langsung memindahkan kursor ke paling kanan. */
+function fmtSpreadInp(inp) {
+    var r = inp.value.replace(/\D/g, '');
+    var baru = r ? parseInt(r, 10).toLocaleString('id-ID') : '';
+    if (baru === inp.value) return;
+    var kanan = inp.value.length - (inp.selectionStart || 0);
+    inp.value = baru;
+    try { var pos = Math.max(0, baru.length - kanan); inp.setSelectionRange(pos, pos); } catch (e) {}
+}
+
+/* Mengubah nominal satu bulan TIDAK BOLEH membangun ulang seluruh tabel.
+   Dulu setSpreadOvr memanggil renderSpreadTable(), dan karena ia menimpa
+   innerHTML, kotak yang sedang diklik ikut terhapus di tengah klik: fokusnya
+   terlempar entah ke mana — sering mendarat di kolom tanggal sehingga kalender
+   terbuka sendiri padahal yang diisi nominal. Sekarang hanya penanda, warna,
+   dan angka totalnya yang disegarkan; kotaknya sendiri tidak disentuh. */
+function setSpreadOvr(k, v) {
+    var r = String(v).replace(/\D/g, '');
+    if (!r) { clearSpreadOvr(k); return; }
+    spreadOverrides[k] = parseInt(r, 10);
+    segarkanSpread();
+}
+function clearSpreadOvr(k) {
+    delete spreadOverrides[k];
+    var inp = document.querySelector('#kalkulasi-spread input[data-period="' + k + '"]');
+    if (inp) {
+        var amts = spreadAmounts(spreadBaseTotal, spreadMonths(spreadBaseStart, spreadBaseEnd, spreadBasePricing, spreadBaseCycle));
+        inp.value = (amts[k] || 0).toLocaleString('id-ID');
+    }
+    segarkanSpread();
+}
+
+/* Menyegarkan tampilan tanpa mengganti satu pun kotak isian. */
+function segarkanSpread() {
+    var spreadDiv = document.getElementById('kalkulasi-spread');
+    if (!spreadDiv || !spreadBaseStart || !spreadBaseEnd) return;
+    var months  = spreadMonths(spreadBaseStart, spreadBaseEnd, spreadBasePricing, spreadBaseCycle);
+    var newBase = computeNewBase(spreadBaseTotal, months);
+    var amts    = spreadAmounts(spreadBaseTotal, months);
+    var grand   = months.reduce(function (s, m) { return s + (amts[m.key] || 0); }, 0);
+    var hasDiff = false;
+
+    months.forEach(function (m) {
+        var tr = spreadDiv.querySelector('tr[data-row="' + m.key + '"]');
+        if (!tr) return;
+        var locked = spreadOverrides[m.key] !== undefined;
+        var newAmt = newBase[m.key] || 0;
+        var isDiff = locked && Math.abs((amts[m.key] || 0) - newAmt) > 1;
+        if (isDiff) hasDiff = true;
+
+        var inp = tr.querySelector('input[data-period]');
+        if (inp) {
+            inp.style.background = locked ? '#dbeafe' : '';
+            inp.style.fontWeight = locked ? '700' : '';
+        }
+        var lbl = tr.querySelector('[data-sel="label"]');
+        if (lbl) {
+            lbl.innerHTML = m.label
+                + (locked ? '<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:600">KHUSUS</span>' : '')
+                + (locked ? '<button type="button" onclick="clearSpreadOvr(\'' + m.key + '\')" style="font-size:10px;padding:1px 5px;margin-left:4px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:3px;cursor:pointer">Reset</button>' : '');
+        }
+        var dif = tr.querySelector('[data-sel="diff"]');
+        if (dif) {
+            dif.innerHTML = isDiff
+                ? '→ baru: <strong style="color:#0369a1">' + newAmt.toLocaleString('id-ID') + '</strong>'
+                  + ' <button type="button" onclick="clearSpreadOvr(\'' + m.key + '\')" style="font-size:10px;padding:1px 6px;margin-left:2px;background:#0ea5e9;color:#fff;border:none;border-radius:3px;cursor:pointer">Pakai</button>'
+                : '';
+        }
+    });
+
+    var judul = spreadDiv.querySelector('[data-sel="judul"]');
+    if (judul) judul.textContent = 'Spread (' + months.length + ' bulan) | Total: Rp ' + grand.toLocaleString('id-ID');
+    var tombol = spreadDiv.querySelector('[data-sel="pakai-semua"]');
+    if (tombol) {
+        var newTotal = months.reduce(function (s, m) { return s + (newBase[m.key] || 0); }, 0);
+        tombol.style.display = hasDiff ? '' : 'none';
+        tombol.textContent = 'Pakai Semua Baru (Rp ' + newTotal.toLocaleString('id-ID') + ')';
+    }
+    syncOvrInputs();
+}
 
 function flushSpreadInputs() {
     var spreadDiv = document.getElementById('kalkulasi-spread');
