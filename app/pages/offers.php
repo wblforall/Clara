@@ -2616,6 +2616,8 @@ function offer_form(PDO $pdo): void
                     var baru = tb.rows[0].cloneNode(true);
                     baru.querySelectorAll('input').forEach(function (i) { i.value = ''; });
                     tb.appendChild(baru);
+                    // Kolom tanggal pada baris klona belum punya kalender — pasang.
+                    if (window.claraTanggal) window.claraTanggal(baru);
                     hitung();
                 });
                 ['start_date', 'end_date'].forEach(function (id) {
