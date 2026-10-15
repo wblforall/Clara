@@ -1677,6 +1677,18 @@ function offer_form(PDO $pdo): void
                     <div class="help">Menentukan isi baku surat. Isinya dikunci saat penawaran disimpan, jadi
                         mengubah template kemudian tidak mengubah surat ini.</div>
                 </div>
+                <?php /* Dipasang di sini, SEBELUM blok skrip mana pun yang memakainya:
+                         tarif PPN milik template yang sedang dipilih. Dulu angkanya
+                         dipaku 11/12 × 12% di tiga tempat, jadi template dengan tarif
+                         lain menampilkan PPN yang berbeda dari suratnya sendiri. */ ?>
+                <script>
+                window.claraPpnTarif = function () {
+                    var sel = document.querySelector('select[name="template_id"]');
+                    var opt = sel && sel.options[sel.selectedIndex];
+                    var v = opt ? parseFloat(opt.getAttribute('data-ppn')) : NaN;
+                    return (isFinite(v) && v > 0) ? v : (11 / 12 * 0.12);
+                };
+                </script>
                 <div>
                     <label>PIC Sales (pembuat)</label>
                     <select name="pic_name" required <?= $disabled ?>>
@@ -2024,7 +2036,7 @@ function offer_form(PDO $pdo): void
                     if (!on.checked) return;
                     var n = bulan(), t = angka(), h = hari();
                     var rp = function (x) { return 'Rp ' + (x || 0).toLocaleString('id-ID'); };
-                    var ppn = Math.round(n * t * 11 / 12 * 0.12);
+                    var ppn = Math.round(n * t * claraPpnTarif());
 
                     // "Sedang/pernah diketik sendiri" — kotaknya tidak ditimpa,
                     // termasuk saat isinya baru dikosongkan untuk diganti.
@@ -2043,7 +2055,7 @@ function offer_form(PDO $pdo): void
                     if (totBox && !manual) totBox.value = (n * t).toLocaleString('id-ID');
                     var isiManual = manual ? angkaTot() : 0;
                     var dipakai = isiManual > 0 ? isiManual : n * t;
-                    var ppnPakai = Math.round(dipakai * 11 / 12 * 0.12);
+                    var ppnPakai = Math.round(dipakai * claraPpnTarif());
                     if (totVal) totVal.value = isiManual > 0 ? isiManual : 0;
                     if (totInfo) {
                         // PPN selalu disebut — pertanyaan "ini sudah sama PPN belum?"
@@ -2142,7 +2154,9 @@ function offer_form(PDO $pdo): void
                 <?php if ($editable): ?>
                 <p style="margin:8px 0 0"><button type="button" class="btn light" id="tahap-tambah" style="font-size:12.5px">+ Tambah Tahap</button></p>
                 <?php endif; ?>
-                <div id="tahap-ringkas" class="help" style="margin-top:7px"></div>
+                <p class="help" style="margin:7px 0 0">Tiap tahap berlaku <strong>sejak tanggalnya sampai tahap berikutnya mulai</strong>;
+                    tahap terakhir berlaku sampai kontrak selesai. Karena itu tidak ada kolom tanggal selesai.</p>
+                <div id="tahap-ringkas" class="help" style="margin-top:4px"></div>
             </div>
 
             <div id="single-pay" style="<?= $isBundle ? 'display:none' : '' ?>">
@@ -2187,6 +2201,17 @@ function offer_form(PDO $pdo): void
                     <input type="checkbox" name="deposit_paid" id="deposit_paid" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= !empty($offer['deposit_paid']) ? 'checked' : '' ?> <?= $disabled ?>>
                     <span><strong style="color:#166534">Security Deposit sudah dibayarkan</strong> <span class="muted">&mdash; tetap tercantum di surat, tapi tidak ditambahkan ke Grand Total</span></span>
                 </label>
+            </div>
+
+            <?php /* Ringkasan yang dibaca client di surat: sewa, PPN, service charge,
+                     dan deposit, sampai Grand Total. Rumusnya disamakan dengan
+                     offer_print_template.php supaya angka di layar tidak pernah
+                     berbeda dengan angka yang tercetak. */ ?>
+            <div id="ringkas-biaya" style="display:none;margin-top:14px;background:#f8fafc;border:1px solid #cbd5e1;border-left:3px solid #0D9488;border-radius:10px;padding:12px 16px">
+                <div style="font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#0f766e;margin-bottom:6px">
+                    Ringkasan biaya &mdash; yang akan tercetak di surat</div>
+                <table style="width:100%;max-width:540px;border-collapse:collapse;font-size:13px"><tbody id="ringkas-isi"></tbody></table>
+                <div id="ringkas-catatan" class="help" style="margin-top:6px"></div>
             </div>
 
             <?php if ($offer && $editable): ?>
@@ -2635,7 +2660,7 @@ function offer_form(PDO $pdo): void
                 box.style.display = on.checked ? '' : 'none';
                 var rpSc = on.checked ? (parseInt((val || {}).value, 10) || 0) : 0;
                 var kena = !ppnOn || ppnOn.checked;
-                var ppn = kena ? Math.round(rpSc * 11 / 12 * 0.12) : 0;
+                var ppn = kena ? Math.round(rpSc * claraPpnTarif()) : 0;
                 var bulan = bulanSewa();
                 if (info) info.innerHTML = rpSc <= 0 ? ''
                     : (kena ? ('PPN Rp ' + ppn.toLocaleString('id-ID') + ' · Rp ' + (rpSc + ppn).toLocaleString('id-ID') + ' per bulan · ')
@@ -2731,6 +2756,7 @@ function offer_form(PDO $pdo): void
                 // Ringkasan + estimasi spread
                 var res = document.getElementById('kalkulasi-result');
                 if (res) { res.style.display = ''; res.innerHTML = 'Kalkulasi: <strong>' + rp(calc) + '</strong> · ' + days + ' hari · ' + months + ' bulan' + (override > 0 ? ' · <span style="color:#b45309">override ' + rp(override) + '</span>' : ''); }
+                ringkasBiaya(total, months);
                 var sp = document.getElementById('kalkulasi-spread');
                 if (sp) {
                     if (effectiveBilling() === 'spread' && months > 1 && total > 0 && s) {
@@ -2748,6 +2774,77 @@ function offer_form(PDO $pdo): void
                     } else { sp.style.display = 'none'; }
                 }
             }
+            /**
+             * Ringkasan biaya seperti yang akan tercetak di surat.
+             *
+             * Rumusnya menyalin offer_print_template.php: PPN dihitung per
+             * komponen (sewa, listrik) lalu dijumlahkan, Service Charge ditagih
+             * per bulan berikut PPN-nya, dan deposit yang SUDAH dibayar tidak
+             * ikut Grand Total. Kalau rumusnya dikarang sendiri di sini, angka
+             * di layar dan di surat akan berbeda — dan yang dipegang client
+             * adalah suratnya.
+             */
+            function ringkasBiaya(total, months) {
+                var kotak = document.getElementById('ringkas-biaya'),
+                    isi   = document.getElementById('ringkas-isi'),
+                    ket   = document.getElementById('ringkas-catatan');
+                if (!kotak || !isi) return;
+                total = Math.round(total || 0);
+                months = Math.max(1, months || 1);
+                if (total <= 0) { kotak.style.display = 'none'; return; }
+
+                var tarif = claraPpnTarif();
+                var ppnOn = document.getElementById('ppn_flag');
+                var kena  = !ppnOn || ppnOn.checked;
+                var nilai = function (id) { return parseInt(((document.getElementById(id) || {}).value || '').replace(/\D/g, ''), 10) || 0; };
+
+                // Listrik: pakai total yang diketik sendiri bila ada, kalau tidak
+                // tarif per bulan × jumlah bulan — sama seperti offer_listrik().
+                var lisOn = document.getElementById('electricity_flag');
+                var listrik = 0;
+                if (lisOn && lisOn.checked) {
+                    var manual = nilai('electricity_amount');
+                    listrik = manual > 0 ? manual : nilai('electricity_monthly') * months;
+                }
+                var scOn = document.getElementById('sc_flag');
+                var scBln = (scOn && scOn.checked) ? nilai('sc_monthly') : 0;
+                var deposit = nilai('deposit_amount');
+                var depLunas = (document.getElementById('deposit_paid') || {}).checked;
+                var dp = nilai('dp_amount');
+
+                var ppnSewa    = kena ? Math.round(total * tarif) : 0;
+                var ppnListrik = kena ? Math.round(listrik * tarif) : 0;
+                var scPpnBln   = kena ? Math.round(scBln * tarif) : 0;
+                var scTotal    = scBln > 0 ? (scBln + scPpnBln) * months : 0;
+                var grand = total + listrik + ppnSewa + ppnListrik + scTotal + (depLunas ? 0 : deposit);
+
+                var baris = [];
+                var tambah = function (label, nilaiRp, tebal) {
+                    baris.push('<tr><td style="padding:3px 0' + (tebal ? ';font-weight:800;border-top:1px solid #cbd5e1;padding-top:6px' : '') + '">' + label
+                             + '</td><td style="padding:3px 0;text-align:right;white-space:nowrap'
+                             + (tebal ? ';font-weight:800;border-top:1px solid #cbd5e1;padding-top:6px' : '') + '">' + rp(nilaiRp) + '</td></tr>');
+                };
+                tambah('Biaya sewa (' + months + ' bulan)', total);
+                if (listrik > 0) tambah('Biaya listrik', listrik);
+                if (kena) tambah('PPN' + (listrik > 0 ? ' (sewa + listrik)' : ''), ppnSewa + ppnListrik);
+                if (scTotal > 0) tambah('Service Charge ' + months + ' bulan (termasuk PPN)', scTotal);
+                if (deposit > 0) tambah('Security Deposit' + (depLunas ? ' — sudah dibayar, di luar total' : ''), depLunas ? 0 : deposit);
+                tambah('GRAND TOTAL', grand, true);
+                isi.innerHTML = baris.join('');
+                kotak.style.display = '';
+
+                var catatan = [];
+                if (!kena) catatan.push('Harga bersih — baris PPN tidak dicetak di surat.');
+                if (dp > 0) catatan.push('DP ' + rp(dp) + ' adalah bagian dari Grand Total, bukan tambahan.');
+                if (depLunas && deposit > 0) catatan.push('Deposit ' + rp(deposit) + ' tetap tercantum di surat tapi tidak ditagih lagi.');
+                ket.innerHTML = catatan.join(' ');
+            }
+            ['ppn_flag', 'sc_flag', 'sc_monthly', 'deposit_paid', 'dep_fmt', 'dp_fmt',
+             'electricity_flag', 'electricity_monthly', 'electricity_amount', 'template_id'].forEach(function (id) {
+                var el = document.getElementById(id) || document.querySelector('[name="' + id + '"]');
+                if (el) ['change', 'input'].forEach(function (ev) { el.addEventListener(ev, function () { kalkulasi(); }); });
+            });
+
             // ── Pengakuan: hitung metode efektif (Otomatis → ikut periode), toggle siklus ──
             function effectiveBilling() {
                 var bm = (document.getElementById('billing_method') || {}).value;
