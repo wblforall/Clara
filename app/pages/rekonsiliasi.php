@@ -163,9 +163,15 @@ function _rekon_saring_pic(array $hasil, string $pic): array
     if ($pic === '') return $hasil;
     $sama = fn($a) => ReconCL::normal((string) ($a ?? '')) === ReconCL::normal($pic);
 
-    foreach (['cocok', 'nilai', 'pic'] as $k) {
+    foreach (['cocok', 'nilai', 'pic', 'kontrak'] as $k) {
         $hasil[$k] = array_values(array_filter($hasil[$k], fn($b) => $sama($b['excel']['pic'] ?? '') || $sama($b['clara']['pic'] ?? '')));
     }
+    // Baris gabungan punya BEBERAPA transaksi CLARA di satu kelompok.
+    $hasil['gabungan'] = array_values(array_filter($hasil['gabungan'], function ($g) use ($sama) {
+        if ($sama($g['excel']['pic'] ?? '')) return true;
+        foreach ($g['clara'] as $c) if ($sama($c['pic'] ?? '')) return true;
+        return false;
+    }));
     foreach (['input', 'lebih'] as $k) {
         $hasil[$k] = array_values(array_filter($hasil[$k], fn($b) => $sama($b['pic'] ?? '')));
     }
@@ -181,7 +187,10 @@ function _rekon_saring_pic(array $hasil, string $pic): array
     }
 
     $R = $hasil['ringkas'];
-    $R['n_cocok'] = count($hasil['cocok']);
+    $R['n_cocok']    = count($hasil['cocok']);
+    $R['n_gabungan'] = count($hasil['gabungan']);
+    $R['n_kontrak']  = count($hasil['kontrak']);
+    $R['rp_kontrak'] = array_sum(array_column($hasil['kontrak'], 'selisih'));
     $R['n_nilai'] = count($hasil['nilai']);
     $R['n_pic']   = count($hasil['pic']);
     $R['n_input'] = count($hasil['input']);
@@ -509,8 +518,24 @@ function rekonsiliasi_page(PDO $pdo): void
                 <b class="<?= abs($R['selisih']) < 1 ? 'rk-ok' : ($R['selisih'] < 0 ? 'rk-kurang' : 'rk-lebih') ?>">
                     <?= abs($R['selisih']) < 1 ? 'Rp 0 — sama' : $rp($R['selisih']) ?></b>
                 <span><?= $R['selisih'] < 0 ? 'CLARA lebih kecil' : ($R['selisih'] > 0 ? 'CLARA lebih besar' : 'tidak ada beda') ?></span></div>
-            <div class="k"><span>Baris sudah cocok</span><b class="rk-ok"><?= (int) $R['n_cocok'] ?></b>
+            <div class="k"><span>Baris sudah cocok</span><b class="rk-ok"><?= (int) $R['n_cocok'] + (int) ($R['n_gabungan'] ?? 0) ?></b>
                 <span>dari <?= (int) $R['n_excel'] ?> baris Excel</span></div>
+            <?php
+            /* Selisih kotor memasukkan kontrak panjang, yang di spreadsheet
+               ditulis sekali sebesar nilai utuhnya sementara CLARA mengakuinya
+               sebulan demi sebulan. Itu beda cara mencatat, bukan pekerjaan.
+               Angka inilah yang benar-benar harus dikejar. */
+            $rpKontrak = (float) ($R['rp_kontrak'] ?? 0);
+            $perluKerja = $R['selisih'] - $rpKontrak;
+            ?>
+            <?php if (abs($rpKontrak) >= 1): ?>
+            <div class="k" style="border-color:#0D9488">
+                <span>Perlu dikerjakan</span>
+                <b class="<?= abs($perluKerja) < 1 ? 'rk-ok' : 'rk-kurang' ?>">
+                    <?= abs($perluKerja) < 1 ? 'Rp 0 — beres' : $rp($perluKerja) ?></b>
+                <span>di luar <?= $rp(abs($rpKontrak)) ?> kontrak panjang</span>
+            </div>
+            <?php endif; ?>
         </div>
 
         <?php if ((int) $R['n_clara'] === 0): ?>
@@ -551,6 +576,69 @@ function rekonsiliasi_page(PDO $pdo): void
             <h3 style="margin-top:0">Rincian selisih</h3>
             <p class="help">Angka di Excel dibandingkan dengan nilai yang DIAKUI CLARA pada bulan ini
                (tabel alokasi) — sumber yang sama dengan Laporan PIC, bukan hitungan baru.</p>
+
+            <?php /* Dua bagian ini BUKAN temuan — justru penjelasan kenapa angka
+                     yang kelihatan berbeda sebenarnya sudah benar. Ditaruh paling
+                     atas supaya orang tidak terlanjur mengejar yang tidak salah. */ ?>
+            <?php if (!empty($hasil['gabungan'])): ?>
+            <details class="rk-rinci">
+                <summary style="color:#0f766e">Sudah cocok, hanya terpecah — <?= count($hasil['gabungan']) ?> unit</summary>
+                <p class="help" style="margin:0 0 6px">Satu baris kalender di Excel berisi satu UNIT untuk sebulan,
+                   sedangkan di CLARA unit itu dipakai beberapa penyewa bergantian dalam bulan yang sama.
+                   Jumlahnya sudah sama persis — <strong>tidak ada yang perlu dikerjakan</strong>.</p>
+                <table>
+                    <thead><tr><th>Unit di Excel</th><th style="text-align:right">Nilai di Excel</th>
+                        <th>Terdiri dari transaksi CLARA</th><th style="text-align:right">Jumlah</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($hasil['gabungan'] as $g): ?>
+                    <tr>
+                        <td data-label="Unit"><strong><?= h($g['excel']['kode'] ?: $g['excel']['klien']) ?></strong>
+                            <span class="help"><?= h($g['excel']['rujukan']) ?></span></td>
+                        <td data-label="Excel" style="text-align:right"><?= $rp($g['excel']['nilai']) ?></td>
+                        <td data-label="Transaksi">
+                            <?php foreach ($g['clara'] as $c): ?>
+                            <div><?= h($c['klien']) ?> · <?= $rp($c['nilai']) ?>
+                                <a href="?r=transaction_edit&amp;id=<?= (int) ltrim($c['rujukan'], '#') ?>" target="_blank"
+                                   class="help" style="text-decoration:underline"><?= h($c['rujukan']) ?></a></div>
+                            <?php endforeach; ?>
+                        </td>
+                        <td data-label="Jumlah" style="text-align:right">
+                            <span class="rk-pil rk-nol"><?= $rp($g['jumlah']) ?></span></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </details>
+            <?php endif; ?>
+
+            <?php if (!empty($hasil['kontrak'])): ?>
+            <details class="rk-rinci">
+                <summary style="color:#0f766e">Kontrak panjang — beda cara mencatat, bukan selisih (<?= count($hasil['kontrak']) ?> baris)</summary>
+                <p class="help" style="margin:0 0 6px">Spreadsheet menulis <strong>nilai kontrak utuh</strong> sekali di bulan
+                   kontraknya mulai. CLARA mengakuinya <strong>sebulan demi sebulan</strong> sesuai masa sewa.
+                   Keduanya benar — <strong>jangan diinput ulang dan jangan dihapus</strong>.</p>
+                <table>
+                    <thead><tr><th>Penyewa</th><th>Masa kontrak</th>
+                        <th style="text-align:right">Nilai kontrak (Excel)</th>
+                        <th style="text-align:right">Diakui bulan ini</th><th>Tindakan</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($hasil['kontrak'] as $k): ?>
+                    <tr>
+                        <td data-label="Penyewa"><?= h($k['clara']['klien']) ?>
+                            <?php if (($k['clara']['brand'] ?? '') !== ''): ?><span class="help"><?= h($k['clara']['brand']) ?></span><?php endif; ?></td>
+                        <td data-label="Masa"><?= h(($k['clara']['mulai'] ?? '-') . ' s/d ' . ($k['clara']['selesai'] ?? '-')) ?></td>
+                        <td data-label="Nilai kontrak" style="text-align:right"><?= $rp($k['excel']['nilai']) ?></td>
+                        <td data-label="Bulan ini" style="text-align:right"><?= $rp($k['clara']['nilai']) ?></td>
+                        <td data-label="Tindakan">
+                            <a class="btn light" style="font-size:11.5px;padding:3px 9px" target="_blank"
+                               href="?r=transaction_edit&amp;id=<?= (int) ltrim($k['clara']['rujukan'], '#') ?>">Buka transaksi</a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </details>
+            <?php endif; ?>
 
             <?php
             $bagian = [
