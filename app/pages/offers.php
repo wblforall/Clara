@@ -2201,17 +2201,16 @@ function offer_form(PDO $pdo): void
                     <input type="checkbox" name="deposit_paid" id="deposit_paid" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= !empty($offer['deposit_paid']) ? 'checked' : '' ?> <?= $disabled ?>>
                     <span><strong style="color:#166534">Security Deposit sudah dibayarkan</strong> <span class="muted">&mdash; tetap tercantum di surat, tapi tidak ditambahkan ke Grand Total</span></span>
                 </label>
-            </div>
-            <?php /* Harga publish: permintaan tim Casual Leasing & Legal supaya client,
-                     legal, dan finance sama-sama MELIHAT di suratnya bahwa harga yang
-                     diberikan adalah harga diskon — bukan hanya tahu angka akhirnya.
-                     Harga akhirnya sendiri tidak berubah sedikit pun. */ ?>
-            <div style="margin-top:10px;border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:12px 14px;background:#fafafa">
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400;margin:0">
+                <?php /* Harga publish: permintaan tim Casual Leasing & Legal supaya client,
+                         legal, dan finance sama-sama MELIHAT di suratnya bahwa harga yang
+                         diberikan adalah harga diskon. Bentuknya disamakan dengan centang
+                         lain di kelompok ini — isian harganya muncul hanya bila dicentang,
+                         sama seperti Service Charge. */ ?>
+                <label style="display:flex;align-items:center;gap:8px;margin-top:9px;cursor:pointer;font-weight:400">
                     <input type="checkbox" name="diskon_aktif" id="diskon_aktif" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= !empty($offer['diskon_aktif']) ? 'checked' : '' ?> <?= $disabled ?>>
-                    <span><strong>Tampilkan harga diskon</strong> <span class="muted">&mdash; surat akan memuat Harga Publish, besar diskon, dan persentasenya</span></span>
+                    <span><strong>Tampilkan harga diskon</strong> <span class="muted">&mdash; surat memuat Harga Publish, besar diskon, dan persentasenya</span></span>
                 </label>
-                <div id="diskon_box" style="margin-top:8px;max-width:420px">
+                <div id="diskon_box" style="margin-top:8px;max-width:320px">
                     <label>Harga Publish <span class="muted">(sebelum diskon)</span></label>
                     <div style="display:flex;align-items:stretch">
                         <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
@@ -2219,9 +2218,10 @@ function offer_form(PDO $pdo): void
                                style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= $disabled ?>>
                         <input type="hidden" name="harga_publish" id="harga_publish" value="<?= (int) ($offer['harga_publish'] ?? 0) ?>">
                     </div>
-                    <div class="help" id="diskon_info">Harus lebih besar dari harga sewa periode. Besar diskonnya dihitung otomatis &mdash; tidak diketik, supaya tidak pernah berbeda dengan totalnya.</div>
+                    <div class="help" id="diskon_info"></div>
                 </div>
             </div>
+
 
             <?php /* Ringkasan yang dibaca client di surat: sewa, PPN, service charge,
                      dan deposit, sampai Grand Total. Rumusnya disamakan dengan

@@ -1067,6 +1067,23 @@ function skp_form(PDO $pdo): void
                         <input type="checkbox" name="sc_flag" id="skp_sc" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= $defSc ? 'checked' : '' ?> <?= $editable ? '' : 'disabled' ?>>
                         <span><strong>Kenakan Service Charge</strong> <span class="muted">&mdash; ditagih per bulan, tercetak sebagai blok C di dokumen</span></span>
                     </label>
+                    <?php /* Harga publish: client, legal, dan finance harus MELIHAT di
+                             dokumennya bahwa harga yang diberikan adalah harga diskon.
+                             Bentuknya disamakan dengan centang lain di kelompok ini. */ ?>
+                    <label style="display:flex;align-items:center;gap:8px;margin-top:9px;cursor:pointer;font-weight:400">
+                        <input type="checkbox" name="diskon_aktif" id="skp_diskon_on" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= $defDiskon ? 'checked' : '' ?> <?= $editable ? '' : 'disabled' ?>>
+                        <span><strong>Tampilkan harga diskon</strong> <span class="muted">&mdash; dokumen memuat Harga Publish, besar diskon, dan persentasenya</span></span>
+                    </label>
+                    <div id="skp_diskon_box" style="margin-top:8px;max-width:320px">
+                        <label>Harga Publish <span class="muted">(sebelum diskon)</span></label>
+                        <div style="display:flex;align-items:stretch">
+                            <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
+                            <input type="text" inputmode="numeric" id="skp_publish_rp" value="<?= $defPublish > 0 ? number_format($defPublish, 0, ',', '.') : '' ?>" placeholder="0"
+                                   style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= $editable ? '' : 'disabled' ?>>
+                            <input type="hidden" name="harga_publish" id="skp_publish_val" value="<?= (int) $defPublish ?>">
+                        </div>
+                        <div class="help" id="skp_diskon_info"></div>
+                    </div>
                     <div id="skp_sc_box" class="form-grid" style="margin-top:8px">
                         <div>
                             <label>Biaya Service Charge / Bulan</label>
@@ -1082,36 +1099,6 @@ function skp_form(PDO $pdo): void
                             <label>Masa Sewa</label>
                             <input value="<?= (int) $scBulan ?> bulan" disabled>
                             <div class="help">Dihitung dari periode sewa &mdash; dipakai sebagai pengali Service Charge.</div>
-                        </div>
-                    </div>
-                </div>
-                <?php /* Harga publish: permintaan tim Casual Leasing & Legal supaya
-                         client, legal, dan finance sama-sama MELIHAT di dokumennya
-                         bahwa harga yang diberikan adalah harga diskon — bukan hanya
-                         tahu angka akhirnya. Harga akhirnya sendiri tidak berubah. */ ?>
-                <div style="grid-column:1/-1;border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:12px 14px;background:#fafafa">
-                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400;margin:0">
-                        <input type="checkbox" name="diskon_aktif" id="skp_diskon_on" value="1" style="width:15px;height:15px;flex:none;margin:0"
-                               <?= $defDiskon ? 'checked' : '' ?> <?= $editable ? '' : 'disabled' ?>>
-                        <span><strong>Tampilkan harga diskon</strong> <span class="muted">&mdash; dokumen akan memuat Harga Publish, besar diskon, dan persentasenya</span></span>
-                    </label>
-                    <div id="skp_diskon_box" class="form-grid" style="margin-top:8px">
-                        <div>
-                            <label>Harga Publish <span class="muted">(sebelum diskon)</span></label>
-                            <div style="display:flex;align-items:stretch">
-                                <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
-                                <input type="text" inputmode="numeric" id="skp_publish_rp" value="<?= $defPublish > 0 ? number_format($defPublish, 0, ',', '.') : '' ?>" placeholder="0"
-                                       style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= $editable ? '' : 'disabled' ?>>
-                                <input type="hidden" name="harga_publish" id="skp_publish_val" value="<?= (int) $defPublish ?>">
-                            </div>
-                            <div class="help">Dibandingkan dengan <strong>Total Biaya Sewa</strong> di dokumen
-                                <?= ($listrikAll > 0) ? '(sudah termasuk biaya listrik yang ditagih)' : '' ?>.
-                                Harus lebih besar dari total, kalau tidak barisnya tidak dicetak.</div>
-                        </div>
-                        <div>
-                            <label>Hasilnya di dokumen</label>
-                            <input id="skp_diskon_info" value="—" disabled>
-                            <div class="help">Besar diskon dihitung otomatis dari selisihnya &mdash; tidak diketik, supaya tidak pernah berbeda dengan totalnya.</div>
                         </div>
                     </div>
                 </div>
@@ -1654,11 +1641,16 @@ function skp_form(PDO $pdo): void
                     var pub = dsOn.checked ? (parseInt((dsTx.value || '').replace(/\D/g, ''), 10) || 0) : 0;
                     if (dsVal) dsVal.value = pub;
                     if (dsInfo) {
-                        if (!dsOn.checked || pub <= 0) dsInfo.value = '—';
-                        else if (pub <= total) dsInfo.value = 'Harga publish harus lebih besar dari ' + rupiah(total);
-                        else {
+                        if (!dsOn.checked || pub <= 0) {
+                            dsInfo.innerHTML = 'Dibandingkan dengan <b>Total Biaya Sewa</b> di dokumen. '
+                                + 'Besar diskonnya dihitung otomatis.';
+                        } else if (pub <= total) {
+                            dsInfo.innerHTML = '<span style="color:#b91c1c">Harga publish harus lebih besar dari '
+                                + rupiah(total) + ' &mdash; baris diskon tidak akan dicetak.</span>';
+                        } else {
                             var pot = pub - total, pct = Math.round(pot / pub * 10000) / 100;
-                            dsInfo.value = rupiah(pub) + ' − ' + rupiah(pot) + ' (' + String(pct).replace('.', ',') + '%) = ' + rupiah(total);
+                            dsInfo.innerHTML = '<b>' + rupiah(pub) + ' &minus; ' + rupiah(pot) + ' ('
+                                + String(pct).replace('.', ',') + '%) = ' + rupiah(total) + '</b>';
                         }
                     }
                 }
