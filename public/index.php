@@ -177,6 +177,12 @@ if ($route === 'login') {
     exit;
 }
 
+// API baca-saja daftar gudang untuk OpsJobs (penautan meteran) — token header.
+if ($route === 'api_gudang') {
+    require_once APP_ROOT . '/app/pages/api_gudang.php';
+    api_gudang($pdo);
+}
+
 if (in_array($route, ['display', 'display_data'], true)) {
     require_once APP_ROOT . '/app/pages/dashboard.php';
     if (!display_authorized($config)) {
