@@ -23,6 +23,13 @@
  * Pakai:  php scripts/cek_ttd.php "Nama Client"
  */
 
+// Di server display_errors biasanya mati. Untuk skrip diagnostik itu berbahaya:
+// kesalahan kecil membuat keluarannya terpotong tanpa pesan apa pun, dan yang
+// membaca mengira "datanya memang tidak ada".
+ini_set('display_errors', '1');
+ini_set('display_startup_errors', '1');
+error_reporting(E_ALL);
+
 require __DIR__ . '/../app/env.php';
 require __DIR__ . '/../app/Database.php';
 
@@ -34,6 +41,19 @@ if ($cari === '') {
 
 $pdo = Database::connect();
 $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+
+/** Nama tabel client berbeda antar versi — jangan ditebak, dideteksi. */
+function tabelKlien(PDO $pdo): string
+{
+    foreach (['master_clients', 'clients'] as $t) {
+        try {
+            $pdo->query("SELECT 1 FROM `$t` LIMIT 1");
+            return $t;
+        } catch (Throwable $e) {
+        }
+    }
+    return '';
+}
 
 /** Kolom sebuah tabel — dipakai supaya skrip ini tidak mati di skema yang beda. */
 function kolom(PDO $pdo, string $tabel): array
@@ -116,7 +136,7 @@ function sisirSemua(PDO $pdo, string $cari): array
         foreach ($kata as $kt) {
             try {
                 $sel = $pk ? "`$pk` AS _id, `$k` AS _nilai" : "`$k` AS _nilai";
-                $q = $pdo->prepare("SELECT $sel FROM `$t` WHERE `$k` LIKE ? LIMIT 5");
+                $q = $pdo->prepare("SELECT $sel FROM `$t` WHERE `$k` LIKE ? LIMIT 50");
                 $q->execute(['%' . $kt . '%']);
                 foreach ($q->fetchAll() as $r) {
                     $kunci = $t . '|' . $k . '|' . ($r['_id'] ?? md5((string) $r['_nilai']));
@@ -144,37 +164,52 @@ if (!$jejakNama) {
     }
 }
 
-// Kumpulkan client_id dari baris mana pun yang ketemu (mis. PIC client).
-$klien = [];
+// Kumpulkan client_id DAN contact_id dari baris mana pun yang ketemu.
+// Dokumen bisa menempel ke orangnya lewat contact_id, bukan hanya client_id —
+// kalau contact_id diabaikan, dokumen miliknya tidak ikut terbaca.
+$TBL_KLIEN = tabelKlien($pdo);
+$klien   = [];
 $idKlien = [];
+$idKontak = [];
 foreach ($jejakNama as $f) {
-    if ($f['tabel'] === 'clients' && $f['id'] !== null) { $idKlien[] = (int) $f['id']; continue; }
-    if ($f['id'] === null || !punya($pdo, $f['tabel'], 'client_id')) continue;
+    if ($f['id'] === null) continue;
+    if ($f['tabel'] === $TBL_KLIEN) { $idKlien[] = (int) $f['id']; continue; }
+    if ($f['tabel'] === 'master_client_contacts') $idKontak[] = (int) $f['id'];
+    if (!punya($pdo, $f['tabel'], 'client_id')) continue;
     try {
         $q = $pdo->prepare("SELECT client_id FROM `{$f['tabel']}` WHERE id = ?");
         $q->execute([$f['id']]);
         $cid = $q->fetchColumn();
         if ($cid) $idKlien[] = (int) $cid;
     } catch (Throwable $e) {
+        echo "  (gagal membaca client_id dari {$f['tabel']}: " . $e->getMessage() . ")\n";
     }
 }
-$idKlien = array_values(array_unique(array_filter($idKlien)));
+$idKlien  = array_values(array_unique(array_filter($idKlien)));
+$idKontak = array_values(array_unique(array_filter($idKontak)));
 
 garis('CLIENT');
-if (!$idKlien) {
+if ($TBL_KLIEN === '') {
+    echo "  tabel client tidak ditemukan (bukan master_clients maupun clients)\n";
+} elseif (!$idKlien) {
     echo "  tidak ada client yang bisa dikaitkan dengan nama itu\n";
 } else {
-    $q = $pdo->query('SELECT * FROM clients WHERE id IN (' . implode(',', $idKlien) . ')');
-    foreach ($q->fetchAll() as $r) {
-        $klien[$r['id']] = $r;
-        printf("  id %-5s prop %-3s %s\n", $r['id'], amb($r, 'property_id'),
-            amb($r, 'name', amb($r, 'company_name')));
+    try {
+        $q = $pdo->query("SELECT * FROM `$TBL_KLIEN` WHERE id IN (" . implode(',', $idKlien) . ')');
+        foreach ($q->fetchAll() as $r) {
+            $klien[$r['id']] = $r;
+            printf("  id %-5s prop %-3s %s\n", $r['id'], amb($r, 'property_id'),
+                amb($r, 'company_name', amb($r, 'name')));
+        }
+    } catch (Throwable $e) {
+        echo "  (gagal membaca $TBL_KLIEN: " . $e->getMessage() . ")\n";
     }
 }
+if ($idKontak) echo "  PIC (contact) id: " . implode(', ', $idKontak) . "\n";
 
 // ── 3. Kumpulkan dokumen yang terkait ────────────────────────────────────────
 /** Ambil baris tabel yang terkait client ini — lewat client_id maupun nama yang diketik. */
-function dokumen(PDO $pdo, string $tabel, array $idKlien, string $cari): array
+function dokumen(PDO $pdo, string $tabel, array $idKlien, string $cari, array $idKontak = []): array
 {
     if (!kolom($pdo, $tabel)) return [];
     $syarat = [];
@@ -182,6 +217,10 @@ function dokumen(PDO $pdo, string $tabel, array $idKlien, string $cari): array
     if ($idKlien && punya($pdo, $tabel, 'client_id')) {
         $syarat[] = 'client_id IN (' . implode(',', array_fill(0, count($idKlien), '?')) . ')';
         $args     = array_merge($args, $idKlien);
+    }
+    if ($idKontak && punya($pdo, $tabel, 'contact_id')) {
+        $syarat[] = 'contact_id IN (' . implode(',', array_fill(0, count($idKontak), '?')) . ')';
+        $args     = array_merge($args, $idKontak);
     }
     foreach (['client_name', 'company_name', 'nama_client', 'pic_name'] as $k) {
         if (!punya($pdo, $tabel, $k)) continue;
@@ -199,8 +238,8 @@ function dokumen(PDO $pdo, string $tabel, array $idKlien, string $cari): array
     }
 }
 
-$offers = dokumen($pdo, 'offers', $idKlien, $cari);
-$trx    = dokumen($pdo, 'transactions', $idKlien, $cari);
+$offers = dokumen($pdo, 'offers', $idKlien, $cari, $idKontak);
+$trx    = dokumen($pdo, 'transactions', $idKlien, $cari, $idKontak);
 
 // SKP: lewat transaksi / penawaran yang sudah ketemu, plus nama yang diketik langsung.
 $skps = [];
@@ -217,7 +256,7 @@ foreach ([['transaction_id', $idTrx], ['offer_id', $idOffer]] as [$kol, $ids]) {
         echo "  (gagal membaca skp_documents via $kol: " . $e->getMessage() . ")\n";
     }
 }
-foreach (dokumen($pdo, 'skp_documents', $idKlien, $cari) as $r) $skps[$r['id']] = $r;
+foreach (dokumen($pdo, 'skp_documents', $idKlien, $cari, $idKontak) as $r) $skps[$r['id']] = $r;
 ksort($skps);
 
 // ── 4. Laporan per dokumen ───────────────────────────────────────────────────
