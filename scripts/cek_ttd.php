@@ -78,24 +78,99 @@ try {
 echo "Aturan TTD mulai berlaku : " . ($ttdMulai !== '' ? $ttdMulai : '(belum disetel — TTD tidak diwajibkan untuk siapa pun)') . "\n";
 echo "Waktu pemeriksaan        : " . date('Y-m-d H:i:s') . "\n";
 
-// ── 2. Cari clientnya ────────────────────────────────────────────────────────
-$klien = [];
-foreach (['name', 'company_name', 'client_name'] as $k) {
-    if (!punya($pdo, 'clients', $k)) continue;
-    $st = $pdo->prepare("SELECT * FROM clients WHERE `$k` LIKE ?");
-    $st->execute(['%' . $cari . '%']);
-    foreach ($st->fetchAll() as $r) $klien[$r['id']] = $r;
+// ── 2. Cari namanya DI MANA SAJA ─────────────────────────────────────────────
+/**
+ * Sisir seluruh kolom teks di database.
+ *
+ * Mencari hanya di clients tidak cukup: nama orang sering tersimpan sebagai
+ * PIC client (master_client_contacts), sebagai sales (master_pic), atau
+ * diketik langsung di dokumennya. Kalau hanya clients yang dicari lalu
+ * hasilnya kosong, orang akan menyimpulkan "tidak punya dokumen" — padahal
+ * yang terjadi cuma salah tempat mencari.
+ */
+function sisirSemua(PDO $pdo, string $cari): array
+{
+    $db = (string) $pdo->query('SELECT DATABASE()')->fetchColumn();
+    // Dicari juga per kata, supaya ejaan yang beda sedikit tetap ketemu
+    // (mis. "Anggraeni" vs "Anggraheni", atau nama yang dibalik urutannya).
+    $kata = array_values(array_unique(array_filter(
+        array_merge([$cari], preg_split('/\s+/', $cari) ?: []),
+        fn($k) => mb_strlen($k) >= 4
+    )));
+    $st = $pdo->prepare(
+        "SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = ?
+            AND DATA_TYPE IN ('char','varchar','text','tinytext','mediumtext','longtext')
+            AND COLUMN_NAME NOT IN ('signature_data','signature_path')
+          ORDER BY TABLE_NAME, COLUMN_NAME"
+    );
+    $st->execute([$db]);
+
+    $temuan = [];
+    foreach ($st->fetchAll() as $c) {
+        [$t, $k] = [$c['TABLE_NAME'], $c['COLUMN_NAME']];
+        // audit_logs diperiksa terpisah & terarah — menyisir seluruh JSON-nya
+        // lambat dan hasilnya penuh kebisingan.
+        if ($t === 'audit_logs') continue;
+        $pk = punya($pdo, $t, 'id') ? 'id' : null;
+        foreach ($kata as $kt) {
+            try {
+                $sel = $pk ? "`$pk` AS _id, `$k` AS _nilai" : "`$k` AS _nilai";
+                $q = $pdo->prepare("SELECT $sel FROM `$t` WHERE `$k` LIKE ? LIMIT 5");
+                $q->execute(['%' . $kt . '%']);
+                foreach ($q->fetchAll() as $r) {
+                    $kunci = $t . '|' . $k . '|' . ($r['_id'] ?? md5((string) $r['_nilai']));
+                    $temuan[$kunci] = ['tabel' => $t, 'kolom' => $k,
+                        'id' => $r['_id'] ?? null, 'nilai' => (string) $r['_nilai']];
+                }
+            } catch (Throwable $e) {
+                // kolom/tabel aneh — lewati, jangan sampai mematikan pemeriksaan
+            }
+        }
+    }
+    return array_values($temuan);
 }
-garis('CLIENT');
-if (!$klien) {
-    echo "  tidak ada baris di tabel clients yang namanya mengandung \"$cari\"\n";
+
+$jejakNama = sisirSemua($pdo, $cari);
+garis('DI MANA NAMA INI TERSIMPAN');
+if (!$jejakNama) {
+    echo "  TIDAK DITEMUKAN di kolom teks mana pun di database ini.\n";
+    echo "  Artinya: bukan \"dokumennya tanpa TTD\" — orangnya memang tidak ada\n";
+    echo "  di database ini. Periksa ejaan namanya, atau properti/mal yang lain.\n";
 } else {
-    foreach ($klien as $r) {
+    foreach ($jejakNama as $f) {
+        printf("  %-28s %-20s id %-7s %s\n", $f['tabel'], $f['kolom'],
+            $f['id'] ?? '—', mb_substr(preg_replace('/\s+/', ' ', $f['nilai']), 0, 60));
+    }
+}
+
+// Kumpulkan client_id dari baris mana pun yang ketemu (mis. PIC client).
+$klien = [];
+$idKlien = [];
+foreach ($jejakNama as $f) {
+    if ($f['tabel'] === 'clients' && $f['id'] !== null) { $idKlien[] = (int) $f['id']; continue; }
+    if ($f['id'] === null || !punya($pdo, $f['tabel'], 'client_id')) continue;
+    try {
+        $q = $pdo->prepare("SELECT client_id FROM `{$f['tabel']}` WHERE id = ?");
+        $q->execute([$f['id']]);
+        $cid = $q->fetchColumn();
+        if ($cid) $idKlien[] = (int) $cid;
+    } catch (Throwable $e) {
+    }
+}
+$idKlien = array_values(array_unique(array_filter($idKlien)));
+
+garis('CLIENT');
+if (!$idKlien) {
+    echo "  tidak ada client yang bisa dikaitkan dengan nama itu\n";
+} else {
+    $q = $pdo->query('SELECT * FROM clients WHERE id IN (' . implode(',', $idKlien) . ')');
+    foreach ($q->fetchAll() as $r) {
+        $klien[$r['id']] = $r;
         printf("  id %-5s prop %-3s %s\n", $r['id'], amb($r, 'property_id'),
             amb($r, 'name', amb($r, 'company_name')));
     }
 }
-$idKlien = array_keys($klien);
 
 // ── 3. Kumpulkan dokumen yang terkait ────────────────────────────────────────
 /** Ambil baris tabel yang terkait client ini — lewat client_id maupun nama yang diketik. */
@@ -256,6 +331,35 @@ $trxById = [];
 foreach ($trx as $t) $trxById[$t['id']] = $t;
 foreach ($skps as $d) {
     laporDok($pdo, 'skp_documents', $d, $ttdMulai, $trxById[$d['transaction_id'] ?? 0] ?? []);
+}
+
+// Bukti paling kuat: setiap TTD client menulis nama penekennya ke after_json.
+// Dicari langsung, lepas dari dokumen mana pun — kalau orang ini pernah
+// meneken apa saja di sistem ini, barisnya pasti ada di sini.
+garis('JEJAK TANDA TANGAN ATAS NAMA INI (seluruh sistem)');
+$adaTtd = false;
+try {
+    $kataTtd = array_values(array_filter(
+        array_merge([$cari], preg_split('/\s+/', $cari) ?: []),
+        fn($k) => mb_strlen($k) >= 4
+    ));
+    $syarat = implode(' OR ', array_fill(0, count($kataTtd), 'after_json LIKE ?'));
+    $st = $pdo->prepare("SELECT created_at, action, table_name, record_id, ip_address, after_json
+                           FROM audit_logs
+                          WHERE action = 'customer_sign' AND ($syarat)
+                          ORDER BY id");
+    $st->execute(array_map(fn($k) => '%' . $k . '%', $kataTtd));
+    foreach ($st->fetchAll() as $r) {
+        $adaTtd = true;
+        printf("  %-19s %s #%s  IP %s  %s\n", amb($r, 'created_at'), amb($r, 'table_name'),
+            amb($r, 'record_id'), amb($r, 'ip_address'),
+            mb_substr((string) amb($r, 'after_json', ''), 0, 60));
+    }
+} catch (Throwable $e) {
+    echo "  (gagal membaca audit_logs: " . $e->getMessage() . ")\n";
+}
+if (!$adaTtd) {
+    echo "  TIDAK ADA. Nama ini tidak pernah tercatat menandatangani dokumen apa pun.\n";
 }
 
 garis('TRANSAKSI TERKAIT');
