@@ -26,7 +26,7 @@ function pic_pipeline_page(PDO $pdo): void
          FROM offers o
          LEFT JOIN master_clients c ON c.id = o.client_id
          LEFT JOIN master_client_contacts ct ON ct.id = o.contact_id
-         WHERE o.property_id = ? AND DATE(o.created_at) BETWEEN ? AND ?
+         WHERE o.property_id = ? AND o.deleted_at IS NULL AND DATE(o.created_at) BETWEEN ? AND ?
          ORDER BY o.created_at DESC"
     );
     $st->execute([$pid, $fromDate, $toDate]);

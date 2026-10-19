@@ -970,7 +970,7 @@ function _offer_slot_conflicts(PDO $pdo, int $pid, array $items, ?string $start,
         // Penawaran aktif lain (belum batal) dgn unit/titik sama, periode tumpang-tindih.
         $q = $pdo->prepare(
             "SELECT o.offer_no, o.status, o.start_date, o.end_date FROM offers o
-             WHERE o.property_id = ? AND o.id <> ? AND o.status <> 'cancelled'
+             WHERE o.property_id = ? AND o.id <> ? AND o.status <> 'cancelled' AND o.deleted_at IS NULL
                AND o.start_date IS NOT NULL AND o.end_date IS NOT NULL
                AND o.start_date <= ? AND o.end_date >= ?
                AND (o.master_code = ? OR EXISTS (
@@ -1057,7 +1057,8 @@ function offers_list_page(PDO $pdo): void
 
     // Hitung jumlah per tab (badge) — ikut filter modul + scope sales.
     $counts = ['on_going' => 0, 'deal' => 0, 'closed' => 0];
-    $cq = 'SELECT status, COUNT(*) c FROM offers WHERE property_id = ?' . ($module ? ' AND module = ?' : '') . $scopeSqlC . ' GROUP BY status';
+    $cq = 'SELECT status, COUNT(*) c FROM offers WHERE property_id = ? AND deleted_at IS NULL'
+        . ($module ? ' AND module = ?' : '') . $scopeSqlC . ' GROUP BY status';
     $cs = $pdo->prepare($cq);
     $cs->execute(array_merge([$pid], $module ? [$module] : [], $scopeP));
     foreach ($cs->fetchAll() as $r) {
@@ -1069,7 +1070,7 @@ function offers_list_page(PDO $pdo): void
         "SELECT o.*, c.company_name,
                 (SELECT COUNT(*) FROM offer_items oi WHERE oi.offer_id = o.id) AS komponen
          FROM offers o LEFT JOIN master_clients c ON c.id = o.client_id
-         WHERE o.property_id = ? AND o.status IN ($in)" . ($module ? ' AND o.module = ?' : '') . $scopeSql . " ORDER BY o.id DESC"
+         WHERE o.property_id = ? AND o.deleted_at IS NULL AND o.status IN ($in)" . ($module ? ' AND o.module = ?' : '') . $scopeSql . " ORDER BY o.id DESC"
     );
     $stmt->execute(array_merge([$pid], $tabStatuses[$tab], $module ? [$module] : [], $scopeP));
     $rows = $stmt->fetchAll();

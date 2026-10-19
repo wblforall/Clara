@@ -734,7 +734,8 @@ function mobile_offers_page(PDO $pdo): void
 
     // Hitung badge per tab (ikut filter modul + scope).
     $counts = ['on_going' => 0, 'deal' => 0, 'closed' => 0];
-    $cq = 'SELECT status, COUNT(*) c FROM offers WHERE property_id = ?' . ($module ? ' AND module = ?' : '') . $scopeSqlC . ' GROUP BY status';
+    $cq = 'SELECT status, COUNT(*) c FROM offers WHERE property_id = ? AND deleted_at IS NULL'
+        . ($module ? ' AND module = ?' : '') . $scopeSqlC . ' GROUP BY status';
     $cs = $pdo->prepare($cq);
     $cs->execute(array_merge([$pid], $module ? [$module] : [], $scopePCount));
     foreach ($cs->fetchAll() as $r) {
@@ -744,7 +745,7 @@ function mobile_offers_page(PDO $pdo): void
     $in   = implode(',', array_fill(0, count($tabStatuses[$tab]), '?'));
     $stmt = $pdo->prepare(
         "SELECT o.*, c.company_name FROM offers o LEFT JOIN master_clients c ON c.id = o.client_id
-         WHERE o.property_id = ? AND o.status IN ($in)" . ($module ? ' AND o.module = ?' : '') . $scopeSql . ' ORDER BY o.id DESC'
+         WHERE o.property_id = ? AND o.deleted_at IS NULL AND o.status IN ($in)" . ($module ? ' AND o.module = ?' : '') . $scopeSql . ' ORDER BY o.id DESC'
     );
     $stmt->execute(array_merge([$pid], $tabStatuses[$tab], $module ? [$module] : [], $scopePList));
     $rows = $stmt->fetchAll();

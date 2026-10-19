@@ -73,7 +73,7 @@ function _skp_source_from_offer(PDO $pdo, int $offerId, int $pid): ?array
          LEFT JOIN master_gudang   g ON g.code = o.master_code AND g.property_id = o.property_id
          LEFT JOIN master_media    m ON m.code = o.master_code AND m.property_id = o.property_id
          LEFT JOIN master_cl_units u ON u.code = o.master_code AND u.property_id = o.property_id
-         WHERE o.id = ? AND o.property_id = ? AND o.status = 'deal'"
+         WHERE o.id = ? AND o.property_id = ? AND o.status = 'deal' AND o.deleted_at IS NULL"
     );
     $stmt->execute([$offerId, $pid]);
     $o = $stmt->fetch();
