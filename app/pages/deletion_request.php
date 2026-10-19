@@ -396,12 +396,20 @@ function deletion_request_page(PDO $pdo): void
     // dengan yang diperiksa deletion_request_restore().
     $bolehPulih = $bolehHapus || $bolehPutus;
 
-    // Rekap per PIC — dilihat SEMUA orang yang bisa membuka halaman ini, bukan
-    // hanya superadmin. Terbuka begitu justru gunanya: orang tahu catatannya
-    // sendiri terlihat rekan sekerja, dan itu menekan kebiasaan asal input
-    // lebih efektif daripada teguran.
+    // Rekap per PENGAJU — dilihat SEMUA orang yang bisa membuka halaman ini,
+    // bukan hanya superadmin. Terbuka begitu justru gunanya: orang tahu
+    // catatannya sendiri terlihat rekan sekerja, dan itu menekan kebiasaan asal
+    // input lebih efektif daripada teguran.
+    //
+    // Dikelompokkan per requested_by, BUKAN per pic_name. Judul panelnya
+    // bertanya "siapa yang mengajukan", dan yang mengajukan adalah orang yang
+    // menekan tombolnya — tercatat di requested_by dan selalu terisi. pic_name
+    // itu pemilik datanya, boleh kosong; memakainya di sini membuat pengajuan
+    // bernama jelas tetap tampil sebagai "(tanpa PIC)".
     $rk = $pdo->prepare(
-        "SELECT COALESCE(NULLIF(TRIM(pic_name),''),'(tanpa PIC)') AS pic,
+        "SELECT COALESCE(NULLIF(TRIM(requested_by),''),'(tidak tercatat)') AS pengaju,
+                GROUP_CONCAT(DISTINCT NULLIF(TRIM(pic_name),'')
+                             ORDER BY pic_name SEPARATOR ', ')             AS pic_data,
                 COUNT(*)                                                   AS total,
                 SUM(jenis = 'dobel')                                       AS dobel,
                 SUM(jenis = 'salah_input')                                 AS salah_input,
@@ -412,7 +420,7 @@ function deletion_request_page(PDO $pdo): void
                 COALESCE(SUM(CASE WHEN status = 'dihapus' THEN nilai END), 0) AS nilai_dihapus
            FROM deletion_requests
           WHERE property_id = ?
-          GROUP BY pic
+          GROUP BY pengaju
           ORDER BY dobel DESC, total DESC, nilai_dihapus DESC"
     );
     $rk->execute([$pid]);
@@ -641,7 +649,7 @@ function deletion_request_page(PDO $pdo): void
             $tampil = array_slice($urut, 0, 8);
             ?>
             <p style="margin:0 0 12px;font-size:13.5px;color:var(--ink2)">
-                Paling sering: <strong style="color:var(--ink)"><?= h($puncak['pic']) ?></strong>
+                Paling sering: <strong style="color:var(--ink)"><?= h($puncak['pengaju']) ?></strong>
                 &mdash; <strong><?= (int) $puncak['total'] ?> pengajuan</strong>,
                 terbanyak karena <strong><?= h(mb_strtolower($jenisUrut[$alasanTop], 'UTF-8')) ?></strong>
                 (<?= $nTop ?>&times;).
@@ -659,11 +667,11 @@ function deletion_request_page(PDO $pdo): void
             <div class="dr-graf">
                 <?php foreach ($tampil as $r): $tot = max(1, (int) $r['total']); ?>
                 <div class="dr-grow">
-                    <div class="dr-nama" title="<?= h($r['pic']) ?>"><?= h($r['pic']) ?></div>
+                    <div class="dr-nama" title="<?= h($r['pengaju']) ?>"><?= h($r['pengaju']) ?></div>
                     <div class="dr-track" style="width:<?= round((int) $r['total'] / $maxTotal * 100, 1) ?>%">
                         <?php foreach ($jenisUrut as $k => $label): $n = (int) $r[$k]; if (!$n) continue; ?>
                         <div class="dr-seg" style="flex:<?= $n ?>;background:var(--dr-<?= h($k) ?>)"
-                             title="<?= h($r['pic']) ?> — <?= h($label) ?>: <?= $n ?> pengajuan"></div>
+                             title="<?= h($r['pengaju']) ?> — <?= h($label) ?>: <?= $n ?> pengajuan"></div>
                         <?php endforeach; ?>
                     </div>
                     <div class="dr-tot"><?= (int) $r['total'] ?></div>
@@ -671,7 +679,7 @@ function deletion_request_page(PDO $pdo): void
                 <?php endforeach; ?>
             </div>
             <?php if (count($urut) > count($tampil)): ?>
-            <p class="help" style="margin:8px 0 0"><?= count($urut) - count($tampil) ?> PIC lain dengan pengajuan lebih sedikit
+            <p class="help" style="margin:8px 0 0"><?= count($urut) - count($tampil) ?> pengaju lain dengan pengajuan lebih sedikit
                tidak digambar &mdash; semuanya ada di rincian di bawah.</p>
             <?php endif; ?>
 
@@ -679,7 +687,7 @@ function deletion_request_page(PDO $pdo): void
                      "siapa dan kenapa"; yang butuh angka per kolom membuka ini. */ ?>
             <details style="margin-top:12px">
                 <summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--ink2)">
-                    Lihat angka lengkapnya (<?= count($rekap) ?> PIC)</summary>
+                    Lihat angka lengkapnya (<?= count($rekap) ?> pengaju)</summary>
                 <p class="help" style="margin:8px 0 7px">
                     Dihitung dari <strong>jenis alasan</strong> yang dipilih saat mengajukan, bukan dari tebakan atas teksnya.
                     Klik judul kolom untuk mengurutkan. Terlihat oleh semua orang.
@@ -687,7 +695,8 @@ function deletion_request_page(PDO $pdo): void
                 <div class="table-wrap" data-dr-tabel>
                     <table class="dr-tabel">
                         <thead><tr>
-                            <th data-sort="text">PIC <span class="dr-arr"></span></th>
+                            <th data-sort="text">Pengaju <span class="dr-arr"></span></th>
+                            <th data-sort="text">PIC datanya <span class="dr-arr"></span></th>
                             <th data-sort="num" style="text-align:right">Dobel <span class="dr-arr"></span></th>
                             <th data-sort="num" style="text-align:right">Salah input <span class="dr-arr"></span></th>
                             <th data-sort="num" style="text-align:right">Client batal <span class="dr-arr"></span></th>
@@ -703,7 +712,8 @@ function deletion_request_page(PDO $pdo): void
                               'jadi_dihapus'=>0,'ditolak'=>0,'nilai_dihapus'=>0];
                         foreach ($rekap as $r): foreach ($t as $k => $_) $t[$k] += (float) $r[$k]; ?>
                             <tr>
-                                <td><?= h($r['pic']) ?></td>
+                                <td><?= h($r['pengaju']) ?></td>
+                                <td class="muted"><?= h($r['pic_data'] ?: '—') ?></td>
                                 <td style="text-align:right"><?= (int) $r['dobel'] ?></td>
                                 <td style="text-align:right"><?= (int) $r['salah_input'] ?></td>
                                 <td style="text-align:right"><?= (int) $r['batal'] ?></td>
@@ -717,6 +727,7 @@ function deletion_request_page(PDO $pdo): void
                         </tbody>
                         <tfoot><tr style="background:#f1f5f9;font-weight:700">
                             <td>TOTAL</td>
+                            <td></td>
                             <td style="text-align:right"><?= (int) $t['dobel'] ?></td>
                             <td style="text-align:right"><?= (int) $t['salah_input'] ?></td>
                             <td style="text-align:right"><?= (int) $t['batal'] ?></td>
