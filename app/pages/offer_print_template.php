@@ -71,12 +71,19 @@ $total    = (float) $o['total_calculated'];
  * merakit $o dengan tangan, dan kunci yang tidak ada di sana akan mencetak
  * peringatan PHP ke DALAM PDF yang dikirim ke client.
  */
-$tarifPakai   = (float) ($o['unit_rate'] ?? 0);
 $tarifPublish = (float) ($o['tarif_publish'] ?? 0);
-// Pengali diambil dari nilai sewa yang dicetak di dokumen ini, jadi harga
-// publish memakai dasar yang sama persis dengan harga akhirnya — tidak pernah
-// ada sisa pembulatan, apa pun jenis harganya.
-$pengaliSewa  = $tarifPakai > 0 ? $total / $tarifPakai : 0.0;
+// Pengali diturunkan dari STRUKTUR kontrak (luas × hari, slot × hari, hari,
+// atau jumlah bulan) — bukan dari total ÷ tarif.
+//
+// Dulu dibagi dengan tarif tersimpan supaya hasilnya selalu pas. Itu runtuh
+// pada penawaran yang nilainya di-override: tarif tersimpan bukan lagi harga
+// sebenarnya, dan barisnya mencetak "sebelum diskon Rp 66.600.000" untuk
+// kontrak 3 bulan bertarif Rp 3.700.000/bulan.
+//
+// Tarif yang DIPAKAI pun diturunkan dari totalnya, bukan dibaca dari kolom —
+// dengan begitu tarif yang tercetak selalu benar-benar menghasilkan totalnya.
+$pengaliSewa  = function_exists('clara_pengali_harga') ? clara_pengali_harga($o) : 0.0;
+$tarifPakai   = $pengaliSewa > 0 ? $total / $pengaliSewa : (float) ($o['unit_rate'] ?? 0);
 $diskonAktif  = !empty($o['diskon_aktif']) && $tarifPakai > 0 && $pengaliSewa > 0
               && $tarifPublish > $tarifPakai;
 $publishRp    = $diskonAktif ? round($tarifPublish * $pengaliSewa) : 0.0;

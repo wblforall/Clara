@@ -918,6 +918,53 @@ function sign_token_expired(?string $expiresAt): bool
     return $ts !== false && $ts < time();
 }
 
+/**
+ * Pengali harga sebuah penawaran/transaksi — berapa "satuan" yang dikalikan tarif.
+ *
+ *   daily_area  : luas × hari      daily_slot : slot × hari
+ *   daily_point : hari             monthly    : jumlah bulan
+ *   fixed       : 1
+ *
+ * Diturunkan dari STRUKTUR kontraknya, BUKAN dari total ÷ tarif.
+ *
+ * Membagi total dengan tarif kelihatan lebih mudah dan selalu "pas", tetapi
+ * salah begitu nilainya di-override: tarif yang tersimpan tidak lagi
+ * mencerminkan harga sebenarnya, dan baris diskon memakai pengali karangan.
+ * Pernah mencetak "Harga Sewa sebelum diskon Rp 66.600.000" pada kontrak 3
+ * bulan yang tarif publishnya Rp 3.700.000/bulan — mestinya Rp 11.100.000.
+ */
+function clara_pengali_harga(array $o): float
+{
+    $hari = 0;
+    $s = $o['start_date'] ?? null;
+    $e = $o['end_date'] ?? null;
+    if ($s && $e) {
+        $ts = strtotime((string) $s); $te = strtotime((string) $e);
+        if ($ts !== false && $te !== false && $te >= $ts) $hari = (int) floor(($te - $ts) / 86400) + 1;
+    }
+    $bulan = (int) ($o['contract_months'] ?? 0);
+    if ($bulan < 1 && $s && $e) {
+        $ts = strtotime((string) $s); $te = strtotime((string) $e);
+        if ($ts !== false && $te !== false && $te >= $ts) {
+            $bulan = ((int) date('Y', $te) - (int) date('Y', $ts)) * 12
+                   + ((int) date('n', $te) - (int) date('n', $ts));
+            if ((int) date('j', $te) >= (int) date('j', $ts)) $bulan++;
+        }
+    }
+    $bulan = max(1, $bulan);
+    $luas  = max(1.0, (float) ($o['area_sqm'] ?? 0));
+    $slot  = max(1.0, (float) ($o['slots'] ?? 0));
+
+    return match ((string) ($o['pricing_type'] ?? '')) {
+        'daily_point' => (float) $hari,
+        'daily_slot'  => $slot * $hari,
+        'daily_area'  => $luas * $hari,
+        'monthly'     => (float) $bulan,
+        'fixed'       => 1.0,
+        default       => 0.0,
+    };
+}
+
 function validate_password(string $pw): ?string
 {
     if (strlen($pw) < 8)                          return 'Password minimal 8 karakter.';

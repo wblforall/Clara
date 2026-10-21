@@ -1331,11 +1331,16 @@ function offer_view(PDO $pdo): void
                kecil daripada yang diingatnya tanpa satu pun petunjuk kenapa —
                dan menyangka sistemnya yang salah hitung. */
             $tarifPub = (float) ($offer['tarif_publish'] ?? 0);
-            $tarifPak = (float) ($offer['unit_rate'] ?? 0);
+            // Pengali & tarif yang dipakai diturunkan dari struktur kontrak dan
+            // totalnya — sama persis dengan yang dipakai mencetak surat, supaya
+            // angka di layar tidak pernah berbeda dengan yang diterima client.
+            $pengali  = clara_pengali_harga($offer);
+            $tarifPak = $pengali > 0
+                ? (float) $offer['total_calculated'] / $pengali
+                : (float) ($offer['unit_rate'] ?? 0);
             $diskonOn = !empty($offer['diskon_aktif']) && $tarifPub > $tarifPak && $tarifPak > 0;
             if ($diskonOn) {
                 $pctDis   = ($tarifPub - $tarifPak) / $tarifPub * 100;
-                $pengali  = (float) $offer['total_calculated'] / $tarifPak;
                 $sblmDisk = round($tarifPub * $pengali);
                 $pctTeks  = rtrim(rtrim(number_format($pctDis, 2, ',', '.'), '0'), ',');
                 $row('Tarif publish', $rp($tarifPub));
@@ -2844,7 +2849,13 @@ function offer_form(PDO $pdo): void
                 // Ringkasan + estimasi spread
                 var res = document.getElementById('kalkulasi-result');
                 if (res) { res.style.display = ''; res.innerHTML = 'Kalkulasi: <strong>' + rp(calc) + '</strong> · ' + days + ' hari · ' + months + ' bulan' + (override > 0 ? ' · <span style="color:#b45309">override ' + rp(override) + '</span>' : ''); }
-                ringkasBiaya(total, months, pakaiDiskon ? tarifPublish : 0, rate);
+                // Tarif yang DIPAKAI diturunkan dari total, bukan dibaca dari kotak
+                // Rate: begitu Harga Nego Final diisi, tarif di kotak bukan lagi
+                // harga sebenarnya. calc = rate x pengali, jadi pengalinya
+                // didapat tanpa menghitung ulang struktur kontraknya di sini.
+                var pengaliStruktur = rate > 0 ? calc / rate : 0;
+                var tarifEfektif = pengaliStruktur > 0 ? total / pengaliStruktur : rate;
+                ringkasBiaya(total, months, pakaiDiskon ? tarifPublish : 0, tarifEfektif);
                 var sp = document.getElementById('kalkulasi-spread');
                 if (sp) {
                     if (effectiveBilling() === 'spread' && months > 1 && total > 0 && s) {
