@@ -118,7 +118,10 @@ foreach ($grup as $rows) {
 }
 usort($menyimpang, fn($a, $b) => $b['selisih'] <=> $a['selisih']);
 
-$bulanSS = $ss['bulan'];
+// Hanya bulan yang diminta. Menyertakan bulan lain membuat orang mengira
+// semuanya harus dikerjakan sekaligus, lalu tidak jadi mengerjakan apa pun.
+$bulanSS = array_intersect_key($ss['bulan'], array_flip($fokus));
+if (!$bulanSS) $bulanSS = $ss['bulan'];
 ksort($bulanSS);
 $totSS = 0.0; $totCL = 0.0; $tabel = [];
 foreach ($bulanSS as $k => $v) {
@@ -238,7 +241,7 @@ ob_start(); ?>
     Kolom CLARA dibaca langsung dari database saat dicetak.
     Pembanding: <?= $h($ss['sumber'] ?? 'spreadsheet') ?>.</div>
 
-<h2>1. Selisih per bulan</h2>
+<h2>1. Selisih <?= count($bulanSS) === 1 ? h((string) array_key_first($bulanSS)) : 'per bulan' ?></h2>
 <table>
     <tr><th>Bulan</th><th class="n">Spreadsheet</th><th class="n">CLARA</th><th class="n">Selisih</th><th>Artinya</th></tr>
     <?php foreach ($tabel as $t): ?>
@@ -256,8 +259,9 @@ ob_start(); ?>
         <td class="n"><?= ($totCL - $totSS > 0 ? '+' : '&minus;') . number_format(abs($totCL - $totSS), 0, ',', '.') ?></td>
         <td></td></tr>
 </table>
-<p class="muted" style="margin-top:-3px">Bulan bertanda hijau adalah yang dirinci di bawah.
-Selisih <b>minus</b> berarti CLARA lebih kecil &mdash; hampir selalu karena ada yang belum diinput.</p>
+<p class="muted" style="margin-top:-3px">Selisih <b>minus</b> berarti CLARA lebih kecil &mdash;
+hampir selalu karena ada yang belum diinput. Spreadsheet dipakai sebagai patokan;
+seluruh langkah di dokumen ini dikerjakan di CLARA.</p>
 
 <?php foreach ($fokus as $bln):
     $qRinci->execute([$pid, $pic, $bln]);
@@ -333,7 +337,7 @@ Kalau ternyata berbeda, berarti yang kiri belum diinput dan yang kanan perlu dip
 <?php endforeach; ?>
 
 <?php if ($menyimpang): ?>
-<h2>3. Nilai yang menyimpang dari siklus sebelumnya</h2>
+<h2>Nilai yang menyimpang dari siklus sebelumnya</h2>
 <p>Penyewa berikut nilainya hampir selalu sama tiap siklus, tetapi ada satu siklus yang jauh
 berbeda. Yang paling sering: <b>tarif ikut terketik di kolom nilai</b>. Periksa dan betulkan
 lewat menu asalnya.</p>
@@ -358,74 +362,64 @@ dengan <b>tarif</b>-nya.</p>
 <?php endif; ?>
 
 <?php
-// ── Jembatan: apakah kedua sisi bisa bertemu? ────────────────────────────────
-// Dihitung hanya untuk bulan yang punya catatan sisi spreadsheet. Tanpa catatan
-// itu, "100% sama" tidak bisa dijanjikan — dan lebih baik tidak dijanjikan
-// daripada dijanjikan lalu meleset.
-$adaJembatan = false;
+// ── Langkah agar bulan ini cocok ────────────────────────────────────────────
+//
+// Semua tindakan ada di sisi CLARA: spreadsheet jadi patokan, CLARA yang
+// menyesuaikan. Yang kurang diinput, yang bulannya berbeda digeser
+// pengakuannya — tidak ada nilai yang dibuang.
 foreach ($fokus as $bln) {
-    $cat = $ss['catatan_spreadsheet'][$bln] ?? [];
-    if (!$cat) continue;
-    $adaJembatan = true;
     $qBulan->execute([$pid, $pic, $bln]);
     $clSekarang = (float) $qBulan->fetchColumn();
-    $ssSekarang = (float) ($ss['bulan'][$bln] ?? 0);
+    $ssTarget   = (float) ($ss['bulan'][$bln] ?? 0);
 
     $qRinci->execute([$pid, $pic, $bln]);
-    $clRows2 = $qRinci->fetchAll();
-    [$ck, $rg, $kr, $lb] = sandingkan($ss['rincian'][$bln] ?? [], $clRows2);
-    // Yang bertanda TBC tidak ikut diinput — itu proyeksi, bukan kesepakatan.
-    // Baris "perlu dipastikan" ikut dihitung sebagai BELUM ADA, kecuali memang
-    // sudah dipastikan sama dan dicatat di berkas banding. Menganggapnya cocok
-    // begitu saja akan menyembunyikan kekurangan; menganggapnya hilang semua
-    // akan melebih-lebihkan. Keputusannya dibuat manusia, bukan ditebak di sini.
+    [$ck, $rg, $kr, $lb] = sandingkan($ss['rincian'][$bln] ?? [], $qRinci->fetchAll());
     $raguSama = array_map('mb_strtolower', (array) ($ss['ragu_sama'][$bln] ?? []));
-    $raguKurang = [];
     foreach ($rg as [$sRow, $cRow]) {
-        if (!in_array(mb_strtolower((string) $sRow['ket']), $raguSama, true)) $raguKurang[] = $sRow;
+        if (!in_array(mb_strtolower((string) $sRow['ket']), $raguSama, true)) $kr[] = $sRow;
     }
-    $tambahCl = 0.0;
-    foreach (array_merge($kr, $raguKurang) as $k)
-        if (stripos((string) $k['ket'], 'TBC') === false) $tambahCl += (float) $k['nilai'];
-    $nInput = count(array_filter(array_merge($kr, $raguKurang),
-        fn($k) => stripos((string) $k['ket'], 'TBC') === false));
-    $tambahSs = 0.0; $kurangSs = 0.0;
-    foreach ($cat as $c) {
-        if (($c['arah'] ?? '') === 'tambah') $tambahSs += (float) $c['nilai'];
-        else                                 $kurangSs += (float) $c['nilai'];
-    }
-    $clAkhir = $clSekarang + $tambahCl;
-    $ssAkhir = $ssSekarang + $tambahSs - $kurangSs;
+    usort($kr, fn($a, $b) => (float) $b['nilai'] <=> (float) $a['nilai']);
+    $jmlInput = array_sum(array_column($kr, 'nilai'));
+    $aksi     = $ss['aksi_clara'][$bln] ?? [];
+    $jmlAksi  = array_sum(array_map(fn($a) => (float) $a['nilai'], $aksi));
+    $hasil    = $clSekarang + $jmlInput + $jmlAksi;
 ?>
-<h2>Apakah bisa 100% sama? &mdash; <?= $h($bln) ?></h2>
-<p>Jawaban jujurnya: <b>tidak, kalau hanya <?= $h($pic) ?> yang memperbaiki.</b>
-Sebagian selisihnya ada di sisi spreadsheet, dan itu di luar kendalinya.
-Dua sisi harus sama-sama dibetulkan.</p>
+<h2>Langkah agar <?= $h($bln) ?> cocok dengan spreadsheet</h2>
 <table>
-    <tr><th style="width:58%">Langkah</th><th class="n">CLARA</th><th class="n">Spreadsheet</th></tr>
-    <tr><td>Keadaan sekarang</td><td class="n"><?= $rp($clSekarang) ?></td><td class="n"><?= $rp($ssSekarang) ?></td></tr>
-    <tr><td><b><?= $h($pic) ?></b> menginput <?= $nInput ?> baris yang belum ada</td>
-        <td class="n hijau">+<?= number_format($tambahCl, 0, ',', '.') ?></td><td class="n">&mdash;</td></tr>
-    <?php foreach ($cat as $c): ?>
-    <tr><td><b>Tim spreadsheet</b> &mdash; <?= $h(mb_substr((string) $c['ket'], 0, 95)) ?></td>
-        <td class="n">&mdash;</td>
-        <td class="n <?= ($c['arah'] ?? '') === 'tambah' ? 'hijau' : 'merah' ?>">
-            <?= (($c['arah'] ?? '') === 'tambah' ? '+' : '&minus;') . number_format((float) $c['nilai'], 0, ',', '.') ?></td></tr>
+    <tr><th style="width:64%">Langkah di CLARA</th><th class="n">Nilai</th><th class="n">Jadi</th></tr>
+    <tr><td>Keadaan sekarang</td><td class="n">&mdash;</td><td class="n"><?= $rp($clSekarang) ?></td></tr>
+    <?php $jalan = $clSekarang; foreach ($kr as $k): $jalan += (float) $k['nilai']; ?>
+    <tr class="tambah"><td>Input: <?= $h(mb_substr((string) $k['ket'], 0, 70)) ?></td>
+        <td class="n hijau">+<?= number_format((float) $k['nilai'], 0, ',', '.') ?></td>
+        <td class="n"><?= $rp($jalan) ?></td></tr>
+    <?php endforeach; ?>
+    <?php foreach ($aksi as $a): $jalan += (float) $a['nilai']; ?>
+    <tr class="buang"><td>Geser: <?= $h(mb_substr((string) $a['ket'], 0, 70)) ?></td>
+        <td class="n"><?= ((float) $a['nilai'] >= 0 ? '+' : '&minus;')
+            . number_format(abs((float) $a['nilai']), 0, ',', '.') ?></td>
+        <td class="n"><?= $rp($jalan) ?></td></tr>
     <?php endforeach; ?>
     <tr style="background:#ecfdf5;font-weight:700">
-        <td>HASIL AKHIR</td><td class="n"><?= $rp($clAkhir) ?></td><td class="n"><?= $rp($ssAkhir) ?></td></tr>
-    <tr style="font-weight:700">
-        <td>SELISIH</td>
-        <td class="n" colspan="2"><?= round($clAkhir - $ssAkhir) == 0
-            ? '<span class="hijau">Rp 0 &mdash; SAMA PERSIS</span>'
-            : '<span class="merah">' . $rp($clAkhir - $ssAkhir) . '</span>' ?></td></tr>
+        <td>HASIL</td><td class="n">&mdash;</td><td class="n"><?= $rp($hasil) ?></td></tr>
+    <tr style="font-weight:700"><td>Spreadsheet <?= $h($bln) ?></td><td class="n">&mdash;</td>
+        <td class="n"><?= $rp($ssTarget) ?></td></tr>
+    <tr style="font-weight:700"><td>SELISIH</td><td class="n">&mdash;</td>
+        <td class="n"><?= round($hasil - $ssTarget) == 0
+            ? '<span class="hijau">Rp 0 &mdash; COCOK</span>'
+            : '<span class="merah">' . $rp($hasil - $ssTarget) . '</span>' ?></td></tr>
 </table>
-<div class="box <?= round($clAkhir - $ssAkhir) == 0 ? '' : 'warn' ?>">
-    <p style="margin:0">Kalau hanya <?= $h($pic) ?> yang mengerjakan bagiannya, CLARA berhenti di
-    <b><?= $rp($clAkhir) ?></b> sementara spreadsheet tetap <b><?= $rp($ssSekarang) ?></b> &mdash;
-    masih beda <b><?= $rp(abs($clAkhir - $ssSekarang)) ?></b>. Angka itu <b>bukan kesalahan input</b>,
-    melainkan dua catatan di sisi spreadsheet yang perlu dibereskan tim pemegang berkasnya.</p>
+
+<?php foreach ($aksi as $a): ?>
+<div class="box warn">
+    <p style="margin:0"><span class="tebal">Cara menggesernya.</span>
+    <?= $h($a['cara'] ?? '') ?></p>
 </div>
+<?php endforeach; ?>
+
+<?php foreach (($ss['catatan_khusus'][$bln] ?? []) as $c): ?>
+<h3><?= $h($c['judul'] ?? 'Catatan') ?></h3>
+<p style="margin:0 0 8px"><?= $h($c['isi'] ?? '') ?></p>
+<?php endforeach; ?>
 <?php } ?>
 
 <?php
