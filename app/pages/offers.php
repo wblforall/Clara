@@ -3163,10 +3163,15 @@ function offer_save(PDO $pdo): void
     }
     // #3 — parse rupiah aman via helper (titik ribuan / koma desimal), bukan strip digit.
     $override = parse_rupiah(post('override_amount', '')) ?: 0.0;
-    // Harga diskon dipakai = totalnya HARUS hasil kalkulasi tarif nego. Kalau
-    // override manual dibiarkan menang, tarif yang tercetak tidak lagi cocok
-    // dengan totalnya — itulah selisih seribu-dua ribu rupiah yang dikeluhkan.
-    if ($diskonAktif) $override = 0.0;
+    // CATATAN: override TIDAK dikosongkan walau harga diskon menyala.
+    //
+    // Sempat dibuat begitu supaya tarif yang tercetak selalu cocok dengan
+    // totalnya. Akibatnya fatal: sales mengetik Harga Nego Final, angkanya
+    // hilang diam-diam, dan totalnya melorot ke hasil kalkulasi tarif —
+    // berulang kali, tanpa satu pun pesan. Menghapus angka yang diketik orang
+    // tanpa memberitahu jauh lebih buruk daripada tarif cetak yang kurang pas.
+    // Baris diskon tetap konsisten karena pengalinya diturunkan dari TOTAL
+    // (lihat offer_print_template.php), jadi publish - diskon = total selalu.
     $final    = $override > 0 ? $override : $calc;
     // Harga / Bulan. Untuk kontrak prorata, membagi total dengan jumlah bulan
     // menghasilkan rata-rata (mis. Rp 8.297.619) — bukan tarif yang disepakati

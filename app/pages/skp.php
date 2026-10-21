@@ -2160,10 +2160,10 @@ function _skp_simpan_periode(PDO $pdo, int $pid, int $trxId, ?array $skp, array 
                 && $tarifDiskonKtk < $tarifPublishKtk) ? $tarifDiskonKtk : $tarifPublishKtk;
     // Kosong = biarkan sistem menghitung. Diisi = itu harga kesepakatannya.
     $totalKetik = parse_rupiah((string) post('p_total', '0'));
-    // Diskon dipakai = total ikut kalkulasi tarif nego, bukan angka ketikan —
-    // supaya tarif yang tercetak selalu cocok dengan totalnya.
-    if (post('diskon_aktif') && $tarifDiskonKtk > 0 && $tarifPublishKtk > 0
-        && $tarifDiskonKtk < $tarifPublishKtk) $totalKetik = 0.0;
+    // Harga nego yang diketik TIDAK dibuang walau harga diskon menyala —
+    // lihat alasannya di offers.php: angka yang diketik orang tidak boleh
+    // hilang diam-diam. Baris diskon tetap konsisten karena pengalinya
+    // diturunkan dari total, bukan dari tarif.
     $sah = function (string $t): bool {
         $d = DateTimeImmutable::createFromFormat('Y-m-d', $t);
         return $d instanceof DateTimeImmutable && $d->format('Y-m-d') === $t;
