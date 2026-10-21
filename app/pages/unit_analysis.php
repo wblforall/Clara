@@ -108,7 +108,7 @@ function _ua_master(PDO $pdo, int $pid, string $module): array
         $st = $pdo->prepare('SELECT code, media_type, location, point, size, quantity, slots, rate, pricing_type, status FROM master_media WHERE property_id = ? ORDER BY sort_order, id');
         $st->execute([$pid]);
         $satuan = ['daily_point' => 'per hari per titik', 'daily_slot' => 'per hari per slot', 'monthly' => 'per bulan',
-                   'fixed' => 'paket (tetap)', 'daily_area' => 'per m² per hari'];
+                   'fixed' => 'paket (tetap)', 'daily_area' => 'per m² per hari', 'monthly_area' => 'per m² per bulan'];
         $basis  = ['daily_point' => 'hari', 'monthly' => 'bulan'];
         foreach ($st->fetchAll() as $r) {
             $out[$r['code']] = [

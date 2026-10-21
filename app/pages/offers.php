@@ -586,6 +586,9 @@ function _offer_calc_total(string $pricing, float $rate, float $area, float $slo
         'daily_slot'  => $rate * max(1, $slots) * $days,
         'daily_area'  => $rate * max(1, $area) * $days,
         'monthly'     => $rate * max(1, $months), // gudang: harga/bulan × jumlah bulan
+        // Tarif per m² per BULAN — dipakai kontrak island/booth yang harganya
+        // dihitung per meter, bukan harga datar sebulan.
+        'monthly_area' => $rate * max(1, $area) * max(1, $months),
         'fixed'       => $rate,                    // nilai tetap sekali kontrak
         default       => 0.0,
     };
@@ -1918,7 +1921,7 @@ function offer_form(PDO $pdo): void
                 </div>
                 <div><label>Pricing Type</label>
                     <select name="pricing_type" id="pricing_type" <?= $disabled ?>>
-                        <?php foreach (['daily_area', 'daily_slot', 'daily_point', 'monthly', 'fixed'] as $o): ?><option <?= ($offer['pricing_type'] ?? '') === $o ? 'selected' : '' ?>><?= $o ?></option><?php endforeach; ?>
+                        <?php foreach (['daily_area', 'daily_slot', 'daily_point', 'monthly', 'monthly_area', 'fixed'] as $o): ?><option <?= ($offer['pricing_type'] ?? '') === $o ? 'selected' : '' ?>><?= $o ?></option><?php endforeach; ?>
                     </select>
                 </div>
                 <?php /* Bila harga diskon dipakai, kotak Rate ini adalah TARIF PUBLISH (harga
@@ -2816,6 +2819,8 @@ function offer_form(PDO $pdo): void
                     case 'daily_point': calc = rate * days; break;
                     case 'daily_slot':  calc = rate * Math.max(1, slots) * days; break;
                     case 'daily_area':  calc = rate * Math.max(1, area) * days; break;
+                    case 'monthly_area':
+                        calc = rate * Math.max(1, area) * Math.max(1, months); break;
                     case 'monthly':
                         // Prorata bulan kalender: bulan yang tidak penuh dihitung
                         // per hari bulan itu. Harus sama persis dengan

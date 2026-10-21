@@ -29,14 +29,22 @@ final class AllocationService
         $area = max(0.0, (float) ($trx['area_sqm'] ?? 0));
         $contractMonths = (int) ($trx['contract_months'] ?? 0);
 
-        if ($pricingType === 'monthly') {
+        if ($pricingType === 'monthly' || $pricingType === 'monthly_area') {
+            // monthly       : tarifnya harga per bulan (datar)
+            // monthly_area  : tarifnya harga per m² per bulan — dikalikan luas
+            //
+            // Hanya besar sewa per bulannya yang berbeda; pembagian ke bulan
+            // kalender dan siklusnya sama persis, jadi keduanya lewat jalur ini.
+            $perBulan = $pricingType === 'monthly_area'
+                ? $unitRate * max(1.0, $area)
+                : $unitRate * $qty;
             // Dua model penagihan, dipilih per kontrak:
             //   prorata_kalender = 1 → bulan kalender (ikut surat kertas)
             //   selain itu       → siklus tanggal-ke-tanggal (perilaku lama)
             if (!empty($trx['prorata_kalender'])) {
-                return self::monthlyCalendarAllocations($start, $end, $unitRate * $qty, $qty, $slots, $area);
+                return self::monthlyCalendarAllocations($start, $end, $perBulan, $qty, $slots, $area);
             }
-            $cycles = self::monthlyCycles($start, $end, $contractMonths, $unitRate * $qty);
+            $cycles = self::monthlyCycles($start, $end, $contractMonths, $perBulan);
             return self::splitCyclesToCalendarMonths($cycles, $pricingType, $qty, $slots, $area);
         }
 
@@ -98,7 +106,7 @@ final class AllocationService
             // hasil itu dibuang dan diganti siklus tanggal yang dibagi rata —
             // totalnya tetap, tetapi angka tiap bulannya salah.
             if (empty($trx['prorata_kalender'])
-                && ($trx['pricing_type'] ?? '') === 'monthly'
+                && in_array($trx['pricing_type'] ?? '', ['monthly', 'monthly_area'], true)
                 && in_array($cycleRecognition, ['cycle_start', 'cycle_end'], true)
             ) {
                 // Alokasi per siklus — tiap cycle diakui di 1 period_key tanpa dipecah
@@ -603,6 +611,9 @@ final class AllocationService
             'daily_slot' => $qty * $slots * $days,
             'daily_area' => max(1.0, $area) * $days,
             'monthly' => $qty * $days,
+            // Sewa per m² per bulan tetap memakan luas — occupancy-nya dihitung
+            // seperti sewa harian per m², bukan seperti sewa bulanan datar.
+            'monthly_area' => max(1.0, $area) * $days,
             default => $qty * $days,
         };
     }

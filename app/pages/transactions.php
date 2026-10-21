@@ -564,7 +564,7 @@ function transaction_form(PDO $pdo): void
                     <select name="pricing_type" id="pricing_type">
                         <?php
                         $defaultPricing = $prefill['pricing_type'] ?? ($module === 'gudang' ? 'monthly' : 'daily_point');
-                        foreach (['daily_point', 'daily_slot', 'daily_area', 'monthly', 'fixed'] as $opt): ?>
+                        foreach (['daily_point', 'daily_slot', 'daily_area', 'monthly', 'monthly_area', 'fixed'] as $opt): ?>
                             <option value="<?= h($opt) ?>" <?= $defaultPricing === $opt ? 'selected' : '' ?>><?= h($opt) ?></option>
                         <?php endforeach; ?>
                     </select>
@@ -946,6 +946,7 @@ function transaction_form(PDO $pdo): void
                     case 'daily_point': total = rate * days; break;
                     case 'daily_slot':  total = rate * slots * days; break;
                     case 'daily_area':  total = rate * Math.max(1, area) * days; break;
+                    case 'monthly_area': total = rate * Math.max(1, area); break;   // sebulan, sama seperti 'monthly' di pratinjau ini
                     case 'monthly':     total = rate; break;
                     case 'fixed':       total = rate; break;
                 }
@@ -1361,7 +1362,7 @@ function transaction_edit(PDO $pdo): void
                 <div>
                     <label>Pricing Type</label>
                     <select name="pricing_type" id="pricing_type">
-                        <?php foreach (['daily_point', 'daily_slot', 'daily_area', 'monthly', 'fixed'] as $opt): ?>
+                        <?php foreach (['daily_point', 'daily_slot', 'daily_area', 'monthly', 'monthly_area', 'fixed'] as $opt): ?>
                             <option value="<?= h($opt) ?>" <?= $opt === $trx['pricing_type'] ? 'selected' : '' ?>><?= h($opt) ?></option>
                         <?php endforeach; ?>
                     </select>
@@ -1738,6 +1739,7 @@ function transaction_edit(PDO $pdo): void
                     case 'daily_point': total = rate * days; break;
                     case 'daily_slot':  total = rate * slots * days; break;
                     case 'daily_area':  total = rate * Math.max(1, area) * days; break;
+                    case 'monthly_area': total = rate * Math.max(1, area); break;   // sebulan, sama seperti 'monthly' di pratinjau ini
                     case 'monthly':     total = rate; break;
                     case 'fixed':       total = rate; break;
                 }

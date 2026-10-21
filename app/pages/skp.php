@@ -578,6 +578,7 @@ function _skp_satuan_tarif(string $pricingType): string
 {
     return match ($pricingType) {
         'daily_area'  => 'Biaya Sewa / m² / hari',
+        'monthly_area' => 'Biaya Sewa / m² / bulan',
         'daily_slot'  => 'Biaya Sewa / slot / hari',
         'daily_point' => 'Biaya Sewa / titik / hari',
         'monthly'     => 'Biaya Sewa / bulan',

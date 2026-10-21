@@ -960,6 +960,7 @@ function clara_pengali_harga(array $o): float
         'daily_slot'  => $slot * $hari,
         'daily_area'  => $luas * $hari,
         'monthly'     => (float) $bulan,
+        'monthly_area' => $luas * $bulan,
         'fixed'       => 1.0,
         default       => 0.0,
     };

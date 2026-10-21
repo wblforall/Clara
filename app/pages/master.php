@@ -370,7 +370,7 @@ function master_form(PDO $pdo, array $masterConfig): void
                             </script>
                         <?php elseif ($name === 'pricing_type'): ?>
                             <select name="<?= h($name) ?>">
-                                <?php foreach (['daily_point', 'daily_slot', 'daily_area', 'monthly', 'fixed'] as $opt): ?>
+                                <?php foreach (['daily_point', 'daily_slot', 'daily_area', 'monthly', 'monthly_area', 'fixed'] as $opt): ?>
                                     <option value="<?= h($opt) ?>" <?= ($row[$name] ?? '') === $opt ? 'selected' : '' ?>><?= h($opt) ?></option>
                                 <?php endforeach; ?>
                             </select>
