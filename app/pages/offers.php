@@ -1326,11 +1326,40 @@ function offer_view(PDO $pdo): void
             $row('Total Kontrak', $rp($offer['total_calculated']));
             if (!empty($offer['override_amount'])) $row('Harga Nego Final', $rp($offer['override_amount']));
             $row('Harga / Bulan', $rp($offer['monthly_amount']));
+            /* Harga diskon memotong nilai kontraknya, bukan sekadar keterangan
+               di surat. Tanpa baris ini orang melihat total yang jauh lebih
+               kecil daripada yang diingatnya tanpa satu pun petunjuk kenapa —
+               dan menyangka sistemnya yang salah hitung. */
+            $tarifPub = (float) ($offer['tarif_publish'] ?? 0);
+            $tarifPak = (float) ($offer['unit_rate'] ?? 0);
+            $diskonOn = !empty($offer['diskon_aktif']) && $tarifPub > $tarifPak && $tarifPak > 0;
+            if ($diskonOn) {
+                $pctDis   = ($tarifPub - $tarifPak) / $tarifPub * 100;
+                $pengali  = (float) $offer['total_calculated'] / $tarifPak;
+                $sblmDisk = round($tarifPub * $pengali);
+                $pctTeks  = rtrim(rtrim(number_format($pctDis, 2, ',', '.'), '0'), ',');
+                $row('Tarif publish', $rp($tarifPub));
+                $row('Tarif setelah diskon', $rp($tarifPak)
+                    . ' <span style="color:var(--muted);font-weight:400">(diskon ' . h($pctTeks) . '%)</span>');
+                $row('Nilai sebelum diskon', $rp($sblmDisk));
+            }
             $row('DP', $rp($offer['dp_amount']) . ' <span style="color:var(--muted);font-weight:400">(' . h(rtrim(rtrim(number_format((float)$offer['dp_months'],1,',',''),'0'),',')) . ' bln)</span>');
             $row('Deposit', $rp($offer['deposit_amount']) . ' <span style="color:var(--muted);font-weight:400">(' . h(rtrim(rtrim(number_format((float)$offer['deposit_months'],1,',',''),'0'),',')) . ' bln)</span>');
             $row('Recurring', !empty($offer['recurring_flag']) ? 'Ya' : 'Tidak');
             if (!empty($offer['keterangan'])) $row('Keterangan', h($offer['keterangan']));
             ?>
+            <?php if ($diskonOn): ?>
+            <div style="margin-top:12px;border:1px solid #cbd5e1;border-left:3px solid <?= $pctDis >= 50 ? '#b91c1c' : '#0D9488' ?>;background:<?= $pctDis >= 50 ? '#fef2f2' : '#f8fafc' ?>;border-radius:8px;padding:10px 13px;font-size:13px">
+                <b>Harga diskon menyala.</b> Nilai kontraknya dihitung dari <b>tarif setelah diskon</b>:
+                <?= $rp($sblmDisk) ?> &minus; diskon <?= h($pctTeks) ?>% = <b><?= $rp($offer['total_calculated']) ?></b>.
+                <?php if ($pctDis >= 50): ?>
+                <br><span style="color:#b91c1c"><b>Periksa lagi &mdash; potongan <?= h($pctTeks) ?>% tidak wajar.</b>
+                Kalau yang dimaksud harga kontraknya <?= $rp($sblmDisk) ?>, lepas centang
+                <b>Tampilkan harga diskon</b> di formulirnya, atau betulkan isian
+                <b>tarif setelah diskon</b>.</span>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
         </div>
 
         <?php
