@@ -484,7 +484,32 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                      informasi membuat client menghitung ulang mencari bedanya,
                      dan tidak ada bedanya. Tabel SKP sudah lama ringkas begini. */ ?>
             <?= $BARIS_DISKON() ?>
-            <tr class="sub"><td class="lbl">Harga Sewa / Periode</td><td class="amt"><?= $rp($total) ?></td></tr>
+            <?php /* Kontrak berbulan: harga per bulannya ikut dicetak.
+                     "Harga Sewa / Periode" terbaca ganda — bisa diartikan harga
+                     TIAP periode tagihan, bisa juga harga untuk SELURUH periode
+                     sewa. Client (dan sales) pernah membacanya sebagai harga per
+                     bulan lalu bingung kenapa PPN-nya tidak cocok. SKP sudah
+                     lama mencetak keduanya: "Biaya Sewa / Bulan" lalu "Total
+                     Biaya Sewa". Surat penawaran disamakan. */ ?>
+            <?php
+            $blnKontrak = $contractMonths > 1 ? $contractMonths : 0;
+            if (!$blnKontrak && $o['start_date'] && $o['end_date']) {
+                $ts = strtotime((string) $o['start_date']); $te = strtotime((string) $o['end_date']);
+                if ($ts !== false && $te !== false && $te >= $ts) {
+                    $b = ((int) date('Y', $te) - (int) date('Y', $ts)) * 12
+                       + ((int) date('n', $te) - (int) date('n', $ts));
+                    if ((int) date('j', $te) >= (int) date('j', $ts)) $b++;
+                    $blnKontrak = $b > 1 ? $b : 0;
+                }
+            }
+            $perBulan = $blnKontrak > 1 ? round($total / $blnKontrak) : 0.0;
+            ?>
+            <?php if ($perBulan > 0): ?>
+            <tr><td class="lbl">Harga Sewa / Bulan</td><td class="amt"><?= $rp($perBulan) ?></td></tr>
+            <?php endif; ?>
+            <tr class="sub"><td class="lbl">Harga Sewa / Periode<?= $blnKontrak > 1
+                ? ' <span class="muted" style="font-weight:400">(' . $blnKontrak . ' bulan)</span>' : '' ?></td>
+                <td class="amt"><?= $rp($total) ?></td></tr>
         <?php endif; ?>
         <?php if ($listrik > 0): ?>
             <?php /* Dirinci per komponen: sewa dan listrik masing-masing dengan
