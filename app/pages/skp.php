@@ -135,7 +135,7 @@ function _skp_tarif_publish_post(): float
     return ($publish > 0 && $diskon > 0 && $diskon < $publish) ? $publish : 0.0;
 }
 
-function _skp_amounts(float $total, float $ratePerM, float $deposit, float $listrik = 0.0, bool $depositLunas = false, bool $kenaPpn = true, float $scPerBulan = 0.0, int $scBulan = 1, float $tarifPublish = 0.0, bool $diskonAktif = false): array
+function _skp_amounts(float $total, float $ratePerM, float $deposit, float $listrik = 0.0, bool $depositLunas = false, bool $kenaPpn = true, float $scPerBulan = 0.0, int $scBulan = 1, float $tarifPublish = 0.0, bool $diskonAktif = false, float $pengaliStruktur = 0.0): array
 {
     // PPN dihitung per komponen (sewa & listrik) supaya bisa dirinci; jumlahnya
     // dipakai sebagai PPN total agar penjumlahan di dokumen selalu pas.
@@ -169,21 +169,28 @@ function _skp_amounts(float $total, float $ratePerM, float $deposit, float $list
      * Diskon hanya berlaku pada SEWA. Listrik, service charge, dan deposit
      * ditagih apa adanya dan tidak ikut didiskon.
      */
-    $pengali    = $ratePerM > 0 ? $sewa / $ratePerM : 0.0;
-    $publishSah = $diskonAktif && $ratePerM > 0 && $pengali > 0 && $tarifPublish > $ratePerM;
+    // Pengali dari STRUKTUR kontrak bila diketahui (luas x hari, slot x hari,
+    // hari, atau jumlah bulan). Membaginya dengan tarif tersimpan selalu "pas",
+    // tetapi runtuh pada dokumen yang nilainya di-override: tarif tersimpan
+    // bukan lagi harga sebenarnya, dan baris diskon memakai pengali karangan.
+    $pengali    = $pengaliStruktur > 0 ? $pengaliStruktur : ($ratePerM > 0 ? $sewa / $ratePerM : 0.0);
+    // Tarif yang DIPAKAI pun diturunkan dari nilai sewanya, supaya tarif yang
+    // tercetak selalu benar-benar menghasilkan totalnya.
+    $tarifPakai = $pengali > 0 ? $sewa / $pengali : $ratePerM;
+    $publishSah = $diskonAktif && $pengali > 0 && $tarifPakai > 0 && $tarifPublish > $tarifPakai;
     $publishRp  = $publishSah ? round($tarifPublish * $pengali) : 0.0;
-    $diskonRp   = $publishSah ? round(($tarifPublish - $ratePerM) * $pengali) : 0.0;
+    $diskonRp   = $publishSah ? round(($tarifPublish - $tarifPakai) * $pengali) : 0.0;
     return [
         'rate_m_day'  => $ratePerM,
         'kena_ppn'    => $kenaPpn ? 1 : 0,
         'publish_on'    => $publishSah ? 1 : 0,
         'tarif_publish' => $publishSah ? round($tarifPublish, 2) : 0.0,
-        'tarif_pakai'   => $publishSah ? round($ratePerM, 2) : 0.0,
+        'tarif_pakai'   => $publishSah ? round($tarifPakai, 2) : 0.0,
         'publish'       => $publishRp,
         'diskon'        => $diskonRp,
         // Persennya dihitung dari TARIF, bukan dari rupiah — angkanya bulat dan
         // sama persis dengan yang dilihat sales saat menurunkan tarifnya.
-        'diskon_pct'    => $publishSah ? round(($tarifPublish - $ratePerM) / $tarifPublish * 100, 2) : 0.0,
+        'diskon_pct'    => $publishSah ? round(($tarifPublish - $tarifPakai) / $tarifPublish * 100, 2) : 0.0,
         'sewa'        => $sewa,
         'listrik'     => $listrik,
         'ppn_sewa'    => $ppnSewa,
@@ -711,7 +718,8 @@ function skp_form(PDO $pdo): void
     $defDiskon = $skp ? !empty($skp['diskon_aktif']) : !empty($src['diskon_aktif']);
     $defPublish = (float) ($skp['tarif_publish'] ?? $src['tarif_publish'] ?? 0);
     $amt      = _skp_amounts($total + $listrikSkp, (float) $src['unit_rate'], $defDeposit, $listrikAll, $defDepPaid, $defPpn,
-        $defSc ? $defScRp : 0.0, $scBulan, $defDiskon ? $defPublish : 0.0, $defDiskon);
+        $defSc ? $defScRp : 0.0, $scBulan, $defDiskon ? $defPublish : 0.0, $defDiskon,
+        clara_pengali_harga($src));
     $area     = (float) ($src['area_sqm'] ?: $src['unit_area']);
     // Isi khusus modul: tabel harga Gudang / daftar centang Form Utilities Media.
     // Teksnya (intro, peraturan, catatan kaki, daftar item) datang dari Template
@@ -2773,7 +2781,8 @@ function skp_approve(PDO $pdo): void
         // Diambil dari KOLOM DOKUMEN, bukan dari penawaran: inilah angka yang
         // dibekukan ke snapshot dan jadi isi dokumen selamanya.
         !empty($skp['diskon_aktif']) ? (float) $skp['tarif_publish'] : 0.0,
-        !empty($skp['diskon_aktif']));
+        !empty($skp['diskon_aktif']),
+        clara_pengali_harga($src));
     // Paket: lokasi & komponen utk ditampilkan di dokumen SKP.
     $bundleLoc = $bundleTampil ? ('Paket — ' . count($bundleRows) . ' lokasi') : '';
     // Lantai & luas tiap komponen ikut dibekukan: tanpanya pemeriksa cuma
