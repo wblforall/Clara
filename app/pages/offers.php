@@ -2883,20 +2883,32 @@ function offer_form(PDO $pdo): void
                 months = Math.max(1, months || 1);
                 if (total <= 0) { kotak.style.display = 'none'; return; }
 
+                // Dicari lewat id DAN name. Isian listrik id-nya tidak sama dengan
+                // name-nya (listrik_val vs electricity_monthly), dan sebelum ini
+                // ringkasan hanya mencari lewat id yang salah — akibatnya listrik
+                // selalu terbaca nol dan Grand Total di layar lebih kecil daripada
+                // yang benar-benar tercetak di surat.
+                var el = function (k) {
+                    return document.getElementById(k) || document.querySelector('[name="' + k + '"]');
+                };
+                var nilai = function (k) {
+                    var e = el(k);
+                    return parseInt(((e || {}).value || '').replace(/\D/g, ''), 10) || 0;
+                };
+
                 var tarif = claraPpnTarif();
-                var ppnOn = document.getElementById('ppn_flag');
+                var ppnOn = el('ppn_flag');
                 var kena  = !ppnOn || ppnOn.checked;
-                var nilai = function (id) { return parseInt(((document.getElementById(id) || {}).value || '').replace(/\D/g, ''), 10) || 0; };
 
                 // Listrik: pakai total yang diketik sendiri bila ada, kalau tidak
                 // tarif per bulan × jumlah bulan — sama seperti offer_listrik().
-                var lisOn = document.getElementById('electricity_flag');
+                var lisOn = el('electricity_flag');
                 var listrik = 0;
                 if (lisOn && lisOn.checked) {
                     var manual = nilai('electricity_amount');
                     listrik = manual > 0 ? manual : nilai('electricity_monthly') * months;
                 }
-                var scOn = document.getElementById('sc_flag');
+                var scOn = el('sc_flag');
                 var scBln = (scOn && scOn.checked) ? nilai('sc_monthly') : 0;
                 var deposit = nilai('deposit_amount');
                 var depLunas = (document.getElementById('deposit_paid') || {}).checked;
