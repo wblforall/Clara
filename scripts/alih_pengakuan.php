@@ -124,6 +124,19 @@ foreach ($rows as $r) {
         // benar justru menghapus income yang tadinya ada.
         $awalBln = substr((string) $r['start_date'], 0, 7);
         $akhirBln = substr((string) $r['end_date'], 0, 7);
+        // PERINGATAN: nilai penuh kontrak ditumpuk ke SATU bulan. Benar untuk
+        // kontrak satu siklus; untuk kontrak yang berjalan beberapa bulan,
+        // bulan itu jadi kelebihan sebesar porsi bulan-bulan lainnya. Yang
+        // dibutuhkan biasanya membetulkan TANGGAL, bukan menumpuk.
+        if ($awalBln !== $akhirBln) {
+            $nBln = ((int) substr($akhirBln, 0, 4) - (int) substr($awalBln, 0, 4)) * 12
+                  + ((int) substr($akhirBln, 5, 2) - (int) substr($awalBln, 5, 2)) + 1;
+            printf("    #%-6s %-26s PERHATIAN: masa sewanya %d bulan (%s s/d %s).\n",
+                $r['id'], mb_substr((string) $r['nama'], 0, 26), $nBln, $awalBln, $akhirBln);
+            printf("             Seluruh Rp %s akan ditumpuk ke %s saja.\n",
+                $rp((float) ($r['final_amount'] ?: $r['total_calculated'])), $pindah);
+            echo "             Kalau yang benar hanya SATU siklus, betulkan tanggalnya dulu.\n";
+        }
         if ($pindah < $awalBln || $pindah > $akhirBln) {
             printf("    #%-6s %-26s DITOLAK: %s di luar masa sewa (%s s/d %s).\n",
                 $r['id'], mb_substr((string) $r['nama'], 0, 26), $pindah, $awalBln, $akhirBln);
