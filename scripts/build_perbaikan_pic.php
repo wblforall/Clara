@@ -27,8 +27,8 @@ require_once $root . '/app/Database.php';
 require_once $root . '/app/helpers.php';
 require_once $root . '/app/pdf.php';
 
-$opt = array_merge(['pic' => '', 'prop' => '2', 'banding' => '', 'bulan' => '', 'keluar' => ''],
-    getopt('', ['pic:', 'prop:', 'banding:', 'bulan:', 'keluar:']));
+$opt = array_merge(['pic' => '', 'prop' => '2', 'banding' => '', 'bulan' => '', 'keluar' => '', 'gambar' => ''],
+    getopt('', ['pic:', 'prop:', 'banding:', 'bulan:', 'keluar:', 'gambar:']));
 if ($opt['pic'] === '' || $opt['banding'] === '') {
     fwrite(STDERR, "Pakai: php scripts/build_perbaikan_pic.php --pic=\"Nama\" --banding=berkas.json [--prop=2] [--bulan=2026-10,2026-11]\n");
     exit(2);
@@ -146,10 +146,23 @@ function _kata(string $t): array
     return array_values(array_filter(explode(' ', _norm($t)), fn($k) => mb_strlen($k) >= 4));
 }
 
-/** Berapa kata penting yang sama antara dua nama. */
+/**
+ * Berapa kata penting yang sama antara dua nama.
+ *
+ * Kata dianggap sama bila persis ATAU beda paling banyak dua huruf. Ejaan nama
+ * penyewa berbeda-beda antar berkas — "luca"/"luuca", "chilok"/"cilok" — dan
+ * kalau dituntut sama persis, satu penyewa akan terbaca sebagai dua orang:
+ * yang satu dilaporkan hilang, yang satu dilaporkan berlebih.
+ */
 function _mirip(string $a, string $b): int
 {
-    return count(array_intersect(_kata($a), _kata($b)));
+    $ka = _kata($a); $kb = _kata($b); $n = 0;
+    foreach ($ka as $x) {
+        foreach ($kb as $y) {
+            if ($x === $y || levenshtein($x, $y) <= 2) { $n++; break; }
+        }
+    }
+    return $n;
 }
 
 /**
@@ -344,13 +357,111 @@ harga nego baru memang bisa berbeda. Yang perlu dicurigai adalah yang nilainya k
 dengan <b>tarif</b>-nya.</p>
 <?php endif; ?>
 
-<h2><?= $menyimpang ? '4' : '3' ?>. Urutan mengerjakannya</h2>
+<?php
+// ── Jembatan: apakah kedua sisi bisa bertemu? ────────────────────────────────
+// Dihitung hanya untuk bulan yang punya catatan sisi spreadsheet. Tanpa catatan
+// itu, "100% sama" tidak bisa dijanjikan — dan lebih baik tidak dijanjikan
+// daripada dijanjikan lalu meleset.
+$adaJembatan = false;
+foreach ($fokus as $bln) {
+    $cat = $ss['catatan_spreadsheet'][$bln] ?? [];
+    if (!$cat) continue;
+    $adaJembatan = true;
+    $qBulan->execute([$pid, $pic, $bln]);
+    $clSekarang = (float) $qBulan->fetchColumn();
+    $ssSekarang = (float) ($ss['bulan'][$bln] ?? 0);
+
+    $qRinci->execute([$pid, $pic, $bln]);
+    $clRows2 = $qRinci->fetchAll();
+    [$ck, $rg, $kr, $lb] = sandingkan($ss['rincian'][$bln] ?? [], $clRows2);
+    // Yang bertanda TBC tidak ikut diinput — itu proyeksi, bukan kesepakatan.
+    // Baris "perlu dipastikan" ikut dihitung sebagai BELUM ADA, kecuali memang
+    // sudah dipastikan sama dan dicatat di berkas banding. Menganggapnya cocok
+    // begitu saja akan menyembunyikan kekurangan; menganggapnya hilang semua
+    // akan melebih-lebihkan. Keputusannya dibuat manusia, bukan ditebak di sini.
+    $raguSama = array_map('mb_strtolower', (array) ($ss['ragu_sama'][$bln] ?? []));
+    $raguKurang = [];
+    foreach ($rg as [$sRow, $cRow]) {
+        if (!in_array(mb_strtolower((string) $sRow['ket']), $raguSama, true)) $raguKurang[] = $sRow;
+    }
+    $tambahCl = 0.0;
+    foreach (array_merge($kr, $raguKurang) as $k)
+        if (stripos((string) $k['ket'], 'TBC') === false) $tambahCl += (float) $k['nilai'];
+    $nInput = count(array_filter(array_merge($kr, $raguKurang),
+        fn($k) => stripos((string) $k['ket'], 'TBC') === false));
+    $tambahSs = 0.0; $kurangSs = 0.0;
+    foreach ($cat as $c) {
+        if (($c['arah'] ?? '') === 'tambah') $tambahSs += (float) $c['nilai'];
+        else                                 $kurangSs += (float) $c['nilai'];
+    }
+    $clAkhir = $clSekarang + $tambahCl;
+    $ssAkhir = $ssSekarang + $tambahSs - $kurangSs;
+?>
+<h2>Apakah bisa 100% sama? &mdash; <?= $h($bln) ?></h2>
+<p>Jawaban jujurnya: <b>tidak, kalau hanya <?= $h($pic) ?> yang memperbaiki.</b>
+Sebagian selisihnya ada di sisi spreadsheet, dan itu di luar kendalinya.
+Dua sisi harus sama-sama dibetulkan.</p>
+<table>
+    <tr><th style="width:58%">Langkah</th><th class="n">CLARA</th><th class="n">Spreadsheet</th></tr>
+    <tr><td>Keadaan sekarang</td><td class="n"><?= $rp($clSekarang) ?></td><td class="n"><?= $rp($ssSekarang) ?></td></tr>
+    <tr><td><b><?= $h($pic) ?></b> menginput <?= $nInput ?> baris yang belum ada</td>
+        <td class="n hijau">+<?= number_format($tambahCl, 0, ',', '.') ?></td><td class="n">&mdash;</td></tr>
+    <?php foreach ($cat as $c): ?>
+    <tr><td><b>Tim spreadsheet</b> &mdash; <?= $h(mb_substr((string) $c['ket'], 0, 95)) ?></td>
+        <td class="n">&mdash;</td>
+        <td class="n <?= ($c['arah'] ?? '') === 'tambah' ? 'hijau' : 'merah' ?>">
+            <?= (($c['arah'] ?? '') === 'tambah' ? '+' : '&minus;') . number_format((float) $c['nilai'], 0, ',', '.') ?></td></tr>
+    <?php endforeach; ?>
+    <tr style="background:#ecfdf5;font-weight:700">
+        <td>HASIL AKHIR</td><td class="n"><?= $rp($clAkhir) ?></td><td class="n"><?= $rp($ssAkhir) ?></td></tr>
+    <tr style="font-weight:700">
+        <td>SELISIH</td>
+        <td class="n" colspan="2"><?= round($clAkhir - $ssAkhir) == 0
+            ? '<span class="hijau">Rp 0 &mdash; SAMA PERSIS</span>'
+            : '<span class="merah">' . $rp($clAkhir - $ssAkhir) . '</span>' ?></td></tr>
+</table>
+<div class="box <?= round($clAkhir - $ssAkhir) == 0 ? '' : 'warn' ?>">
+    <p style="margin:0">Kalau hanya <?= $h($pic) ?> yang mengerjakan bagiannya, CLARA berhenti di
+    <b><?= $rp($clAkhir) ?></b> sementara spreadsheet tetap <b><?= $rp($ssSekarang) ?></b> &mdash;
+    masih beda <b><?= $rp(abs($clAkhir - $ssSekarang)) ?></b>. Angka itu <b>bukan kesalahan input</b>,
+    melainkan dua catatan di sisi spreadsheet yang perlu dibereskan tim pemegang berkasnya.</p>
+</div>
+<?php } ?>
+
+<?php
+// ── Langkah bergambar ───────────────────────────────────────────────────────
+$gbr = [];
+if ($opt['gambar'] !== '' && is_dir((string) $opt['gambar'])) {
+    foreach (glob(rtrim((string) $opt['gambar'], '/') . '/ss*.png') ?: [] as $g) $gbr[basename($g)] = $g;
+    ksort($gbr);
+}
+$kapsi = [
+    'ss1_renewal.png' => ['Menu <b>Renewal Kontrak</b>', 'Semua kontrak yang akan/sudah berakhir ada di sini, lengkap dengan nama PIC-nya. Tekan <b>+ Perpanjang</b> pada baris yang mau diteruskan. <span class="merah">Perhatikan: kontrak yang sudah lewat lebih dari 7 hari TIDAK muncul di sini lagi</span> &mdash; yang seperti itu harus dibuat manual lewat Surat Penawaran.'],
+    'ss2_form.png'    => ['Surat Penawaran terisi otomatis', 'Client, unit, rate, dan PIC sudah terisi dari kontrak sebelumnya. <b>Tanggal Mulai</b> otomatis sehari setelah siklus lama berakhir. Periksa tanggalnya cocok dengan kontrak, lalu <b>Simpan</b>.'],
+    'ss3_deal.png'    => ['Jadikan DEAL, lalu Buat SKP', 'Setelah client menyetujui (TTD online) atau status dijadikan DEAL manual, tombol <b>&rarr; Buat SKP (Konfirmasi)</b> muncul. Transaksi &mdash; dan income-nya &mdash; baru terbit setelah SKP ini dibuat dan disetujui.'],
+];
+if ($gbr): ?>
+<h2>Langkah inputnya &mdash; dengan gambar</h2>
+<p>Input transaksi langsung sudah <b>dimatikan</b> di CLARA. Semua kontrak, termasuk perpanjangan,
+wajib lewat <b>Surat Penawaran &rarr; DEAL &rarr; SKP</b>. Urutannya begini:</p>
+<?php $no = 0; foreach ($gbr as $nama => $jalur): $no++;
+    [$judul, $teks] = $kapsi[$nama] ?? [ucfirst(str_replace(['.png','_'], ['',' '], $nama)), '']; ?>
+<h3><?= $no ?>. <?= $judul ?></h3>
+<?php if ($teks): ?><p style="margin:0 0 5px"><?= $teks ?></p><?php endif; ?>
+<img src="<?= $h($jalur) ?>" style="width:168mm;border:1px solid #cbd5e1">
+<?php endforeach; ?>
+<?php endif; ?>
+
+<h2>Urutan mengerjakannya</h2>
 <ol>
-    <li><b>Mulai dari daftar A.</b> Itu yang membuat angka Anda kecil. Input satu per satu lewat
-        menu <b>Exhibition / Media / Gudang</b> sesuai jenis sewanya.</li>
+    <li><b>Mulai dari daftar A.</b> Itu yang membuat angka Anda kecil. Untuk tiap barisnya:
+        buka <b>Renewal Kontrak</b> lalu tekan <b>+ Perpanjang</b>. Kalau kontraknya sudah lewat
+        lebih dari 7 hari dan tidak muncul di sana, buat manual lewat <b>Surat Penawaran</b>.</li>
+    <li><b>Simpan penawarannya, jadikan DEAL, lalu tekan Buat SKP (Konfirmasi).</b>
+        Income baru terhitung setelah SKP-nya terbit &mdash; menyimpan penawaran saja belum cukup.</li>
     <li><b>Tanggal disalin dari kontrak</b>, jangan dibulatkan. Perpanjangan mulai <b>sehari setelah</b>
         siklus sebelumnya berakhir.</li>
-    <li><b>Kolom PIC diisi <?= $h($pic) ?></b> &mdash; kosong berarti tidak masuk ke siapa pun.</li>
+    <li><b>Kolom PIC Sales diisi <?= $h($pic) ?></b> &mdash; kosong berarti tidak masuk ke siapa pun.</li>
     <li><b>Lalu periksa daftar B.</b> Abaikan yang bertanda lintas bulan. Sisanya: kalau benar dobel,
         ajukan lewat <b>Pengajuan Hapus Data</b> dengan alasan <b>Dobel / duplikat</b> &mdash;
         jangan dihapus diam-diam.</li>

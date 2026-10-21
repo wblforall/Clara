@@ -236,16 +236,26 @@ muncul di CLARA.</p>
 Yang menyala harus <b><?= $h($namaProperti) ?></b>. Salah mal = datanya masuk ke laporan mal lain
 dan tidak akan pernah muncul di income Anda.</p>
 
-<h3><span class="langkah">Langkah 2</span> &nbsp;Pilih menu sesuai jenis sewanya</h3>
+<h3><span class="langkah">Langkah 2</span> &nbsp;Masuk lewat jalur yang benar</h3>
+<div class="box warn">
+    <p style="margin:0"><span class="tebal">Input transaksi langsung sudah dimatikan.</span>
+    Menu Exhibition / Media / Gudang sekarang hanya untuk <b>melihat</b>. Semua kontrak &mdash;
+    termasuk perpanjangan bulanan &mdash; wajib lewat:
+    <b>Surat Penawaran &rarr; DEAL &rarr; Buat SKP (Konfirmasi)</b>.
+    Income baru terhitung setelah SKP-nya terbit.</p>
+</div>
 <table>
-    <tr><th>Jenis sewa</th><th>Menu yang dipakai</th></tr>
-    <tr><td>Pameran / island / booth di area mal</td><td><b>Exhibition</b></td></tr>
-    <tr><td>Titik media: banner, LED, TVC, hanging banner</td><td><b>Media</b></td></tr>
-    <tr><td>Gudang / storage</td><td><b>Gudang</b></td></tr>
+    <tr><th>Keadaan</th><th>Dari mana memulainya</th></tr>
+    <tr><td>Penyewa lama diperpanjang</td>
+        <td>Menu <b>Renewal Kontrak</b> &rarr; tombol <b>+ Perpanjang</b>.
+            Client, unit, rate, dan tanggalnya terisi sendiri.</td></tr>
+    <tr><td>Perpanjangan yang sudah lewat &gt; 7 hari</td>
+        <td>Tidak muncul lagi di Renewal Kontrak. Buat manual lewat <b>Surat Penawaran</b>.</td></tr>
+    <tr><td>Penyewa baru</td><td>Menu <b>Surat Penawaran</b> &rarr; buat baru.</td></tr>
+    <tr><td>Gudang &amp; Media</td>
+        <td>Tidak lewat Surat Penawaran &mdash; dokumennya dibuat di
+            <b>SKP Pameran &rarr; + Buat Dokumen</b>.</td></tr>
 </table>
-<p class="muted" style="margin-top:-4px">Salah menu adalah sebab klasik "income saya kurang":
-sewa media yang diinput sebagai Exhibition tetap terhitung, tetapi tidak akan cocok saat
-dibandingkan per kategori dengan spreadsheet.</p>
 
 <h3><span class="langkah">Langkah 3</span> &nbsp;Isi tanggal persis seperti di kontrak</h3>
 <ul>
