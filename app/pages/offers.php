@@ -1949,8 +1949,22 @@ function offer_form(PDO $pdo): void
                          Tanpa ini kotaknya cuma bertuliskan "Rate" — angkanya bisa
                          dibaca per hari atau per bulan, dan dropdown di sebelah
                          terlihat seperti satu-satunya yang mengatur harga. */ ?>
+                <?php /* Rupiah berformat ribuan, sama seperti kotak nominal lain di
+                         aplikasi ini. Sebelumnya kotak angka polos: "277777777"
+                         tidak bisa dibaca sekilas, dan salah satu nol lebih atau
+                         kurang baru ketahuan setelah suratnya tercetak.
+                         Angka murninya disimpan di field tersembunyi agar seluruh
+                         perhitungan di halaman ini tidak perlu diubah. */ ?>
+                <?php $rateNilai = (float) ($offer['tarif_publish'] ?? 0) > 0
+                        ? (float) $offer['tarif_publish'] : (float) ($offer['unit_rate'] ?? 0); ?>
                 <div><label>Rate <span id="rate_satuan" class="muted" style="font-weight:400"></span></label>
-                    <input type="number" step="0.01" name="unit_rate" id="unit_rate" value="<?= h((string) ((float) ($offer['tarif_publish'] ?? 0) > 0 ? (float) $offer['tarif_publish'] : ($offer['unit_rate'] ?? ''))) ?>" <?= $disabled ?>>
+                    <div style="display:flex;align-items:stretch">
+                        <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;color:#475569">Rp</span>
+                        <input type="text" inputmode="numeric" id="unit_rate_fmt"
+                               value="<?= $rateNilai > 0 ? h(number_format($rateNilai, 0, ',', '.')) : '' ?>"
+                               style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right" <?= $disabled ?>>
+                        <input type="hidden" name="unit_rate" id="unit_rate" value="<?= $rateNilai > 0 ? (int) $rateNilai : '' ?>">
+                    </div>
                     <div class="help">Terisi sendiri dari <strong>Master</strong> saat unit dipilih &mdash; boleh diubah, boleh dikosongkan.
                         Kosong = nilainya dihitung dari <em>Total</em> yang Anda isi.</div>
                 </div>
@@ -2496,6 +2510,29 @@ function offer_form(PDO $pdo): void
                 var m = String(size || '').replace(/[mM²]/g, '').match(/(\d+\.?\d*)\s*[×xX]\s*(\d+\.?\d*)/);
                 return m ? parseFloat(m[1]) * parseFloat(m[2]) : 0;
             }
+            // Kotak Rate: yang terlihat berformat ribuan, yang terkirim angka murni.
+            // Semua perhitungan di halaman ini membaca #unit_rate, jadi id itu
+            // tetap dipegang field tersembunyi agar tidak ada yang perlu diubah.
+            function claraSetRateOffer(v) {
+                var raw = document.getElementById('unit_rate'), fmt = document.getElementById('unit_rate_fmt');
+                var n = parseFloat(v) || 0;
+                if (raw) raw.value = n > 0 ? Math.round(n) : '';
+                if (fmt) fmt.value = n > 0 ? Math.round(n).toLocaleString('id-ID') : '';
+            }
+            (function () {
+                var fmt = document.getElementById('unit_rate_fmt'), raw = document.getElementById('unit_rate');
+                if (!fmt || !raw) return;
+                fmt.addEventListener('input', function () {
+                    var d = this.value.replace(/\D/g, '');
+                    this.value = d ? parseInt(d, 10).toLocaleString('id-ID') : '';
+                    raw.value = d;
+                    if (typeof kalkulasi === 'function') kalkulasi();
+                });
+                // Jaring pengaman saat submit, kalau ada JS lain yang gagal.
+                var f = fmt.form || fmt.closest('form');
+                if (f) f.addEventListener('submit', function () { raw.value = (fmt.value || '').replace(/\D/g, ''); });
+            })();
+
             // Label satuan Rate — satu daftar, sama dengan yang dipakai PHP
             // (clara_satuan_harga) supaya tidak pernah berbeda sebutan.
             var SATUAN_RATE = {
@@ -2519,7 +2556,7 @@ function offer_form(PDO $pdo): void
             function fillMaster(code) {
                 var m = byCode[code]; if (!m) return;
                 var area = document.getElementById('area_sqm'), rate = document.getElementById('unit_rate'), pt = document.getElementById('pricing_type');
-                if (m.rate && rate && !rate.value) rate.value = m.rate;
+                if (m.rate && rate && !rate.value) claraSetRateOffer(m.rate);
                 if (m.pricing_type && pt) { pt.value = m.pricing_type; updateSatuanRate(); }
                 if (area && !area.value) area.value = m.area_sqm || 0;
                 <?php if ($module === 'media'): ?>

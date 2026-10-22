@@ -811,14 +811,19 @@ function skp_form(PDO $pdo): void
     // termasuk saat dokumennya masih draft. Supaya tidak pernah bisa disalah-
     // gunakan sebagai surat sungguhan, hasilnya dicap melintang di tiap
     // halaman dan nomor dokumennya sengaja tidak diterbitkan.
-    if (getv('pratinjau') === '1' && $skp) {
+    // Dokumen yang BELUM disimpan pun boleh dipratinjau. Isinya dibangun dari
+    // sumbernya (penawaran/transaksi) dan hitungan di halaman ini — sama seperti
+    // dokumen yang sudah ada, hanya kolom milik SKP yang masih kosong. Memaksa
+    // orang menyimpan dulu hanya untuk melihat hasil jadinya membuat draft
+    // setengah jadi menumpuk di daftar dokumen.
+    if (getv('pratinjau') === '1' && $src) {
         $d = [
             'company_name' => $src['company_name'] ?? null, 'npwp' => $src['npwp'] ?? null,
             'siup' => $src['siup'] ?? null, 'address' => $src['address'] ?? null,
-            'cp_name' => ($skp['cp_name'] ?? '') ?: ($src['cp_name'] ?? null),
-            'phone' => ($skp['phone_pj'] ?? '') ?: ($src['cp_phone'] ?? null),
+            'cp_name' => ((string) ($skp['cp_name'] ?? '')) ?: ($src['cp_name'] ?? null),
+            'phone' => ((string) ($skp['phone_pj'] ?? '')) ?: ($src['cp_phone'] ?? null),
             'ktp_pj' => $skp['ktp_pj'] ?? null, 'business_type' => $src['business_type'] ?? null,
-            'produk' => ($skp['produk'] ?? '') ?: ($src['brand_name'] ?? null),
+            'produk' => ((string) ($skp['produk'] ?? '')) ?: ($src['brand_name'] ?? null),
             'brand_name' => $src['brand_name'] ?? null,
             'location' => (($src['location_name'] ?? '') ?: ($src['master_code'] ?? '')) ?: '-',
             'floor' => $src['floor'] ?? null,
@@ -832,20 +837,35 @@ function skp_form(PDO $pdo): void
             'amounts' => $amt, 'sales' => $src['pic_name'] ?? null,
             'property_name' => (current_property()['name'] ?? ''),
             'pricing_type' => (string) ($src['pricing_type'] ?? ''),
-            'tahap_harga' => AllocationService::priceSteps($pdo, (int) ($skp['transaction_id'] ?? 0), (int) ($skp['offer_id'] ?? 0)),
-            'paraf' => ApprovalLine::jejakBeku($pdo, (int) $skp['id'], $docType),
-            'tier_harga' => (!empty($skp['offer_id']) && function_exists('offer_area_tiers'))
+            'tahap_harga' => AllocationService::priceSteps($pdo, (int) ($skp['transaction_id'] ?? $trxId), (int) ($skp['offer_id'] ?? $offerId)),
+            'paraf' => ApprovalLine::jejakBeku($pdo, (int) ($skp['id'] ?? 0), $docType),
+            'tier_harga' => (!empty($skp['offer_id'] ?? $offerId) && function_exists('offer_area_tiers'))
                 ? offer_area_tiers($pdo, (int) $skp['offer_id']) : [],
             'offer_no' => $src['offer_no'] ?? null,
-            'attachments' => _skp_attachment_list($pdo, (int) $skp['id']),
+            'attachments' => _skp_attachment_list($pdo, (int) ($skp['id'] ?? 0)),
             'doc_type' => $docType, 'detail' => $detail, 'tpl' => $tplDoc,
             'npwp_no' => $src['npwp'] ?? null, 'doc_date' => date('Y-m-d'),
         ];
-        $d = _skp_lengkapi_komponen($pdo, $skp, $d, $pid);
+        // Dokumen baru belum punya barisnya sendiri; pelengkap komponen cuma
+        // membaca id & modulnya, jadi cukup diberi bentuk kosong yang setara.
+        $d = _skp_lengkapi_komponen($pdo, $skp ?? ['id' => 0, 'doc_type' => $docType,
+            'property_id' => $pid, 'offer_id' => $offerId ?: null,
+            'transaction_id' => $trxId ?: null], $d, $pid);
         $a   = $d['amounts'] ?? [];
         $rp  = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
         $chk = fn($b) => !empty($b) ? '<span style="color:#0D9488">■</span>' : '<span style="color:#9ca3af">□</span>';
         require_once dirname(__DIR__) . '/pdf.php';
+        // Templat cetak membaca $skp apa adanya (nomor dokumen, tanda tangan,
+        // penyetuju). Untuk dokumen yang belum disimpan semuanya memang belum
+        // ada — diberi bentuk kosong supaya templatnya tetap satu, tanpa
+        // percabangan "kalau pratinjau" yang gampang melenceng dari aslinya.
+        // Aman ditimpa di sini: cabang ini selalu berakhir dengan return.
+        $skp = $skp ?? [
+            'id' => 0, 'skp_no' => null, 'doc_type' => $docType, 'status' => 'draft',
+            'property_id' => $pid, 'offer_id' => $offerId ?: null, 'transaction_id' => $trxId ?: null,
+            'approved_by' => null, 'sign_method' => null, 'sign_name' => null,
+            'sign_token' => null, 'signature_data' => null, 'signed_at' => null,
+        ];
         $PDF_MODE = true;
         $PARAF_OVERLAY = [];
         ob_start();
@@ -1484,15 +1504,18 @@ function skp_form(PDO $pdo): void
             <p class="help" style="margin-top:16px;color:#92400e">Submit untuk approval hanya bisa setelah <strong>Scan KTP</strong> dan <strong>Scan NPWP</strong> ada. Untuk client yang pernah dibuatkan dokumen, scan lamanya otomatis dipakai ulang (centang <strong>Pakai ulang</strong> sudah aktif) &mdash; tidak perlu unggah lagi.<br>
                 <strong>Bukti Transfer</strong> tidak diunggah di sini &mdash; tempatnya di <strong>Permintaan Kontrak</strong>, sebelum berkas dikirim ke Legal.</p>
             <p class="help" style="margin-top:6px">Tombol <strong>Cetak / Simpan PDF</strong> baru muncul setelah manager menyetujui &mdash; saat itulah nomor dokumen terbit dan isinya dikunci. Sebelum itu, pakai <strong>Lihat Contoh Surat</strong> untuk melihat hasil jadinya.</p>
-            <?php if ($skp): ?>
-            <?php /* Pratinjau bercap untuk diperiksa sebelum semuanya disetujui.
-                     Dibuka di tab baru supaya isian yang sedang diketik tidak hilang;
-                     yang tercetak adalah keadaan terakhir yang SUDAH disimpan. */ ?>
+            <?php /* Pratinjau bercap untuk diperiksa sebelum semuanya disetujui —
+                     termasuk untuk dokumen yang BELUM disimpan, supaya orang tidak
+                     perlu membuat draft hanya untuk melihat hasil jadinya.
+                     Dibuka di tab baru agar isian yang sedang diketik tidak hilang. */ ?>
+            <?php $prevQ = $skp ? 'id=' . (int) $skp['id']
+                    : ($offerId ? 'offer_id=' . (int) $offerId
+                        : ($trxId ? 'transaction_id=' . (int) $trxId : 'module=' . h($modKind))); ?>
             <p class="help" style="margin-top:4px">
-                <a class="btn light" href="?r=skp_form&id=<?= (int) $skp['id'] ?>&pratinjau=1" target="_blank" rel="noopener">👁 Lihat Contoh Surat</a>
-                <span class="muted" style="margin-left:6px">Bercap &ldquo;CONTOH &mdash; BELUM SAH&rdquo;, tanpa nomor dokumen. Simpan dulu kalau baru mengubah isian.</span>
+                <a class="btn light" href="?r=skp_form&<?= $prevQ ?>&pratinjau=1" target="_blank" rel="noopener">👁 Lihat Contoh Surat</a>
+                <span class="muted" style="margin-left:6px">Bercap &ldquo;CONTOH &mdash; BELUM SAH&rdquo;, tanpa nomor dokumen.
+                    <?= $skp ? 'Simpan dulu kalau baru mengubah isian.' : 'Isinya mengikuti penawaran/transaksi asalnya.' ?></span>
             </p>
-            <?php endif; ?>
             <p class="form-actions" style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">
                 <button type="submit" onclick="document.getElementById('skp-action').value='save'" class="btn secondary">Simpan Draft</button>
                 <button type="submit" onclick="document.getElementById('skp-action').value='submit'" style="background:#0369a1">Simpan & Submit untuk Approval</button>
