@@ -334,15 +334,27 @@ seluruh langkah di dokumen ini dikerjakan di CLARA.</p>
     $clRows = $qRinci->fetchAll();
     $ssRows = $ss['rincian'][$bln] ?? [];
     [$cocok, $ragu, $kurang, $lebih] = sandingkan($ssRows, $clRows);
-    $jmlKurang = array_sum(array_column($kurang, 'nilai'));
+    // Baris yang DITAHAN: ada di spreadsheet, tetapi sudah diperiksa dan
+    // ternyata belum boleh diinput — biasanya karena dealnya sebenarnya milik
+    // PIC lain dan sudah ada di CLARA. Dihitung di sini supaya angka ringkasan
+    // dan angka di tabel di bawahnya tidak pernah berbeda.
+    $tahanPeta = [];
+    foreach (($ss['tahan'][$bln] ?? []) as $tt) $tahanPeta[mb_strtolower((string) $tt['ket'])] = $tt;
+    $jmlKurang = 0.0; $nKurang = 0; $jmlTertahan = 0.0; $nTertahan = 0;
+    foreach ($kurang as $k) {
+        if (isset($tahanPeta[mb_strtolower((string) $k['ket'])])) { $jmlTertahan += (float) $k['nilai']; $nTertahan++; }
+        else                                                      { $jmlKurang   += (float) $k['nilai']; $nKurang++; }
+    }
     $jmlLebih  = array_sum(array_map(fn($r) => (float) $r['amount'], $lebih));
 ?>
 <h2>2. Rincian <?= $h($bln) ?> &mdash; apa yang harus dikerjakan</h2>
 <p><b><?= count($cocok) ?> baris sudah cocok</b> (nilai dan namanya sama).
    <?php if ($ragu): ?><b><?= count($ragu) ?> baris perlu dipastikan</b> (nilainya sama, namanya beda).
    <?php endif; ?>
-   <b class="merah"><?= count($kurang) ?> baris belum ada di CLARA</b> (<?= $rp($jmlKurang) ?>),
-   <b><?= count($lebih) ?> baris ada di CLARA saja</b> (<?= $rp($jmlLebih) ?>).</p>
+   <b class="merah"><?= $nKurang ?> baris belum ada di CLARA</b> (<?= $rp($jmlKurang) ?>),
+   <b><?= count($lebih) ?> baris ada di CLARA saja</b> (<?= $rp($jmlLebih) ?>).
+   <?php if ($nTertahan): ?><b><?= $nTertahan ?> baris ditahan</b> (<?= $rp($jmlTertahan) ?>)
+   &mdash; kelihatan hilang, tetapi sudah diperiksa dan tidak boleh diinput.<?php endif; ?></p>
 
 <?php if ($ragu): ?>
 <h3>Perlu dipastikan &mdash; nilainya sama, namanya berbeda</h3>
@@ -363,19 +375,7 @@ Kalau ternyata berbeda, berarti yang kiri belum diinput dan yang kanan perlu dip
 </table>
 <?php endif; ?>
 
-<?php if ($kurang):
-    // Baris yang DITAHAN: ada di spreadsheet, tetapi sudah diperiksa dan
-    // ternyata belum boleh diinput — biasanya karena dealnya sebenarnya milik
-    // PIC lain dan sudah ada di CLARA. Dibiarkan ikut "harus diinput" membuat
-    // orang membuat transaksi kembar yang jauh lebih repot dibereskan daripada
-    // selisih yang ditutupinya.
-    $tahanPeta = [];
-    foreach (($ss['tahan'][$bln] ?? []) as $t) $tahanPeta[mb_strtolower((string) $t['ket'])] = $t;
-    $jmlInputBersih = 0.0;
-    foreach ($kurang as $k) {
-        if (!isset($tahanPeta[mb_strtolower((string) $k['ket'])])) $jmlInputBersih += (float) $k['nilai'];
-    }
-?>
+<?php if ($kurang): ?>
 <h3 class="merah">A. Harus DIINPUT &mdash; ada di spreadsheet, belum ada di CLARA</h3>
 <table>
     <tr><th>Keterangan di spreadsheet</th><th class="n">Nilai</th></tr>
@@ -390,7 +390,7 @@ Kalau ternyata berbeda, berarti yang kiri belum diinput dan yang kanan perlu dip
         <td class="n<?= $tahan ? ' muted' : '' ?>"><?= $rp($k['nilai']) ?></td></tr>
     <?php endforeach; ?>
     <tr style="font-weight:700"><td>Jumlah yang benar-benar perlu diinput</td>
-        <td class="n"><?= $rp($jmlInputBersih) ?></td></tr>
+        <td class="n"><?= $rp($jmlKurang) ?></td></tr>
 </table>
 <?php endif; ?>
 
