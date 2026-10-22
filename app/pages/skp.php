@@ -394,7 +394,7 @@ function skp_list_page(PDO $pdo): void
             <?php endforeach; ?>
         </div>
         <div class="panel" style="margin-top:12px">
-            <p style="margin:0 0 10px;color:var(--muted);font-size:13px"><strong>Exhibition:</strong> SKP dibuat dari <strong>Preview Penawaran</strong> yang sudah DEAL. <strong>Gudang &amp; Media:</strong> tidak lewat Surat Penawaran — tekan <strong>+ Buat Dokumen</strong>, isi formulirnya langsung. Transaksi &amp; alokasi bulanan terbit otomatis saat manager menyetujui.</p>
+            <p style="margin:0 0 10px;color:var(--muted);font-size:13px"><strong>Exhibition:</strong> SKP dibuat dari <strong>Preview Penawaran</strong> yang sudah DEAL. <strong>Gudang &amp; Media:</strong> tidak lewat Surat Penawaran — tekan <strong>+ Buat Dokumen</strong>, isi formulirnya langsung. Transaksinya terbit saat manager menyetujui, tetapi <strong>income bulanannya baru terhitung setelah klien menandatangani</strong> — sebelum itu baris transaksinya ada dengan nilai Rp 0 di laporan.</p>
             <div class="table-wrap">
                 <table style="font-size:12.5px">
                     <thead><tr><th>No. SKP/SKS</th><th>Modul</th><th>Kode</th><th>Client</th><th>Periode</th><th>Status</th><th>Dibuat</th><th></th></tr></thead>
