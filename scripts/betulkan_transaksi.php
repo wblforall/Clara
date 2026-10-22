@@ -33,10 +33,10 @@ require_once $root . '/app/helpers.php';
 require_once $root . '/app/AllocationService.php';
 
 $opt = getopt('', ['trx:', 'mulai:', 'selesai:', 'rate:', 'tipe:', 'bulan-kontrak:',
-                   'nilai:', 'metode:', 'terapkan']);
+                   'nilai:', 'metode:', 'siklus:', 'prorata:', 'terapkan']);
 $terapkan = array_key_exists('terapkan', $opt);
 $id = (int) ($opt['trx'] ?? 0);
-if ($id <= 0) { fwrite(STDERR, "Pakai: --trx=ID [--mulai=..] [--selesai=..] [--rate=..] [--tipe=..] [--bulan-kontrak=..] [--nilai=..] [--metode=spread|anchor] [--terapkan]\n"); exit(2); }
+if ($id <= 0) { fwrite(STDERR, "Pakai: --trx=ID [--mulai=..] [--selesai=..] [--rate=..] [--tipe=..] [--bulan-kontrak=..] [--nilai=..] [--metode=spread|anchor] [--siklus=cycle_start|cycle_end] [--prorata=0|1] [--terapkan]\n"); exit(2); }
 
 $pdo = Database::connect();
 $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
@@ -57,9 +57,11 @@ $tampil = function (array $t) use ($alok, $rp, $id): void {
     printf("    harga     %s · rate %s · %s bulan kontrak · qty %s · luas %s m2\n", $t['pricing_type'],
         $rp($t['unit_rate']), $t['contract_months'] ?: '-',
         $rp($t['quantity'] ?? 1), $rp($t['area_sqm'] ?? 0));
-    printf("    nilai     %s · metode %s · diakui %s\n",
+    printf("    nilai     %s · metode %s · diakui %s · siklus %s%s\n",
         $rp($t['final_amount'] ?: $t['total_calculated']),
-        ($t['billing_method'] ?? '') === 'spread' ? 'Recurring' : 'Sekaligus', $t['period_key'] ?: '-');
+        ($t['billing_method'] ?? '') === 'spread' ? 'Recurring' : 'Sekaligus', $t['period_key'] ?: '-',
+        $t['cycle_recognition'] ?: 'cycle_start',
+        !empty($t['prorata_kalender']) ? ' · prorata kalender' : '');
     $alok->execute([$id]);
     foreach ($alok->fetchAll() as $a) printf("      %s  Rp %s\n", $a['period_key'], $rp($a['rp']));
 };
@@ -81,6 +83,21 @@ if (isset($opt['nilai']))   { $baru['final_amount'] = (float) preg_replace('/\D/
 if (isset($opt['metode']))  {
     $m = ((string) $opt['metode']) === 'spread' ? 'spread' : 'anchor_cycle';
     $baru['billing_method'] = $m; $ubah['billing_method'] = $m;
+}
+// Siklus yang menyeberang bulan diakui di bulan AWALnya (cycle_start) atau
+// bulan AKHIRnya (cycle_end). Inilah yang menentukan sewa 10 Sep - 9 Okt
+// masuk September atau Oktober — jadi harus bisa disebut, bukan diwarisi
+// diam-diam dari isi kolom yang kebetulan ada.
+if (isset($opt['siklus'])) {
+    $c = ((string) $opt['siklus']) === 'cycle_end' ? 'cycle_end' : 'cycle_start';
+    $baru['cycle_recognition'] = $c; $ubah['cycle_recognition'] = $c;
+}
+// Prorata kalender membagi sewa menurut jumlah hari di tiap bulan kalender,
+// bukan per siklus tanggal. Kalau menyala, siklus di atas tidak dipakai —
+// jadi harus bisa dimatikan dari sini juga.
+if (isset($opt['prorata'])) {
+    $pk = ((int) $opt['prorata']) === 1 ? 1 : 0;
+    $baru['prorata_kalender'] = $pk; $ubah['prorata_kalender'] = $pk;
 }
 // Tanpa satu pun pilihan perubahan, skrip ini hanya MELIHAT. Kalau tidak,
 // memanggilnya untuk memeriksa sebuah transaksi malah menulis ulang
