@@ -634,7 +634,31 @@ function layout(string $title, callable $body, array $opts = []): void
        tercatat sebagai Ditolak. setTimeout(...,0) menunda sampai pengiriman
        sudah disusun, sehingga penjaga klik-ganda tetap jalan tanpa menelan
        nilai tombolnya. */
-    document.addEventListener('submit',function(e){if(e.defaultPrevented)return;var form=e.target;if(form.dataset.submitted){e.preventDefault();return;}form.dataset.submitted='1';setTimeout(function(){form.querySelectorAll('button[type=submit]').forEach(function(btn){btn.disabled=true;btn.dataset.orig=btn.textContent;btn.textContent='Menyimpan...';});},0);});
+    /* Pengiriman yang membuka TAB BARU tidak meninggalkan halaman ini. Tombol
+       "Lihat Contoh Surat" di Surat Penawaran mengirim formulir yang SAMA dengan
+       formaction + formtarget="_blank": pratinjaunya terbuka di tab lain,
+       formulirnya tetap di layar dan masih dipakai. Menguncinya membuat tombol
+       Simpan tertinggal "Menyimpan..." selamanya — dan penjaga klik-ganda di
+       bawah menolak setiap percobaan simpan berikutnya. */
+    function claraTabBaru(e){
+        var s=e.submitter||document.activeElement;
+        var t=(s&&s.getAttribute&&s.getAttribute('formtarget'))||e.target.getAttribute('target')||'';
+        return t!==''&&t!=='_self';
+    }
+    document.addEventListener('submit',function(e){if(e.defaultPrevented)return;if(claraTabBaru(e))return;var form=e.target;if(form.dataset.submitted){e.preventDefault();return;}form.dataset.submitted='1';setTimeout(function(){form.querySelectorAll('button[type=submit]').forEach(function(btn){btn.disabled=true;btn.dataset.orig=btn.textContent;btn.textContent='Menyimpan...';});},0);});
+    /* Kembali ke halaman ini lewat tombol Back memulihkannya dari cache peramban
+       APA ADANYA — termasuk tombol yang sudah dimatikan. Tanpa ini formulirnya
+       terlihat menggantung "Menyimpan..." padahal tidak ada yang sedang jalan. */
+    window.addEventListener('pageshow',function(e){
+        if(!e.persisted)return;
+        document.querySelectorAll('form[data-submitted]').forEach(function(form){
+            delete form.dataset.submitted;
+            form.querySelectorAll('button[type=submit]').forEach(function(btn){
+                btn.disabled=false;
+                if(btn.dataset.orig){btn.textContent=btn.dataset.orig;delete btn.dataset.orig;}
+            });
+        });
+    });
     /* Salin teks ke clipboard dgn fallback. navigator.clipboard hanya ada di
        secure context (HTTPS/localhost); di PWA via IP LAN (HTTP) ia undefined,
        jadi tombol Salin "diam" tanpa fallback. Fallback: textarea + execCommand. */
