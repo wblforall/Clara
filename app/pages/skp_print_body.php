@@ -325,7 +325,11 @@ $skpHasQr = !empty($skp['sign_token']);
                  tetap berlabel "per m² per hari" padahal isinya tarif PER BULAN —
                  salah baca yang sudah lama dikeluhkan. Dokumen lama tidak
                  menyimpan pricing_type, jadi labelnya dibiarkan seperti dulu. */ ?>
-        <?php $satuanSkp = ($d['pricing_type'] ?? '') === 'monthly' ? 'Biaya Sewa / Bulan' : 'Biaya Sewa / m² / hari'; ?>
+        <?php /* Dulu hanya 'monthly' yang dikenali, sehingga kontrak berdasar
+                 tarif per m² per BULAN ikut tercetak "per m² per hari" — satu
+                 angka, dua arti, dan client yang membacanya salah. */ ?>
+        <?php $ptSkp = (string) ($d['pricing_type'] ?? '');
+              $satuanSkp = $ptSkp !== '' ? clara_satuan_harga($ptSkp) : 'Biaya Sewa / m² / hari'; ?>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?><?= $h($satuanSkp) ?></td><td class="amt"><?= $rp($a['rate_m_day'] ?? 0) ?></td></tr>
         <?php endif; ?>
         <?php if (($a['listrik'] ?? 0) > 0): ?>

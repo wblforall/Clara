@@ -919,6 +919,40 @@ function sign_token_expired(?string $expiresAt): bool
 }
 
 /**
+ * Label satuan harga sesuai cara kontrak dihargai.
+ *
+ * Dipakai bersama oleh formulir, surat penawaran, SKP, halaman tanda tangan
+ * client, dan PDF — supaya satu kontrak tidak pernah disebut "per m² per hari"
+ * di satu tempat dan "per m² per bulan" di tempat lain. Dasar harganya DIPILIH,
+ * bukan dipakai dua-duanya.
+ */
+function clara_satuan_harga(string $pricingType): string
+{
+    return match ($pricingType) {
+        'daily_area'   => 'Biaya Sewa / m² / hari',
+        'monthly_area' => 'Biaya Sewa / m² / bulan',
+        'daily_slot'   => 'Biaya Sewa / slot / hari',
+        'daily_point'  => 'Biaya Sewa / titik / hari',
+        'monthly'      => 'Biaya Sewa / bulan',
+        'fixed'        => 'Nilai Kontrak (lump sum)',
+        default        => 'Harga Sewa',
+    };
+}
+
+/** Pilihan dasar harga untuk dropdown — bawaannya per m² per hari. */
+function clara_pilihan_harga(): array
+{
+    return [
+        'daily_area'   => 'Per m² / hari  (bawaan)',
+        'monthly_area' => 'Per m² / bulan',
+        'daily_slot'   => 'Per slot / hari',
+        'daily_point'  => 'Per titik / hari',
+        'monthly'      => 'Per bulan (tanpa hitungan luas)',
+        'fixed'        => 'Lump sum (satu nilai)',
+    ];
+}
+
+/**
  * Pengali harga sebuah penawaran/transaksi — berapa "satuan" yang dikalikan tarif.
  *
  *   daily_area  : luas × hari      daily_slot : slot × hari

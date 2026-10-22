@@ -96,11 +96,14 @@ $poin = [
   ['Seluruh halaman memakai `current_property_id()` sebagai penyaring data, bukan percabangan kode per mall.'],
   'Perlu dipastikan sekali lagi setelah poin 11 dan 13 dikerjakan, agar menu baru dan kolom baru ikut muncul di kedua properti.'],
 
- [13, 'Dasar harga dipilih lewat DROPDOWN: per m² per hari (bawaan) atau per m² per bulan — hanya salah satu yang dipakai, dan SP/SKP/PDF/tautan client ikut menyesuaikan', 'belum',
-  'Arahan terakhir: bukan centang yang menambah kolom kedua, melainkan DROPDOWN yang memilih salah satu dasar harga — bawaannya per m² per hari. Kabar baiknya, mesinnya sudah siap: kedua dasar harga itu sudah ada sebagai jenis harga `daily_area` dan `monthly_area`, jadi yang perlu dibuat tinggal pemilihnya di formulir dan penyesuaian label di cetakan.',
-  ['Jenis harga `monthly_area` sudah dikenali — app/AllocationService.php:32 dan app/helpers.php (`clara_pengali_harga`).',
-   'Sudah dipakai di surat penawaran — app/pages/offers.php:591.'],
-  'Pasang dropdown di formulir SP dan SKP (bawaan: per m² per hari), lalu samakan label dan perhitungannya di cetakan SP, cetakan SKP, halaman tanda tangan client, dan PDF. Belum saya mulai — ini pekerjaan berikutnya.'],
+ [13, 'Dasar harga dipilih lewat DROPDOWN: per m² per hari (bawaan) atau per m² per bulan — hanya salah satu yang dipakai, dan SP/SKP/PDF/tautan client ikut menyesuaikan', 'selesai',
+  'SUDAH DIKERJAKAN. Dasar harganya kini DIPILIH dari satu dropdown, bawaannya *Per m² / hari*, dan pilihan itu menentukan satuan yang tercetak di mana-mana. Kabar buruknya yang ketemu saat mengerjakan: label di surat SKP dulu hanya mengenal satu jenis harga bulanan, sehingga kontrak berdasar tarif *per m² per BULAN* ikut tercetak "per m² per hari" — satu angka, dua arti, dan client yang membacanya salah.',
+  ['Dropdown di formulir Surat Penawaran sekarang berlabel manusia, bukan kode (`daily_area`, `monthly_area`) — app/pages/offers.php. Penawaran baru jatuh ke *Per m² / hari*.',
+   'Satuannya diambil dari SATU daftar bersama, `clara_satuan_harga()` di app/helpers.php. Dipakai oleh formulir SKP, surat SKP, surat penawaran, PDF, dan halaman tanda tangan client — jadi satu kontrak tidak mungkin disebut berbeda di dua tempat.',
+   'Halaman yang dibuka client memang memakai berkas cetak yang sama (`offer_print_template.php` untuk penawaran, `skp_print_body.php` untuk SKP), jadi perbaikannya ikut ke sana dengan sendirinya.',
+   'Surat penawaran sekarang menulis dasar harganya terang-terangan sebagai satu baris tersendiri — sebelumnya hanya ada "Harga Sewa / Periode", tanpa menyebut tarifnya per apa.',
+   'Diuji di salinan lokal: penawaran #34 (per m² / hari) mencetak baris *Biaya Sewa / m² / hari*; pemetaan labelnya diperiksa untuk keenam jenis harga; pratinjau SKP, cetak SKP, dan cetak penawaran semuanya tetap terbit normal.'],
+  'Tidak ada.'],
 
  [14, 'Rapikan formulir SP, SKP, Gudang, dan Media — terlalu banyak kolom dan berhamburan', 'belum',
   'Belum dikerjakan. Formulirnya panjang dan kolomnya belum dikelompokkan menurut kebutuhan.',
@@ -157,7 +160,8 @@ Tiap klaim di dokumen ini menyebut berkas dan nomor barisnya, supaya bisa diperi
 
 <div class="ring">
 <table>
-    <tr><td><b>Sudah selesai</b></td><td style="text-align:right"><b><?= $n['selesai'] ?> dari <?= count($poin) ?></b> &mdash; poin 4 dan 7</td></tr>
+    <tr><td><b>Sudah selesai</b></td><td style="text-align:right"><b><?= $n['selesai'] ?> dari <?= count($poin) ?></b> &mdash; poin
+        <?= $h(implode(', ', array_map(fn($p) => $p[0], array_filter($poin, fn($p) => $p[2] === 'selesai')))) ?></td></tr>
     <tr><td>Sudah ada sebagian</td><td style="text-align:right"><?= $n['sebagian'] ?> poin</td></tr>
     <tr><td>Belum dikerjakan</td><td style="text-align:right"><?= $n['belum'] ?> poin</td></tr>
 </table>

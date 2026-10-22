@@ -504,6 +504,15 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             }
             $perBulan = $blnKontrak > 1 ? round($total / $blnKontrak) : 0.0;
             ?>
+            <?php /* Dasar harganya ditulis terang di surat: client harus tahu angka
+                     tarif itu per m² per HARI atau per m² per BULAN. Satu angka
+                     tanpa satuan bisa dibaca dua arti, dan itu baru ketahuan saat
+                     ditagih. Satuannya diambil dari daftar yang sama dengan yang
+                     dipakai SKP dan formulir, jadi tidak mungkin berbeda. */ ?>
+            <?php if ($tarifPakai > 0 && ($o['pricing_type'] ?? '') !== 'fixed'): ?>
+            <tr><td class="lbl"><?= $h(clara_satuan_harga((string) ($o['pricing_type'] ?? ''))) ?></td>
+                <td class="amt"><?= $rp($tarifPakai) ?></td></tr>
+            <?php endif; ?>
             <?php if ($perBulan > 0): ?>
             <tr><td class="lbl">Harga Sewa / Bulan</td><td class="amt"><?= $rp($perBulan) ?></td></tr>
             <?php endif; ?>

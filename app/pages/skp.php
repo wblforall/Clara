@@ -576,15 +576,9 @@ function _skp_komponen_paket(PDO $pdo, int $offerId, int $pid): array
 /** Label tarif sesuai cara kontrak ini dihargai — satuannya ikut pricing_type. */
 function _skp_satuan_tarif(string $pricingType): string
 {
-    return match ($pricingType) {
-        'daily_area'  => 'Biaya Sewa / m² / hari',
-        'monthly_area' => 'Biaya Sewa / m² / bulan',
-        'daily_slot'  => 'Biaya Sewa / slot / hari',
-        'daily_point' => 'Biaya Sewa / titik / hari',
-        'monthly'     => 'Biaya Sewa / bulan',
-        'fixed'       => 'Nilai Kontrak (lump sum)',
-        default       => 'Harga Sewa',
-    };
+    // Daftarnya tinggal satu, di app/helpers.php — dua daftar pasti melenceng
+    // cepat atau lambat, dan yang melenceng itu tercetak di surat client.
+    return clara_satuan_harga($pricingType);
 }
 
 function skp_form(PDO $pdo): void
@@ -1163,7 +1157,7 @@ function skp_form(PDO $pdo): void
             <?php else: ?>
             <h3>Rincian Pembayaran</h3>
             <div class="form-grid">
-                <div><label>Biaya Sewa / m² / hari</label><input value="<?= money($amt['rate_m_day']) ?>" disabled></div>
+                <div><label><?= h(clara_satuan_harga((string) ($src['pricing_type'] ?? ''))) ?></label><input value="<?= money($amt['rate_m_day']) ?>" disabled></div>
                 <?php /* Biaya listrik ikut dari Surat Penawaran — ditampilkan terpisah
                          supaya jelas dari mana angka totalnya. */ ?>
                 <?php if (($amt['listrik'] ?? 0) > 0): ?>

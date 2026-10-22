@@ -1928,10 +1928,19 @@ function offer_form(PDO $pdo): void
                     <input name="ukuran" value="<?= h((string) ($offer['ukuran'] ?? '')) ?>" placeholder="mis. 2x3 m2" <?= $disabled ?>>
                     <div class="help">Kalau diisi, inilah yang tercetak di kolom Luas. Kosong = pakai luas m&sup2;.</div>
                 </div>
-                <div><label>Pricing Type</label>
+                <div><label>Dasar Harga Sewa</label>
+                    <?php /* Dasar harganya DIPILIH — bukan dua-duanya dipakai. Yang
+                             dipilih di sini menentukan satuan yang tercetak di surat
+                             penawaran, di SKP, di PDF, dan di halaman yang dibuka
+                             client. Bawaannya per m² per hari; kosong (penawaran baru)
+                             pun jatuh ke sana. */ ?>
                     <select name="pricing_type" id="pricing_type" <?= $disabled ?>>
-                        <?php foreach (['daily_area', 'daily_slot', 'daily_point', 'monthly', 'monthly_area', 'fixed'] as $o): ?><option <?= ($offer['pricing_type'] ?? '') === $o ? 'selected' : '' ?>><?= $o ?></option><?php endforeach; ?>
+                        <?php $ptKini = (string) ($offer['pricing_type'] ?? '') ?: 'daily_area'; ?>
+                        <?php foreach (clara_pilihan_harga() as $kode => $label): ?>
+                        <option value="<?= h($kode) ?>" <?= $ptKini === $kode ? 'selected' : '' ?>><?= h($label) ?></option>
+                        <?php endforeach; ?>
                     </select>
+                    <div class="help">Menentukan arti kotak <strong>Rate</strong> di sebelah, dan satuan yang tercetak di surat.</div>
                 </div>
                 <?php /* Bila harga diskon dipakai, kotak Rate ini adalah TARIF PUBLISH (harga
          daftar). Tarif hasil nego diketik di kotak diskon di bawah dan itulah
