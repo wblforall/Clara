@@ -1708,6 +1708,15 @@ function offer_form(PDO $pdo): void
             <?php /* Bagian Catatan hanya ada saat penawarannya masih bisa diedit —
                      tautannya ikut, supaya tidak ada tombol yang menuju ke mana pun. */ ?>
             <?php if ($offer && $editable): ?><a href="#sp-catatan">Catatan</a><?php endif; ?>
+            <?php /* Pratinjau dari isian yang SEDANG diketik — tidak perlu disimpan
+                     dulu. Tombolnya mengirim formulir ini ke ?r=offer_preview di tab
+                     baru; tidak ada satu pun baris yang ditulis ke basis data.
+                     formaction/formtarget dipakai supaya nilainya ikut apa adanya,
+                     termasuk yang baru diketik dan belum pernah tersimpan. */ ?>
+            <button type="submit" form="offer-form" formaction="?r=offer_preview" formtarget="_blank"
+                    formnovalidate class="btn light"
+                    style="margin-left:auto;background:#ecfdf5;color:#065f46;border-color:#a7f3d0;font-size:12px;padding:4px 10px"
+                    title="Surat contoh bercap &quot;CONTOH — BELUM SAH&quot;, tanpa nomor penawaran">👁 Lihat Contoh Surat</button>
         </div>
         <form class="panel" method="post" action="?r=offer_save" style="margin-top:12px" id="offer-form">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
