@@ -51,6 +51,10 @@ $pdo = Database::connect();
 $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 $h  = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
 $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
+// Teks tutorial datang dari berkas JSON, jadi tetap di-escape penuh. Yang
+// diizinkan hanya satu penanda: *teks* jadi tebal — cukup untuk menyorot nama
+// menu dan tombol, tanpa membuka pintu HTML dari berkas luar.
+$tb = fn($s) => preg_replace('/\*(.+?)\*/u', '<b>$1</b>', htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'));
 
 $namaProperti = (string) ($pdo->query('SELECT name FROM properties WHERE id = ' . $pid)->fetchColumn() ?: '-');
 
@@ -473,9 +477,32 @@ foreach ($fokus as $bln) {
 </div>
 <?php endforeach; ?>
 
+<?php $tut = $ss['tutorial'][$bln] ?? []; if ($tut): ?>
+<h2>Cara mengerjakannya &mdash; langkah demi langkah</h2>
+<p class="muted" style="margin-top:-3px">Urutannya boleh bebas. Yang penting ketiganya selesai;
+setelah itu <?= $h($bln) ?> akan sama persis dengan spreadsheet.</p>
+<?php foreach ($tut as $i => $t): ?>
+<h3><?= $i + 1 ?>. <?= $tb($t['judul'] ?? '') ?><?php
+    if (isset($t['nilai'])): ?> <span class="<?= (float) $t['nilai'] < 0 ? 'merah' : 'hijau' ?>">&middot;
+    <?= ((float) $t['nilai'] < 0 ? '&minus;' : '+') . number_format(abs((float) $t['nilai']), 0, ',', '.') ?></span><?php
+    endif; ?></h3>
+<?php if (!empty($t['ringkas'])): ?><p style="margin:0 0 5px"><?= $tb($t['ringkas']) ?></p><?php endif; ?>
+<?php if (!empty($t['langkah'])): ?>
+<ol><?php foreach ($t['langkah'] as $l): ?><li><?= $tb($l) ?></li><?php endforeach; ?></ol>
+<?php endif; ?>
+<?php if (!empty($t['catatan'])): ?>
+<div class="box <?= ($t['jenis'] ?? '') === 'awas' ? 'warn' : '' ?>">
+    <p style="margin:0"><?= $tb($t['catatan']) ?></p></div>
+<?php endif; ?>
+<?php endforeach; ?>
+<?php endif; ?>
+
 <?php foreach (($ss['catatan_khusus'][$bln] ?? []) as $c): ?>
-<h3><?= $h($c['judul'] ?? 'Catatan') ?></h3>
-<p style="margin:0 0 8px"><?= $h($c['isi'] ?? '') ?></p>
+<h3><?= $tb($c['judul'] ?? 'Catatan') ?></h3>
+<?php if (!empty($c['isi'])): ?><p style="margin:0 0 6px"><?= $tb($c['isi']) ?></p><?php endif; ?>
+<?php if (!empty($c['poin'])): ?>
+<ul><?php foreach ($c['poin'] as $pp): ?><li><?= $tb($pp) ?></li><?php endforeach; ?></ul>
+<?php endif; ?>
 <?php endforeach; ?>
 <?php } ?>
 
@@ -489,12 +516,15 @@ if ($opt['gambar'] !== '' && is_dir((string) $opt['gambar'])) {
 $kapsi = [
     'ss1_renewal.png' => ['Menu <b>Renewal Kontrak</b>', 'Semua kontrak yang akan/sudah berakhir ada di sini, lengkap dengan nama PIC-nya. Tekan <b>+ Perpanjang</b> pada baris yang mau diteruskan. <span class="merah">Perhatikan: kontrak yang sudah lewat lebih dari 7 hari TIDAK muncul di sini lagi</span> &mdash; yang seperti itu harus dibuat manual lewat Surat Penawaran.'],
     'ss2_form.png'    => ['Surat Penawaran terisi otomatis', 'Client, unit, rate, dan PIC sudah terisi dari kontrak sebelumnya. <b>Tanggal Mulai</b> otomatis sehari setelah siklus lama berakhir. Periksa tanggalnya cocok dengan kontrak, lalu <b>Simpan</b>.'],
-    'ss3_deal.png'    => ['Jadikan DEAL, lalu Buat SKP', 'Setelah client menyetujui (TTD online) atau status dijadikan DEAL manual, tombol <b>&rarr; Buat SKP (Konfirmasi)</b> muncul. Transaksi &mdash; dan income-nya &mdash; baru terbit setelah SKP ini dibuat dan disetujui.'],
+    'ss3_deal.png'    => ['Jadikan DEAL, lalu Buat SKP', 'Setelah client menyetujui (TTD online) atau status dijadikan DEAL manual, tombol <b>&rarr; Buat SKP (Konfirmasi)</b> muncul. Transaksinya terbit setelah SKP ini disetujui Manager, tetapi <b>income-nya baru terhitung setelah klien menandatangani</b>.'],
 ];
 if ($gbr): ?>
 <h2>Langkah inputnya &mdash; dengan gambar</h2>
-<p>Input transaksi langsung sudah <b>dimatikan</b> di CLARA. Semua kontrak, termasuk perpanjangan,
-wajib lewat <b>Surat Penawaran &rarr; DEAL &rarr; SKP</b>. Urutannya begini:</p>
+<p>Kontrak <b>Exhibition</b> yang baru wajib lewat <b>Surat Penawaran &rarr; DEAL &rarr; SKP</b>
+&mdash; input transaksi langsung sudah dimatikan. Dua hal ini pengecualiannya:
+<b>Perpanjangan</b> (tombol <b>Perpanjang</b> di daftar modul) langsung membuka formulir transaksi,
+dan <b>Gudang &amp; Media</b> tidak lewat Surat Penawaran sama sekali &mdash; dokumennya dibuat dari
+menu <b>SKP Pameran &rarr; + Buat Dokumen</b>. Urutan untuk Exhibition baru:</p>
 <?php $no = 0; foreach ($gbr as $nama => $jalur): $no++;
     [$judul, $teks] = $kapsi[$nama] ?? [ucfirst(str_replace(['.png','_'], ['',' '], $nama)), '']; ?>
 <h3><?= $no ?>. <?= $judul ?></h3>
@@ -505,11 +535,14 @@ wajib lewat <b>Surat Penawaran &rarr; DEAL &rarr; SKP</b>. Urutannya begini:</p>
 
 <h2>Urutan mengerjakannya</h2>
 <ol>
-    <li><b>Mulai dari daftar A.</b> Itu yang membuat angka Anda kecil. Untuk tiap barisnya:
-        buka <b>Renewal Kontrak</b> lalu tekan <b>+ Perpanjang</b>. Kalau kontraknya sudah lewat
-        lebih dari 7 hari dan tidak muncul di sana, buat manual lewat <b>Surat Penawaran</b>.</li>
-    <li><b>Simpan penawarannya, jadikan DEAL, lalu tekan Buat SKP (Konfirmasi).</b>
-        Income baru terhitung setelah SKP-nya terbit &mdash; menyimpan penawaran saja belum cukup.</li>
+    <li><b>Mulai dari daftar A.</b> Itu yang membuat angka Anda kecil. Kalau barisnya perpanjangan
+        kontrak yang sudah ada: buka <b>Renewal Kontrak</b> lalu tekan <b>+ Perpanjang</b>, atau tekan
+        <b>Perpanjang</b> langsung di baris kontraknya di menu modulnya. Kalau kontraknya sudah lewat
+        lebih dari 7 hari dan tidak muncul di Renewal, pakai tombol <b>Perpanjang</b> di menu modulnya.</li>
+    <li><b>Untuk Exhibition baru: simpan penawarannya, jadikan DEAL, lalu buat SKP.</b>
+        Income baru terhitung setelah <b>klien menandatangani</b> SKP itu &mdash; SKP yang baru dibuat
+        atau baru disetujui Manager belum menyumbang satu rupiah pun. Perpanjangan lewat tombol
+        <b>Perpanjang</b> tidak melewati tahap ini: nilainya terhitung begitu disimpan.</li>
     <li><b>Tanggal disalin dari kontrak</b>, jangan dibulatkan. Perpanjangan mulai <b>sehari setelah</b>
         siklus sebelumnya berakhir.</li>
     <li><b>Kolom PIC Sales diisi <?= $h($pic) ?></b> &mdash; kosong berarti tidak masuk ke siapa pun.</li>
