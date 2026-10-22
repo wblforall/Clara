@@ -870,6 +870,10 @@ function skp_form(PDO $pdo): void
         // supaya yang dilihat memang hasil jadinya. Yang membedakannya dari surat
         // sungguhan cuma capnya dan nomor dokumen yang belum terbit.
         $PDF_MODE = true;
+        // Penanda pratinjau: dipakai templat cetak untuk tetap menggambar kotak
+        // QR walau tokennya belum terbit, supaya tata letaknya sama dengan surat
+        // asli dan paraf tidak terbaca sebagai tanda tangan Manager.
+        $PRATINJAU = true;
         $PARAF_OVERLAY = [];
         ob_start();
         include __DIR__ . '/skp_print_body.php';
