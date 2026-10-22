@@ -80,10 +80,10 @@ final class Paraf
             // membesarkan selalu bisa menggeser sendiri. Kebalikannya tidak —
             // paraf kebesaran baru ketahuan setelah suratnya terbit.
             'lebar'        => 12.0,
-            // Tanpa nama secara bawaan. Paraf di kertas memang cuma coretan, dan
-            // nama pemeriksanya sudah tercatat di jejak approval. Keterangan yang
-            // menjuntai di bawah paraf justru membuatnya terbaca sebagai blok
-            // besar di samping QR, bukan tanda kecil di pojoknya.
+            // Tanpa nama secara bawaan. Paraf di kertas memang cuma coretan,
+            // dan baris pemeriksaan sudah menyebut nama, jabatan, serta jamnya
+            // tepat di sebelahnya — keterangan yang menjuntai di bawah coretan
+            // hanya mengulang hal yang sama dua kali.
             'tampil_nama'  => 0,
             'tampil_waktu' => 0,
         ];
@@ -228,12 +228,14 @@ final class Paraf
             $path = trim((string) ($p['gambar_path'] ?? ''));
             if ($path === '') return '';
             $berkas = dirname(__DIR__) . '/public/' . ltrim($path, '/');
-            $url = $src === 'file'
-                ? $berkas
-                : (function_exists('upload_url') ? upload_url($path) : $path);
-            if ($src === 'file' && !is_file($url)) return '';
+            // Berkasnya harus benar-benar ada. Kalau tidak, barisnya lebih baik
+            // tampil sebagai teks saja daripada memuat gambar rusak di tengah
+            // kalimat — dan PDF memang sudah berperilaku begitu.
+            if (!is_file($berkas)) return '';
+            $url = $src === 'file' ? $berkas : self::tanamGambar($berkas, $path);
+            if ($url === '') return '';
             // Paraf yang tinggi-ramping dikecilkan sampai tingginya muat, supaya
-            // tidak memanjangkan kotak penindih (lihat OTO_TINGGI_GAMBAR).
+            // tidak menjulur melewati barisnya (lihat OTO_TINGGI_GAMBAR).
             $lebarGbr = $lebar;
             if ($maksTinggiMm > 0 && is_file($berkas)) {
                 $dim = @getimagesize($berkas);
@@ -243,6 +245,11 @@ final class Paraf
                 }
             }
             $isi = '<img src="' . $h($url) . '" style="width:' . round($lebarGbr, 1) . 'mm">';
+            // Kotak pembungkus ikut menyusut bersama gambarnya. Kalau tetap
+            // selebar setelan, coretan yang ramping menyisakan ruang kosong di
+            // kanannya — di baris pemeriksaan ruang itu terbaca sebagai jarak
+            // yang menganga antara paraf dan nama pemiliknya.
+            $lebarIsi = $lebarGbr;
         }
 
         // Nama dan waktu dua hal terpisah: paraf di kertas memang tidak pernah
@@ -261,8 +268,47 @@ final class Paraf
         // Kotaknya boleh lebih lebar dari gambarnya: gambar tetap sekecil setelan,
         // tetapi keterangannya punya ruang supaya tidak membungkus jadi tumpukan
         // baris yang membuat paraf terlihat besar.
-        $lebarBlok = $lebarBlokMm > 0 ? max($lebarBlokMm, $lebar) : $lebar;
+        $lebarBlok = $lebarBlokMm > 0 ? max($lebarBlokMm, $lebar) : ($lebarIsi ?? $lebar);
         return '<div style="width:' . round($lebarBlok, 1) . 'mm">' . $isi . $ket . '</div>';
+    }
+
+    /**
+     * Berapa besar paraf masih pantas ditanam langsung ke dalam halaman.
+     * Paraf sungguhan cuma coretan — yang digambar di kanvas sekitar 2 KB,
+     * yang diunggah jarang lebih dari seratus KB. Batas unggah 2 MB ada untuk
+     * menjaring berkas rusak, bukan karena paraf sebesar itu masuk akal.
+     */
+    private const TANAM_MAKS = 512 * 1024;
+
+    /**
+     * Sumber gambar untuk tampilan di LAYAR.
+     *
+     * Gambar paraf disajikan lewat ?r=file, dan rute itu menolak permintaan
+     * tanpa sesi. Halaman tanda tangan client dibuka TANPA login, jadi di sana
+     * parafnya balas 403 dan muncul sebagai gambar rusak — tepat di baris yang
+     * menerangkan siapa memeriksa surat itu. Karena itu gambarnya ditanam
+     * langsung ke halaman sebagai data URI: tidak ada permintaan kedua, tidak
+     * ada izin yang perlu dilewati, dan hasilnya sama persis dengan PDF-nya.
+     *
+     * Berkas yang kelewat besar tetap ditunjuk lewat ?r=file — menanam berkas
+     * sebesar itu membuat halamannya berat, dan ukuran sebesar itu sendiri
+     * sudah menandakan parafnya perlu diunggah ulang.
+     */
+    private static function tanamGambar(string $berkas, string $path): string
+    {
+        $ukuran = @filesize($berkas);
+        if ($ukuran === false || $ukuran > self::TANAM_MAKS) {
+            return function_exists('upload_url') ? upload_url($path) : $path;
+        }
+        $isi = @file_get_contents($berkas);
+        if ($isi === false || $isi === '') return '';
+        $tipe = [
+            'png'  => 'image/png',
+            'jpg'  => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'webp' => 'image/webp',
+        ][strtolower(pathinfo($berkas, PATHINFO_EXTENSION))] ?? 'image/png';
+        return 'data:' . $tipe . ';base64,' . base64_encode($isi);
     }
 
     /**

@@ -7,9 +7,10 @@
  *   manual   — ditempel pada koordinat milimeter yang dipilih sendiri oleh
  *              pemeriksanya. Kalau tata letak suratnya bergeser, parafnya ikut
  *              meleset karena koordinatnya tidak ikut bergerak.
- *   otomatis — menindih ruang kosong di sebelah QR Manager, ditarik ke atas
- *              dengan margin negatif. Kalau QR-nya belum terbit (dokumen belum
- *              disetujui), tarikan itu melempar parafnya ke ruang kosong.
+ *   otomatis — dicetak pada baris "Diperiksa sebelum disetujui" di bawah blok
+ *              tanda tangan, sebaris dengan nama pemeriksanya. Tidak pernah
+ *              masuk ke kolom tanda tangan, jadi tidak bisa terbaca sebagai
+ *              tanda tangan Manager maupun client.
  *
  * MURNI MELIHAT.
  *
@@ -65,10 +66,18 @@ foreach ($sumber as $i => $pf) {
     printf("  %d) %-22s %-16s aksi %s\n", $i + 1,
         (string) ($pf['nama'] ?? '-'), (string) ($pf['role_name'] ?? '-'), (string) ($pf['action'] ?? '-'));
     if (!$set) { echo "       (orang ini belum menyimpan gambar parafnya)\n"; continue; }
-    printf("       mode   : %s\n", $set['mode'] ?? 'manual');
-    printf("       posisi : x=%s mm · y=%s mm · lebar=%s mm\n",
-        $set['pos_x'] ?? '-', $set['pos_y'] ?? '-', $set['lebar'] ?? '-');
-    printf("       berkas : %s\n", $set['path'] ?? $set['file'] ?? '(tidak tercatat)');
+    $mode = $set['mode'] ?? 'manual';
+    printf("       mode   : %s\n", $mode);
+    // Koordinat hanya berlaku di mode manual. Mencetaknya untuk paraf otomatis
+    // membuat orang mengira parafnya bisa digeser dari situ — padahal letaknya
+    // ditentukan dokumen.
+    if ($mode === 'manual') {
+        printf("       posisi : x=%s mm · y=%s mm · lebar=%s mm\n",
+            $set['pos_x'] ?? '-', $set['pos_y'] ?? '-', $set['lebar'] ?? '-');
+    } else {
+        printf("       ukuran : %s mm (sisi terpanjang)\n", $set['lebar'] ?? '-');
+    }
+    printf("       berkas : %s\n", $set['gambar_path'] ?? $set['teks'] ?? '(tidak tercatat)');
 }
 echo "\n  Artinya:\n";
 $adaManual = false;
@@ -78,8 +87,5 @@ foreach ($sumber as $pf) {
 }
 echo $adaManual
     ? "  Ada paraf MANUAL — letaknya mengikuti koordinat di atas, bukan kolom tanda tangan.\n"
-    : "  Semua paraf OTOMATIS — letaknya menempel di sebelah QR Manager.\n";
-if ($s['tanpa_qr'] && !$adaManual) {
-    echo "  QR Manager belum terbit, jadi paraf otomatis tidak punya tumpuan.\n";
-}
+    : "  Semua paraf OTOMATIS — tercetak di baris \"Diperiksa sebelum disetujui\".\n";
 echo "\n";

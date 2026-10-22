@@ -52,7 +52,7 @@ foreach (($d['paraf'] ?? []) as $iPf => $pf) {
     $isi = Paraf::html($set, (string) ($pf['nama'] ?? ''), (string) ($pf['role_name'] ?? ''), $kapan,
                        !empty($PDF_MODE) ? 'file' : 'web',
                        $otomatis ? Paraf::maksTinggiOtomatis((float) $set['lebar']) : 0.0,
-                       $otomatis ? Paraf::LEBAR_OTOMATIS_MAKS : 0.0);
+                       0.0);
     if ($isi === '') continue;
 
     if ($otomatis) {
@@ -89,8 +89,9 @@ $skpScheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https
 $skpDir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
 $skpVerifyUrl = $skpScheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $skpDir . '/?r=doc_verify&token=' . ($skp['sign_token'] ?? '');
 // Di PRATINJAU kotak QR tetap dirender meski tokennya belum terbit. Tanpa itu
-// kolom Manager kosong, dan paraf yang semestinya menindih QR terbaca seolah
-// tanda tangan Manager — padahal di surat asli kolom itu memang berisi QR.
+// kedua kolom berdiri kosong dan pemeriksanya tidak bisa menilai apakah surat
+// ini sudah benar — padahal di surat asli keduanya memang berisi QR, bukan
+// tanda tangan.
 $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 ?>
 <style>
@@ -454,26 +455,37 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
         if (!$rows) return;
         $adaGambar = false;
         foreach ($rows as $r) if ($r['gambar'] !== '') { $adaGambar = true; break; }
-        echo '<div style="margin-top:4mm;font-size:8.5px;color:#334155;line-height:1.5"><strong>'
-           . $judul . '</strong>';
         if (!$adaGambar) {
             // Tidak seorang pun memasang gambar paraf — cetak sebaris saja,
             // persis seperti sebelum paraf bergambar ada.
-            echo ' ' . implode('; ', array_column($rows, 'teks')) . '</div>';
+            echo '<div style="margin-top:4mm;font-size:8.5px;color:#334155;line-height:1.5"><strong>'
+               . $judul . '</strong> ' . implode('; ', array_column($rows, 'teks')) . '</div>';
             return;
         }
-        echo '</div><table style="border-collapse:collapse;margin-top:0.8mm">';
-        foreach ($rows as $r) {
-            echo '<tr><td style="width:' . Paraf::LEBAR_OTOMATIS_MAKS . 'mm;padding:0.4mm 3mm 0.4mm 0;'
-               . 'vertical-align:middle">' . $r['gambar'] . '</td>'
-               . '<td style="padding:0.4mm 0;vertical-align:middle;font-size:8.5px;color:#334155">'
-               . $r['teks'] . '</td></tr>';
+        // SATU baris: judul, coretan, lalu nama pemeriksanya — sejajar di
+        // tengah. Judul yang berdiri sendiri di atas membuat parafnya terbaca
+        // menggantung di bawah, lepas dari keterangannya.
+        // Lebar kolom dibiarkan mengikuti isinya: dengan lebar tetap, coretan
+        // yang ramping menyisakan ruang kosong lebar sebelum namanya. Kolom yang
+        // mengikuti isi tetap membuat beberapa pemeriksa sejajar, karena lebarnya
+        // diambil dari baris terlebar.
+        $sel = 'vertical-align:middle;font-size:8.5px;color:#334155';
+        echo '<table style="border-collapse:collapse;margin-top:4mm">';
+        foreach ($rows as $i => $r) {
+            echo '<tr>'
+               . '<td style="padding:0 2.5mm 0 0;' . $sel . '">'
+               . ($i === 0 ? '<strong>' . $judul . '</strong>' : '') . '</td>'
+               . '<td style="padding:0 2.5mm 0 0;vertical-align:middle">' . $r['gambar'] . '</td>'
+               . '<td style="padding:0;' . $sel . '">' . $r['teks'] . '</td>'
+               . '</tr>';
         }
         echo '</table>';
     };
-    // Ada tahap paraf tetapi tidak ada satu pun yang memaraf: tetap dicetak,
-    // supaya tidak terlihat seolah dokumen ini memang tanpa pemeriksaan.
-    if ($parafBeku && !$barisPeriksa && !$barisSetuju) {
+    // Ada tahap persetujuan tetapi tidak ada satu pun yang memaraf: barisnya
+    // tetap dicetak dengan "—", persis seperti sebelumnya, supaya tidak terlihat
+    // seolah dokumen ini memang tanpa pemeriksaan. Tidak bergantung pada ada
+    // tidaknya paraf penyetuju — itu keterangan yang berbeda.
+    if ($parafBeku && !$barisPeriksa) {
         echo '<div style="margin-top:4mm;font-size:8.5px;color:#334155;line-height:1.5">'
            . '<strong>Diperiksa sebelum disetujui:</strong> —</div>';
     }

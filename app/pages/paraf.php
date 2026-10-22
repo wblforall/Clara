@@ -10,12 +10,14 @@ declare(strict_types=1);
  *
  * Letaknya punya dua mode:
  *
- *  - OTOMATIS (bawaan). Paraf ditempatkan di kanan atas QR Manager pada blok
- *    tanda tangan, dekat tetapi tidak bertabrakan. Tidak ada koordinat yang
- *    perlu diisi, dan satu pengaturan ini langsung berlaku untuk SKP, SKS
- *    Gudang, maupun Form Utilities — termasuk template yang dibuat nanti.
- *    Dokumennya sendiri yang menentukan titiknya saat dicetak, jadi posisinya
- *    tidak pernah meleset walau panjang isi dokumen berubah-ubah.
+ *  - OTOMATIS (bawaan). Paraf dicetak pada baris "Diperiksa sebelum disetujui"
+ *    di bawah blok tanda tangan, sebaris dengan nama pemeriksanya. Kolom tanda
+ *    tangan tidak disentuh: "Dibuat Oleh" dan "Mengetahui" divalidasi lewat QR,
+ *    dan satu-satunya tanda tangan di surat itu milik client. Tidak ada
+ *    koordinat yang perlu diisi, dan satu pengaturan ini langsung berlaku untuk
+ *    SKP, SKS Gudang, maupun Form Utilities — termasuk template yang dibuat
+ *    nanti. Dokumennya sendiri yang menentukan titiknya saat dicetak, jadi
+ *    posisinya tidak pernah meleset walau panjang isi dokumen berubah-ubah.
  *
  *  - MANUAL. Untuk yang ingin menaruh paraf di tempat lain: digeser sendiri di
  *    atas pratinjau kertas A4, diatur per jenis dokumen, disimpan dalam
@@ -481,7 +483,11 @@ function my_paraf_page(PDO $pdo): void
                 document.getElementById('blok-inisial').style.display = bentuk() === 'inisial' ? '' : 'none';
 
                 if (otomatis) {
-                    auto.style.width = (lebar * PX) + 'px';
+                    // Kotaknya mengikuti coretannya, bukan angka setelan: paraf
+                    // tinggi-ramping dikecilkan agar tingginya muat, dan kotak
+                    // yang tetap selebar setelan akan memberi jarak palsu ke
+                    // nama di sebelahnya — persis seperti di dokumen.
+                    auto.style.width = 'auto';
                     auto.innerHTML = potonganParaf(lebar, PX);
                     return;
                 }
@@ -585,7 +591,7 @@ function my_paraf_save(PDO $pdo): void
     ]);
     audit($pdo, 'update', 'paraf_settings', $simpanKe, ['mode' => $mode, 'bentuk' => $bentuk, 'lebar' => post('lebar')]);
     flash($mode === 'otomatis'
-        ? 'Paraf tersimpan dan langsung berlaku untuk semua jenis surat — terpasang di kanan atas QR Manager.'
+        ? 'Paraf tersimpan dan langsung berlaku untuk semua jenis surat — tercetak di baris "Diperiksa sebelum disetujui".'
         : 'Paraf untuk ' . Paraf::JENIS[$jenis] . ' tersimpan pada posisi yang Anda tentukan.');
     redirect_to('my_paraf', $balik);
 }
