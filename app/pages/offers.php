@@ -1945,7 +1945,15 @@ function offer_form(PDO $pdo): void
                 <?php /* Bila harga diskon dipakai, kotak Rate ini adalah TARIF PUBLISH (harga
          daftar). Tarif hasil nego diketik di kotak diskon di bawah dan itulah
          yang menghitung seluruh nilai kontrak. */ ?>
-                <div><label>Rate</label><input type="number" step="0.01" name="unit_rate" id="unit_rate" value="<?= h((string) ((float) ($offer['tarif_publish'] ?? 0) > 0 ? (float) $offer['tarif_publish'] : ($offer['unit_rate'] ?? ''))) ?>" <?= $disabled ?>></div>
+                <?php /* Satuan Rate mengikuti Dasar Harga Sewa di sebelahnya.
+                         Tanpa ini kotaknya cuma bertuliskan "Rate" — angkanya bisa
+                         dibaca per hari atau per bulan, dan dropdown di sebelah
+                         terlihat seperti satu-satunya yang mengatur harga. */ ?>
+                <div><label>Rate <span id="rate_satuan" class="muted" style="font-weight:400"></span></label>
+                    <input type="number" step="0.01" name="unit_rate" id="unit_rate" value="<?= h((string) ((float) ($offer['tarif_publish'] ?? 0) > 0 ? (float) $offer['tarif_publish'] : ($offer['unit_rate'] ?? ''))) ?>" <?= $disabled ?>>
+                    <div class="help">Terisi sendiri dari <strong>Master</strong> saat unit dipilih &mdash; boleh diubah, boleh dikosongkan.
+                        Kosong = nilainya dihitung dari <em>Total</em> yang Anda isi.</div>
+                </div>
                 <div class="wide"><label>Keterangan</label><input name="keterangan" value="<?= $v('keterangan') ?>" <?= $disabled ?>></div>
             </div>
             </div><!-- /#single-fields (Objek Sewa) -->
@@ -2488,11 +2496,31 @@ function offer_form(PDO $pdo): void
                 var m = String(size || '').replace(/[mM²]/g, '').match(/(\d+\.?\d*)\s*[×xX]\s*(\d+\.?\d*)/);
                 return m ? parseFloat(m[1]) * parseFloat(m[2]) : 0;
             }
+            // Label satuan Rate — satu daftar, sama dengan yang dipakai PHP
+            // (clara_satuan_harga) supaya tidak pernah berbeda sebutan.
+            var SATUAN_RATE = {
+                daily_area: 'per m\u00b2 / hari', monthly_area: 'per m\u00b2 / bulan',
+                daily_slot: 'per slot / hari', daily_point: 'per titik / hari',
+                monthly: 'per bulan', fixed: 'nilai borongan'
+            };
+            function updateSatuanRate() {
+                var pt = document.getElementById('pricing_type'), el = document.getElementById('rate_satuan');
+                if (!pt || !el) return;
+                var t = SATUAN_RATE[pt.value] || '';
+                el.textContent = t ? '(Rp ' + t + ')' : '';
+            }
+            document.addEventListener('DOMContentLoaded', updateSatuanRate);
+            (function () {
+                var pt = document.getElementById('pricing_type');
+                if (pt) pt.addEventListener('change', updateSatuanRate);
+                updateSatuanRate();
+            })();
+
             function fillMaster(code) {
                 var m = byCode[code]; if (!m) return;
                 var area = document.getElementById('area_sqm'), rate = document.getElementById('unit_rate'), pt = document.getElementById('pricing_type');
                 if (m.rate && rate && !rate.value) rate.value = m.rate;
-                if (m.pricing_type && pt) pt.value = m.pricing_type;
+                if (m.pricing_type && pt) { pt.value = m.pricing_type; updateSatuanRate(); }
                 if (area && !area.value) area.value = m.area_sqm || 0;
                 <?php if ($module === 'media'): ?>
                 var a = parseSizeM2(m.size); if (a > 0 && area) area.value = a.toFixed(2);

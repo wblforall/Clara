@@ -378,22 +378,37 @@ function skp_list_page(PDO $pdo): void
         ];
         ?>
         <?php $mq = $module ? '&module=' . $module : ''; $sq = $status ? '&status=' . $status : ''; ?>
+        <?php
+        // Judul & tombol buat mengikuti menu yang sedang dibuka.
+        //
+        // Begitu menunya dipisah per modul, dropdown yang menawarkan ketiga
+        // jenis dokumen jadi mubazir — dan menyesatkan: orang yang sudah
+        // berada di menu Media masih disodori pilihan Gudang dan Exhibition,
+        // lalu bisa salah pilih dan membuat dokumen di modul yang keliru.
+        // Di dalam menu modul, tombolnya langsung membuat dokumen modul itu.
+        $judulDaftar = ['cl' => 'SKP Exhibition', 'gudang' => 'SKS Gudang', 'media' => 'Form Utilities (Media)'];
+        $buatLabel = ['gudang' => '+ Buat SKS Gudang', 'media' => '+ Buat Form Utilities'];
+        ?>
         <div class="toolbar" style="gap:8px;flex-wrap:wrap">
-            <strong style="font-size:16px">Surat Konfirmasi SKP / SKS / Form Utilities</strong>
-            <?php /* Gudang & Media tidak lewat Surat Penawaran — dokumennya dibuat
-                     langsung dari transaksi lewat tombol ini. */ ?>
-            <div class="dd" style="position:relative">
-                <button type="button" class="btn" onclick="var m=this.nextElementSibling;m.style.display=m.style.display==='block'?'none':'block'">+ Buat Dokumen ▾</button>
-                <div class="dd-menu" style="display:none;position:absolute;z-index:30;right:0;top:calc(100% + 4px);min-width:290px;background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12);overflow:hidden">
-                    <?php /* Hanya Gudang & Media yang dibuat dari sini. Exhibition
-                             tetap lahir dari Surat Penawaran yang sudah DEAL,
-                             jadi pilihannya mengarah ke halaman itu. */ ?>
-                    <a class="dd-item" href="?r=skp_form&module=gudang" style="display:block;padding:9px 14px;font-size:13px">📦 SKS Gudang <span style="color:var(--muted,#64748b);font-size:11px">— formulir kosong</span></a>
-                    <a class="dd-item" href="?r=skp_form&module=media" style="display:block;padding:9px 14px;font-size:13px;border-top:1px solid #f1f5f9">📺 Form Utilities <span style="color:var(--muted,#64748b);font-size:11px">— formulir kosong</span></a>
-                    <a class="dd-item" href="?r=offers&tab=deal" style="display:block;padding:9px 14px;font-size:13px;border-top:1px solid #f1f5f9">🏬 SKP Exhibition <span style="color:var(--muted,#64748b);font-size:11px">— buka Surat Penawaran DEAL</span></a>
-                    <a class="dd-item" href="?r=skp_pick&module=gudang" style="display:block;padding:9px 14px;font-size:12px;border-top:1px solid #f1f5f9;color:var(--muted,#64748b)">↗ Dari transaksi yang sudah ada</a>
+            <strong style="font-size:16px"><?= h($judulDaftar[$module] ?? 'Surat Konfirmasi SKP / SKS / Form Utilities') ?></strong>
+            <?php if ($module === 'gudang' || $module === 'media'): ?>
+                <a class="btn" href="?r=skp_form&module=<?= h($module) ?>"><?= h($buatLabel[$module]) ?></a>
+                <a class="btn light" href="?r=skp_pick&module=<?= h($module) ?>" style="font-size:12.5px">↗ Dari transaksi yang sudah ada</a>
+            <?php elseif ($module === 'cl'): ?>
+                <?php /* Exhibition tidak dibuat dari sini: dokumennya lahir dari
+                         Surat Penawaran yang sudah DEAL dan diteken client. */ ?>
+                <a class="btn" href="?r=offers&tab=deal">+ Buat dari Penawaran DEAL</a>
+            <?php else: ?>
+                <?php /* Hanya di tampilan gabungan, karena di sini modulnya memang belum dipilih. */ ?>
+                <div class="dd" style="position:relative">
+                    <button type="button" class="btn" onclick="var m=this.nextElementSibling;m.style.display=m.style.display==='block'?'none':'block'">+ Buat Dokumen ▾</button>
+                    <div class="dd-menu" style="display:none;position:absolute;z-index:30;right:0;top:calc(100% + 4px);min-width:290px;background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12);overflow:hidden">
+                        <a class="dd-item" href="?r=skp_form&module=gudang" style="display:block;padding:9px 14px;font-size:13px">📦 SKS Gudang</a>
+                        <a class="dd-item" href="?r=skp_form&module=media" style="display:block;padding:9px 14px;font-size:13px;border-top:1px solid #f1f5f9">📺 Form Utilities</a>
+                        <a class="dd-item" href="?r=offers&tab=deal" style="display:block;padding:9px 14px;font-size:13px;border-top:1px solid #f1f5f9">🏬 SKP Exhibition <span style="color:var(--muted,#64748b);font-size:11px">— dari Penawaran DEAL</span></a>
+                    </div>
                 </div>
-            </div>
+            <?php endif; ?>
             <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
                 <?php /* Tab giliran sendiri: supaya pemeriksa tidak perlu menebak
                          mana dokumen yang menunggunya. Hanya tampil kalau dia
@@ -433,7 +448,14 @@ function skp_list_page(PDO $pdo): void
             <?php endforeach; ?>
         </div>
         <div class="panel" style="margin-top:12px">
-            <p style="margin:0 0 10px;color:var(--muted);font-size:13px"><strong>Exhibition:</strong> SKP dibuat dari <strong>Preview Penawaran</strong> yang sudah DEAL. <strong>Gudang &amp; Media:</strong> tidak lewat Surat Penawaran — tekan <strong>+ Buat Dokumen</strong>, isi formulirnya langsung. Transaksinya terbit saat manager menyetujui, tetapi <strong>income bulanannya baru terhitung setelah klien menandatangani</strong> — sebelum itu baris transaksinya ada dengan nilai Rp 0 di laporan.</p>
+            <?php /* Keterangan ikut modul yang dibuka. Menyebut ketiga jalur di
+                     setiap halaman membuat orang membaca aturan yang tidak
+                     berlaku untuk dokumen yang sedang ia buat. */ ?>
+            <p style="margin:0 0 10px;color:var(--muted);font-size:13px"><?php
+                if ($module === 'cl'): ?><strong>SKP Exhibition</strong> dibuat dari <strong>Surat Penawaran</strong> yang sudah DEAL dan ditandatangani client &mdash; bukan dari halaman ini.<?php
+                elseif ($module === 'gudang' || $module === 'media'): ?><strong><?= $module === 'gudang' ? 'SKS Gudang' : 'Form Utilities' ?></strong> tidak lewat Surat Penawaran &mdash; tekan tombol di atas, isi formulirnya langsung.<?php
+                else: ?><strong>Exhibition</strong> dibuat dari Surat Penawaran yang sudah DEAL. <strong>Gudang &amp; Media</strong> tidak lewat penawaran &mdash; formulirnya diisi langsung.<?php
+                endif; ?> Transaksinya terbit saat manager menyetujui, tetapi <strong>income bulanannya baru terhitung setelah klien menandatangani</strong> &mdash; sebelum itu baris transaksinya ada dengan nilai Rp 0 di laporan.</p>
             <div class="table-wrap">
                 <table style="font-size:12.5px">
                     <thead><tr><th>No. SKP/SKS</th><th>Modul</th><th>Kode</th><th>Client</th><th>Periode</th><th>Status</th><th>Dibuat</th><th></th></tr></thead>
