@@ -26,11 +26,10 @@ $tb = fn($s) => preg_replace('/\*(.+?)\*/u', '<b>$1</b>', htmlspecialchars((stri
 
 // status: selesai | sebagian | belum
 $poin = [
- [1, 'Buat baru / format berbeda → buat SP dulu, baru SKP', 'sebagian',
-  'Exhibition sudah wajib lewat Surat Penawaran. Gudang & Media belum — dokumennya dibuat langsung dari menu SKP tanpa penawaran.',
-  ['Input transaksi langsung sudah dimatikan untuk Exhibition — app/pages/transactions.php:432 (`offer_first`).',
-   'Gudang & Media dibuat lewat *+ Buat Dokumen → SKS Gudang / Form Utilities* — app/pages/skp.php:368-369.'],
-  'Tentukan dulu: apakah Gudang & Media WAJIB lewat SP, atau boleh tetap langsung. Kalau wajib, jalur pembuatan langsung di SKP harus ditutup dan form penawaran perlu varian Gudang/Media.'],
+ [1, 'Buat baru / format berbeda → buat SP dulu, baru SKP', 'selesai',
+  'SUDAH SESUAI ATURANMU. Kamu tetapkan: hanya Exhibition yang wajib lewat Surat Penawaran; Gudang dan Media boleh langsung. Itu persis perilaku sistem sekarang, jadi tidak ada yang perlu diubah — yang tadinya saya catat sebagai kekurangan ternyata memang disengaja.',
+  ['Input transaksi langsung dimatikan untuk Exhibition — app/pages/transactions.php:432.', 'Gudang \\& Media dibuat langsung lewat *+ Buat Dokumen* tanpa penawaran — app/pages/skp.php.'],
+  'Tidak ada.'],
 
  [2, 'SP → TTD client → SKP → kerjakan → paraf Asst. Manager & Manager → TTD client → masuk modul → income', 'selesai',
   'SUDAH DIKERJAKAN. SKP baru kini hanya boleh lahir dari penawaran yang benar-benar sudah ditandatangani client. Status DEAL saja tidak cukup — status itu bisa ditandai sendiri oleh sales, jadi tidak membuktikan client menyepakati apa pun.',
@@ -39,11 +38,10 @@ $poin = [
    'Risiko yang saya khawatirkan kemarin ternyata NOL: dari 33 penawaran berstatus DEAL di kedua properti (e-Walk 23, Pentacity 10), *seluruhnya sudah ditandatangani client*. Tidak ada satu pun pekerjaan berjalan yang terhenti oleh aturan ini.'],
   'Tidak ada.'],
 
- [3, 'SKP yang sudah di-TTD client tidak bisa diedit / direvisi lagi', 'sebagian',
-  'Formulirnya sudah terkunci saat berstatus Ditandatangani. Yang masih boleh diganti hanya berkas scan lampiran — nilai, periode, dan nomor dokumen tidak ikut berubah.',
-  ['Dokumen terkunci, hanya lampiran yang bisa diperbaiki — app/pages/skp.php:1297-1304.',
-   'Permintaan revisi hanya diterima dari status `approved`, bukan `signed` — app/pages/skp.php:3194.'],
-  'Perlu satu kali pemeriksaan menyeluruh ke penjaga sisi simpan (bukan hanya tampilan) agar tidak ada jalur POST yang masih bisa menembus dokumen signed.'],
+ [3, 'SKP yang sudah di-TTD client tidak bisa diedit / direvisi lagi', 'selesai',
+  'SUDAH, DAN SUDAH SAYA PERIKSA SAMPAI KE SISI SIMPAN. Dokumen yang sudah ditandatangani client tidak bisa diubah — bukan hanya tombolnya yang disembunyikan, penyimpanannya sendiri menolak.',
+  ['skp_save() menolak semua status selain `draft` dan `rejected` — jadi `submitted`, `approved`, dan `signed` semuanya terkunci. app/pages/skp.php.', 'Satu pengecualian yang memang disengaja: berkas scan lampiran (mis. KTP salah unggah) masih boleh diganti. Nilai, periode, dan nomor dokumen tidak ikut berubah.', 'Permintaan revisi pun hanya diterima dari status `approved`, tidak dari `signed`.'],
+  'Tidak ada.'],
 
  [4, 'Revisi mengeluarkan nilainya dari income (keluar dari Exhibition/Media/Gudang)', 'selesai',
   'Sudah berjalan. Saat permintaan revisi disetujui, dokumen dikembalikan ke draft, nomor dokumen dipertahankan, tautan tanda tangan dimatikan, dan alokasi income dihapus sampai dokumennya selesai diperbaiki dan disetujui lagi.',
@@ -56,10 +54,10 @@ $poin = [
   ['Penanda revisi tampil di formulir — app/pages/skp.php:834-836.'],
   'Perlu penelusuran kolom per kolom di formulir SKP, dibandingkan dengan daftar kolom yang diturunkan dari penawaran.'],
 
- [6, 'Kolom yang berasal dari penawaran dikunci dan diperjelas: hanya bisa diubah lewat SP, kalau tidak bisa → Pengajuan Hapus Data', 'belum',
-  'Belum ada penandaan khusus. Kolom yang berasal dari penawaran tidak dibedakan tampilannya dari kolom yang memang milik SKP, dan tidak ada petunjuk ke mana harus mengubahnya.',
-  [],
-  'Tandai kolom turunan penawaran (gembok + keterangan "ubah lewat Surat Penawaran"), dan tambahkan tautan langsung ke Pengajuan Hapus Data bila penawarannya sudah terkunci.'],
+ [6, 'Kolom yang berasal dari penawaran dikunci dan diperjelas: hanya bisa diubah lewat SP, kalau tidak bisa → Pengajuan Hapus Data', 'selesai',
+  'SUDAH DIKERJAKAN. Formulir SKP yang lahir dari penawaran kini membuka dengan keterangan terang: mana yang terkunci, mana yang masih boleh diubah, dan apa jalan keluarnya kalau yang terkunci ternyata salah.',
+  ['Banner menyebut nomor penawarannya, lalu memisahkan dua daftar — terkunci: client, unit/lokasi, luas, jenis \\& dasar harga; masih boleh diubah: masa sewa, total biaya sewa, PPN, Service Charge, deposit, listrik, lampiran, catatan.', 'Karena SKP hanya boleh lahir dari penawaran ber-tanda tangan (poin 2), penawarannya pasti sudah terkunci — jadi banner menyebutkan satu-satunya jalan: *mengajukan penghapusan*, lengkap dengan tautannya.', 'Tampil untuk dokumen dari penawaran di status apa pun, termasuk yang sudah disetujui — justru saat terkunci penjelasannya paling dibutuhkan.'],
+  'Tidak ada.'],
 
  [7, 'SP bisa diedit sepenuhnya selama client belum TTD; begitu di-TTD, terkunci', 'selesai',
   'SUDAH DIKERJAKAN HARI INI. Sebelumnya yang mengunci adalah status DEAL — padahal DEAL bisa ditandai sendiri oleh sales sebelum ada tanda tangan, sehingga salah ketik sepele pun tidak bisa dibetulkan dan jalan keluarnya menghapus lalu membuat ulang. Sekarang yang mengunci adalah tanda tangan client.',
@@ -85,16 +83,15 @@ $poin = [
    'Akibatnya alokasi dilepas dan draft SKP terbit — app/pages/transactions.php:1157 dan sesudahnya.'],
   'Tidak ada untuk lubang ini. Poin 8 (pintu masuknya langsung dari menu SKP) masih terbuka, tetapi angkanya sudah aman.'],
 
- [11, 'Menu SKP tergabung antara Exhibition, Media, dan Gudang — membingungkan', 'belum',
-  'Ketiganya memang satu menu. Saringan modul sudah ada di dalamnya, tetapi pintu masuknya tetap satu dan pembuatan dokumen Gudang/Media bersembunyi di dalam menu bernama SKP.',
-  ['Menu tunggal *SKP Pameran* — app/pages/bootstrap.php:132.',
-   'Pembuatan Gudang/Media di dalam menu itu — app/pages/skp.php:368-369.'],
-  'Pisahkan jadi menu sendiri (mis. *SKP Exhibition*, *SKS Gudang*, *Form Utilities*) dengan daftar dan tombol buat masing-masing.'],
+ [11, 'Menu SKP tergabung antara Exhibition, Media, dan Gudang — membingungkan', 'selesai',
+  'SUDAH DIKERJAKAN. Satu menu bernama SKP dulu memuat tiga jenis dokumen yang alurnya berbeda, sehingga orang yang mau membuat SKS Gudang harus menebak tempatnya. Sekarang tiga pintu masuk sendiri-sendiri.',
+  ['Menu: *SKP Exhibition*, *SKS Gudang*, *Form Utilities (Media)* — app/pages/bootstrap.php. Judul halamannya ikut berubah, jadi tidak perlu memeriksa saringan untuk tahu sedang melihat daftar yang mana.', 'Daftarnya tetap satu halaman dengan saringan modul, sehingga riwayatnya utuh dan bisa dilihat lintas modul bila perlu.', 'Ditambah kotak *pencarian bebas*: nomor dokumen, kode unit, atau nama client. Saringan modul \\& status ikut terbawa saat mencari.', 'Pembatasan per-PIC memang sudah ada sejak sebelumnya — tiap sales hanya melihat dokumen miliknya.', 'Catatan teknis: kolom skp_documents bercollation utf8mb4_bin sedangkan kolom transaksi/penawaran utf8_general_ci, jadi pencariannya membandingkan tiap kolom sendiri-sendiri dengan collation eksplisit.'],
+  'Tidak ada.'],
 
- [12, 'Perubahan format di e-Walk ikut berlaku di Pentacity; alurnya sama, isinya boleh beda', 'sebagian',
-  'Alur dan formulirnya memang satu kode untuk kedua properti, jadi perubahan apa pun otomatis berlaku di keduanya. Yang dipisah per properti adalah datanya: unit, PIC, target, dan pengaturan.',
-  ['Seluruh halaman memakai `current_property_id()` sebagai penyaring data, bukan percabangan kode per mall.'],
-  'Perlu dipastikan sekali lagi setelah poin 11 dan 13 dikerjakan, agar menu baru dan kolom baru ikut muncul di kedua properti.'],
+ [12, 'Perubahan format di e-Walk ikut berlaku di Pentacity; alurnya sama, isinya boleh beda', 'selesai',
+  'SUDAH, DAN MEMANG BEGITU RANCANGANNYA. Maksudmu: perubahan sistem berlaku untuk e-Walk dan Pentacity sekaligus. Itu yang terjadi — satu kode dipakai kedua properti, jadi setiap perbaikan di dokumen ini otomatis berlaku di keduanya.',
+  ['Tidak ada percabangan kode per mall. Yang dipisah hanya DATAnya — unit, PIC, target, pengaturan — lewat `current_property_id()`.', 'Diuji: menu baru, kotak pencarian, pratinjau bercap, dan banner kunci semuanya muncul sama di kedua properti.'],
+  'Tidak ada.'],
 
  [13, 'Dasar harga dipilih lewat DROPDOWN: per m² per hari (bawaan) atau per m² per bulan — hanya salah satu yang dipakai, dan SP/SKP/PDF/tautan client ikut menyesuaikan', 'selesai',
   'SUDAH DIKERJAKAN. Dasar harganya kini DIPILIH dari satu dropdown, bawaannya *Per m² / hari*, dan pilihan itu menentukan satuan yang tercetak di mana-mana. Kabar buruknya yang ketemu saat mengerjakan: label di surat SKP dulu hanya mengenal satu jenis harga bulanan, sehingga kontrak berdasar tarif *per m² per BULAN* ikut tercetak "per m² per hari" — satu angka, dua arti, dan client yang membacanya salah.',
@@ -115,10 +112,10 @@ $poin = [
   [],
   'Selesaikan poin 2, 8, dan 10 — ketiganya menutup jalur yang membuat income masuk tanpa persetujuan lengkap.'],
 
- [16, 'Format baru (biaya per m² per bulan) harus jelas di SP dan/atau SKP, di PDF, dan di halaman yang dilihat client', 'belum',
-  'Mengikuti poin 13.',
-  [],
-  'Dikerjakan bersama poin 13.'],
+ [16, 'Format baru (biaya per m² per bulan) harus jelas di SP dan/atau SKP, di PDF, dan di halaman yang dilihat client', 'selesai',
+  'SUDAH, bersama poin 13. Dasar harga yang dipilih tercetak terang di surat penawaran, di SKP, di PDF, dan di halaman yang dibuka client — semuanya mengambil satuan dari satu daftar yang sama.',
+  ['`clara_satuan_harga()` di app/helpers.php dipakai formulir, kedua surat, PDF, dan halaman tanda tangan client.'],
+  'Tidak ada.'],
 
  [17, 'Pratinjau surat ber-stempel "contoh" supaya PIC, Asst. Manager, dan Manager bisa memeriksa sebelum semuanya disetujui', 'selesai',
   'SUDAH DIKERJAKAN. Tombol *Lihat Contoh Surat* ada di formulir SKP dan bisa ditekan di status apa pun — termasuk saat masih draft. Hasilnya surat utuh dengan tata letak yang sama persis dengan yang nanti diterima client, bercap melintang "CONTOH — BELUM SAH" dan tanpa nomor dokumen.',
@@ -197,21 +194,39 @@ Pemeriksa terpaksa membaca dari formulir, kolom demi kolom.</p>
 <img src="<?= $h($aset) ?>/ss_surat_bercap.png" style="width:120mm;border:1px solid #cbd5e1">
 
 <pagebreak>
-<h1 style="font-size:15pt">Urutan yang saya sarankan</h1>
-<p>Bukan menurut nomor poinnya, tetapi menurut mana yang paling cepat menghentikan angka salah.</p>
+<h1 style="font-size:15pt">Bukti: poin 11 &mdash; menu dipisah</h1>
+<p><b>Sebelum.</b> Satu menu <i>SKP Pameran</i> memuat tiga jenis dokumen sekaligus. Yang mau membuat
+SKS Gudang harus menebak bahwa tempatnya di dalam menu bernama SKP, lalu mencari di dropdown
+<i>+ Buat Dokumen</i>. Daftarnya tidak bisa dicari.</p>
+<p><b>Sesudah.</b> Tiga pintu masuk sendiri-sendiri, judul halaman ikut, dan ada kotak pencarian:</p>
+<img src="<?= $h($aset) ?>/ss_menu_terpisah.png" style="width:168mm;border:1px solid #cbd5e1">
+
+<pagebreak>
+<h1 style="font-size:15pt">Bukti: poin 6 &mdash; mana yang terkunci</h1>
+<p><b>Sebelum.</b> Kolom yang datang dari penawaran tidak dibedakan sama sekali dari kolom milik SKP,
+dan tidak ada petunjuk ke mana harus mengubahnya. Orang mencoba, gagal, lalu menebak sendiri &mdash;
+ada yang menghapus dokumennya, ada yang membuat penawaran kedua.</p>
+<p><b>Sesudah.</b> Keterangannya terang di atas formulir, lengkap dengan nomor penawarannya dan
+jalan keluarnya:</p>
+<img src="<?= $h($aset) ?>/ss_banner_kunci.png" style="width:168mm;border:1px solid #cbd5e1">
+
+<pagebreak>
+<h1 style="font-size:15pt">Yang masih tersisa</h1>
+<p>Lima poin belum dikerjakan. Semuanya saya tahan dengan sengaja &mdash; masing-masing menyentuh
+formulir dan alur yang dipakai setiap hari, dan mengerjakannya terburu-buru justru melanggar
+permintaanmu sendiri di poin 15.</p>
 <ol>
-    <li><b>Poin 17 &mdash; pratinjau ber-stempel.</b> Paling kecil risikonya (tidak mengubah data sama
-        sekali) dan langsung menghapus kesulitan Asst. Manager & Manager memeriksa. Kerjakan lebih dulu.</li>
-    <li><b>Poin 8 &amp; 10 &mdash; perpanjangan lewat SKP.</b> Ini yang membuat income masuk tanpa
-        persetujuan. Begitu perpanjangan tidak lagi lewat formulir transaksi, lubangnya tertutup.</li>
-    <li><b>Poin 2 &mdash; DEAL wajib bertanda tangan client.</b> Harus disertai keputusan tentang
-        penawaran yang sudah terlanjur DEAL tanpa tanda tangan, supaya pekerjaan berjalan tidak berhenti.</li>
-    <li><b>Poin 11 &mdash; pisahkan menu.</b> Tidak mengubah data, mengurangi salah pilih.</li>
-    <li><b>Poin 13 &amp; 16 &mdash; harga per m² per bulan.</b> Mesinnya sudah ada; yang kurang
-        sakelar, validasi, dan penampilannya.</li>
-    <li><b>Poin 6, 5, 3 &mdash; penguncian kolom &amp; pemeriksaan menyeluruh.</b></li>
+    <li><b>Poin 8 &mdash; perpanjangan berangkat dari menu modulnya ke formulir yang sesuai</b>
+        (Gudang &rarr; formulir Gudang, Exhibition &rarr; formulir Exhibition, Media &rarr; Media).
+        Angkanya sudah aman sejak poin 10 ditutup; yang tersisa pintu masuknya. <b>Kerjakan duluan.</b></li>
+    <li><b>Poin 9 &mdash; auto-fill perpanjangan yang pintar.</b> Menyusul poin 8, karena isinya
+        pindah ke formulir yang berbeda.</li>
+    <li><b>Poin 5 &mdash; saat revisi, seluruh isi SKP bisa diedit sesuai penawarannya.</b> Perlu
+        penelusuran kolom per kolom, dibandingkan dengan daftar kolom turunan penawaran.</li>
     <li><b>Poin 14 &mdash; rapikan formulir.</b> Paling akhir, karena susunannya ikut berubah oleh
-        poin 11 dan 13.</li>
+        poin 8 dan 9. Arahanmu sudah saya catat: dibagi per kebutuhan, keterangan padat, dan orang
+        bingung harus tahu arah scroll-nya.</li>
+    <li><b>Poin 15 &mdash; pastikan semua alur aman.</b> Tuntas sendirinya setelah keempat di atas selesai.</li>
 </ol>
 
 <h2 style="margin-top:16px">Cara memeriksanya sendiri</h2>

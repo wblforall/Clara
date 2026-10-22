@@ -129,7 +129,14 @@ function layout(string $title, callable $body, array $opts = []): void
         ['', 'unit_analysis', 'Analisa Unit', 'view_dashboard'],
         ['', 'comparison', 'Perbandingan Periode', 'view_dashboard'],
         ['Input', 'offers', 'Surat Penawaran', 'manage_offers'],
-        ['', 'skp', 'SKP Pameran', 'manage_skp'],
+        // Satu menu bernama "SKP" dulu memuat tiga jenis dokumen yang alurnya
+        // berbeda — Exhibition lewat penawaran, Gudang & Media tidak. Orang yang
+        // mau membuat SKS Gudang harus menebak bahwa tempatnya di dalam menu
+        // bernama SKP. Dipisah supaya pintu masuknya sejelas isinya; daftarnya
+        // tetap satu halaman dengan saringan modul, jadi riwayatnya utuh.
+        ['', 'skp&module=cl', 'SKP Exhibition', 'manage_skp'],
+        ['', 'skp&module=gudang', 'SKS Gudang', 'manage_skp'],
+        ['', 'skp&module=media', 'Form Utilities (Media)', 'manage_skp'],
         ['', 'contract_requests', 'Permintaan Kontrak', 'manage_skp'],
         ['', 'deletion_request', 'Pengajuan Hapus Data', 'request_delete'],
         ['', 'transactions&module=cl', 'Exhibition', 'view_transactions'],

@@ -277,6 +277,25 @@ function skp_list_page(PDO $pdo): void
         $where[] = '(s.module = ? OR (s.module IS NULL AND COALESCE(t.module, o.module) = ?))';
         $params[] = $module; $params[] = $module;
     }
+    // Pencarian bebas: nomor dokumen, kode unit, atau nama client. Daftar
+    // dokumen dipakai juga sebagai RIWAYAT — tanpa pencarian, mencari satu
+    // kontrak lama berarti menyusuri halaman demi halaman.
+    $q = trim((string) getv('q', ''));
+    if ($q !== '') {
+        // Kolom milik skp_documents bercollation utf8mb4_bin, sedangkan kolom
+        // transaksi/penawaran utf8_general_ci. Menggabungkannya lewat COALESCE
+        // lalu membandingkannya ditolak MySQL ("illegal mix of collations") —
+        // jebakan yang sama sudah pernah kena di saringan modul. Jadi tiap
+        // kolom dibandingkan sendiri-sendiri, dan yang utf8mb4_bin diberi
+        // collation eksplisit supaya pencariannya juga tidak peka huruf besar.
+        $where[] = '(s.skp_no COLLATE utf8mb4_general_ci LIKE ?
+                     OR s.master_code COLLATE utf8mb4_general_ci LIKE ?
+                     OR t.master_code LIKE ? OR o.master_code LIKE ?
+                     OR sc.company_name LIKE ? OR tc.company_name LIKE ? OR oc.company_name LIKE ?
+                     OR sc.brand_name LIKE ? OR tc.brand_name LIKE ? OR oc.brand_name LIKE ?)';
+        for ($i = 0; $i < 10; $i++) $params[] = "%$q%";
+    }
+
     // Pembatasan per-sales: SKP miliknya, yaitu yang PIC-nya dia (di dokumen,
     // di penawaran, atau di transaksi) ATAU yang ia buat sendiri. PIC transaksi
     // & PIC dokumen ikut dicek supaya dokumen tetap terlihat walau dibuatkan
@@ -340,7 +359,11 @@ function skp_list_page(PDO $pdo): void
         $rows[$i]['_revisi']   = ($r['status'] === 'approved' && ApprovalLine::revisiPending($pdo, (int) $r['id'])) ? 1 : 0;
     }
 
-    layout('Surat Konfirmasi Pameran (SKP)', function () use ($rows, $status, $module, $antreanN, $giliran) {
+    // Judul halaman ikut modul yang dibuka, supaya orang tahu sedang melihat
+    // daftar yang mana tanpa harus memeriksa saringannya.
+    $judulModul = ['cl' => 'SKP Exhibition', 'gudang' => 'SKS Gudang', 'media' => 'Form Utilities (Media)'];
+    layout($judulModul[$module] ?? 'Semua Dokumen (SKP / SKS / Form Utilities)',
+        function () use ($rows, $status, $module, $antreanN, $giliran, $q) {
         $modBadge = [
             'cl'     => ['Exhibition', '#0f766e', '#ccfbf1'],
             'media'  => ['Media', '#0369a1', '#e0f2fe'],
@@ -386,6 +409,22 @@ function skp_list_page(PDO $pdo): void
                 <?php endforeach; ?>
             </div>
         </div>
+        <?php /* Kotak cari: daftar ini juga berfungsi sebagai riwayat dokumen,
+                 jadi harus bisa dicari — bukan disusuri halaman demi halaman.
+                 Saringan modul & status ikut terbawa supaya hasilnya tetap di
+                 dalam konteks yang sedang dibuka. */ ?>
+        <form method="get" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px">
+            <input type="hidden" name="r" value="skp">
+            <?php if ($module): ?><input type="hidden" name="module" value="<?= h($module) ?>"><?php endif; ?>
+            <?php if ($status): ?><input type="hidden" name="status" value="<?= h($status) ?>"><?php endif; ?>
+            <input name="q" value="<?= h($q) ?>" placeholder="Cari nomor dokumen / kode unit / nama client…"
+                   style="min-width:280px;padding:6px 10px;font-size:12.5px">
+            <button class="btn light" style="padding:5px 12px;font-size:12.5px">Cari</button>
+            <?php if ($q !== ''): ?>
+            <a class="btn light" style="padding:5px 12px;font-size:12.5px"
+               href="?r=skp<?= $module ? '&module=' . h($module) : '' ?><?= $status ? '&status=' . h($status) : '' ?>">Hapus pencarian</a>
+            <?php endif; ?>
+        </form>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px">
             <span style="font-size:12px;color:var(--muted);margin-right:2px">Modul:</span>
             <?php foreach (['' => 'Semua', 'cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'] as $mk => $mlbl):
@@ -1040,6 +1079,24 @@ function skp_form(PDO $pdo): void
                 <div><label>Luas Area (m²)<?= $komponenPaket ? ' <span class="muted" style="font-weight:400">(total ' . count($komponenPaket) . ' lokasi)</span>' : '' ?></label>
                     <input id="spec-luas" value="<?= number_format($komponenPaket ? $luasPaket : $area, 2, ',', '.') ?>" disabled></div>
                 <div><label>Luas Seating Area (m²)</label><input name="seating_area" value="<?= $val('seating_area') ?>" inputmode="decimal" placeholder="opsional" <?= $editable ? '' : 'disabled' ?>></div>
+                <?php endif; ?>
+                <?php /* Mana yang boleh diubah, mana yang terkunci — dan KENAPA.
+                         Tanpa keterangan ini orang mencoba mengubah kolom yang
+                         datang dari penawaran, gagal, lalu menebak sendiri: ada
+                         yang menghapus dokumennya, ada yang membuat penawaran
+                         kedua. Keduanya lebih repat dibereskan daripada satu
+                         kalimat yang menjelaskan. */ ?>
+                <?php if ($offerId): ?>
+                <div class="wide" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:9px 11px;font-size:12px;color:#92400e;line-height:1.55">
+                    <strong>🔒 Dokumen ini lahir dari Surat Penawaran<?= !empty($src['offer_no']) ? ' ' . h((string) $src['offer_no']) : '' ?>.</strong>
+                    Yang <u>terkunci</u> dan ikut apa adanya dari penawaran:
+                    <strong>client, unit/lokasi, luas, jenis &amp; dasar harga</strong>.
+                    Yang <u>masih boleh diubah</u> di halaman ini:
+                    <strong>masa sewa, total biaya sewa, PPN, Service Charge, deposit, listrik, lampiran, dan catatan</strong>.
+                    <br>Penawarannya sudah ditandatangani client &mdash; itu syarat SKP ini boleh dibuat &mdash; sehingga isinya
+                    <strong>tidak bisa diubah lagi</strong>. Kalau yang terkunci ternyata salah, satu-satunya jalan adalah
+                    <a href="?r=deletion_request" style="font-weight:700">mengajukan penghapusan</a>, lalu dibuat ulang dari penawaran yang benar.
+                </div>
                 <?php endif; ?>
                 <?php if ($ubahPeriode): ?>
                 <div><label>Tanggal Mulai <span style="color:#dc2626">*</span></label><input type="date" name="p_start_date" value="<?= h((string) $src['start_date']) ?>" required></div>
