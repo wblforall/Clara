@@ -33,32 +33,18 @@ final class Paraf
     public const SEMUA = 'all';
 
     /**
-     * Geometri paraf mode OTOMATIS — "menindih" blok tanda tangan seperti gambar
-     * di-depan-teks pada Word: QR dan nama di bawahnya tidak bergeser sama sekali.
+     * Mode OTOMATIS: paraf dicetak pada BARIS PEMERIKSAAN di bawah blok tanda
+     * tangan — "Diperiksa sebelum disetujui" — bersebelahan dengan nama
+     * pemeriksanya, bukan di dalam salah satu kolom tanda tangan.
      *
-     * Caranya: sebuah tabel setinggi OTO_TARIK ditarik kembali ke atas sejauh
-     * tinggi itu juga, sehingga tinggi bersih yang ia tambahkan ke aliran
-     * dokumen = NOL. Ia lalu tergambar menumpang di ruang kosong sebelah kanan
-     * QR. mPDF dan browser sama-sama menghormati margin atas negatif pada
-     * tabel, jadi pratinjau HTML dan PDF memberi hasil yang sama — berbeda
-     * dengan position:absolute yang tidak didukung mPDF di aliran normal.
-     *
-     * Angkanya berasal dari lebar kolom "Mengetahui" pada blok tanda tangan:
-     * lebar isi kolom ±56mm, QR 18mm di tengahnya, jadi tepi kanan QR ada di
-     * ±37mm dan paraf mulai 1mm setelahnya. OTO_GESER + OTO_LEBAR harus tetap
-     * di bawah 56mm, kalau lebih tabelnya diciutkan dan parafnya ikut meleset.
+     * Dulu parafnya ditempel menindih ruang kosong di kanan QR Manager. Di
+     * kertas itu memang kebiasaannya, tetapi di surat ini kolom "Dibuat Oleh"
+     * dan "Mengetahui" sama sekali tidak berisi tanda tangan — keduanya
+     * divalidasi lewat QR. Coretan yang menempel di sebelah QR Manager jadi
+     * terbaca sebagai TANDA TANGAN Manager, padahal satu-satunya tanda tangan
+     * di surat ini milik client di kolom "Menyetujui". Dipindah ke barisnya
+     * sendiri, paraf tetap tercetak dan tidak bisa salah dibaca lagi.
      */
-    public const OTO_GESER  = 38.0;   // jarak dari tepi kiri kolom ke awal paraf
-    public const OTO_LEBAR  = 17.0;   // ruang tersisa untuk paraf sampai tepi kolom
-    public const OTO_TARIK  = 21.0;   // tinggi tarikan — puncak paraf jadi sejajar puncak QR
-
-    /**
-     * Kelebihan tinggi tetap yang selalu ditambahkan mPDF pada sebuah tabel.
-     * Diukur langsung (0,51pt) dan terbukti KONSTAN pada tinggi sel 10, 20,
-     * maupun 30mm, jadi cukup dikurangkan sekali supaya tinggi bersihnya
-     * benar-benar nol dan nama di bawah QR tidak turun 0,2mm.
-     */
-    public const OTO_SISA = 0.18;
 
     /**
      * Batas mutlak tinggi paraf dalam mode otomatis.
@@ -72,8 +58,14 @@ final class Paraf
      */
     public const OTO_TINGGI_GAMBAR = 12.0;
 
-    /** Lebar maksimum paraf dalam mode otomatis — ruang di samping QR terbatas. */
-    public const LEBAR_OTOMATIS_MAKS = self::OTO_LEBAR;
+    /**
+     * Lebar maksimum paraf dalam mode otomatis.
+     *
+     * Angkanya tidak diubah ketika paraf pindah ke baris pemeriksaan: dokumen
+     * yang sudah terbit memakai batas ini, dan membesarkannya sekarang akan
+     * ikut membesarkan paraf di surat yang sudah diserahkan ke client.
+     */
+    public const LEBAR_OTOMATIS_MAKS = 17.0;
 
     public static function bawaan(): array
     {
@@ -281,39 +273,5 @@ final class Paraf
     public static function maksTinggiOtomatis(float $ukuranMm): float
     {
         return min($ukuranMm, self::OTO_TINGGI_GAMBAR);
-    }
-
-    /**
-     * Bungkus paraf mode otomatis menjadi lapisan yang MENINDIH blok tanda
-     * tangan: tampil di kanan atas QR tanpa menggeser QR maupun nama di
-     * bawahnya. Lihat OTO_* untuk cara kerja dan asal angkanya.
-     *
-     * Dipasang SESUDAH .sigarea di kolom "Mengetahui" — urutan itu penting,
-     * karena tarikannya dihitung mundur dari dasar area tanda tangan.
-     */
-    /**
-     * @param bool $adaQr Ada kotak QR di atasnya atau tidak.
-     *
-     * Tarikan ke atas (margin negatif) hanya benar bila memang ADA kotak QR yang
-     * ditindih. Pada dokumen yang belum disetujui, QR-nya belum terbit — tarikan
-     * itu lalu melempar parafnya ke ruang kosong di atas blok tanda tangan,
-     * melayang lepas dari kolomnya. Dulu tidak pernah kelihatan karena surat
-     * hanya bisa dicetak setelah disetujui; begitu ada pratinjau yang boleh
-     * dibuka di status apa pun, cacatnya langsung muncul.
-     */
-    public static function overlay(string $isi, bool $adaQr = true): string
-    {
-        if ($isi === '') return '';
-        // Tanpa QR: paraf duduk wajar di dalam kolomnya, tanpa ditarik ke atas
-        // dan tanpa digeser ke sisi kanan tempat QR biasanya berada.
-        $margin = $adaQr ? '-' . (self::OTO_TARIK + self::OTO_SISA) . 'mm 0 0 0' : '0';
-        $geser  = $adaQr ? self::OTO_GESER : 0.0;
-        $lebar  = $adaQr ? self::OTO_LEBAR : (self::OTO_GESER + self::OTO_LEBAR);
-        return '<table style="width:' . (self::OTO_GESER + self::OTO_LEBAR) . 'mm;border-collapse:collapse;'
-             . 'margin:' . $margin . '"><tr>'
-             . ($geser > 0 ? '<td style="width:' . $geser . 'mm;padding:0;font-size:1pt">&nbsp;</td>' : '')
-             . '<td style="width:' . $lebar . 'mm;height:' . self::OTO_TARIK . 'mm;padding:0;'
-             . 'vertical-align:top;text-align:' . ($adaQr ? 'left' : 'center') . '">' . $isi . '</td>'
-             . '</tr></table>';
     }
 }

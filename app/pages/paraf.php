@@ -130,9 +130,9 @@ function my_paraf_page(PDO $pdo): void
                     <label class="pilihmode" style="flex:1;min-width:270px;max-width:420px;display:flex;gap:9px;align-items:flex-start;
                                border:1px solid #e2e8f0;background:#fff;border-radius:8px;padding:10px 12px;cursor:pointer;font-weight:400">
                         <input type="radio" name="mode" value="otomatis" style="margin-top:2px" <?= $mode === 'otomatis' ? 'checked' : '' ?>>
-                        <span style="font-size:13px"><strong>Otomatis</strong> &mdash; di kanan atas QR Manager
+                        <span style="font-size:13px"><strong>Otomatis</strong> &mdash; di baris pemeriksaan, bawah tanda tangan
                             <span class="help" style="display:block;margin-top:2px">Berlaku untuk <strong>semua jenis surat</strong> sekaligus.
-                            Tidak perlu mengatur posisi, dan tidak akan menimpa QR.</span></span>
+                            Tidak perlu mengatur posisi, dan tidak menyentuh kolom tanda tangan.</span></span>
                     </label>
                     <label class="pilihmode" style="flex:1;min-width:270px;max-width:420px;display:flex;gap:9px;align-items:flex-start;
                                border:1px solid #e2e8f0;background:#fff;border-radius:8px;padding:10px 12px;cursor:pointer;font-weight:400">
@@ -155,20 +155,19 @@ function my_paraf_page(PDO $pdo): void
 
                 <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start">
                     <div>
-                        <?php /* Mode otomatis: tiruan blok tanda tangan, supaya hubungan
-                                 paraf dengan QR terlihat tanpa membuka dokumen. */ ?>
+                        <?php /* Mode otomatis: tiruan blok tanda tangan, supaya terlihat
+                                 paraf jatuh di baris pemeriksaan — bukan di dalam salah
+                                 satu kolom tanda tangan. */ ?>
                         <div id="pratinjau-auto">
                             <div style="font-size:12px;font-weight:700;margin-bottom:6px">Hasilnya di blok tanda tangan</div>
                             <?php
                             /* Tiruan ini memakai PROPORSI DOKUMEN yang sebenarnya: lebar isi
-                               A4 178mm dipetakan ke 430px, QR 18mm di tengah kolom, paraf
-                               mulai Paraf::OTO_GESER mm dari tepi kiri kolom. Angkanya
+                               A4 178mm dipetakan ke 430px, QR 18mm di tengah kolom. Angkanya
                                diturunkan dari konstanta yang sama dengan yang dipakai saat
                                mencetak, jadi tiruan ini tidak bisa menyimpang dari hasil asli. */
                             $PX   = 560 / 178;                       // px per mm
                             $qrPx = round(18 * $PX);                 // QR 18mm
                             $sigPx = round(20.64 * $PX);             // tinggi area tanda tangan (78px di dokumen)
-                            $kiri = round(Paraf::OTO_GESER * $PX);   // awal paraf dari tepi kolom
                             $pad  = round(1.5875 * $PX, 1);          // padding kolom (6px di dokumen)
                             ?>
                             <div style="width:560px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:16px 0">
@@ -184,15 +183,9 @@ function my_paraf_page(PDO $pdo): void
                                         </td>
                                         <td style="width:33.33%;text-align:center;vertical-align:top;padding:0 <?= $pad ?>px">
                                             <div style="font-size:11px;margin-bottom:5px">Mengetahui,</div>
-                                            <?php /* position:relative hanya pembungkus — paraf melayang di
-                                                     atasnya dan TIDAK ikut menghitung tinggi, persis seperti
-                                                     di dokumen. QR tetap di tengah kolom. */ ?>
-                                            <div style="position:relative">
-                                                <div style="height:<?= $sigPx ?>px">
-                                                    <div style="width:<?= $qrPx ?>px;height:<?= $qrPx ?>px;margin:0 auto;background:repeating-conic-gradient(#111 0 25%, #fff 0 50%) 0 0/8px 8px"></div>
-                                                    <div style="font-size:7.5px;color:#94a3b8;margin-top:2px">Scan untuk validasi</div>
-                                                </div>
-                                                <div id="auto-paraf" style="position:absolute;left:<?= $kiri ?>px;top:-1px;text-align:left"></div>
+                                            <div style="height:<?= $sigPx ?>px">
+                                                <div style="width:<?= $qrPx ?>px;height:<?= $qrPx ?>px;margin:0 auto;background:repeating-conic-gradient(#111 0 25%, #fff 0 50%) 0 0/8px 8px"></div>
+                                                <div style="font-size:7.5px;color:#94a3b8;margin-top:2px">Scan untuk validasi</div>
                                             </div>
                                             <div style="font-size:11px;font-weight:700">Manager</div>
                                         </td>
@@ -203,10 +196,21 @@ function my_paraf_page(PDO $pdo): void
                                         </td>
                                     </tr>
                                 </table>
+                                <?php /* Baris pemeriksaan — tempat paraf sebenarnya dicetak.
+                                         Susunannya sama dengan dokumen: gambar di kiri, nama
+                                         pemeriksanya di sebelahnya. */ ?>
+                                <div style="margin:14px <?= $pad ?>px 0;border-top:1px dashed #e2e8f0;padding-top:9px">
+                                    <div style="font-size:10px;font-weight:700;color:#334155">Diperiksa sebelum disetujui:</div>
+                                    <div style="display:flex;gap:10px;align-items:center;margin-top:4px">
+                                        <div id="auto-paraf" style="text-align:left"></div>
+                                        <div style="font-size:10px;color:#334155"><?= h($nama) ?><?= $jabatan !== '' ? ' (' . h($jabatan) . ')' : '' ?></div>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="help" style="margin-top:5px">Paraf Anda <strong>menindih</strong> ruang kosong di kanan atas QR
-                                &mdash; seperti gambar di-depan-teks pada Word. QR dan nama di bawahnya <strong>tidak bergeser
-                                sedikit pun</strong>, dan posisinya sama di semua jenis surat.</div>
+                            <div class="help" style="margin-top:5px">Paraf Anda dicetak pada <strong>baris pemeriksaan</strong> di bawah
+                                blok tanda tangan, bersebelahan dengan nama Anda. Kolom &ldquo;Dibuat Oleh&rdquo; dan
+                                &ldquo;Mengetahui&rdquo; <strong>tidak disentuh</strong> &mdash; keduanya divalidasi lewat QR, bukan
+                                tanda tangan. Letaknya sama di semua jenis surat.</div>
                         </div>
 
                         <div id="pratinjau-manual" style="display:none">
@@ -466,7 +470,7 @@ function my_paraf_page(PDO $pdo): void
                     l.style.background  = on ? '#f0fdfa' : '#fff';
                 });
 
-                // Mode otomatis: ruang di samping QR terbatas, lebarnya dibatasi.
+                // Mode otomatis: lebarnya dibatasi supaya baris pemeriksaan tidak melar.
                 document.getElementById('lbl-judul').textContent = otomatis ? 'Ukuran paraf (sisi terpanjang)' : 'Lebar paraf';
                 il.max = otomatis ? MAKS_AUTO : 80;
                 if (otomatis && parseFloat(il.value) > MAKS_AUTO) il.value = MAKS_AUTO;

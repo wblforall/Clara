@@ -25,35 +25,38 @@ require_once dirname(__DIR__) . '/Paraf.php';
  * milik mPDF. Keduanya membaca milimeter yang sama persis.
  */
 $PARAF_OVERLAY = [];   // mode manual — ditempel pada koordinat halaman
-$PARAF_QR = '';        // mode otomatis — menumpang di sebelah QR Manager
-foreach (($d['paraf'] ?? []) as $pf) {
+$PARAF_BARIS = [];     // mode otomatis — dicetak di baris pemeriksaan, per pemeriksa
+foreach (($d['paraf'] ?? []) as $iPf => $pf) {
     $set = $pf['paraf'] ?? null;
     if (!$set || !in_array($pf['action'] ?? '', ['paraf', 'approve'], true)) continue;
     $kapan = ($pf['waktu'] ?? '') !== '' ? date('d/m/Y H:i', strtotime((string) $pf['waktu'])) : '';
 
-    // Mode otomatis tidak memakai koordinat sama sekali: parafnya MENINDIH ruang
-    // kosong di kanan atas QR Manager — dekat, tidak bertabrakan, dan tidak
-    // menggeser QR maupun nama di bawahnya. Berlaku di jenis surat mana pun
-    // tanpa perlu diatur ulang.
+    // Mode otomatis tidak memakai koordinat sama sekali: parafnya dicetak pada
+    // baris "Diperiksa sebelum disetujui" di bawah blok tanda tangan, tepat di
+    // sebelah nama pemeriksanya. Berlaku di jenis surat mana pun tanpa perlu
+    // diatur ulang.
     //
     // Snapshot lama belum punya kunci 'mode' — dan pada masanya mode otomatis
     // memang belum ada, jadi semuanya manual. Default 'manual' di sini membuat
     // dokumen yang sudah terbit tetap tercetak persis seperti aslinya.
     $otomatis = ($set['mode'] ?? 'manual') !== 'manual';
     if ($otomatis) {
-        // Ruang di samping QR terbatas. Dokumen lama bisa menyimpan lebar yang
-        // melebihi batas sekarang, jadi dijepit di sini juga — kalau tidak,
-        // tabel penindihnya diciutkan mPDF dan parafnya meleset.
+        // Dokumen lama bisa menyimpan lebar yang melebihi batas sekarang, jadi
+        // dijepit di sini juga supaya barisnya tidak melar.
         $set['lebar'] = min((float) $set['lebar'], Paraf::LEBAR_OTOMATIS_MAKS);
+        // Nama & waktu di bawah coretan dimatikan: baris pemeriksaan sudah
+        // menyebut nama, jabatan, dan jamnya tepat di sebelah paraf — mencetak
+        // keterangan yang sama dua kali hanya membuat barisnya menumpuk.
+        $set['tampil_nama'] = $set['tampil_waktu'] = 0;
     }
     $isi = Paraf::html($set, (string) ($pf['nama'] ?? ''), (string) ($pf['role_name'] ?? ''), $kapan,
                        !empty($PDF_MODE) ? 'file' : 'web',
                        $otomatis ? Paraf::maksTinggiOtomatis((float) $set['lebar']) : 0.0,
-                       $otomatis ? Paraf::OTO_LEBAR : 0.0);
+                       $otomatis ? Paraf::LEBAR_OTOMATIS_MAKS : 0.0);
     if ($isi === '') continue;
 
     if ($otomatis) {
-        $PARAF_QR .= $isi;
+        $PARAF_BARIS[$iPf] = $isi;
         continue;
     }
     $PARAF_OVERLAY[] = [
@@ -397,11 +400,6 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
         </td>
         <td class="col"><div class="role"><?= $skpDocType === 'sks' ? 'Menyetujui,' : 'Mengetahui,' ?></div>
             <div class="sigarea"><?php if ($skpHasQr): ?><?php if (empty($skp['sign_token'])): ?><?php /* Pratinjau: kotaknya ada supaya letaknya persis seperti surat asli, tetapi TIDAK memuat QR sungguhan — tokennya memang belum terbit, dan QR yang dipindai lalu gagal lebih buruk daripada tidak ada QR sama sekali. */ ?><table style="width:70px;margin:0 auto 3px;border-collapse:collapse"><tr><td style="width:70px;height:70px;border:1px dashed #cbd5e1;text-align:center;vertical-align:middle;font-size:6.5px;color:#94a3b8;line-height:1.4">QR validasi<br>terbit saat<br>disetujui</td></tr></table><?php elseif (!empty($PDF_MODE)): ?><div class="qrbox"><?= clara_qr_img($skpVerifyUrl, 18) ?></div><?php else: ?><div class="qrbox" data-qr="<?= $h($skpVerifyUrl) ?>"></div><?php endif; ?><div class="qrhint">Scan untuk validasi</div><?php endif; ?></div>
-            <?php /* Paraf mode otomatis MENINDIH ruang kosong di kanan atas QR —
-                     seperti gambar di-depan-teks pada Word. Area QR di atas tidak
-                     disentuh sama sekali, jadi QR dan nama di bawahnya tetap di
-                     tempatnya. Lihat Paraf::overlay(). */ ?>
-            <?= Paraf::overlay($PARAF_QR, $skpHasQr) ?>
             <div class="name"<?= $skpHasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($skpManager) ?><br><span <?= $skpJab ?>>Casual Leasing Manager</span></div>
         </td>
         <td class="col"><div class="role"><?= $skpDocType === 'sks' ? 'Pihak Penyewa,' : ($skpDocType === 'fu' ? 'Pemohon,' : 'Menyetujui,') ?></div>
@@ -426,24 +424,62 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
         </td>
     </tr></table>
 
-    <?php /* Jejak pemeriksaan berjenjang: siapa memparaf sebelum disetujui.
-             Dicetak sebagai satu baris di bawah blok tanda tangan — BUKAN kolom
-             keempat — supaya lebar tabel tanda tangan dokumen yang sudah terbit
-             tidak berubah. Dokumen tanpa tahap paraf tidak mencetak apa pun. */ ?>
-    <?php $parafBeku = $d['paraf'] ?? []; ?>
-    <?php if ($parafBeku): ?>
-    <div style="margin-top:4mm;font-size:8.5px;color:#334155;line-height:1.5">
-        <strong>Diperiksa sebelum disetujui:</strong>
-        <?php $bagian = [];
-              foreach ($parafBeku as $pf) {
-                  if (($pf['action'] ?? '') !== 'paraf') continue;
-                  $bagian[] = $h($pf['nama'] ?: '-')
-                      . (($pf['role_name'] ?? '') !== '' ? ' (' . $h($pf['role_name']) . ')' : '')
-                      . (($pf['waktu'] ?? '') !== '' ? ' — ' . $h(date('d/m/Y H:i', strtotime((string) $pf['waktu']))) : '');
-              }
-              echo $bagian ? implode('; ', $bagian) : '—'; ?>
-    </div>
-    <?php endif; ?>
+    <?php /* Jejak pemeriksaan berjenjang: siapa memaraf sebelum disetujui.
+             Dicetak di bawah blok tanda tangan — BUKAN kolom keempat — supaya
+             lebar tabel tanda tangan dokumen yang sudah terbit tidak berubah.
+
+             GAMBAR parafnya ikut tercetak di sini, bersebelahan dengan nama
+             pemiliknya. Dulu gambar itu ditempel menindih ruang kosong di kanan
+             QR Manager; di surat ini kolom "Dibuat Oleh" dan "Mengetahui" tidak
+             berisi tanda tangan sama sekali — keduanya divalidasi lewat QR —
+             sehingga coretan yang menempel di sebelah QR terbaca sebagai TANDA
+             TANGAN Manager. Satu-satunya tanda tangan di surat ini milik client
+             di kolom "Menyetujui". Dokumen tanpa tahap paraf tidak mencetak
+             apa pun. */ ?>
+    <?php
+    $parafBeku = $d['paraf'] ?? [];
+    // Paraf pemeriksa dan paraf penyetuju dipisah: label keduanya berbeda, dan
+    // menyebut penyetuju sebagai "pemeriksa" akan keliru di surat yang terbit.
+    $barisPeriksa = $barisSetuju = [];
+    foreach ($parafBeku as $iPf => $pf) {
+        $aksi = (string) ($pf['action'] ?? '');
+        $gbr  = (string) ($PARAF_BARIS[$iPf] ?? '');
+        if ($aksi !== 'paraf' && !($aksi === 'approve' && $gbr !== '')) continue;
+        $baris = ['gambar' => $gbr, 'teks' => $h($pf['nama'] ?: '-')
+            . (($pf['role_name'] ?? '') !== '' ? ' (' . $h($pf['role_name']) . ')' : '')
+            . (($pf['waktu'] ?? '') !== '' ? ' — ' . $h(date('d/m/Y H:i', strtotime((string) $pf['waktu']))) : '')];
+        if ($aksi === 'paraf') $barisPeriksa[] = $baris; else $barisSetuju[] = $baris;
+    }
+    $cetakParaf = static function (string $judul, array $rows): void {
+        if (!$rows) return;
+        $adaGambar = false;
+        foreach ($rows as $r) if ($r['gambar'] !== '') { $adaGambar = true; break; }
+        echo '<div style="margin-top:4mm;font-size:8.5px;color:#334155;line-height:1.5"><strong>'
+           . $judul . '</strong>';
+        if (!$adaGambar) {
+            // Tidak seorang pun memasang gambar paraf — cetak sebaris saja,
+            // persis seperti sebelum paraf bergambar ada.
+            echo ' ' . implode('; ', array_column($rows, 'teks')) . '</div>';
+            return;
+        }
+        echo '</div><table style="border-collapse:collapse;margin-top:0.8mm">';
+        foreach ($rows as $r) {
+            echo '<tr><td style="width:' . Paraf::LEBAR_OTOMATIS_MAKS . 'mm;padding:0.4mm 3mm 0.4mm 0;'
+               . 'vertical-align:middle">' . $r['gambar'] . '</td>'
+               . '<td style="padding:0.4mm 0;vertical-align:middle;font-size:8.5px;color:#334155">'
+               . $r['teks'] . '</td></tr>';
+        }
+        echo '</table>';
+    };
+    // Ada tahap paraf tetapi tidak ada satu pun yang memaraf: tetap dicetak,
+    // supaya tidak terlihat seolah dokumen ini memang tanpa pemeriksaan.
+    if ($parafBeku && !$barisPeriksa && !$barisSetuju) {
+        echo '<div style="margin-top:4mm;font-size:8.5px;color:#334155;line-height:1.5">'
+           . '<strong>Diperiksa sebelum disetujui:</strong> —</div>';
+    }
+    $cetakParaf('Diperiksa sebelum disetujui:', $barisPeriksa);
+    $cetakParaf('Disetujui dengan paraf:', $barisSetuju);
+    ?>
 
     <?php /* Form Utilities: blok CATATAN berada di bawah tanda tangan, mengikuti
              susunan formulir kertasnya. */ ?>
