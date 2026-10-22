@@ -23,26 +23,156 @@
  *       --banding=berkas.json --bulan=2026-10 --keluar=Tutorial.pdf
  */
 
+/**
+ * Susun langkah tutorial dari hasil scripts/cek_semua_pic.php.
+ *
+ * Tiap golongan selisih punya tindakan yang berbeda, dan perbedaan itulah yang
+ * paling sering salah dikerjakan orang: yang nilai kontraknya sudah benar
+ * TIDAK boleh diubah nilainya — cukup bulan pengakuannya; yang belum ada harus
+ * dibuat lewat menu yang sesuai modulnya; dan yang masa sewanya menyeberang ke
+ * bulan berikutnya tidak boleh disentuh sama sekali.
+ *
+ * Mengembalikan [langkah, sisaWajar, targetSpreadsheet].
+ */
+function langkah_dari_sandingan(string $berkas, string $picXlsx, string $bln): array
+{
+    $h = json_decode((string) @file_get_contents($berkas), true);
+    if (!is_array($h)) return [[], [], null];
+    $d = null;
+    foreach ($h as $nama => $isi) {
+        if (mb_strtolower((string) $nama) === mb_strtolower($picXlsx)
+            || mb_strtolower((string) ($isi['pic_clara'] ?? '')) === mb_strtolower($picXlsx)) { $d = $isi; break; }
+    }
+    if ($d === null) return [[], [], null];
+
+    $fmt   = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
+    $modul = ['cl' => 'Exhibition', 'gudang' => 'Gudang', 'media' => 'Media'];
+    $L = [];
+
+    // 1. Nilai kontraknya sudah benar, hanya bulan pengakuannya yang terbagi.
+    foreach ($d['beda'] ?? [] as $b) {
+        if (($b['sebab'] ?? '') !== 'pengakuan') continue;
+        $L[] = [
+            'judul' => 'Betulkan bulan pengakuan ' . $b['nama'],
+            'hasil' => (float) $b['selisih'],
+            'apa'   => 'Nilai kontraknya *sudah benar* (' . $fmt($b['nilai_kontrak']) . '). Yang salah cuma pembagiannya: '
+                     . 'CLARA menyebarnya ke beberapa bulan sehingga ' . $bln . ' hanya kebagian ' . $fmt($b['nilai_clara'])
+                     . ', sedangkan spreadsheet membukukan utuh di bulan mulainya.',
+            'isi'   => [
+                'Buka menu *Input → ' . ($modul[$b['modul']] ?? $b['modul']) . '*.',
+                'Cari *' . $b['nama'] . '* (kode unit *' . $b['kode'] . '*, transaksi *#' . $b['trx'] . '*), tekan *Edit*.',
+                'Di dropdown *Nilai Diakui di Bulan*, ganti dari *Spread per Bulan (Recurring)* jadi *Bulan Awal (bulan mulai)*.',
+                '*Jangan ubah nilainya.* Nilai kontraknya sudah benar.',
+                'Tekan *Simpan*.'],
+            'awas'  => 'Setelah diubah, bulan-bulan berikutnya tidak lagi kebagian nilai kontrak ini — memang begitu seharusnya kalau spreadsheet membukukannya utuh di bulan mulai.',
+            'selesai' => 'Di *Analisa → Laporan PIC* bulan ini, *' . $b['nama'] . '* bernilai ' . $fmt($b['nilai_ss']) . '.',
+        ];
+    }
+
+    // 2. Belum ada di CLARA — jalurnya berbeda per modul.
+    foreach ($d['kurang'] ?? [] as $k) {
+        $mod  = $k['modul'] ?? null;
+        $kode = $k['kode'] ?? null;
+        $unit = $kode ? ('*' . $kode . '*' . (empty($k['unit_pasti']) ? ' (dugaan — pastikan dulu di *Master Data*)' : '')) : 'unit sesuai spreadsheet';
+        if ($mod === 'cl' || $mod === null) {
+            $isi = [
+                'Buka menu *Input → Surat Penawaran*, tekan *+ Buat Penawaran Exhibition*.',
+                'Isi client dan unit ' . $unit . ', PIC *' . ($d['pic_clara'] ?? '') . '*, dan periodenya sesuai kontrak.',
+                'Isi harganya sampai *Grand Total* di kotak Ringkasan Biaya tertulis tepat ' . $fmt($k['nilai']) . '.',
+                'Simpan, buka *Preview*, tekan *Tandai DEAL*, lalu buat SKP-nya.',
+                'Alurnya: paraf Asst. Manager → disetujui Manager → dikirim ke klien untuk tanda tangan.'];
+            $awas = 'Income baru terhitung *setelah klien menandatangani*. Sebelum itu barisnya sudah kelihatan tetapi nilainya Rp 0 — itu bukan error.';
+        } else {
+            $isi = [
+                'Buka menu *Input → SKP Pameran*, tekan *+ Buat Dokumen*.',
+                'Pilih *' . ($mod === 'gudang' ? 'SKS Gudang' : 'Form Utilities') . '*.',
+                'Isi client dan unit ' . $unit . ', PIC *' . ($d['pic_clara'] ?? '') . '*, periodenya sesuai kontrak.',
+                'Isi nilainya ' . $fmt($k['nilai']) . ', lalu Simpan.',
+                'Ajukan sampai disetujui Manager, lalu kirim ke klien untuk tanda tangan.'];
+            $awas = 'Gudang dan Media tidak lewat Surat Penawaran. Income tetap baru terhitung setelah klien menandatangani.';
+        }
+        $L[] = [
+            'judul' => 'Input ' . mb_substr((string) $k['ket'], 0, 48),
+            'hasil' => (float) $k['nilai'],
+            'apa'   => 'Baris ini ada di spreadsheet ' . $bln . ' tetapi belum ada di CLARA.',
+            'isi'   => $isi, 'awas' => $awas,
+            'selesai' => 'Di *Analisa → Laporan PIC* bulan ini muncul baris senilai ' . $fmt($k['nilai']) . '.',
+        ];
+    }
+
+    // 3. Nilai kontraknya sendiri berbeda — harus dipastikan dulu, bukan
+    //    langsung diubah. Yang benar bisa CLARA, bisa spreadsheet.
+    foreach ($d['beda'] ?? [] as $b) {
+        if (($b['sebab'] ?? '') === 'pengakuan') continue;
+        $L[] = [
+            'judul' => 'Pastikan nilai ' . $b['nama'],
+            'hasil' => (float) $b['selisih'],
+            'apa'   => 'Spreadsheet menulis ' . $fmt($b['nilai_ss']) . ', CLARA ' . $fmt($b['nilai_clara'])
+                     . '. Nilai kontrak di CLARA memang ' . $fmt($b['nilai_kontrak']) . ' — jadi bukan soal pembagian bulan, angkanya yang berbeda.',
+            'isi'   => [
+                'Buka surat penawaran / SKP *' . $b['nama'] . '* dan lihat nilai yang disepakati.',
+                'Kalau *spreadsheet yang benar*: buka *Input → ' . ($modul[$b['modul']] ?? $b['modul'])
+                    . '*, cari *#' . $b['trx'] . '* (' . $b['kode'] . '), tekan *Edit*, betulkan nilainya jadi ' . $fmt($b['nilai_ss']) . ', Simpan.',
+                'Kalau *CLARA yang benar*: jangan ubah apa pun di CLARA — selnya di spreadsheet yang perlu dibetulkan.'],
+            'awas'  => 'Jangan diubah sebelum melihat dokumennya. Selisihnya ' . $fmt(abs((float) $b['selisih']))
+                     . ', dan menyamakan angka ke dokumen yang salah membuat laporan ikut salah.',
+            'selesai' => 'Nilai di CLARA dan di spreadsheet sama, dan keduanya sama dengan dokumen kontraknya.',
+        ];
+    }
+
+    // 4. Ada di CLARA, tidak ada di spreadsheet — kecuali yang memang menyeberang bulan.
+    $sisa = [];
+    foreach ($d['lebih'] ?? [] as $c) {
+        if (($c['ada_bulan_depan'] ?? null) === true) { $sisa[] = $c; continue; }
+        $L[] = [
+            'judul' => 'Pastikan ' . $c['nama'] . ' (' . $c['kode'] . ')',
+            'hasil' => -(float) $c['nilai'],
+            'apa'   => 'Ada di CLARA (' . $fmt($c['nilai']) . ', ' . $c['mulai'] . ' s/d ' . $c['selesai']
+                     . ') tetapi tidak ada di spreadsheet ' . $bln . ($c['lintas_bulan'] ? ', dan di bulan berikutnya pun tidak ada.' : '.'),
+            'isi'   => [
+                'Pastikan dulu: apakah kontrak ini memang ada?',
+                'Kalau *tidak ada*: buka *Input → Pengajuan Hapus Data*, pilih transaksi *#' . $c['trx'] . '*, tulis alasannya, ajukan.',
+                'Kalau *ada*: jangan hapus apa pun — selnya di spreadsheet yang perlu diisi.'],
+            'awas'  => 'Jangan dihapus sebelum yakin. Kalau ternyata kontraknya benar ada, angka akhirmu lebih tinggi '
+                     . $fmt($c['nilai']) . ' dari spreadsheet, dan itu yang benar.',
+            'selesai' => 'Baris *' . $c['nama'] . '* sudah tidak muncul lagi di Laporan PIC bulan ini.',
+        ];
+    }
+    return [$L, $sisa, (float) ($d['spreadsheet'] ?? 0)];
+}
+
 $root = dirname(__DIR__);
 require_once $root . '/app/env.php';
 require_once $root . '/app/Database.php';
 require_once $root . '/app/helpers.php';
 require_once $root . '/app/pdf.php';
 
-$opt = array_merge(['pic' => '', 'prop' => '2', 'banding' => '', 'bulan' => '', 'keluar' => ''],
-    getopt('', ['pic:', 'prop:', 'banding:', 'bulan:', 'keluar:']));
-if ($opt['pic'] === '' || $opt['banding'] === '' || $opt['bulan'] === '') {
-    fwrite(STDERR, "Pakai: --pic=\"Nama\" --banding=berkas.json --bulan=2026-10 [--prop=2] [--keluar=x.pdf]\n");
+$opt = array_merge(['pic' => '', 'prop' => '2', 'banding' => '', 'bulan' => '', 'keluar' => '',
+                    'hasil' => '', 'pic-xlsx' => ''],
+    getopt('', ['pic:', 'prop:', 'banding:', 'bulan:', 'keluar:', 'hasil:', 'pic-xlsx:']));
+if ($opt['pic'] === '' || $opt['bulan'] === '' || ($opt['banding'] === '' && $opt['hasil'] === '')) {
+    fwrite(STDERR, "Pakai: --pic=\"Nama\" --bulan=2026-10 (--banding=berkas.json | --hasil=sandingan.json --pic-xlsx=NAMA) [--prop=2] [--keluar=x.pdf]\n");
     exit(2);
 }
 $pic = (string) $opt['pic'];
 $pid = (int) $opt['prop'];
 $bln = (string) $opt['bulan'];
-$ss  = json_decode((string) file_get_contents((string) $opt['banding']), true);
+$ss = $opt['banding'] !== ''
+    ? json_decode((string) file_get_contents((string) $opt['banding']), true)
+    : [];
 if (!is_array($ss)) { fwrite(STDERR, "Berkas banding tidak terbaca.\n"); exit(2); }
 
 $langkah = $ss['langkah'][$bln] ?? [];
-if (!$langkah) { fwrite(STDERR, "Berkas banding belum memuat langkah untuk $bln.\n"); exit(2); }
+$sisaWajar = [];
+$targetSS  = null;
+if (!$langkah && $opt['hasil'] !== '') {
+    [$langkah, $sisaWajar, $targetSS] = langkah_dari_sandingan(
+        (string) $opt['hasil'], (string) ($opt['pic-xlsx'] ?: $pic), $bln);
+}
+if (!$langkah) {
+    fwrite(STDERR, "Tidak ada langkah untuk $bln — tidak ada yang perlu dikerjakan, atau berkasnya salah.\n");
+    exit(1);
+}
 
 if ($opt['keluar'] === '') {
     $opt['keluar'] = $root . '/docs/Tutorial_' . str_replace('-', '_', $bln) . '_'
@@ -109,6 +239,10 @@ ob_start(); ?>
     <tr><td class="hijau">Sesudah semua langkah selesai</td><td class="n hijau"><b><?= $rp($akhir) ?></b></td></tr>
 </table>
 </div>
+<?php if ($sisaWajar && $targetSS !== null): ?>
+<p class="muted" style="margin:-6px 0 10px">Angka itu <b>lebih besar</b> dari spreadsheet
+(<?= $rp($targetSS) ?>), dan memang seharusnya begitu &mdash; penjelasannya di halaman terakhir.</p>
+<?php endif; ?>
 <p style="margin:0">Ada <b><?= count($langkah) ?> langkah</b>. Kerjakan berurutan.
 Setiap langkah menyebutkan angka yang harus muncul sesudahnya &mdash; kalau tidak cocok,
 berhenti di situ dan tanyakan, jangan lanjut.</p>
@@ -166,9 +300,28 @@ berhenti di situ dan tanyakan, jangan lanjut.</p>
 <div class="angka">
 <table>
     <tr><td>Yang harus tertulis di situ</td><td class="n"><b><?= $rp($akhir) ?></b></td></tr>
+    <?php if ($targetSS !== null): ?>
+    <tr><td class="muted">Spreadsheet <?= $h($blnTeks) ?></td><td class="n muted"><?= $rp($targetSS) ?></td></tr>
+    <?php endif; ?>
 </table>
 </div>
+<?php if ($sisaWajar):
+    $jmlSisa = array_sum(array_map(fn($c) => (float) $c['nilai'], $sisaWajar)); ?>
+<div class="awas">
+<p style="margin:0 0 5px"><b>Angkamu akan lebih besar <?= $rp($jmlSisa) ?> dari spreadsheet &mdash; dan itu benar.</b></p>
+<p style="margin:0 0 5px">Kontrak berikut masa sewanya menyeberang ke bulan depan. CLARA membukukan seluruh
+nilainya di bulan <b>mulai</b>, sedangkan spreadsheet menaruhnya di bulan berikutnya. Nilainya tidak hilang
+dan tidak dobel &mdash; hanya beda bulan. <b>Jangan diapa-apakan.</b></p>
+<ul style="margin:0 0 0 16px">
+<?php foreach ($sisaWajar as $c): ?>
+    <li><b><?= $h($c['nama']) ?></b> &middot; <?= $h($c['kode']) ?> &middot; <?= $rp($c['nilai']) ?>
+        <span class="muted">(<?= $h($c['mulai']) ?> s/d <?= $h($c['selesai']) ?>)</span></li>
+<?php endforeach; ?>
+</ul>
+</div>
+<?php else: ?>
 <p>Kalau angkanya sudah sama, <?= $h($blnTeks) ?> selesai dan tidak ada lagi yang perlu diinput.</p>
+<?php endif; ?>
 
 <h2 style="margin-top:18px">Kalau angkanya belum sama</h2>
 <ol>

@@ -58,6 +58,9 @@ public/report_recurring.pdf
 # Laporan jadi + aset screenshot: memuat nama & dokumen klien nyata.
 # Sumber pembangunnya (scripts/build_*.php) boleh di-commit, hasilnya tidak.
 docs/*.pdf
+# Termasuk subfolder: laporan per PIC memuat nama klien dan angka income,
+# dan repo ini publik.
+docs/**/*.pdf
 docs/rekonsiliasi_assets/
 docs/*_assets/
 # Contoh dokumen hasil fitur — memuat nama klien asli, repo ini publik.
