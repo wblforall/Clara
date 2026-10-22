@@ -1683,6 +1683,32 @@ function offer_form(PDO $pdo): void
         </div>
         <?php endif; ?>
 
+        <?php /* Penunjuk arah, sama seperti di formulir SKP. Surat Penawaran
+                 sama panjangnya — tujuh bagian — dan sebelumnya tidak ada cara
+                 melompat selain menggulir sambil menebak. Hanya penunjuk; isi
+                 dan urutan formulirnya tidak diubah. */ ?>
+        <style>
+            .sp-nav { position: sticky; top: 0; z-index: 20; display: flex; gap: 6px; flex-wrap: wrap;
+                      background: #fff; border: 1px solid var(--border, #e2e8f0); border-radius: 10px;
+                      padding: 8px 10px; margin-top: 12px; box-shadow: 0 2px 8px rgba(15,23,42,.05); }
+            .sp-nav a { font-size: 12px; padding: 4px 10px; border-radius: 999px; text-decoration: none;
+                        color: #334155; background: #f1f5f9; white-space: nowrap; }
+            .sp-nav a:hover { background: var(--primary, #0D9488); color: #fff; }
+            .sp-nav span { font-size: 11px; color: var(--muted, #64748b); align-self: center; margin-right: 2px; }
+            .panel h3[id] { scroll-margin-top: 58px; }
+        </style>
+        <div class="sp-nav">
+            <span>Lompat ke:</span>
+            <a href="#sp-penerima">Penerima</a>
+            <a href="#sp-objek">Objek Sewa</a>
+            <a href="#sp-periode">Periode</a>
+            <a href="#sp-pengakuan">Pengakuan</a>
+            <a href="#sp-harga">Harga</a>
+            <a href="#sp-bayar">Pembayaran</a>
+            <?php /* Bagian Catatan hanya ada saat penawarannya masih bisa diedit —
+                     tautannya ikut, supaya tidak ada tombol yang menuju ke mana pun. */ ?>
+            <?php if ($offer && $editable): ?><a href="#sp-catatan">Catatan</a><?php endif; ?>
+        </div>
         <form class="panel" method="post" action="?r=offer_save" style="margin-top:12px" id="offer-form">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="id" value="<?= (int)($offer['id'] ?? 0) ?>">
@@ -1692,7 +1718,7 @@ function offer_form(PDO $pdo): void
             $cliLabel = '';
             foreach ($clients as $cl) if ((int)$cl['id'] === (int)($offer['client_id'] ?? 0)) { $cliLabel = $cl['company_name'] . ($cl['brand_name'] ? ' (' . $cl['brand_name'] . ')' : ''); break; }
             ?>
-            <h3 style="margin-top:0">Penerima</h3>
+            <h3 id="sp-penerima" style="margin-top:0">Penerima</h3>
             <div class="form-grid">
                 <div>
                     <label>Client / Perusahaan</label>
@@ -1890,7 +1916,7 @@ function offer_form(PDO $pdo): void
             </div>
 
             <div id="single-fields" style="<?= $isBundle ? 'display:none' : '' ?>">
-            <h3>Objek Sewa</h3>
+            <h3 id="sp-objek">Objek Sewa</h3>
             <div class="form-grid">
                 <?php
                 $unitLabel = '';
@@ -1972,13 +1998,13 @@ function offer_form(PDO $pdo): void
             </div>
             </div><!-- /#single-fields (Objek Sewa) -->
 
-            <h3>Periode</h3>
+            <h3 id="sp-periode">Periode</h3>
             <div class="form-grid">
                 <div><label>Tanggal Mulai</label><input type="date" name="start_date" id="start_date" value="<?= $v('start_date') ?>" required <?= $disabled ?>></div>
                 <div><label>Tanggal Selesai</label><input type="date" name="end_date" id="end_date" data-min-dari="start_date" value="<?= $v('end_date') ?>" required <?= $disabled ?>></div>
             </div>
 
-            <h3>Pengakuan & Recurring</h3>
+            <h3 id="sp-pengakuan">Pengakuan &amp; Recurring</h3>
             <div class="form-grid">
                 <div>
                     <label>Metode Pengakuan</label>
@@ -2020,7 +2046,7 @@ function offer_form(PDO $pdo): void
 
             <?php /* Semua yang menyangkut uang dikumpulkan di bagian bawah:
                      harga, biaya listrik, PPN, service charge, DP & deposit. */ ?>
-            <h3>Harga</h3>
+            <h3 id="sp-harga">Harga</h3>
             <div class="form-grid">
                 <div class="single-price"><label>Total Kontrak <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="total_calc" value="" readonly><input type="hidden" name="total_calculated" id="total_calc_h" value="<?= $v('total_calculated') ?>"></div>
                 <div class="single-price"><label>Harga / Bulan <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="monthly_disp" value="" readonly><input type="hidden" name="monthly_amount" id="monthly_amount" value="<?= $v('monthly_amount') ?>"></div>
@@ -2244,7 +2270,7 @@ function offer_form(PDO $pdo): void
             </div>
 
             <div id="single-pay" style="<?= $isBundle ? 'display:none' : '' ?>">
-            <h3>Pembayaran <span style="font-weight:400;font-size:12px;color:var(--muted)">(DP & deposit dihitung dari harga/bulan; bisa di-override)</span></h3>
+            <h3 id="sp-bayar">Pembayaran <span style="font-weight:400;font-size:12px;color:var(--muted)">(DP & deposit dihitung dari harga/bulan; bisa di-override)</span></h3>
             <div id="tpl-note" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:9px 13px;margin-bottom:10px;font-size:12.5px;color:#075985"></div>
             <div class="form-grid">
                 <div><label>DP (bulan, min 1)</label><input type="number" step="0.5" min="1" name="dp_months" id="dp_months" value="<?= $v('dp_months', '1') ?>" <?= $disabled ?>></div>
@@ -2319,7 +2345,7 @@ function offer_form(PDO $pdo): void
             </div>
 
             <?php if ($offer && $editable): ?>
-            <h3>Catatan Revisi / Nego</h3>
+            <h3 id="sp-catatan">Catatan Revisi / Nego</h3>
             <input name="rev_note" placeholder="mis. turun harga jadi 20jt, tambah 1 bulan gratis…" <?= $disabled ?> style="width:100%">
             <?php endif; ?>
 

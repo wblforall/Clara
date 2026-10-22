@@ -1520,6 +1520,20 @@ function skp_form(PDO $pdo): void
                 <button type="submit" onclick="document.getElementById('skp-action').value='save'" class="btn secondary">Simpan Draft</button>
                 <button type="submit" onclick="document.getElementById('skp-action').value='submit'" style="background:#0369a1">Simpan & Submit untuk Approval</button>
                 <a class="btn secondary" href="?r=skp">Batal</a>
+                <?php /* Draft yang belum jadi apa-apa boleh dibuang di sini juga.
+                         Tanpa ini, perpanjangan yang ditinggal di tengah jalan
+                         menumpuk sebagai draft kosong di daftar dokumen — dan
+                         transaksinya ikut menggantung tanpa nilai. */ ?>
+                <?php $bolehBuang = $skp && ($skp['status'] ?? '') === 'draft'
+                        && empty($skp['skp_no']) && (int) ($skp['revisi_ke'] ?? 0) === 0; ?>
+                <?php if ($bolehBuang): ?>
+                <form method="post" action="?r=skp_discard" style="display:inline"
+                      onsubmit="return confirm('Buang draft ini beserta transaksinya? Tidak ada nilai yang terhitung dari dokumen ini.')">
+                    <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                    <input type="hidden" name="id" value="<?= (int) $skp['id'] ?>">
+                    <button class="btn light" style="background:#fef2f2;color:#991b1b;border-color:#fecaca">Buang Draft</button>
+                </form>
+                <?php endif; ?>
             </p>
             <?php endif; ?>
         </form>
@@ -2632,6 +2646,17 @@ function skp_save(PDO $pdo): void
     $uname = $_SESSION['user']['name'] ?? 'system';
     // Nomor identitas wajib sebelum submit approval (KTP/NPWP/SIUP).
     $missNum = [];
+    // CLIENT wajib — dan ini yang paling mudah terlewat. Kotak client adalah
+    // kotak PENCARIAN: kalau namanya diketik tetapi tidak dipilih dari daftar,
+    // teksnya terlihat terisi sementara nilainya kosong. Dulu client hanya
+    // diperiksa saat persetujuan, sehingga dokumen tanpa client tetap naik ke
+    // antrean manager — dan baru ketahuan di sana, oleh orang yang tidak bisa
+    // membetulkannya. Diperiksa di sini supaya tertahan di tangan pembuatnya.
+    // Untuk dokumen Gudang/Media yang BARU, clientnya baru datang di pengiriman
+    // ini — $src masih memuat keadaan sebelum disimpan. Jadi yang diperiksa
+    // nilai efektifnya, bukan hanya yang sudah tersimpan.
+    $clientEfektif = $clientId ?: (int) post('s_client_id');
+    if ($clientEfektif <= 0) $missNum[] = 'Client (ketik namanya lalu PILIH dari daftar)';
     if (!$ktp)  $missNum[] = 'Nomor KTP';
     if (!$npwp) $missNum[] = 'Nomor NPWP';
     // Pembagian income harus PAS dengan nilai kontrak — kurang atau lebih
@@ -3346,6 +3371,81 @@ function skp_reject(PDO $pdo): void
  * Dokumen yang sudah ditandatangani tidak bisa direvisi — yang dipegang client
  * sudah mengikat, jadi perubahannya harus lewat dokumen baru.
  */
+/**
+ * Buang draft yang belum jadi apa-apa — termasuk transaksinya.
+ *
+ * Menekan "Perpanjang" langsung melahirkan transaksi + dokumen draft, supaya
+ * perpanjangan yang ditinggal di tengah jalan tidak hilang jejak. Tetapi kalau
+ * orangnya memang membatalkan, keduanya hanya menumpuk: draft tanpa isi di
+ * daftar dokumen, dan transaksi tanpa nilai yang tidak tampil di mana-mana.
+ *
+ * Syaratnya ketat, dan semuanya harus terpenuhi — dokumen yang sudah berjalan
+ * tidak boleh ikut terbuang:
+ *   - status masih 'draft'
+ *   - nomor dokumen BELUM terbit (dokumen bernomor sudah dipegang orang lain)
+ *   - bukan hasil revisi (revisi memakai nomor yang sama, jejaknya harus utuh)
+ *   - transaksinya belum menyumbang satu rupiah pun ke laporan
+ *   - yang membuang adalah PIC/pembuatnya sendiri
+ *
+ * Dibuang dengan deleted_at, bukan DELETE — jejaknya tetap bisa ditelusuri.
+ */
+function skp_discard(PDO $pdo): void
+{
+    require_permission('manage_skp');
+    verify_csrf();
+    $pid = current_property_id();
+    $id  = (int) post('id');
+
+    $st = $pdo->prepare('SELECT * FROM skp_documents WHERE id = ? AND property_id = ? AND deleted_at IS NULL');
+    $st->execute([$id, $pid]);
+    $skp = $st->fetch();
+    if (!$skp) { flash('Dokumen tidak ditemukan.'); redirect_to('skp'); }
+
+    $trxId = (int) ($skp['transaction_id'] ?? 0);
+    $alasan = null;
+    if ((string) $skp['status'] !== 'draft')          $alasan = 'statusnya sudah ' . $skp['status'];
+    elseif (!empty($skp['skp_no']))                   $alasan = 'nomornya sudah terbit (' . $skp['skp_no'] . ')';
+    elseif ((int) ($skp['revisi_ke'] ?? 0) > 0)       $alasan = 'ini dokumen revisi — jejaknya harus utuh';
+    if ($alasan === null && $trxId) {
+        $a = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM transaction_allocations WHERE transaction_id = ?');
+        $a->execute([$trxId]);
+        if ((float) $a->fetchColumn() > 0) $alasan = 'transaksinya sudah menyumbang ke laporan';
+    }
+    if ($alasan !== null) {
+        flash('Draft ini tidak bisa dibuang: ' . $alasan . '. Pakai Pengajuan Hapus Data.');
+        redirect_to('skp_form', ['id' => $id]);
+    }
+
+    $src = $trxId ? _skp_source($pdo, $trxId, $pid) : null;
+    if (!_skp_pemilik($pdo, $pid, $skp, $src ?: [])) {
+        flash('Hanya PIC dokumen ini yang bisa membuangnya.');
+        redirect_to('skp_form', ['id' => $id]);
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare("UPDATE skp_documents SET deleted_at = NOW() WHERE id = ? AND property_id = ?")
+            ->execute([$id, $pid]);
+        if ($trxId) {
+            // Transaksinya lahir bersama draft ini dan belum dipakai siapa pun;
+            // dibiarkan hidup, ia jadi baris tanpa nilai yang tidak tampil di
+            // daftar modul maupun di laporan — tidak bisa diperiksa siapa pun.
+            $pdo->prepare("UPDATE transactions SET deleted_at = NOW()
+                            WHERE id = ? AND property_id = ? AND deleted_at IS NULL")
+                ->execute([$trxId, $pid]);
+        }
+        audit($pdo, 'buang_draft', 'skp_documents', (string) $id, ['transaction_id' => $trxId ?: null]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('buang draft gagal (id=' . $id . '): ' . $e->getMessage());
+        flash('Gagal membuang draft — tidak ada yang berubah.');
+        redirect_to('skp_form', ['id' => $id]);
+    }
+    flash('Draft dibuang' . ($trxId ? ' beserta transaksinya' : '') . '. Tidak ada nilai yang terhitung dari dokumen ini.');
+    redirect_to('skp', ['module' => skp_doc_module((string) ($skp['doc_type'] ?? 'skp'))]);
+}
+
 function skp_revision_request(PDO $pdo): void
 {
     require_permission('manage_skp');
