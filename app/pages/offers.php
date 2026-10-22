@@ -1171,7 +1171,15 @@ function offer_view(PDO $pdo): void
     if (!$offer) { flash('Penawaran tidak ditemukan.'); redirect_to('offers'); }
     if (($sc = current_sales_scope($pdo, $pid)) && $offer['pic_name'] !== $sc['pic'] && $offer['created_by'] !== $sc['uname']) { flash('Penawaran ini bukan milik Anda.'); redirect_to('offers'); }
 
-    $editable = !in_array($offer['status'], ['deal', 'cancelled'], true);
+    // Yang mengunci penawaran adalah TANDA TANGAN CLIENT, bukan status DEAL.
+    //
+    // Status DEAL bisa ditandai sendiri oleh sales sebelum clientnya meneken,
+    // dan dulu itu langsung mengunci seluruh formulir. Akibatnya salah ketik
+    // sepele pun tidak bisa dibetulkan lagi padahal belum ada yang menyepakati
+    // apa-apa — jalan keluarnya jadi menghapus lalu membuat ulang, dan nomor
+    // penawarannya ikut terbuang. Selama belum diteken client, isinya masih
+    // boleh diperbaiki; begitu diteken, terkunci untuk seterusnya.
+    $editable = empty($offer['signed_at']) && ($offer['status'] ?? '') !== 'cancelled';
     $days  = _offer_days($offer['start_date'] ?? null, $offer['end_date'] ?? null);
     $rp    = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
 
@@ -1550,7 +1558,8 @@ function offer_form(PDO $pdo): void
         flash('Gudang & Media tidak lewat Surat Penawaran — dokumennya dibuat langsung di sini.');
         redirect_to('skp_form', ['module' => $module]);
     }
-    $editable = !$existing || !in_array($offer['status'], ['deal', 'cancelled'], true);
+    // Sama seperti di halaman Preview: yang mengunci adalah tanda tangan client.
+    $editable = !$existing || (empty($offer['signed_at']) && ($offer['status'] ?? '') !== 'cancelled');
 
     $masters  = masterOptions($pdo, $module);
     // Jadwal harga bertahap: kontrak panjang yang harganya berubah di tahun
@@ -3424,7 +3433,15 @@ function offer_save(PDO $pdo): void
         $cur = $pdo->prepare('SELECT * FROM offers WHERE id=? AND property_id=?');
         $cur->execute([$id, $pid]);
         $offer = $cur->fetch();
-        if (!$offer || in_array($offer['status'], ['deal', 'cancelled'], true)) { flash('Penawaran terkunci / tidak ditemukan.'); redirect_to('offers'); }
+        // Penjaga sisi simpan HARUS sama persis dengan yang mengatur tampilan
+        // formulirnya. Kalau berbeda, formulirnya terbuka tetapi simpanannya
+        // ditolak — orang mengetik ulang semuanya lalu kehilangan isinya.
+        if (!$offer || !empty($offer['signed_at']) || ($offer['status'] ?? '') === 'cancelled') {
+            flash(!empty($offer['signed_at'])
+                ? 'Penawaran ini sudah ditandatangani client — isinya terkunci. Ajukan penghapusan bila memang salah.'
+                : 'Penawaran terkunci / tidak ditemukan.');
+            redirect_to('offers');
+        }
         $sets = []; $vals = [];
         foreach ($data as $k => $val) { $sets[] = "$k=:$k"; $vals[":$k"] = $val; }
         $vals[':id'] = $id; $vals[':pid'] = $pid; $vals[':uname'] = $uname;
@@ -3495,7 +3512,12 @@ function offer_status(PDO $pdo): void
     );
     $cur->execute([$id, $pid]);
     $row = $cur->fetch();
-    if (!$row || in_array($row['status'], ['deal', 'cancelled'], true)) { flash('Status terkunci.'); redirect_to('offer_view', ['id' => $id]); }
+    if (!$row || !empty($row['signed_at']) || ($row['status'] ?? '') === 'cancelled') {
+        flash(!empty($row['signed_at'])
+            ? 'Sudah ditandatangani client — statusnya tidak bisa diubah lagi.'
+            : 'Status terkunci.');
+        redirect_to('offer_view', ['id' => $id]);
+    }
     // Stempel engagement (sekali, tidak ditimpa) untuk analisa aktivitas PIC.
     $extra = '';
     $extraParams = [];
