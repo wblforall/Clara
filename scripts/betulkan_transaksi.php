@@ -33,10 +33,10 @@ require_once $root . '/app/helpers.php';
 require_once $root . '/app/AllocationService.php';
 
 $opt = getopt('', ['trx:', 'mulai:', 'selesai:', 'rate:', 'tipe:', 'bulan-kontrak:',
-                   'nilai:', 'metode:', 'siklus:', 'prorata:', 'terapkan']);
+                   'nilai:', 'total:', 'metode:', 'siklus:', 'prorata:', 'terapkan']);
 $terapkan = array_key_exists('terapkan', $opt);
 $id = (int) ($opt['trx'] ?? 0);
-if ($id <= 0) { fwrite(STDERR, "Pakai: --trx=ID [--mulai=..] [--selesai=..] [--rate=..] [--tipe=..] [--bulan-kontrak=..] [--nilai=..] [--metode=spread|anchor] [--siklus=cycle_start|cycle_end] [--prorata=0|1] [--terapkan]\n"); exit(2); }
+if ($id <= 0) { fwrite(STDERR, "Pakai: --trx=ID [--mulai=..] [--selesai=..] [--rate=..] [--tipe=..] [--bulan-kontrak=..] [--nilai=..] [--total=..] [--metode=spread|anchor] [--siklus=cycle_start|cycle_end] [--prorata=0|1] [--terapkan]\n"); exit(2); }
 
 $pdo = Database::connect();
 $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
@@ -57,8 +57,8 @@ $tampil = function (array $t) use ($alok, $rp, $id): void {
     printf("    harga     %s · rate %s · %s bulan kontrak · qty %s · luas %s m2\n", $t['pricing_type'],
         $rp($t['unit_rate']), $t['contract_months'] ?: '-',
         $rp($t['quantity'] ?? 1), $rp($t['area_sqm'] ?? 0));
-    printf("    nilai     %s · metode %s · diakui %s · siklus %s%s\n",
-        $rp($t['final_amount'] ?: $t['total_calculated']),
+    printf("    nilai     %s (hitungan %s) · metode %s · diakui %s · siklus %s%s\n",
+        $rp($t['final_amount'] ?: $t['total_calculated']), $rp($t['total_calculated']),
         ($t['billing_method'] ?? '') === 'spread' ? 'Recurring' : 'Sekaligus', $t['period_key'] ?: '-',
         $t['cycle_recognition'] ?: 'cycle_start',
         !empty($t['prorata_kalender']) ? ' · prorata kalender' : '');
@@ -80,6 +80,10 @@ if (isset($opt['tipe']))    { $baru['pricing_type'] = (string) $opt['tipe'];  $u
 if (isset($opt['rate']))    { $baru['unit_rate'] = (float) preg_replace('/\D/', '', (string) $opt['rate']); $ubah['unit_rate'] = $baru['unit_rate']; }
 if (isset($opt['bulan-kontrak'])) { $baru['contract_months'] = (int) $opt['bulan-kontrak']; $ubah['contract_months'] = $baru['contract_months']; }
 if (isset($opt['nilai']))   { $baru['final_amount'] = (float) preg_replace('/\D/', '', (string) $opt['nilai']); $ubah['final_amount'] = $baru['final_amount']; }
+// Nilai hitungan harus ikut dibetulkan. Kalau hanya final_amount yang naik,
+// selisihnya terbaca sebagai diskon negatif di laporan — dan sekali transaksi
+// ini disimpan ulang dari form, totalnya dihitung lagi dari tarif lama.
+if (isset($opt['total']))   { $baru['total_calculated'] = (float) preg_replace('/\D/', '', (string) $opt['total']); $ubah['total_calculated'] = $baru['total_calculated']; }
 if (isset($opt['metode']))  {
     $m = ((string) $opt['metode']) === 'spread' ? 'spread' : 'anchor_cycle';
     $baru['billing_method'] = $m; $ubah['billing_method'] = $m;
