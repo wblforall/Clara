@@ -520,6 +520,21 @@ function transaction_form(PDO $pdo): void
                 'content_note'  => (string)($src['content_note'] ?? ''),
                 'start_date'    => $nextStart,
                 'end_date'      => $nextEnd,
+                // Setelan yang STRUKTURAL — hampir selalu sama di siklus
+                // berikutnya, dan kalau dibiarkan kosong orang harus menebak
+                // ulang tiap kali. Inilah yang membuat perpanjangan sebelumnya
+                // jatuh ke bulan yang salah: metode pengakuannya tidak ikut
+                // terbawa, lalu dipilih seadanya.
+                'referrer_name' => (string)($src['referrer_name'] ?? ''),
+                'recurring_flag'=> !empty($src['recurring_flag']) ? '1' : '',
+                'recognition_month' => ($src['billing_method'] ?? '') === 'spread'
+                    ? 'spread'
+                    : ((($src['cycle_recognition'] ?? '') === 'cycle_end') ? 'end' : 'start'),
+                // Nilai siklus sebelumnya TIDAK diisikan ke kolom harga — harga
+                // nego itu kesepakatan satu periode, bukan warisan. Tapi
+                // ditampilkan sebagai petunjuk supaya tidak perlu membuka
+                // kontrak lama hanya untuk membandingkan.
+                'nilai_lama'    => (float)($src['final_amount'] ?: $src['total_calculated']),
             ];
         }
     }
@@ -537,7 +552,10 @@ function transaction_form(PDO $pdo): void
         ?>
         <?php if ($prefill): ?>
         <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:#065f46">
-            <strong>🔄 Perpanjangan kontrak</strong> — tanpa Surat Penawaran baru. Unit, client, PIC, rate, dan tanggal sudah terisi dari kontrak sebelumnya (periode baru dengan lama yang sama). <strong>Tinggal periksa Tanggal Mulai/Selesai</strong>, sesuaikan bila perlu, lalu simpan.
+            <strong>🔄 Perpanjangan kontrak</strong> — semua terisi dari kontrak sebelumnya, tanggal sudah dimajukan ke periode berikutnya. <strong>Periksa tanggalnya</strong>, lalu simpan.<?php
+            if (!empty($prefill['nilai_lama'])): ?>
+            <br><span style="color:#6d28d9">Siklus lalu <strong>Rp <?= number_format((float) $prefill['nilai_lama'], 0, ',', '.') ?></strong> — harga nego tidak diwariskan; isi <strong>Override Aktual</strong> hanya bila harga baru hasil nego.</span><?php endif; ?>
+            <br><span style="color:#92400e">Belum masuk income sampai SKP-nya disetujui dan diteken client.</span>
             <?php if ($toSkp): ?><br>Setelah disimpan Anda langsung diarahkan ke <strong>form SKP</strong> untuk periode baru ini.<?php endif; ?>
         </div>
         <?php endif; ?>
@@ -854,6 +872,14 @@ function transaction_form(PDO $pdo): void
                 if (p.area_sqm !== '')  document.getElementById('area_sqm').value  = p.area_sqm;
                 // Populate & pilih contact person dari client lama
                 if (p.client_id) filterContacts(p.contact_id);
+                // Setelan struktural ikut siklus sebelumnya.
+                var ref = document.querySelector('[name="referrer_name"]');
+                if (ref && p.referrer_name) ref.value = p.referrer_name;
+                var rec = document.getElementById('recognition_month');
+                if (rec && p.recognition_month) rec.value = p.recognition_month;
+                var rf = document.querySelector('[name="recurring_flag"]');
+                if (rf && p.recurring_flag) rf.checked = true;
+                if (typeof checkRecognitionMonth === 'function') checkRecognitionMonth();
             })();
             <?php endif; ?>
 

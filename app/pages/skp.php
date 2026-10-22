@@ -984,6 +984,31 @@ function skp_form(PDO $pdo): void
         </div>
         <?php endif; ?>
 
+        <?php /* Penunjuk arah. Formulir ini panjang — tujuh bagian — dan orang
+                 yang mencari satu kolom harus menggulir sambil menebak. Bar ini
+                 menempel di atas supaya arahnya selalu terlihat tanpa menambah
+                 tulisan di tiap bagian. Hanya penunjuk; tidak mengubah isi
+                 maupun urutan formulirnya. */ ?>
+        <style>
+            .skp-nav { position: sticky; top: 0; z-index: 20; display: flex; gap: 6px; flex-wrap: wrap;
+                       background: #fff; border: 1px solid var(--border, #e2e8f0); border-radius: 10px;
+                       padding: 8px 10px; margin-top: 12px; box-shadow: 0 2px 8px rgba(15,23,42,.05); }
+            .skp-nav a { font-size: 12px; padding: 4px 10px; border-radius: 999px; text-decoration: none;
+                         color: #334155; background: #f1f5f9; white-space: nowrap; }
+            .skp-nav a:hover { background: var(--primary, #0D9488); color: #fff; }
+            .skp-nav span { font-size: 11px; color: var(--muted, #64748b); align-self: center; margin-right: 2px; }
+            /* Judul bagian tidak tertutup bar saat dilompati. */
+            .panel h3[id] { scroll-margin-top: 58px; }
+        </style>
+        <div class="skp-nav">
+            <span>Lompat ke:</span>
+            <a href="#sec-identitas">Identitas</a>
+            <a href="#sec-lampiran">Lampiran</a>
+            <a href="#sec-tempat">Tempat &amp; Periode</a>
+            <a href="#sec-bayar">Pembayaran</a>
+            <a href="#sec-pic">Income per PIC</a>
+            <a href="#sec-catatan">Catatan</a>
+        </div>
         <form class="panel" method="post" action="?r=skp_save" style="margin-top:12px" enctype="multipart/form-data">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="id" value="<?= (int)($skp['id'] ?? 0) ?>">
@@ -997,7 +1022,7 @@ function skp_form(PDO $pdo): void
 
             <?php if ($standalone) skp_standalone_form($pdo, $pid, $modKind, $src, $editable); ?>
 
-            <h3<?= $standalone ? '' : ' style="margin-top:0"' ?>>Identitas Penyewa</h3>
+            <h3 id="sec-identitas"<?= $standalone ? '' : ' style="margin-top:0"' ?>>Identitas Penyewa</h3>
             <div class="form-grid">
                 <div><label>Nama Perusahaan</label><input id="idn-company" value="<?= h($src['company_name'] ?? '-') ?>" disabled></div>
                 <div><label>Nama Penanggung Jawab</label><input name="cp_name" value="<?= $val('cp_name', $src['cp_name'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></div>
@@ -1016,7 +1041,7 @@ function skp_form(PDO $pdo): void
                 <div><label>Nomor Telepon</label><input name="phone_pj" value="<?= $val('phone_pj', $src['cp_phone'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></div>
             </div>
 
-            <h3>Lampiran <span style="font-weight:400;font-size:12px;color:var(--muted)">(<span style="color:#dc2626">*</span> wajib sebelum submit; scan lama client ini dipakai ulang otomatis)</span></h3>
+            <h3 id="sec-lampiran">Lampiran <span style="font-weight:400;font-size:12px;color:var(--muted)">(<span style="color:#dc2626">*</span> wajib sebelum submit; scan lama client ini dipakai ulang otomatis)</span></h3>
             <div class="form-grid">
                 <?php
                 // Bukti Transfer SENGAJA tidak ada di sini. Urutan nyata di lapangan:
@@ -1058,7 +1083,7 @@ function skp_form(PDO $pdo): void
                 <div><label>Lampiran Surat Penawaran</label><div style="font-size:12px;color:var(--muted)"><?= $offerId ? '📎 otomatis dari penawaran (PDF)' : '— (sumber transaksi, tanpa penawaran)' ?></div></div>
             </div>
 
-            <h3>Spesifikasi Tempat & Periode</h3>
+            <h3 id="sec-tempat">Spesifikasi Tempat &amp; Periode</h3>
             <div class="form-grid">
                 <?php if ($komponenPaket): ?>
                 <?php /* Paket: satu baris Lokasi/Lantai/Luas tidak cukup — isinya
@@ -1089,13 +1114,11 @@ function skp_form(PDO $pdo): void
                 <?php if ($offerId): ?>
                 <div class="wide" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:9px 11px;font-size:12px;color:#92400e;line-height:1.55">
                     <strong>🔒 Dokumen ini lahir dari Surat Penawaran<?= !empty($src['offer_no']) ? ' ' . h((string) $src['offer_no']) : '' ?>.</strong>
-                    Yang <u>terkunci</u> dan ikut apa adanya dari penawaran:
-                    <strong>client, unit/lokasi, luas, jenis &amp; dasar harga</strong>.
-                    Yang <u>masih boleh diubah</u> di halaman ini:
-                    <strong>masa sewa, total biaya sewa, PPN, Service Charge, deposit, listrik, lampiran, dan catatan</strong>.
-                    <br>Penawarannya sudah ditandatangani client &mdash; itu syarat SKP ini boleh dibuat &mdash; sehingga isinya
-                    <strong>tidak bisa diubah lagi</strong>. Kalau yang terkunci ternyata salah, satu-satunya jalan adalah
-                    <a href="?r=deletion_request" style="font-weight:700">mengajukan penghapusan</a>, lalu dibuat ulang dari penawaran yang benar.
+                    <u>Terkunci</u>: client, unit, luas, dasar harga, masa sewa, nilai sewa.
+                    <u>Masih bisa diubah</u> (juga saat revisi): contact person, KTP/NPWP/SIUP, produk,
+                    status sewa, PPN, Service Charge, deposit, listrik, pembagian PIC, lampiran, catatan.
+                    <br>Penawarannya sudah diteken client, jadi yang terkunci tidak bisa diubah &mdash; termasuk lewat revisi.
+                    Kalau salah, <a href="?r=deletion_request" style="font-weight:700">ajukan penghapusan</a> lalu buat ulang.
                 </div>
                 <?php endif; ?>
                 <?php if ($ubahPeriode): ?>
@@ -1212,7 +1235,7 @@ function skp_form(PDO $pdo): void
             <p class="help" id="fu-cek-hitung" style="margin-top:6px"></p>
             <p class="help" style="margin-top:6px">Tercetak di surat: <strong id="fu-baris"><?= h($nf($amt['total']) . ' + ' . $nf($fuPpn) . ' = Rp. ' . $nf($fuGrand) . ',-') ?></strong></p>
             <?php else: ?>
-            <h3>Rincian Pembayaran</h3>
+            <h3 id="sec-bayar">Rincian Pembayaran</h3>
             <div class="form-grid">
                 <div><label><?= h(clara_satuan_harga((string) ($src['pricing_type'] ?? ''))) ?></label><input value="<?= money($amt['rate_m_day']) ?>" disabled></div>
                 <?php /* Biaya listrik ikut dari Surat Penawaran — ditampilkan terpisah
@@ -1361,10 +1384,10 @@ function skp_form(PDO $pdo): void
                      sama dengan pendapatan properti. */ ?>
             <?php $paketSrc = !empty($src['is_bundle']); ?>
             <?php if ($paketSrc): ?>
-            <h3>Pembagian Income per PIC</h3>
+            <h3 id="sec-pic">Pembagian Income per PIC</h3>
             <p class="help">Dokumen ini berasal dari <strong>Penawaran Paket</strong> — nilainya terpecah ke beberapa transaksi komponen, sehingga pembagian per PIC diisi di halaman <strong>Alokasi</strong> masing-masing komponen setelah dokumen disetujui.</p>
             <?php else: ?>
-            <h3>Pembagian Income per PIC <span style="font-weight:400;font-size:12px;color:var(--muted)">(opsional — kosongkan bila seluruhnya milik <?= h($src['pic_name'] ?: 'PIC dokumen') ?>)</span></h3>
+            <h3 id="sec-pic">Pembagian Income per PIC <span style="font-weight:400;font-size:12px;color:var(--muted)">(opsional — kosongkan bila seluruhnya milik <?= h($src['pic_name'] ?: 'PIC dokumen') ?>)</span></h3>
             <div id="bagi-box" data-acuan="<?= (int) round($nilaiAcuan) ?>">
                 <table class="data" id="bagi-tabel" style="width:100%;max-width:720px">
                     <thead><tr>
@@ -1404,7 +1427,7 @@ function skp_form(PDO $pdo): void
             </div>
             <?php endif; ?>
 
-            <h3>Catatan Internal</h3>
+            <h3 id="sec-catatan">Catatan Internal</h3>
             <textarea name="note" rows="2" <?= $editable ? '' : 'disabled' ?>><?= h($skp['note'] ?? '') ?></textarea>
 
             <?php if ($editable): ?>

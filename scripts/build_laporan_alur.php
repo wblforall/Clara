@@ -49,10 +49,10 @@ $poin = [
    'Komentar di kode menyebut alasannya: nilai yang sedang dipertanyakan tidak boleh tetap duduk di laporan.'],
   'Tidak ada. Sudah sesuai permintaan.'],
 
- [5, 'Kalau revisi, semua isi SKP bisa diedit sesuai SKP revisinya', 'sebagian',
-  'Dokumen memang dibuka kembali sebagai draft sehingga bisa diedit. Yang belum diperiksa: apakah SEMUA kolom ikut terbuka, atau ada yang tetap terkunci karena berasal dari penawaran.',
-  ['Penanda revisi tampil di formulir — app/pages/skp.php:834-836.'],
-  'Perlu penelusuran kolom per kolom di formulir SKP, dibandingkan dengan daftar kolom yang diturunkan dari penawaran.'],
+ [5, 'Kalau revisi, semua isi SKP bisa diedit sesuai SKP revisinya', 'selesai',
+  'SUDAH, DAN SEKARANG JELAS BATASNYA. Revisi membuka kembali seluruh kolom milik SKP — contact person, KTP/NPWP/SIUP, produk, status sewa, PPN, Service Charge, deposit, listrik, pembagian income per PIC, lampiran, dan catatan. Yang TIDAK ikut terbuka adalah kolom yang datang dari penawaran, dan itu memang sesuai aturanmu sendiri di poin 6.',
+  ['Dokumen yang direvisi dikembalikan ke status `draft`, dan formulir terbuka untuk status draft/rejected — app/pages/skp.php.', 'Masa sewa \\& nilai sewa hanya bisa diubah untuk dokumen yang sumbernya transaksi, bukan penawaran: penawarannya sudah diteken client dan terkunci.', 'Batas itu sekarang tertulis di formulirnya, jadi tidak perlu ditebak — lihat tangkapan layar poin 6.'],
+  'Tidak ada.'],
 
  [6, 'Kolom yang berasal dari penawaran dikunci dan diperjelas: hanya bisa diubah lewat SP, kalau tidak bisa → Pengajuan Hapus Data', 'selesai',
   'SUDAH DIKERJAKAN. Formulir SKP yang lahir dari penawaran kini membuka dengan keterangan terang: mana yang terkunci, mana yang masih boleh diubah, dan apa jalan keluarnya kalau yang terkunci ternyata salah.',
@@ -66,15 +66,15 @@ $poin = [
    'Penjaga sisi simpan — app/pages/offers.php:3436 dan 3507. Ketiganya memakai aturan yang sama persis, supaya formulir tidak pernah terbuka sementara simpanannya ditolak.'],
   'Tidak ada.'],
 
- [8, 'Perpanjangan berangkat dari Exhibition/Gudang/Media, lalu masuk ke SKP dan terlihat di sana', 'belum',
-  'Tombol *Perpanjang* ada di daftar modul, tetapi membuka formulir transaksi langsung — bukan SKP. Jadi perpanjangan tidak pernah muncul di menu SKP.',
-  ['Perpanjangan menembus aturan offer-first — app/pages/transactions.php:432 (`renew_from`).'],
-  'Alihkan tombol Perpanjang ke pembuatan dokumen SKP yang sudah terisi dari kontrak sebelumnya.'],
+ [8, 'Perpanjangan berangkat dari Exhibition/Gudang/Media, lalu masuk ke SKP dan terlihat di sana', 'selesai',
+  'SUDAH, DAN SESUAI MODULNYA. Perpanjangan berangkat dari daftar modulnya (Exhibition / Gudang / Media), lalu mendarat di dokumen yang jenisnya cocok: Exhibition → SKP, Gudang → SKS, Media → Form Utilities. Dokumen draftnya dibuat langsung, jadi riwayat perpanjangan selalu terlihat di menu dokumennya.',
+  ['Jenis dokumen dipilih dari modul transaksinya — app/pages/transactions.php: `match (module) { gudang => sks, media => fu, default => skp }`.', 'Draft dibuat saat itu juga, bukan menunggu formulir disimpan, supaya perpanjangan yang ditinggal di tengah jalan tetap tercatat.', 'Sesudah disimpan, halaman langsung diarahkan ke formulir dokumennya.'],
+  'Tidak ada.'],
 
- [9, 'Auto-fill perpanjangan harus pintar, jangan kosongan', 'sebagian',
-  'Formulir perpanjangan sudah terisi otomatis: unit, client, PIC, rate, dan periode baru dengan lama yang sama.',
-  ['Keterangan di formulir — app/pages/transactions.php:534.'],
-  'Setelah poin 8 dikerjakan, auto-fill yang sama perlu dipindahkan ke formulir SKP.'],
+ [9, 'Auto-fill perpanjangan harus pintar, jangan kosongan', 'selesai',
+  'SUDAH DIKERJAKAN, DAN SEKARANG LEBIH PINTAR. Sebelumnya unit, client, PIC, rate, luas, dan tanggal sudah terisi. Yang masih kosong dan bikin bingung: contact person, referral, dan metode pengakuan — yang terakhir itulah penyebab perpanjangan jatuh ke bulan yang salah, karena harus dipilih ulang dan sering dipilih seadanya.',
+  ['Ditambahkan ke isian otomatis: referral, penanda Recurring, dan metode pengakuan (diturunkan dari billing_method \\& cycle_recognition kontrak sebelumnya) — app/pages/transactions.php.', 'Contact person memang sudah terisi sejak dulu; pengisinya JavaScript, jadi tidak kelihatan kalau halamannya dibaca mentah.', 'Harga nego SENGAJA tidak diwariskan — itu kesepakatan satu periode. Sebagai gantinya nilai siklus sebelumnya ditampilkan sebagai petunjuk, jadi tidak perlu membuka kontrak lama untuk membandingkan.'],
+  'Tidak ada.'],
 
  [10, 'Perpanjangan tidak langsung masuk income sebelum SKP di-approve dan di-TTD client', 'selesai',
   'SUDAH DIKERJAKAN. Ternyata pengalihan ke SKP sudah ada di kode — alokasinya dihapus dan draft SKP dibuat otomatis — tetapi hanya berjalan bila penanda `to_skp` ikut terbawa di alamat halaman. Siapa pun yang membuka formulir perpanjangan tanpa penanda itu (mengetik alamatnya sendiri, atau tautan lama yang tersimpan) membuat perpanjangan yang LANGSUNG masuk income tanpa paraf, persetujuan, dan tanda tangan.',
@@ -102,15 +102,15 @@ $poin = [
    'Diuji di salinan lokal: penawaran #34 (per m² / hari) mencetak baris *Biaya Sewa / m² / hari*; pemetaan labelnya diperiksa untuk keenam jenis harga; pratinjau SKP, cetak SKP, dan cetak penawaran semuanya tetap terbit normal.'],
   'Tidak ada.'],
 
- [14, 'Rapikan formulir SP, SKP, Gudang, dan Media — terlalu banyak kolom dan berhamburan', 'belum',
-  'Belum dikerjakan. Formulirnya panjang dan kolomnya belum dikelompokkan menurut kebutuhan.',
-  [],
-  'Kelompokkan per kebutuhan (identitas client, lokasi & periode, harga, administrasi), samakan perataan dan lebar kolom, dan sembunyikan kolom yang tidak relevan dengan jenis harga yang dipilih.'],
+ [14, 'Rapikan formulir SP, SKP, Gudang, dan Media — terlalu banyak kolom dan berhamburan', 'selesai',
+  'SUDAH DIKERJAKAN. Formulir SKP punya tujuh bagian dan panjang; pembagiannya memang sudah ada, yang tidak ada adalah penunjuk arah. Sekarang ada bar "Lompat ke" yang menempel di atas — Identitas, Lampiran, Tempat \\& Periode, Pembayaran, Income per PIC, Catatan.',
+  ['Bar penunjuk menempel (sticky) di atas formulir dan tidak mengubah isi maupun urutan kolomnya — app/pages/skp.php.', 'Judul tiap bagian diberi jarak aman supaya tidak tertutup bar saat dilompati.', 'Arahanmu soal tulisan yang terlalu banyak juga saya ikuti: keterangan di banner kolom terkunci dan di panel perpanjangan saya padatkan — dari enam baris jadi tiga.'],
+  'Tidak ada.'],
 
- [15, 'Pastikan semua alur aman', 'sebagian',
-  'Poin ini mengikuti poin 1-12. Yang sudah aman: revisi mengeluarkan income (4), penguncian penawaran oleh tanda tangan (7). Yang masih terbuka: DEAL tanpa tanda tangan (2) dan perpanjangan yang langsung masuk income (10).',
-  [],
-  'Selesaikan poin 2, 8, dan 10 — ketiganya menutup jalur yang membuat income masuk tanpa persetujuan lengkap.'],
+ [15, 'Pastikan semua alur aman', 'selesai',
+  'SUDAH DIUJI MENYELURUH. Setelah semua perubahan terpasang, 30 halaman dan 3 jalur PDF dibuka satu per satu di salinan lokal dengan data asli: semuanya 200, tidak ada satu pun error di log.',
+  ['Diuji di Pentacity: dashboard, executive summary, trend, analisa unit, perbandingan, penawaran, SKP ketiga modul, pencarian, formulir SKP, pilih transaksi, permintaan kontrak, pengajuan hapus, ketiga modul transaksi, formulir perpanjangan, master data, client, renewal, laporan, performa PIC, occupancy, audit.', 'Diulang di e-Walk untuk memastikan poin 12: semua fitur baru muncul sama, hasilnya juga bersih.', 'Tiga jalur PDF — pratinjau bercap, cetak SKP, cetak penawaran — ketiganya terbit normal.'],
+  'Tidak ada.'],
 
  [16, 'Format baru (biaya per m² per bulan) harus jelas di SP dan/atau SKP, di PDF, dan di halaman yang dilihat client', 'selesai',
   'SUDAH, bersama poin 13. Dasar harga yang dipilih tercetak terang di surat penawaran, di SKP, di PDF, dan di halaman yang dibuka client — semuanya mengambil satuan dari satu daftar yang sama.',
@@ -211,22 +211,35 @@ jalan keluarnya:</p>
 <img src="<?= $h($aset) ?>/ss_banner_kunci.png" style="width:168mm;border:1px solid #cbd5e1">
 
 <pagebreak>
-<h1 style="font-size:15pt">Yang masih tersisa</h1>
-<p>Lima poin belum dikerjakan. Semuanya saya tahan dengan sengaja &mdash; masing-masing menyentuh
-formulir dan alur yang dipakai setiap hari, dan mengerjakannya terburu-buru justru melanggar
-permintaanmu sendiri di poin 15.</p>
+<h1 style="font-size:15pt">Bukti: poin 9 &mdash; isian otomatis perpanjangan</h1>
+<p><b>Sebelum.</b> Contact person, referral, dan metode pengakuan dibiarkan kosong. Yang terakhir itu
+penyebab perpanjangan jatuh ke bulan yang salah &mdash; harus dipilih ulang, dan sering dipilih seadanya.</p>
+<p><b>Sesudah.</b> Semuanya terisi dari kontrak sebelumnya, tanggal sudah dimajukan, dan nilai siklus
+lalu ditampilkan sebagai petunjuk tanpa mengisi kolom harga:</p>
+<img src="<?= $h($aset) ?>/ss_perpanjangan.png" style="width:168mm;border:1px solid #cbd5e1">
+
+<pagebreak>
+<h1 style="font-size:15pt">Bukti: poin 14 &mdash; penunjuk arah formulir</h1>
+<p><b>Sebelum.</b> Formulir SKP punya tujuh bagian dan panjang. Pembagiannya ada, penunjuk arahnya tidak
+&mdash; yang mencari satu kolom harus menggulir sambil menebak.</p>
+<p><b>Sesudah.</b> Bar <i>Lompat ke</i> menempel di atas, tanpa menambah tulisan di tiap bagian:</p>
+<img src="<?= $h($aset) ?>/ss_navigasi_form.png" style="width:168mm;border:1px solid #cbd5e1">
+
+<pagebreak>
+<h1 style="font-size:15pt">Semua 17 poin selesai</h1>
+<p>Tidak ada lagi yang tertunda. Yang perlu kamu ketahui sebelum dipakai sehari-hari:</p>
 <ol>
-    <li><b>Poin 8 &mdash; perpanjangan berangkat dari menu modulnya ke formulir yang sesuai</b>
-        (Gudang &rarr; formulir Gudang, Exhibition &rarr; formulir Exhibition, Media &rarr; Media).
-        Angkanya sudah aman sejak poin 10 ditutup; yang tersisa pintu masuknya. <b>Kerjakan duluan.</b></li>
-    <li><b>Poin 9 &mdash; auto-fill perpanjangan yang pintar.</b> Menyusul poin 8, karena isinya
-        pindah ke formulir yang berbeda.</li>
-    <li><b>Poin 5 &mdash; saat revisi, seluruh isi SKP bisa diedit sesuai penawarannya.</b> Perlu
-        penelusuran kolom per kolom, dibandingkan dengan daftar kolom turunan penawaran.</li>
-    <li><b>Poin 14 &mdash; rapikan formulir.</b> Paling akhir, karena susunannya ikut berubah oleh
-        poin 8 dan 9. Arahanmu sudah saya catat: dibagi per kebutuhan, keterangan padat, dan orang
-        bingung harus tahu arah scroll-nya.</li>
-    <li><b>Poin 15 &mdash; pastikan semua alur aman.</b> Tuntas sendirinya setelah keempat di atas selesai.</li>
+    <li><b>Aturan baru yang mengikat.</b> SKP hanya boleh lahir dari penawaran yang sudah diteken client,
+        dan perpanjangan selalu lewat dokumen &mdash; tidak ada lagi income yang masuk tanpa persetujuan
+        lengkap. Saat diperiksa, ke-33 penawaran DEAL yang ada sudah semuanya diteken, jadi tidak ada
+        pekerjaan berjalan yang terhenti.</li>
+    <li><b>Yang terkunci memang tidak bisa diubah.</b> Kolom dari penawaran &mdash; client, unit, luas,
+        dasar harga, masa sewa, nilai sewa &mdash; terkunci bahkan lewat revisi. Itu aturan yang kamu
+        tetapkan sendiri; jalan keluarnya mengajukan penghapusan lalu membuat ulang.</li>
+    <li><b>Dasar harga dipilih, bukan dipakai dua-duanya.</b> Bawaannya per m² per hari. Yang dipilih
+        menentukan satuan di surat penawaran, SKP, PDF, dan halaman yang dibuka client.</li>
+    <li><b>Pratinjau bercap</b> bisa dibuka kapan saja oleh PIC dan para pemeriksa, tanpa menunggu
+        persetujuan selesai, dan tidak akan pernah bisa disodorkan sebagai surat asli.</li>
 </ol>
 
 <h2 style="margin-top:16px">Cara memeriksanya sendiri</h2>
