@@ -866,14 +866,27 @@ function skp_form(PDO $pdo): void
             'approved_by' => null, 'sign_method' => null, 'sign_name' => null,
             'sign_token' => null, 'signature_data' => null, 'signed_at' => null,
         ];
+        // Tanda tangan client TIDAK ikut tercetak di surat contoh. Selain tidak
+        // pantas — ini bukan dokumen sah — isinya memang belum tentu sama dengan
+        // yang nanti diteken. $skp di sini salinan lokal untuk pratinjau saja.
+        $skp['signature_data'] = null;
+        $skp['sign_name']      = null;
+        $skp['signed_at']      = null;
+        $skp['sign_method']    = null;
+
         $PDF_MODE = true;
         $PARAF_OVERLAY = [];
         ob_start();
         include __DIR__ . '/skp_print_body.php';
         $isiHtml = (string) ob_get_clean();
+        // Paraf pemeriksa SENGAJA tidak ditempel di pratinjau. Posisinya dikunci
+        // dalam milimeter, dihitung untuk tata letak surat yang sudah bernomor —
+        // di pratinjau isinya sedikit berbeda, jadi parafnya mendarat melayang di
+        // tengah halaman. Lebih baik tidak ada sama sekali daripada salah tempat
+        // di dokumen yang memang belum sah.
         clara_render_letterhead_pdf($isiHtml,
             'PRATINJAU - ' . skp_doc_title($docType),
-            $PARAF_OVERLAY,
+            [],
             'CONTOH — BELUM SAH');
         return;
     }
