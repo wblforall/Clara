@@ -363,17 +363,34 @@ Kalau ternyata berbeda, berarti yang kiri belum diinput dan yang kanan perlu dip
 </table>
 <?php endif; ?>
 
-<?php if ($kurang): ?>
+<?php if ($kurang):
+    // Baris yang DITAHAN: ada di spreadsheet, tetapi sudah diperiksa dan
+    // ternyata belum boleh diinput — biasanya karena dealnya sebenarnya milik
+    // PIC lain dan sudah ada di CLARA. Dibiarkan ikut "harus diinput" membuat
+    // orang membuat transaksi kembar yang jauh lebih repot dibereskan daripada
+    // selisih yang ditutupinya.
+    $tahanPeta = [];
+    foreach (($ss['tahan'][$bln] ?? []) as $t) $tahanPeta[mb_strtolower((string) $t['ket'])] = $t;
+    $jmlInputBersih = 0.0;
+    foreach ($kurang as $k) {
+        if (!isset($tahanPeta[mb_strtolower((string) $k['ket'])])) $jmlInputBersih += (float) $k['nilai'];
+    }
+?>
 <h3 class="merah">A. Harus DIINPUT &mdash; ada di spreadsheet, belum ada di CLARA</h3>
 <table>
     <tr><th>Keterangan di spreadsheet</th><th class="n">Nilai</th></tr>
-    <?php foreach ($kurang as $k): ?>
-    <?php $tbc = stripos((string) $k['ket'], 'TBC') !== false; ?>
-    <tr class="tambah"><td><?= $h($k['ket']) ?><?= $tbc
-        ? ' <span class="muted">&mdash; bertanda TBC, input hanya bila sudah benar-benar deal</span>' : '' ?></td>
-        <td class="n"><?= $rp($k['nilai']) ?></td></tr>
+    <?php foreach ($kurang as $k):
+        $tahan = $tahanPeta[mb_strtolower((string) $k['ket'])] ?? null;
+        $tbc   = stripos((string) $k['ket'], 'TBC') !== false; ?>
+    <tr class="<?= $tahan ? 'buang' : 'tambah' ?>"><td><?= $h($k['ket']) ?><?php
+        if ($tahan): ?><br><span class="merah tebal">JANGAN DIINPUT DULU.</span>
+        <span class="muted"><?= $tb($tahan['alasan'] ?? '') ?></span><?php
+        elseif ($tbc): ?> <span class="muted">&mdash; bertanda TBC, input hanya bila sudah benar-benar deal</span><?php
+        endif; ?></td>
+        <td class="n<?= $tahan ? ' muted' : '' ?>"><?= $rp($k['nilai']) ?></td></tr>
     <?php endforeach; ?>
-    <tr style="font-weight:700"><td>Jumlah yang hilang</td><td class="n"><?= $rp($jmlKurang) ?></td></tr>
+    <tr style="font-weight:700"><td>Jumlah yang benar-benar perlu diinput</td>
+        <td class="n"><?= $rp($jmlInputBersih) ?></td></tr>
 </table>
 <?php endif; ?>
 
@@ -475,10 +492,19 @@ foreach ($fokus as $bln) {
         if (!in_array(mb_strtolower((string) $sRow['ket']), $raguSama, true)) $kr[] = $sRow;
     }
     usort($kr, fn($a, $b) => (float) $b['nilai'] <=> (float) $a['nilai']);
+    // Baris yang ditahan dikeluarkan dari daftar input DAN dipotong dari target
+    // spreadsheet. Kalau hanya salah satunya, tabel ini berakhir dengan selisih
+    // yang tidak pernah bisa ditutup oleh pekerjaan apa pun.
+    $tahan    = $ss['tahan'][$bln] ?? [];
+    $tahanKey = array_map(fn($t) => mb_strtolower((string) $t['ket']), $tahan);
+    $kr       = array_values(array_filter($kr,
+        fn($k) => !in_array(mb_strtolower((string) $k['ket']), $tahanKey, true)));
+    $jmlTahan = array_sum(array_map(fn($t) => (float) $t['nilai'], $tahan));
     $jmlInput = array_sum(array_column($kr, 'nilai'));
     $aksi     = $ss['aksi_clara'][$bln] ?? [];
     $jmlAksi  = array_sum(array_map(fn($a) => (float) $a['nilai'], $aksi));
     $hasil    = $clSekarang + $jmlInput + $jmlAksi;
+    $sasaran  = $ssTarget - $jmlTahan;
 ?>
 <h2>Langkah agar <?= $h($bln) ?> cocok dengan spreadsheet</h2>
 <table>
@@ -497,12 +523,21 @@ foreach ($fokus as $bln) {
     <?php endforeach; ?>
     <tr style="background:#ecfdf5;font-weight:700">
         <td>HASIL</td><td class="n">&mdash;</td><td class="n"><?= $rp($hasil) ?></td></tr>
-    <tr style="font-weight:700"><td>Spreadsheet <?= $h($bln) ?></td><td class="n">&mdash;</td>
+    <tr style="font-weight:700"><td>Spreadsheet <?= $h($bln) ?> apa adanya</td><td class="n">&mdash;</td>
         <td class="n"><?= $rp($ssTarget) ?></td></tr>
+    <?php foreach ($tahan as $t): ?>
+    <tr class="buang"><td>Ditahan: <?= $h(mb_substr((string) $t['ket'], 0, 90)) ?></td>
+        <td class="n">&minus;<?= number_format((float) $t['nilai'], 0, ',', '.') ?></td>
+        <td class="n">&mdash;</td></tr>
+    <?php endforeach; ?>
+    <?php if ($tahan): ?>
+    <tr style="font-weight:700"><td>Spreadsheet setelah baris yang ditahan dikeluarkan</td>
+        <td class="n">&mdash;</td><td class="n"><?= $rp($sasaran) ?></td></tr>
+    <?php endif; ?>
     <tr style="font-weight:700"><td>SELISIH</td><td class="n">&mdash;</td>
-        <td class="n"><?= round($hasil - $ssTarget) == 0
+        <td class="n"><?= round($hasil - $sasaran) == 0
             ? '<span class="hijau">Rp 0 &mdash; COCOK</span>'
-            : '<span class="merah">' . $rp($hasil - $ssTarget) . '</span>' ?></td></tr>
+            : '<span class="merah">' . $rp($hasil - $sasaran) . '</span>' ?></td></tr>
 </table>
 
 <?php foreach ($aksi as $a): ?>
@@ -518,15 +553,22 @@ foreach ($fokus as $bln) {
 setelah itu <?= $h($bln) ?> akan sama persis dengan spreadsheet.</p>
 <?php foreach ($tut as $i => $t): ?>
 <h3><?= $i + 1 ?>. <?= $tb($t['judul'] ?? '') ?><?php
-    if (isset($t['nilai'])): ?> <span class="<?= (float) $t['nilai'] < 0 ? 'merah' : 'hijau' ?>">&middot;
-    <?= ((float) $t['nilai'] < 0 ? '&minus;' : '+') . number_format(abs((float) $t['nilai']), 0, ',', '.') ?></span><?php
+    // Langkah bertanda "tahan" tidak menambah apa pun. Menampilkan angkanya
+    // dengan tanda plus hijau membuat orang membacanya sebagai "input sebesar
+    // ini" — persis kebalikan dari isi langkahnya.
+    if (isset($t['nilai'])):
+        $tahanLangkah = ($t['jenis'] ?? '') === 'tahan'; ?>
+    <span class="<?= $tahanLangkah ? 'muted' : ((float) $t['nilai'] < 0 ? 'merah' : 'hijau') ?>">&middot;
+    <?= $tahanLangkah
+        ? 'Rp ' . number_format(abs((float) $t['nilai']), 0, ',', '.') . ' &mdash; ditahan'
+        : ((float) $t['nilai'] < 0 ? '&minus;' : '+') . number_format(abs((float) $t['nilai']), 0, ',', '.') ?></span><?php
     endif; ?></h3>
 <?php if (!empty($t['ringkas'])): ?><p style="margin:0 0 5px"><?= $tb($t['ringkas']) ?></p><?php endif; ?>
 <?php if (!empty($t['langkah'])): ?>
 <ol><?php foreach ($t['langkah'] as $l): ?><li><?= $tb($l) ?></li><?php endforeach; ?></ol>
 <?php endif; ?>
 <?php if (!empty($t['catatan'])): ?>
-<div class="box <?= ($t['jenis'] ?? '') === 'awas' ? 'warn' : '' ?>">
+<div class="box <?= in_array($t['jenis'] ?? '', ['awas', 'tahan'], true) ? 'warn' : '' ?>">
     <p style="margin:0"><?= $tb($t['catatan']) ?></p></div>
 <?php endif; ?>
 <?php endforeach; ?>
