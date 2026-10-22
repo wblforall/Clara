@@ -1148,7 +1148,35 @@ function skp_form(PDO $pdo): void
                 <div><label>Tanggal Selesai <span style="color:#dc2626">*</span></label><input type="date" name="p_end_date" value="<?= h((string) $src['end_date']) ?>" required></div>
                 <?php /* Bila harga diskon dipakai, kotak ini adalah TARIF PUBLISH; tarif hasil
                          nego diketik di kotak diskon dan itulah yang menghitung nilai sewa. */ ?>
-                <div><label><?= h($satuanTarif) ?> <span style="color:#dc2626">*</span></label><?php skp_input_rp('p_unit_rate', $defDiskon && $defPublish > 0 ? $defPublish : (float) ($src['unit_rate'] ?? 0), '', true); ?></div>
+                <?php /* Dasar harga bisa diatur DI SINI, tidak hanya ikut penawaran.
+                         Sebelumnya satuannya hanya tampil sebagai label mati, jadi
+                         kontrak yang tarifnya per m² per BULAN tetap tercetak
+                         "per m² per hari" dan satu-satunya jalan membetulkannya
+                         adalah membuka form transaksi. Daftarnya sama persis
+                         dengan yang dipakai Surat Penawaran. */ ?>
+                <div><label>Dasar Harga Sewa</label>
+                    <select name="p_pricing_type" id="p_pricing_type">
+                        <?php $ptSkpKini = (string) ($src['pricing_type'] ?? '') ?: 'daily_area'; ?>
+                        <?php foreach (clara_pilihan_harga() as $kode => $lbl): ?>
+                        <option value="<?= h($kode) ?>" <?= $ptSkpKini === $kode ? 'selected' : '' ?>><?= h($lbl) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="help">Menentukan arti kotak di sebelah, dan satuan yang tercetak di surat.</div>
+                </div>
+                <div><label><span id="p_rate_label"><?= h($satuanTarif) ?></span> <span style="color:#dc2626">*</span></label><?php skp_input_rp('p_unit_rate', $defDiskon && $defPublish > 0 ? $defPublish : (float) ($src['unit_rate'] ?? 0), '', true); ?>
+                    <div class="help">Diisi sendiri &mdash; boleh diubah, boleh dikosongkan. Kosong = dihitung dari <em>Total Biaya Sewa</em>.</div>
+                </div>
+                <script>
+                    // Label kotak tarif ikut dasar harga yang dipilih, seketika.
+                    (function () {
+                        var SAT = <?= json_encode(array_map('clara_satuan_harga', array_combine(array_keys(clara_pilihan_harga()), array_keys(clara_pilihan_harga()))), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+                        var pt = document.getElementById('p_pricing_type'), lb = document.getElementById('p_rate_label');
+                        if (!pt || !lb) return;
+                        function sync() { lb.textContent = SAT[pt.value] || 'Harga Sewa'; }
+                        pt.addEventListener('change', sync);
+                        sync();
+                    })();
+                </script>
                 <?php if (($src['pricing_type'] ?? '') === 'monthly'): ?>
                 <div><label>Jumlah Bulan Kontrak</label><input name="p_contract_months" value="<?= (int) ($src['contract_months'] ?? 0) ?: '' ?>" inputmode="numeric" placeholder="kosong = ikut tanggal"></div>
                 <?php endif; ?>
@@ -2368,12 +2396,22 @@ function _skp_simpan_periode(PDO $pdo, int $pid, int $trxId, ?array $skp, array 
         $bulan = (int) post('p_contract_months', 0);
         $trx['contract_months'] = $bulan > 0 ? min(60, $bulan) : null;
     }
+    // Dasar harga dipilih di formulir ini juga, bukan hanya ikut penawaran.
+    // Harus ditetapkan SEBELUM total dihitung: totalCalculated() membaca
+    // pricing_type, jadi kalau ditulis belakangan perubahannya baru terasa pada
+    // simpanan berikutnya — gejala "sudah diganti tapi angkanya tidak berubah".
+    $ptPilih = (string) post('p_pricing_type', '');
+    $ptSah   = array_key_exists($ptPilih, clara_pilihan_harga())
+        ? $ptPilih : (string) ($src['pricing_type'] ?? '');
+    $trx['pricing_type'] = $ptSah;
+
     // Tidak ada yang berubah → jangan menulis apa pun, jangan isi riwayat audit.
     $overrideLama = round((float) ($src['override_amount'] ?? 0));
     if ((string) $src['start_date'] === $mulai
         && (string) $src['end_date'] === $selesai
         && round((float) ($src['unit_rate'] ?? 0)) === round($tarif)
         && (int) ($src['contract_months'] ?? 0) === (int) ($trx['contract_months'] ?? 0)
+        && (string) ($src['pricing_type'] ?? '') === $ptSah
         && round($totalKetik) === $overrideLama) return '';
 
 
@@ -2403,10 +2441,10 @@ function _skp_simpan_periode(PDO $pdo, int $pid, int $trxId, ?array $skp, array 
 
     $pdo->prepare('UPDATE transactions
                       SET start_date = ?, end_date = ?, unit_rate = ?, contract_months = ?,
-                          period_key = ?, total_calculated = ?, override_amount = ?,
+                          pricing_type = ?, period_key = ?, total_calculated = ?, override_amount = ?,
                           final_amount = ?, updated_by = ?
                     WHERE id = ? AND property_id = ?')
-        ->execute([$mulai, $selesai, $tarif, $trx['contract_months'] ?? null, $pkBaru,
+        ->execute([$mulai, $selesai, $tarif, $trx['contract_months'] ?? null, $ptSah, $pkBaru,
                    $hitung, $pakaiKetik ? $totalKetik : null, $nilaiFinal,
                    $_SESSION['user']['name'] ?? 'system', $trxId, $pid]);
 
