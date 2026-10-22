@@ -398,7 +398,7 @@ $skpHasQr = !empty($skp['sign_token']);
                      seperti gambar di-depan-teks pada Word. Area QR di atas tidak
                      disentuh sama sekali, jadi QR dan nama di bawahnya tetap di
                      tempatnya. Lihat Paraf::overlay(). */ ?>
-            <?= Paraf::overlay($PARAF_QR) ?>
+            <?= Paraf::overlay($PARAF_QR, $skpHasQr) ?>
             <div class="name"<?= $skpHasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($skpManager) ?><br><span <?= $skpJab ?>>Casual Leasing Manager</span></div>
         </td>
         <td class="col"><div class="role"><?= $skpDocType === 'sks' ? 'Pihak Penyewa,' : ($skpDocType === 'fu' ? 'Pemohon,' : 'Menyetujui,') ?></div>

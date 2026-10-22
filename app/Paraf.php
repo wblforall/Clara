@@ -291,14 +291,29 @@ final class Paraf
      * Dipasang SESUDAH .sigarea di kolom "Mengetahui" — urutan itu penting,
      * karena tarikannya dihitung mundur dari dasar area tanda tangan.
      */
-    public static function overlay(string $isi): string
+    /**
+     * @param bool $adaQr Ada kotak QR di atasnya atau tidak.
+     *
+     * Tarikan ke atas (margin negatif) hanya benar bila memang ADA kotak QR yang
+     * ditindih. Pada dokumen yang belum disetujui, QR-nya belum terbit — tarikan
+     * itu lalu melempar parafnya ke ruang kosong di atas blok tanda tangan,
+     * melayang lepas dari kolomnya. Dulu tidak pernah kelihatan karena surat
+     * hanya bisa dicetak setelah disetujui; begitu ada pratinjau yang boleh
+     * dibuka di status apa pun, cacatnya langsung muncul.
+     */
+    public static function overlay(string $isi, bool $adaQr = true): string
     {
         if ($isi === '') return '';
+        // Tanpa QR: paraf duduk wajar di dalam kolomnya, tanpa ditarik ke atas
+        // dan tanpa digeser ke sisi kanan tempat QR biasanya berada.
+        $margin = $adaQr ? '-' . (self::OTO_TARIK + self::OTO_SISA) . 'mm 0 0 0' : '0';
+        $geser  = $adaQr ? self::OTO_GESER : 0.0;
+        $lebar  = $adaQr ? self::OTO_LEBAR : (self::OTO_GESER + self::OTO_LEBAR);
         return '<table style="width:' . (self::OTO_GESER + self::OTO_LEBAR) . 'mm;border-collapse:collapse;'
-             . 'margin:-' . (self::OTO_TARIK + self::OTO_SISA) . 'mm 0 0 0"><tr>'
-             . '<td style="width:' . self::OTO_GESER . 'mm;padding:0;font-size:1pt">&nbsp;</td>'
-             . '<td style="width:' . self::OTO_LEBAR . 'mm;height:' . self::OTO_TARIK . 'mm;padding:0;'
-             . 'vertical-align:top;text-align:left">' . $isi . '</td>'
+             . 'margin:' . $margin . '"><tr>'
+             . ($geser > 0 ? '<td style="width:' . $geser . 'mm;padding:0;font-size:1pt">&nbsp;</td>' : '')
+             . '<td style="width:' . $lebar . 'mm;height:' . self::OTO_TARIK . 'mm;padding:0;'
+             . 'vertical-align:top;text-align:' . ($adaQr ? 'left' : 'center') . '">' . $isi . '</td>'
              . '</tr></table>';
     }
 }
