@@ -963,7 +963,19 @@ function skp_form(PDO $pdo): void
         <?php /* Sumbernya hilang → tombol kembali ke sumber ikut buntu, jadi
                  diarahkan ke daftar dokumen saja. */ ?>
         <?php $kembaliDaftar = $standalone || $sumberHilang; ?>
-        <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=<?= $kembaliDaftar ? 'skp' : ($offerId ? 'offer_form&id=' . (int)$offerId : 'allocation_detail&id=' . (int)$trxId) ?>">← <?= $kembaliDaftar ? 'Daftar Dokumen' : ($offerId ? 'Penawaran' : 'Detail Alokasi') ?></a><a class="btn light" href="?r=skp">Daftar Dokumen</a> <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h($docLabel) ?></span></div>
+        <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=<?= $kembaliDaftar ? 'skp' : ($offerId ? 'offer_form&id=' . (int)$offerId : 'allocation_detail&id=' . (int)$trxId) ?>">← <?= $kembaliDaftar ? 'Daftar Dokumen' : ($offerId ? 'Penawaran' : 'Detail Alokasi') ?></a><a class="btn light" href="?r=skp">Daftar Dokumen</a>
+            <?php /* Pratinjau bercap. Ditaruh di sini, bukan di baris tombol Simpan,
+                     karena baris itu hilang begitu dokumen tidak lagi bisa diedit —
+                     padahal saat menunggu paraf/persetujuan itulah pemeriksa paling
+                     butuh melihat hasil jadinya. Berlaku untuk SKP, SKS, dan Form
+                     Utilities, termasuk dokumen yang belum pernah disimpan. */ ?>
+            <?php $prevQ = $skp ? 'id=' . (int) $skp['id']
+                    : ($offerId ? 'offer_id=' . (int) $offerId
+                        : ($trxId ? 'transaction_id=' . (int) $trxId : 'module=' . h($modKind))); ?>
+            <a class="btn light" style="background:#ecfdf5;color:#065f46;border-color:#a7f3d0"
+               href="?r=skp_form&<?= $prevQ ?>&pratinjau=1" target="_blank" rel="noopener"
+               title="Surat contoh bercap &quot;CONTOH — BELUM SAH&quot;, tanpa nomor dokumen">👁 Lihat Contoh Surat</a>
+            <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h($docLabel) ?></span></div>
 
         <?php /* Transaksi/penawaran asalnya sudah tidak ada. Dokumennya tetap bisa
                  dibaca dan diparaf dari datanya sendiri, tetapi orang harus tahu —
@@ -1504,18 +1516,6 @@ function skp_form(PDO $pdo): void
             <p class="help" style="margin-top:16px;color:#92400e">Submit untuk approval hanya bisa setelah <strong>Scan KTP</strong> dan <strong>Scan NPWP</strong> ada. Untuk client yang pernah dibuatkan dokumen, scan lamanya otomatis dipakai ulang (centang <strong>Pakai ulang</strong> sudah aktif) &mdash; tidak perlu unggah lagi.<br>
                 <strong>Bukti Transfer</strong> tidak diunggah di sini &mdash; tempatnya di <strong>Permintaan Kontrak</strong>, sebelum berkas dikirim ke Legal.</p>
             <p class="help" style="margin-top:6px">Tombol <strong>Cetak / Simpan PDF</strong> baru muncul setelah manager menyetujui &mdash; saat itulah nomor dokumen terbit dan isinya dikunci. Sebelum itu, pakai <strong>Lihat Contoh Surat</strong> untuk melihat hasil jadinya.</p>
-            <?php /* Pratinjau bercap untuk diperiksa sebelum semuanya disetujui —
-                     termasuk untuk dokumen yang BELUM disimpan, supaya orang tidak
-                     perlu membuat draft hanya untuk melihat hasil jadinya.
-                     Dibuka di tab baru agar isian yang sedang diketik tidak hilang. */ ?>
-            <?php $prevQ = $skp ? 'id=' . (int) $skp['id']
-                    : ($offerId ? 'offer_id=' . (int) $offerId
-                        : ($trxId ? 'transaction_id=' . (int) $trxId : 'module=' . h($modKind))); ?>
-            <p class="help" style="margin-top:4px">
-                <a class="btn light" href="?r=skp_form&<?= $prevQ ?>&pratinjau=1" target="_blank" rel="noopener">👁 Lihat Contoh Surat</a>
-                <span class="muted" style="margin-left:6px">Bercap &ldquo;CONTOH &mdash; BELUM SAH&rdquo;, tanpa nomor dokumen.
-                    <?= $skp ? 'Simpan dulu kalau baru mengubah isian.' : 'Isinya mengikuti penawaran/transaksi asalnya.' ?></span>
-            </p>
             <p class="form-actions" style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">
                 <button type="submit" onclick="document.getElementById('skp-action').value='save'" class="btn secondary">Simpan Draft</button>
                 <button type="submit" onclick="document.getElementById('skp-action').value='submit'" style="background:#0369a1">Simpan & Submit untuk Approval</button>
