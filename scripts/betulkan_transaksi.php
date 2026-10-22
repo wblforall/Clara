@@ -54,8 +54,9 @@ $alok = $pdo->prepare('SELECT period_key, SUM(amount) rp FROM transaction_alloca
 
 $tampil = function (array $t) use ($alok, $rp, $id): void {
     printf("    periode   %s s/d %s\n", $t['start_date'], $t['end_date']);
-    printf("    harga     %s · rate %s · %s bulan kontrak\n", $t['pricing_type'],
-        $rp($t['unit_rate']), $t['contract_months'] ?: '-');
+    printf("    harga     %s · rate %s · %s bulan kontrak · qty %s · luas %s m2\n", $t['pricing_type'],
+        $rp($t['unit_rate']), $t['contract_months'] ?: '-',
+        $rp($t['quantity'] ?? 1), $rp($t['area_sqm'] ?? 0));
     printf("    nilai     %s · metode %s · diakui %s\n",
         $rp($t['final_amount'] ?: $t['total_calculated']),
         ($t['billing_method'] ?? '') === 'spread' ? 'Recurring' : 'Sekaligus', $t['period_key'] ?: '-');
@@ -81,20 +82,28 @@ if (isset($opt['metode']))  {
     $m = ((string) $opt['metode']) === 'spread' ? 'spread' : 'anchor_cycle';
     $baru['billing_method'] = $m; $ubah['billing_method'] = $m;
 }
-// period_key selalu mengikuti bulan mulai — itulah bulan pengakuannya.
-$baru['period_key'] = substr((string) $baru['start_date'], 0, 7);
-$ubah['period_key'] = $baru['period_key'];
+// Tanpa satu pun pilihan perubahan, skrip ini hanya MELIHAT. Kalau tidak,
+// memanggilnya untuk memeriksa sebuah transaksi malah menulis ulang
+// alokasinya — perubahan yang tidak pernah diminta siapa pun.
+if (!$ubah) { echo "\n  Tidak ada yang diubah — hanya melihat.\n\n"; exit(0); }
 
-if (!$ubah) { echo "\n  Tidak ada yang diubah.\n\n"; exit(0); }
+// period_key mengikuti bulan mulai — itulah bulan pengakuannya.
+$baru['period_key'] = substr((string) $baru['start_date'], 0, 7);
+if ((string) ($t['period_key'] ?? '') !== $baru['period_key']) $ubah['period_key'] = $baru['period_key'];
 
 echo "\n  YANG DIUBAH\n";
 foreach ($ubah as $k => $v) printf("    %-16s %s  ->  %s\n", $k, (string) ($t[$k] ?? '-'), (string) $v);
 
-if (!$terapkan) {
-    echo "\n  Jalankan ulang dengan --terapkan untuk menyimpannya.\n\n";
-    exit(0);
-}
-
+// Jalankan perubahannya sungguhan di dalam satu transaksi database, baca
+// hasilnya, lalu simpan atau batalkan.
+//
+// Tanpa --terapkan hasilnya DIBATALKAN — tetapi angkanya sudah dihitung oleh
+// mesin alokasi yang sama persis dengan yang dipakai saat menyimpan. Jadi yang
+// terlihat di layar memang yang akan terjadi, bukan perkiraan yang ditulis
+// ulang di skrip ini dan bisa melenceng dari aslinya.
+//
+// Ini yang membuat salah tebak tidak bisa terjadi lagi: income per bulan sudah
+// kelihatan SEBELUM apa pun tersimpan.
 $pdo->beginTransaction();
 try {
     $sets = []; $vals = [];
@@ -107,20 +116,34 @@ try {
     if (($baru['billing_method'] ?? '') !== 'spread') $baru['recognition_period'] = $baru['period_key'];
     else unset($baru['recognition_period']);
     AllocationService::saveAllocations($pdo, $id, $baru);
-    audit($pdo, 'betulkan_transaksi', 'transactions', (string) $id, $ubah, array_intersect_key($t, $ubah));
-    $pdo->commit();
+
+    $st->execute([$id]);
+    $t2 = $st->fetch();
+    $alok->execute([$id]);
+    $hasil = $alok->fetchAll();
+
+    if ($terapkan) {
+        audit($pdo, 'betulkan_transaksi', 'transactions', (string) $id, $ubah, array_intersect_key($t, $ubah));
+        $pdo->commit();
+    } else {
+        $pdo->rollBack();
+    }
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     fwrite(STDERR, "GAGAL: " . $e->getMessage() . " — tidak ada yang disimpan.\n");
     exit(1);
 }
 
-$st->execute([$id]);
-$t2 = $st->fetch();
-echo "\n  SESUDAH\n";
-$tampil($t2);
-$alok->execute([$id]);
-$jml = array_sum(array_map(fn($a) => (float) $a['rp'], $alok->fetchAll()));
-printf("\n  Jumlah alokasi: Rp %s · nilai kontrak: Rp %s%s\n\n", $rp($jml),
+printf("\n  %s\n", $terapkan ? 'SESUDAH' : 'HASILNYA AKAN JADI (belum disimpan)');
+printf("    periode   %s s/d %s\n", $t2['start_date'], $t2['end_date']);
+printf("    harga     %s · rate %s · %s bulan kontrak\n", $t2['pricing_type'],
+    $rp($t2['unit_rate']), $t2['contract_months'] ?: '-');
+printf("    nilai     %s · metode %s · diakui %s\n",
     $rp($t2['final_amount'] ?: $t2['total_calculated']),
-    round($jml) === round((float) ($t2['final_amount'] ?: $t2['total_calculated'])) ? ' (PAS)' : '  <-- PERIKSA');
+    ($t2['billing_method'] ?? '') === 'spread' ? 'Recurring' : 'Sekaligus', $t2['period_key'] ?: '-');
+$jml = 0.0;
+foreach ($hasil as $a) { printf("      %s  Rp %s\n", $a['period_key'], $rp($a['rp'])); $jml += (float) $a['rp']; }
+$nilai = (float) ($t2['final_amount'] ?: $t2['total_calculated']);
+printf("\n  Jumlah alokasi: Rp %s · nilai kontrak: Rp %s%s\n", $rp($jml), $rp($nilai),
+    round($jml) === round($nilai) ? ' (PAS)' : '  <-- PERIKSA');
+echo $terapkan ? "\n" : "  Belum ada yang disimpan. Tambahkan --terapkan kalau angka di atas sudah benar.\n\n";

@@ -215,6 +215,63 @@ function sandingkan(array $ssRows, array $clRows): array
     return [$pasti, $ragu, array_values($sisaSs), array_values($sisaCl)];
 }
 
+// Mode teks: jawabannya langsung di terminal, tanpa PDF dan tanpa unduh.
+// Dipakai saat yang dibutuhkan cuma "apa yang kurang, apa yang lebih".
+if (array_key_exists('teks', getopt('', ['teks']))) {
+    $rpT = fn($v) => number_format((float) $v, 0, ',', '.');
+    foreach ($fokus as $bln) {
+        $qB = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM transaction_allocations
+                              WHERE property_id = ? AND pic_name = ? AND period_key = ?');
+        $qB->execute([$pid, $pic, $bln]);
+        $cl = (float) $qB->fetchColumn();
+        $ssT = (float) ($ss['bulan'][$bln] ?? 0);
+
+        $qR = $pdo->prepare("SELECT a.amount, t.id trx, t.module, t.master_code,
+                                    t.start_date, t.end_date,
+                                    COALESCE(c.brand_name, c.company_name, '(tanpa nama)') nama
+                               FROM transaction_allocations a
+                               JOIN transactions t ON t.id = a.transaction_id
+                               LEFT JOIN master_clients c ON c.id = t.client_id
+                              WHERE a.property_id = ? AND a.pic_name = ? AND a.period_key = ?
+                                AND a.amount > 0 AND t.deleted_at IS NULL
+                              ORDER BY a.amount DESC");
+        $qR->execute([$pid, $pic, $bln]);
+        [$ck, $rg, $kr, $lb] = sandingkan($ss['rincian'][$bln] ?? [], $qR->fetchAll());
+
+        echo "\n" . str_repeat('=', 78) . "\n";
+        printf("  %s  CLARA Rp %s   SPREADSHEET Rp %s   SELISIH Rp %s\n",
+            $bln, $rpT($cl), $rpT($ssT), $rpT($cl - $ssT));
+        echo str_repeat('=', 78) . "\n";
+
+        printf("\n  A. KURANG — ada di spreadsheet, belum terhitung di CLARA (%d)\n", count($kr));
+        $jk = 0.0;
+        foreach ($kr as $k) { $jk += (float) $k['nilai'];
+            printf("     %-52s Rp %s\n", mb_substr((string) $k['ket'], 0, 52), $rpT($k['nilai'])); }
+        printf("     %-52s Rp %s\n", 'JUMLAH', $rpT($jk));
+
+        printf("\n  B. LEBIH — terhitung di CLARA, tidak ada di spreadsheet (%d)\n", count($lb));
+        $jl = 0.0;
+        foreach ($lb as $c) { $jl += (float) $c['amount'];
+            $sil = substr((string) $c['start_date'], 0, 7) !== substr((string) $c['end_date'], 0, 7);
+            printf("     #%-6s %-28s %-9s %s Rp %s%s\n", $c['trx'],
+                mb_substr((string) $c['nama'], 0, 28), $c['master_code'],
+                date('d/m', strtotime($c['start_date'])) . '-' . date('d/m', strtotime($c['end_date'])),
+                $rpT($c['amount']), $sil ? ' (lintas bulan)' : ''); }
+        printf("     %-52s Rp %s\n", 'JUMLAH', $rpT($jl));
+
+        if ($rg) {
+            printf("\n  C. PERLU DIPASTIKAN — nilai sama, nama beda (%d)\n", count($rg));
+            foreach ($rg as [$sR, $cR])
+                printf("     %-34s <-> #%-6s %-22s Rp %s\n",
+                    mb_substr((string) $sR['ket'], 0, 34), $cR['trx'],
+                    mb_substr((string) $cR['nama'], 0, 22), $rpT($sR['nilai']));
+        }
+        printf("\n  Uji: %s - %s + %s = %s (target %s)\n\n",
+            $rpT($cl), $rpT($jl), $rpT($jk), $rpT($cl - $jl + $jk), $rpT($ssT));
+    }
+    exit(0);
+}
+
 ob_start(); ?>
 <style>
     body { font-family: sans-serif; font-size: 10.5pt; color: #111; line-height: 1.5; }
