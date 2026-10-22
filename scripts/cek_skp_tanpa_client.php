@@ -119,7 +119,9 @@ if ($opt['skp'] === '' || $opt['client'] === '') {
 $skpId    = (int) $opt['skp'];
 $clientId = (int) $opt['client'];
 
-$ck = $pdo->prepare('SELECT id, company_name, brand_name, property_id FROM master_clients WHERE id = ?');
+// master_clients tidak punya kolom property_id — clientnya dipakai bersama
+// kedua properti.
+$ck = $pdo->prepare('SELECT id, company_name, brand_name FROM master_clients WHERE id = ?');
 $ck->execute([$clientId]);
 $cl = $ck->fetch();
 if (!$cl) { fwrite(STDERR, "Client #$clientId tidak ada di Master Client.\n"); exit(1); }
