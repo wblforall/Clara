@@ -95,9 +95,20 @@ function clara_letterhead_mpdf(): \Mpdf\Mpdf
  * INLINE → tampil di viewer PDF (preview + bisa simpan/bagikan) di HP & PC.
  * Memanggil exit().
  */
-function clara_render_letterhead_pdf(string $html, string $filename, array $overlay = []): void
+function clara_render_letterhead_pdf(string $html, string $filename, array $overlay = [], string $cap = ''): void
 {
     $mpdf = clara_letterhead_mpdf();
+    // Cap melintang untuk dokumen yang BELUM sah (mis. pratinjau sebelum
+    // persetujuan selesai). Dibuat cukup pudar supaya isinya tetap terbaca,
+    // tetapi cukup jelas supaya cetakannya tidak pernah bisa disodorkan
+    // sebagai surat asli. Harus dipasang sebelum WriteHTML agar ikut di
+    // setiap halaman, termasuk halaman yang terbentuk belakangan.
+    if ($cap !== '') {
+        $mpdf->SetWatermarkText($cap);
+        $mpdf->showWatermarkText = true;
+        $mpdf->watermarkTextAlpha = 0.10;
+        $mpdf->watermark_font = 'DejaVuSans';
+    }
     $mpdf->WriteHTML($html);
     // Paraf yang posisinya dikunci dalam milimeter. WriteFixedPosHTML menaruh
     // potongan HTML pada koordinat halaman apa adanya — berbeda dari CSS

@@ -525,7 +525,13 @@ function transaction_form(PDO $pdo): void
     }
 
     // Perpanjang dari daftar transaksi: setelah simpan, langsung ke form SKP.
-    $toSkp = $renewFrom && getv('to_skp') === '1';
+    // Perpanjangan SELALU lewat SKP — penandanya melekat pada perpanjangannya,
+    // bukan pada tautan yang dipakai membukanya. Dulu ini bergantung pada
+    // parameter to_skp di URL, sehingga siapa pun yang membuka formulirnya
+    // tanpa parameter itu (mis. mengetik alamatnya sendiri, atau tautan lama
+    // yang tersimpan) membuat perpanjangan yang langsung masuk income tanpa
+    // paraf, persetujuan, dan tanda tangan client.
+    $toSkp = $renewFrom > 0;
 
     layout('Tambah Transaksi ' . ($moduleLabel[$module] ?? strtoupper($module)), function () use ($module, $masters, $clients, $allContacts, $pics, $linkedPic, $referrers, $prefill, $toSkp) {
         ?>

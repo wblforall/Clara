@@ -20,6 +20,7 @@ date_default_timezone_set((string) (env_value('APP_TIMEZONE') ?: 'Asia/Makassar'
 $opt = array_merge(['keluar' => $root . '/docs/Laporan_Alur_SP_SKP.pdf'],
     getopt('', ['keluar:']));
 
+$aset = $root . '/docs/laporan_alur_assets';
 $h  = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
 $tb = fn($s) => preg_replace('/\*(.+?)\*/u', '<b>$1</b>', htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'));
 
@@ -31,12 +32,12 @@ $poin = [
    'Gudang & Media dibuat lewat *+ Buat Dokumen → SKS Gudang / Form Utilities* — app/pages/skp.php:368-369.'],
   'Tentukan dulu: apakah Gudang & Media WAJIB lewat SP, atau boleh tetap langsung. Kalau wajib, jalur pembuatan langsung di SKP harus ditutup dan form penawaran perlu varian Gudang/Media.'],
 
- [2, 'SP → TTD client → SKP → kerjakan → paraf Asst. Manager & Manager → TTD client → masuk modul → income', 'belum',
-  'Rantainya sudah ada, tetapi satu mata rantai bisa dilewati: status DEAL boleh ditandai sendiri oleh sales tanpa tanda tangan client, dan SKP hanya mensyaratkan status DEAL.',
-  ['Tombol *Tandai DEAL* mengubah status tanpa memeriksa tanda tangan — app/pages/offers.php:1233.',
-   'Syarat membuat SKP hanya `o.status = \'deal\'` — app/pages/skp.php:76.',
-   'Income memang baru terbit saat client meneken SKP — app/pages/skp.php:3467 dan 3576 (`_skp_bangun_alokasi`).'],
-  'Tambahkan syarat `offers.signed_at IS NOT NULL` sebelum SKP boleh dibuat. Perlu diputuskan dulu nasib penawaran yang sudah terlanjur DEAL tanpa tanda tangan — kalau syarat ini langsung diberlakukan, pekerjaan yang sedang berjalan akan berhenti.'],
+ [2, 'SP → TTD client → SKP → kerjakan → paraf Asst. Manager & Manager → TTD client → masuk modul → income', 'selesai',
+  'SUDAH DIKERJAKAN. SKP baru kini hanya boleh lahir dari penawaran yang benar-benar sudah ditandatangani client. Status DEAL saja tidak cukup — status itu bisa ditandai sendiri oleh sales, jadi tidak membuktikan client menyepakati apa pun.',
+  ['Penjaga dipasang saat MEMBUAT dokumen, bukan di pemuat data — app/pages/skp.php (sesudah `$src` dibentuk). Dokumen yang sudah terlanjur ada tetap bisa dibuka dan diproses, jadi pekerjaan berjalan tidak berhenti.',
+   'Diuji di salinan lokal: penawaran #48 (sudah diteken) → SKP terbit (id 201). Penawaran DEAL tanpa tanda tangan → ditolak, dilempar kembali ke halaman penawaran dengan keterangannya.',
+   'Risiko yang saya khawatirkan kemarin ternyata NOL: dari 33 penawaran berstatus DEAL di kedua properti (e-Walk 23, Pentacity 10), *seluruhnya sudah ditandatangani client*. Tidak ada satu pun pekerjaan berjalan yang terhenti oleh aturan ini.'],
+  'Tidak ada.'],
 
  [3, 'SKP yang sudah di-TTD client tidak bisa diedit / direvisi lagi', 'sebagian',
   'Formulirnya sudah terkunci saat berstatus Ditandatangani. Yang masih boleh diganti hanya berkas scan lampiran — nilai, periode, dan nomor dokumen tidak ikut berubah.',
@@ -77,10 +78,12 @@ $poin = [
   ['Keterangan di formulir — app/pages/transactions.php:534.'],
   'Setelah poin 8 dikerjakan, auto-fill yang sama perlu dipindahkan ke formulir SKP.'],
 
- [10, 'Perpanjangan tidak langsung masuk income sebelum SKP di-approve dan di-TTD client', 'belum',
-  'Inilah lubang yang paling berpengaruh ke angka. Perpanjangan lewat tombol Perpanjang langsung membangun alokasi income begitu disimpan — tanpa SKP, tanpa persetujuan, tanpa tanda tangan.',
-  ['Penyimpanan transaksi langsung memanggil pembangun alokasi — app/pages/transactions.php:1127 dan 1934.'],
-  'Setelah poin 8 dikerjakan, lubang ini tertutup dengan sendirinya karena perpanjangan tidak lagi lewat formulir transaksi.'],
+ [10, 'Perpanjangan tidak langsung masuk income sebelum SKP di-approve dan di-TTD client', 'selesai',
+  'SUDAH DIKERJAKAN. Ternyata pengalihan ke SKP sudah ada di kode — alokasinya dihapus dan draft SKP dibuat otomatis — tetapi hanya berjalan bila penanda `to_skp` ikut terbawa di alamat halaman. Siapa pun yang membuka formulir perpanjangan tanpa penanda itu (mengetik alamatnya sendiri, atau tautan lama yang tersimpan) membuat perpanjangan yang LANGSUNG masuk income tanpa paraf, persetujuan, dan tanda tangan.',
+  ['Penandanya sekarang melekat pada perpanjangannya sendiri, bukan pada tautan — app/pages/transactions.php:528.',
+   'Diuji di salinan lokal: membuka formulir perpanjangan TANPA `to_skp` di alamatnya, dan penanda itu tetap terpasang di formulirnya.',
+   'Akibatnya alokasi dilepas dan draft SKP terbit — app/pages/transactions.php:1157 dan sesudahnya.'],
+  'Tidak ada untuk lubang ini. Poin 8 (pintu masuknya langsung dari menu SKP) masih terbuka, tetapi angkanya sudah aman.'],
 
  [11, 'Menu SKP tergabung antara Exhibition, Media, dan Gudang — membingungkan', 'belum',
   'Ketiganya memang satu menu. Saringan modul sudah ada di dalamnya, tetapi pintu masuknya tetap satu dan pembuatan dokumen Gudang/Media bersembunyi di dalam menu bernama SKP.',
@@ -93,11 +96,11 @@ $poin = [
   ['Seluruh halaman memakai `current_property_id()` sebagai penyaring data, bukan percabangan kode per mall.'],
   'Perlu dipastikan sekali lagi setelah poin 11 dan 13 dikerjakan, agar menu baru dan kolom baru ikut muncul di kedua properti.'],
 
- [13, 'Kolom biaya sewa per m² per BULAN di samping per m² per hari — bisa diaktifkan, wajib diisi bila aktif, tampil di SP, SKP, PDF, dan tautan client', 'belum',
-  'Jenis harga `monthly_area` (tarif per m² per bulan) sudah ada di mesin perhitungan dan sudah dipakai di surat penawaran. Yang belum ada: sakelar di formulir, kewajiban mengisi saat aktif, dan penampilannya di SKP serta halaman tanda tangan client.',
+ [13, 'Dasar harga dipilih lewat DROPDOWN: per m² per hari (bawaan) atau per m² per bulan — hanya salah satu yang dipakai, dan SP/SKP/PDF/tautan client ikut menyesuaikan', 'belum',
+  'Arahan terakhir: bukan centang yang menambah kolom kedua, melainkan DROPDOWN yang memilih salah satu dasar harga — bawaannya per m² per hari. Kabar baiknya, mesinnya sudah siap: kedua dasar harga itu sudah ada sebagai jenis harga `daily_area` dan `monthly_area`, jadi yang perlu dibuat tinggal pemilihnya di formulir dan penyesuaian label di cetakan.',
   ['Jenis harga `monthly_area` sudah dikenali — app/AllocationService.php:32 dan app/helpers.php (`clara_pengali_harga`).',
    'Sudah dipakai di surat penawaran — app/pages/offers.php:591.'],
-  'Tambahkan sakelar di formulir SP dan SKP, validasi wajib-isi, lalu baris harganya di cetakan SP, cetakan SKP, dan halaman tanda tangan client.'],
+  'Pasang dropdown di formulir SP dan SKP (bawaan: per m² per hari), lalu samakan label dan perhitungannya di cetakan SP, cetakan SKP, halaman tanda tangan client, dan PDF. Belum saya mulai — ini pekerjaan berikutnya.'],
 
  [14, 'Rapikan formulir SP, SKP, Gudang, dan Media — terlalu banyak kolom dan berhamburan', 'belum',
   'Belum dikerjakan. Formulirnya panjang dan kolomnya belum dikelompokkan menurut kebutuhan.',
@@ -114,11 +117,12 @@ $poin = [
   [],
   'Dikerjakan bersama poin 13.'],
 
- [17, 'Pratinjau surat ber-stempel "contoh" supaya PIC, Asst. Manager, dan Manager bisa memeriksa sebelum semuanya disetujui', 'belum',
-  'Saat ini surat hanya bisa dicetak setelah dokumennya disetujui — persis keluhan yang kamu sebut. Sebelum itu tidak ada cara melihat hasil jadinya.',
-  ['Cetak ditolak bila status belum `approved` / `signed` — app/pages/skp.php:3505.',
-   'Tidak ada stempel/watermark di mana pun — pencarian `watermark` di app/pdf.php dan template cetak tidak menghasilkan apa pun.'],
-  'Tambahkan rute pratinjau yang boleh dibuka di status apa pun oleh PIC pemilik dan para penyetuju, memakai template cetak yang sama, dengan stempel diagonal semi-transparan (mis. "CONTOH — BELUM SAH"). Perlu satu penyesuaian: isi surat saat ini dibekukan saat persetujuan (`snapshot_json`), jadi pratinjau harus membangunnya langsung dari data terkini.'],
+ [17, 'Pratinjau surat ber-stempel "contoh" supaya PIC, Asst. Manager, dan Manager bisa memeriksa sebelum semuanya disetujui', 'selesai',
+  'SUDAH DIKERJAKAN. Tombol *Lihat Contoh Surat* ada di formulir SKP dan bisa ditekan di status apa pun — termasuk saat masih draft. Hasilnya surat utuh dengan tata letak yang sama persis dengan yang nanti diterima client, bercap melintang "CONTOH — BELUM SAH" dan tanpa nomor dokumen.',
+  ['Pratinjau dirender dari dalam formulir itu sendiri, memakai angka yang SEDANG dihitung di halaman itu — bukan salinan beku — sehingga isinya selalu mengikuti keadaan terakhir. app/pages/skp.php (cabang `?pratinjau=1`).',
+   'Cap melintang ditambahkan di app/pdf.php — `clara_render_letterhead_pdf()` sekarang menerima teks cap, dipasang sebelum isi ditulis supaya ikut di setiap halaman. Kepekatannya 10% agar isinya tetap terbaca.',
+   'Diuji di salinan lokal pada SKP draft #185: `skp_print` menolaknya dengan 404 "SKP belum disetujui", sedangkan pratinjau menghasilkan PDF 2 halaman.'],
+  'Tidak ada. Dua tangkapan layar hasilnya ada di halaman berikutnya.'],
 ];
 
 $warna = [
@@ -179,6 +183,16 @@ akan berulang berapa kali pun datanya dibetulkan.</p>
 <?php endforeach; ?>
 
 <pagebreak>
+<h1 style="font-size:15pt">Bukti: poin 17 sebelum &amp; sesudah</h1>
+<p><b>Sebelum.</b> Menekan Cetak pada dokumen yang belum disetujui dijawab
+<i>&ldquo;SKP belum disetujui / tidak ditemukan&rdquo;</i> &mdash; halaman 404, tidak ada surat sama sekali.
+Pemeriksa terpaksa membaca dari formulir, kolom demi kolom.</p>
+<p><b>Sesudah.</b> Tombol baru di formulir SKP, bisa ditekan kapan saja:</p>
+<img src="<?= $h($aset) ?>/ss_tombol_pratinjau.png" style="width:168mm;border:1px solid #cbd5e1">
+<p style="margin-top:10px">Hasilnya surat utuh, bercap melintang, tanpa nomor dokumen:</p>
+<img src="<?= $h($aset) ?>/ss_surat_bercap.png" style="width:120mm;border:1px solid #cbd5e1">
+
+<pagebreak>
 <h1 style="font-size:15pt">Urutan yang saya sarankan</h1>
 <p>Bukan menurut nomor poinnya, tetapi menurut mana yang paling cepat menghentikan angka salah.</p>
 <ol>
@@ -196,18 +210,21 @@ akan berulang berapa kali pun datanya dibetulkan.</p>
         poin 11 dan 13.</li>
 </ol>
 
-<h2 style="margin-top:16px">Tentang tangkapan layar</h2>
-<p>Dokumen ini belum memuat tangkapan layar. Untuk mengambilnya, aplikasinya harus berjalan dan
-<b>dalam keadaan login</b> &mdash; dan saya tidak punya akses masuk ke CLARA, baik di server maupun
-dengan salinan lokal. Memasang gambar yang saya buat sendiri jelas bukan bukti, jadi tidak saya lakukan.</p>
-<p>Dua cara supaya tangkapan layarnya ada:</p>
+<h2 style="margin-top:16px">Cara memeriksanya sendiri</h2>
+<p>Seluruh perubahan di dokumen ini sudah diuji di salinan lokal dengan data asli
+(dump 14 Oktober), masuk memakai akun sungguhan, dan setiap halaman utama dibuka
+untuk memastikan tidak ada yang rusak: Dashboard, Surat Penawaran, SKP, Exhibition,
+Gudang, dan Laporan PIC &mdash; semuanya terbuka normal.</p>
+<p>Di server, sesudah <b>git pull</b>, periksa tiga hal ini:</p>
 <ol>
-    <li>Kirimkan tangkapan layar halamannya &mdash; saya sisipkan ke dokumen ini di tempat yang tepat.</li>
-    <li>Atau beri satu akun uji (boleh akun terbatas) untuk salinan lokal, dan saya ambil sendiri
-        seluruh halaman yang disebut di dokumen ini.</li>
+    <li><b>Poin 17</b> &mdash; buka satu SKP yang masih draft. Tombol <b>Lihat Contoh Surat</b>
+        harus ada, dan menekannya menghasilkan PDF bercap.</li>
+    <li><b>Poin 10</b> &mdash; buka Gudang, tekan <b>Perpanjang</b>, simpan. Transaksinya harus
+        mendarat di formulir SKP, dan nilainya <b>belum</b> muncul di Laporan PIC.</li>
+    <li><b>Poin 2</b> &mdash; coba buat SKP dari penawaran yang belum diteken client. Harus ditolak
+        dengan keterangannya. (Saat ini semua penawaran DEAL sudah diteken, jadi tidak ada yang terhalang.)</li>
 </ol>
-<p>Sebagai gantinya, tiap klaim di atas sudah menyebut berkas dan nomor baris. Itu bisa dibuka dan
-dicocokkan langsung, dan tidak bisa saya karang.</p>
+
 <?php
 $html = (string) ob_get_clean();
 $mpdf = clara_letterhead_mpdf();
