@@ -421,9 +421,16 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                         : ($o['area_sqm'] ? number_format((float)$o['area_sqm'], 2, ',', '.') . ' m²' : '-') ?></td>
                 <?php /* Surat kertas menulis harga PER BULAN di kolom ini, bukan
                          total kontrak. Templatenya yang menentukan; bawaannya
-                         tetap total periode supaya template lama tak berubah. */ ?>
-                <td><?= $rp(($letter['harga_tampil'] ?? 'periode') === 'bulan'
-                        ? (float) ($o['unit_rate'] ?? 0) : $total) ?></td>
+                         tetap total periode supaya template lama tak berubah.
+
+                         Yang dibaca untuk "bulan" adalah monthly_amount — kolom
+                         Harga / Bulan di formulir. Dulu keliru membaca unit_rate,
+                         yaitu tarif per m²/slot: angka yang sama sekali berbeda
+                         artinya, tercetak di kolom yang judulnya menjanjikan
+                         harga sebulan. Kosong dicetak kosong, bukan "Rp 0". */ ?>
+                <?php $hargaKolom = ($letter['harga_tampil'] ?? 'periode') === 'bulan'
+                        ? (float) ($o['monthly_amount'] ?? 0) : $total; ?>
+                <td><?= $hargaKolom > 0 ? $rp($hargaKolom) : '&nbsp;' ?></td>
                 <td>
                     <?php if ($ketBullet): ?>
                         <?php foreach ($ketBullet as $kb): ?><div style="line-height:1.45">&#9679; <?= clara_format_bold($kb) ?></div><?php endforeach; ?>
@@ -462,7 +469,9 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             <?php $luasTier = 0; foreach ($tierHarga as $t): $luasTier += (float) $t['area_sqm'];
                   $sub = (float) $t['area_sqm'] * (float) $t['rate_per_sqm'] * $days; ?>
             <tr><td class="lbl"><?= $h($t['label'] ?: 'Harga Sewa') ?>
-                <span class="muted" style="font-weight:400">(<?= $h(rtrim(rtrim(number_format((float) $t['area_sqm'], 2, ',', '.'), '0'), ',')) ?> m² × <?= $rp($t['rate_per_sqm']) ?> × <?= (int) $days ?> hari)</span></td>
+                <?php /* Keterangan perkaliannya hanya dicetak bila tarifnya memang
+                         ada — "× Rp 0 ×" membuat barisnya terbaca sebagai gratis. */ ?>
+                <?php if ((float) $t['rate_per_sqm'] > 0): ?><span class="muted" style="font-weight:400">(<?= $h(rtrim(rtrim(number_format((float) $t['area_sqm'], 2, ',', '.'), '0'), ',')) ?> m² × <?= $rp($t['rate_per_sqm']) ?> × <?= (int) $days ?> hari)</span><?php endif; ?></td>
                 <td class="amt"><?= $rp($sub) ?></td></tr>
             <?php endforeach; ?>
             <?php $luasUnit = array_sum(array_map(fn($x) => (float) ($x['area_sqm'] ?? 0), $items)); ?>

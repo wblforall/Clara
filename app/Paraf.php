@@ -214,43 +214,8 @@ final class Paraf
     {
         $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
         $lebar = (float) ($p['lebar'] ?? 30);
-        $isi = '';
-
-        if (($p['bentuk'] ?? 'gambar') === 'inisial') {
-            $teks = trim((string) ($p['teks'] ?? ''));
-            if ($teks === '') return '';
-            // Tinggi huruf diikutkan lebar kotak supaya paraf inisial ikut
-            // membesar/mengecil saat lebarnya digeser, seperti paraf bergambar.
-            $ukuran = max(9.0, $lebar * 0.42);
-            $isi = '<div style="font-family:Helvetica,Arial,sans-serif;font-style:italic;font-weight:700;'
-                 . 'font-size:' . round($ukuran, 1) . 'pt;color:#1e3a8a;line-height:1.1">' . $h($teks) . '</div>';
-        } else {
-            $path = trim((string) ($p['gambar_path'] ?? ''));
-            if ($path === '') return '';
-            $berkas = dirname(__DIR__) . '/public/' . ltrim($path, '/');
-            // Berkasnya harus benar-benar ada. Kalau tidak, barisnya lebih baik
-            // tampil sebagai teks saja daripada memuat gambar rusak di tengah
-            // kalimat — dan PDF memang sudah berperilaku begitu.
-            if (!is_file($berkas)) return '';
-            $url = $src === 'file' ? $berkas : self::tanamGambar($berkas, $path);
-            if ($url === '') return '';
-            // Paraf yang tinggi-ramping dikecilkan sampai tingginya muat, supaya
-            // tidak menjulur melewati barisnya (lihat OTO_TINGGI_GAMBAR).
-            $lebarGbr = $lebar;
-            if ($maksTinggiMm > 0 && is_file($berkas)) {
-                $dim = @getimagesize($berkas);
-                if ($dim && (int) $dim[0] > 0 && (int) $dim[1] > 0) {
-                    $tinggi = $lebar * (int) $dim[1] / (int) $dim[0];
-                    if ($tinggi > $maksTinggiMm) $lebarGbr = $lebar * $maksTinggiMm / $tinggi;
-                }
-            }
-            $isi = '<img src="' . $h($url) . '" style="width:' . round($lebarGbr, 1) . 'mm">';
-            // Kotak pembungkus ikut menyusut bersama gambarnya. Kalau tetap
-            // selebar setelan, coretan yang ramping menyisakan ruang kosong di
-            // kanannya — di baris pemeriksaan ruang itu terbaca sebagai jarak
-            // yang menganga antara paraf dan nama pemiliknya.
-            $lebarIsi = $lebarGbr;
-        }
+        [$isi, $lebarIsi] = self::tanda($p, $src, $maksTinggiMm, false);
+        if ($isi === '') return '';
 
         // Nama dan waktu dua hal terpisah: paraf di kertas memang tidak pernah
         // mencantumkan jam, jadi keduanya bisa dimatikan sendiri-sendiri.
@@ -268,8 +233,72 @@ final class Paraf
         // Kotaknya boleh lebih lebar dari gambarnya: gambar tetap sekecil setelan,
         // tetapi keterangannya punya ruang supaya tidak membungkus jadi tumpukan
         // baris yang membuat paraf terlihat besar.
-        $lebarBlok = $lebarBlokMm > 0 ? max($lebarBlokMm, $lebar) : ($lebarIsi ?? $lebar);
+        $lebarBlok = $lebarBlokMm > 0 ? max($lebarBlokMm, $lebar) : ($lebarIsi ?: $lebar);
         return '<div style="width:' . round($lebarBlok, 1) . 'mm">' . $isi . $ket . '</div>';
+    }
+
+    /**
+     * Paraf untuk dicetak SEBARIS dengan teks — tanpa pembungkus blok apa pun.
+     *
+     * Baris "Diperiksa sebelum disetujui" sudah menyebut nama, jabatan, dan
+     * jamnya tepat di sebelah coretan, jadi yang dibutuhkan di sini hanya
+     * coretannya saja.
+     *
+     * Dibuat terpisah dari html() karena pembungkus <div> miliknya memutus
+     * baris. Menggantinya dengan <table> juga tidak bisa: mPDF menciutkan tabel
+     * yang hampir tidak muat (shrink_tables_to_fit) sehingga pada sebagian
+     * panjang dokumen seluruh barisnya tercetak 74% dengan huruf 4,7pt — satu-
+     * satunya catatan siapa memeriksa surat itu jadi nyaris tak terbaca. Sel
+     * tabel juga tidak mewarisi font surat di mPDF, sehingga baris itu berganti
+     * huruf serif sendiri di surat Gudang.
+     */
+    public static function sebaris(array $p, string $src = 'web', float $maksTinggiMm = 0.0): string
+    {
+        return self::tanda($p, $src, $maksTinggiMm, true)[0];
+    }
+
+    /**
+     * Coretannya saja: gambar atau inisial, beserta lebar tampilnya dalam mm.
+     *
+     * @return array{0:string,1:float} HTML dan lebar; HTML kosong bila paraf
+     *                                 belum diatur atau berkasnya hilang.
+     */
+    private static function tanda(array $p, string $src, float $maksTinggiMm, bool $sebaris): array
+    {
+        $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+        $lebar = (float) ($p['lebar'] ?? 30);
+
+        if (($p['bentuk'] ?? 'gambar') === 'inisial') {
+            $teks = trim((string) ($p['teks'] ?? ''));
+            if ($teks === '') return ['', 0.0];
+            // Tinggi huruf diikutkan lebar kotak supaya paraf inisial ikut
+            // membesar/mengecil saat lebarnya digeser, seperti paraf bergambar.
+            $ukuran = max(9.0, $lebar * 0.42);
+            $tag = $sebaris ? 'span' : 'div';
+            return ['<' . $tag . ' style="font-family:Helvetica,Arial,sans-serif;font-style:italic;'
+                  . 'font-weight:700;font-size:' . round($ukuran, 1) . 'pt;color:#1e3a8a;'
+                  . 'line-height:1.1">' . $h($teks) . '</' . $tag . '>', $lebar];
+        }
+
+        $path = trim((string) ($p['gambar_path'] ?? ''));
+        if ($path === '') return ['', 0.0];
+        $berkas = dirname(__DIR__) . '/public/' . ltrim($path, '/');
+        // Berkasnya harus benar-benar ada. Kalau tidak, barisnya lebih baik
+        // tampil sebagai teks saja daripada memuat gambar rusak di tengah
+        // kalimat — dan PDF memang sudah berperilaku begitu.
+        if (!is_file($berkas)) return ['', 0.0];
+        $url = $src === 'file' ? $berkas : self::tanamGambar($berkas, $path);
+        if ($url === '') return ['', 0.0];
+        // Paraf yang tinggi-ramping dikecilkan sampai tingginya muat, supaya
+        // tidak menjulur melewati barisnya (lihat OTO_TINGGI_GAMBAR).
+        $lebarGbr = $lebar;
+        $dim = @getimagesize($berkas);
+        if ($maksTinggiMm > 0 && $dim && (int) $dim[0] > 0 && (int) $dim[1] > 0) {
+            $tinggi = $lebar * (int) $dim[1] / (int) $dim[0];
+            if ($tinggi > $maksTinggiMm) $lebarGbr = $lebar * $maksTinggiMm / $tinggi;
+        }
+        return ['<img src="' . $h($url) . '" style="width:' . round($lebarGbr, 1) . 'mm'
+              . ($sebaris ? ';vertical-align:middle' : '') . '">', $lebarGbr];
     }
 
     /**

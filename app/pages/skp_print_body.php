@@ -39,26 +39,20 @@ foreach (($d['paraf'] ?? []) as $iPf => $pf) {
     // Snapshot lama belum punya kunci 'mode' — dan pada masanya mode otomatis
     // memang belum ada, jadi semuanya manual. Default 'manual' di sini membuat
     // dokumen yang sudah terbit tetap tercetak persis seperti aslinya.
-    $otomatis = ($set['mode'] ?? 'manual') !== 'manual';
+    $sumberGbr = !empty($PDF_MODE) ? 'file' : 'web';
+    $otomatis  = ($set['mode'] ?? 'manual') !== 'manual';
     if ($otomatis) {
         // Dokumen lama bisa menyimpan lebar yang melebihi batas sekarang, jadi
         // dijepit di sini juga supaya barisnya tidak melar.
         $set['lebar'] = min((float) $set['lebar'], Paraf::LEBAR_OTOMATIS_MAKS);
-        // Nama & waktu di bawah coretan dimatikan: baris pemeriksaan sudah
-        // menyebut nama, jabatan, dan jamnya tepat di sebelah paraf — mencetak
-        // keterangan yang sama dua kali hanya membuat barisnya menumpuk.
-        $set['tampil_nama'] = $set['tampil_waktu'] = 0;
-    }
-    $isi = Paraf::html($set, (string) ($pf['nama'] ?? ''), (string) ($pf['role_name'] ?? ''), $kapan,
-                       !empty($PDF_MODE) ? 'file' : 'web',
-                       $otomatis ? Paraf::maksTinggiOtomatis((float) $set['lebar']) : 0.0,
-                       0.0);
-    if ($isi === '') continue;
-
-    if ($otomatis) {
-        $PARAF_BARIS[$iPf] = $isi;
+        // Coretannya saja, tanpa pembungkus: nama, jabatan, dan jamnya dicetak
+        // oleh baris pemeriksaan tepat di sebelahnya.
+        $isi = Paraf::sebaris($set, $sumberGbr, Paraf::maksTinggiOtomatis((float) $set['lebar']));
+        if ($isi !== '') $PARAF_BARIS[$iPf] = $isi;
         continue;
     }
+    $isi = Paraf::html($set, (string) ($pf['nama'] ?? ''), (string) ($pf['role_name'] ?? ''), $kapan, $sumberGbr);
+    if ($isi === '') continue;
     $PARAF_OVERLAY[] = [
         'html' => $isi,
         'x'    => (float) $set['pos_x'],
@@ -459,31 +453,28 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
         if (!$rows) return;
         $adaGambar = false;
         foreach ($rows as $r) if ($r['gambar'] !== '') { $adaGambar = true; break; }
+        // page-break-inside:avoid menjaga judul dan seluruh pemeriksanya tetap
+        // satu blok. Terbelah halaman, pemeriksa kedua berdiri sendiri di
+        // halaman berikutnya tanpa keterangan apa pun tentang dirinya.
+        echo '<div style="margin-top:4mm;font-size:8.5px;color:#334155;line-height:1.5;'
+           . 'page-break-inside:avoid"><strong>' . $judul . '</strong>';
         if (!$adaGambar) {
             // Tidak seorang pun memasang gambar paraf — cetak sebaris saja,
             // persis seperti sebelum paraf bergambar ada.
-            echo '<div style="margin-top:4mm;font-size:8.5px;color:#334155;line-height:1.5"><strong>'
-               . $judul . '</strong> ' . implode('; ', array_column($rows, 'teks')) . '</div>';
+            echo ' ' . implode('; ', array_column($rows, 'teks')) . '</div>';
             return;
         }
-        // SATU baris: judul, coretan, lalu nama pemeriksanya — sejajar di
-        // tengah. Judul yang berdiri sendiri di atas membuat parafnya terbaca
-        // menggantung di bawah, lepas dari keterangannya.
-        // Lebar kolom dibiarkan mengikuti isinya: dengan lebar tetap, coretan
-        // yang ramping menyisakan ruang kosong lebar sebelum namanya. Kolom yang
-        // mengikuti isi tetap membuat beberapa pemeriksa sejajar, karena lebarnya
-        // diambil dari baris terlebar.
-        $sel = 'vertical-align:middle;font-size:8.5px;color:#334155';
-        echo '<table style="border-collapse:collapse;margin-top:4mm">';
+        // Coretannya SEBARIS dengan judul dan nama pemiliknya — bukan tabel.
+        // Tabel di sini pernah dicoba dan salah dua kali: mPDF menciutkan tabel
+        // yang hampir tidak muat sampai hurufnya tinggal 4,7pt, dan sel tabel
+        // tidak mewarisi huruf surat sehingga baris ini berganti serif sendiri
+        // di surat Gudang.
         foreach ($rows as $i => $r) {
-            echo '<tr>'
-               . '<td style="padding:0 2.5mm 0 0;' . $sel . '">'
-               . ($i === 0 ? '<strong>' . $judul . '</strong>' : '') . '</td>'
-               . '<td style="padding:0 2.5mm 0 0;vertical-align:middle">' . $r['gambar'] . '</td>'
-               . '<td style="padding:0;' . $sel . '">' . $r['teks'] . '</td>'
-               . '</tr>';
+            echo ($i > 0 ? '<br>' : ' ')
+               . ($r['gambar'] !== '' ? $r['gambar'] . '&nbsp;&nbsp;' : '')
+               . $r['teks'];
         }
-        echo '</table>';
+        echo '</div>';
     };
     // Ada tahap persetujuan tetapi tidak ada satu pun yang memaraf: barisnya
     // tetap dicetak dengan "—", persis seperti sebelumnya, supaya tidak terlihat

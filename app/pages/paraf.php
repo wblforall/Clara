@@ -301,6 +301,13 @@ function my_paraf_page(PDO $pdo): void
                             </div>
                         </div>
 
+                        <?php /* Hanya untuk mode MANUAL. Di mode otomatis parafnya
+                                 dicetak sebaris dengan nama, jabatan, dan jamnya,
+                                 jadi keterangan di bawah coretan hanya mengulang
+                                 hal yang sama — dan memang diabaikan saat mencetak.
+                                 Menawarkan setelan yang tidak dipakai membuat
+                                 orang mengira sudah mengaturnya. */ ?>
+                        <div id="blok-keterangan">
                         <div style="font-size:12px;font-weight:700;margin-bottom:5px">Yang ikut tercetak di bawah paraf</div>
                         <label style="font-weight:400;display:flex;gap:7px;align-items:center;cursor:pointer;margin-bottom:5px">
                             <input type="checkbox" name="tampil_nama" value="1" id="inp-nama" <?= !empty($set['tampil_nama']) ? 'checked' : '' ?>>
@@ -310,6 +317,7 @@ function my_paraf_page(PDO $pdo): void
                             <input type="checkbox" name="tampil_waktu" value="1" id="inp-waktu" <?= !empty($set['tampil_waktu']) ? 'checked' : '' ?>>
                             <span style="font-size:13px">Tanggal &amp; jam</span>
                         </label>
+                        </div>
 
                         <button type="submit">&#128190; Simpan Paraf</button>
                         <?php if (Paraf::siap($set)): ?>
@@ -449,9 +457,12 @@ function my_paraf_page(PDO $pdo): void
                         : '<div style="height:' + Math.round(lebarMm * pxPerMm * 0.5) + 'px;border:1px dashed #cbd5e1;'
                           + 'border-radius:3px;background:rgba(148,163,184,.08)" title="belum ada gambar"></div>';
                 }
+                // Mode otomatis tidak mencetak keterangan di bawah coretan.
                 var ket = [];
-                if (inm.checked) ket.push(NAMA);
-                if (iw.checked)  ket.push('05/10/2026 09:15');
+                if (mode() !== 'otomatis') {
+                    if (inm.checked) ket.push(NAMA);
+                    if (iw.checked)  ket.push('05/10/2026 09:15');
+                }
                 // 6pt — ukuran yang dipakai Paraf::html() saat mencetak, diubah ke piksel
                 // menurut skala tiruan, supaya baris yang membungkus di sini juga
                 // membungkus di dokumen.
@@ -466,6 +477,9 @@ function my_paraf_page(PDO $pdo): void
                 document.getElementById('pratinjau-manual').style.display = otomatis ? 'none' : '';
                 document.getElementById('blok-koordinat').style.display   = otomatis ? 'none' : 'flex';
                 document.getElementById('blok-jenis').style.display       = otomatis ? 'none' : '';
+                // Keterangan di bawah coretan tidak berlaku di mode otomatis —
+                // lihat alasannya di dekat #blok-keterangan.
+                document.getElementById('blok-keterangan').style.display  = otomatis ? 'none' : '';
                 document.querySelectorAll('.pilihmode').forEach(function (l) {
                     var on = l.querySelector('input').checked;
                     l.style.borderColor = on ? '#0d9488' : '#e2e8f0';
@@ -586,8 +600,11 @@ function my_paraf_save(PDO $pdo): void
         'pos_x'        => post('pos_x', 150),
         'pos_y'        => post('pos_y', 232),
         'lebar'        => post('lebar', 20),
-        'tampil_nama'  => post('tampil_nama') === '1' ? 1 : 0,
-        'tampil_waktu' => post('tampil_waktu') === '1' ? 1 : 0,
+        // Mode otomatis tidak memakai keterangan di bawah coretan — disimpan 0
+        // supaya yang tersimpan sama dengan yang tercetak. Kotak centangnya pun
+        // disembunyikan di mode itu, tetapi centang lama bisa ikut terkirim.
+        'tampil_nama'  => $mode === 'otomatis' ? 0 : (post('tampil_nama') === '1' ? 1 : 0),
+        'tampil_waktu' => $mode === 'otomatis' ? 0 : (post('tampil_waktu') === '1' ? 1 : 0),
     ]);
     audit($pdo, 'update', 'paraf_settings', $simpanKe, ['mode' => $mode, 'bentuk' => $bentuk, 'lebar' => post('lebar')]);
     flash($mode === 'otomatis'

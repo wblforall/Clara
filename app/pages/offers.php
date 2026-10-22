@@ -1612,9 +1612,13 @@ function offer_form(PDO $pdo): void
     $draftPost = $draft['post'] ?? [];
     $bentrokKini = $draft['bentrok'] ?? [];
     if ($draftPost) {
+        // Angka uang yang DIKETIK ikut dipulihkan. Harga / Bulan, Harga Nego
+        // Final, dan nominal DP/deposit semuanya diisi tangan; hilang diam-diam
+        // saat simpan ditolak berarti harus diketik ulang tanpa diberi tahu.
         foreach (['module', 'client_id', 'contact_id', 'pic_name', 'referrer_name', 'master_code',
                   'area_sqm', 'slots', 'pricing_type', 'unit_rate', 'keterangan', 'start_date',
-                  'end_date', 'billing_method', 'cycle_recognition', 'template_id', 'perihal'] as $k) {
+                  'end_date', 'billing_method', 'cycle_recognition', 'template_id', 'perihal',
+                  'monthly_amount', 'override_amount', 'dp_amount', 'deposit_amount'] as $k) {
             if (array_key_exists($k, $draftPost)) $offer[$k] = $draftPost[$k];
         }
         $offer['is_bundle'] = ($draftPost['is_bundle'] ?? '') === '1' ? 1 : 0;
@@ -2296,7 +2300,7 @@ function offer_form(PDO $pdo): void
             </div>
 
             <div id="single-pay" style="<?= $isBundle ? 'display:none' : '' ?>">
-            <h3 id="sp-bayar">Pembayaran <span style="font-weight:400;font-size:12px;color:var(--muted)">(DP & deposit dihitung dari harga/bulan; bisa di-override)</span></h3>
+            <h3 id="sp-bayar">Pembayaran <span style="font-weight:400;font-size:12px;color:var(--muted)">(DP &amp; deposit terisi otomatis dari nilai per bulan; bisa diubah)</span></h3>
             <div id="tpl-note" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:9px 13px;margin-bottom:10px;font-size:12.5px;color:#075985"></div>
             <div class="form-grid">
                 <div><label>DP (bulan, min 1)</label><input type="number" step="0.5" min="1" name="dp_months" id="dp_months" value="<?= $v('dp_months', '1') ?>" <?= $disabled ?>></div>
@@ -3351,6 +3355,16 @@ function offer_save(PDO $pdo): void
     // Baris diskon tetap konsisten karena pengalinya diturunkan dari TOTAL
     // (lihat offer_print_template.php), jadi publish - diskon = total selalu.
     $final    = $override > 0 ? $override : $calc;
+    // Rate boleh dikosongkan — tetapi kalau Harga Nego Final juga kosong,
+    // nilainya nol dan SELURUH suratnya tercetak Rp 0: harga sewa, PPN, sampai
+    // Grand Total. Tidak diblokir (draft awal memang sering belum berharga),
+    // tetapi harus disebut, karena di layar angkanya cuma tidak muncul.
+    //
+    // Digabung ke pesan simpan, bukan flash() tersendiri: flash() MENIMPA, jadi
+    // peringatan yang berdiri sendiri akan tertelan pesan "Revisi #N disimpan".
+    $pesanNol = $final > 0 ? ''
+        : ' PERHATIAN: nilainya Rp 0 — Rate dan Harga Nego Final dua-duanya kosong,'
+        . ' dan suratnya akan tercetak Rp 0 sampai salah satunya diisi.';
     // Harga / Bulan. Untuk kontrak prorata, membagi total dengan jumlah bulan
     // menghasilkan rata-rata (mis. Rp 8.297.619) — bukan tarif yang disepakati
     // dan tidak ada di surat mana pun. Tarif sewanya yang ditampilkan.
@@ -3605,7 +3619,7 @@ function offer_save(PDO $pdo): void
         $tahapLama = _offer_write_steps($pdo, $pid, $id, $uname);
         _offer_sync_step_total($pdo, $id, $calc, $tahapLama);
         audit($pdo, 'update', 'offers', (string) $id, $data);
-        flash("Revisi #$newRev disimpan.");
+        flash("Revisi #$newRev disimpan." . $pesanNol);
         redirect_to('offer_view', ['id' => $id]);
     }
 
@@ -3631,7 +3645,7 @@ function offer_save(PDO $pdo): void
     $pdo->prepare('INSERT INTO offer_revisions (offer_id, rev_no, snapshot_json, note, created_by) VALUES (?,0,?,?,?)')
         ->execute([$newId, json_encode(array_intersect_key($data, array_flip(_offer_fields())), JSON_UNESCAPED_UNICODE), 'Penawaran awal', $uname]);
     audit($pdo, 'create', 'offers', (string) $newId, $data);
-    flash("Penawaran dibuat: $offerNo");
+    flash("Penawaran dibuat: $offerNo" . $pesanNol);
     redirect_to('offer_view', ['id' => $newId]);
 }
 

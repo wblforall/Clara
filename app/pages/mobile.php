@@ -809,7 +809,10 @@ function mobile_offers_page(PDO $pdo): void
         <?php else: foreach ($rows as $o):
             $st = $badge[$o['status']] ?? $badge['draft'];
             [$ml, $mc, $mbg] = _m_offer_mod($o['module']);
-            $amt = !empty($o['override_amount']) ? $o['override_amount'] : ($o['monthly_amount'] ?? 0); ?>
+            // Nilai kontraknya, bukan harga per bulan: harga per bulan kini
+            // diketik sendiri dan sering memang dikosongkan, sehingga kartunya
+            // akan berbunyi "Rp 0" di hampir semua baris.
+            $amt = !empty($o['override_amount']) ? $o['override_amount'] : ($o['total_calculated'] ?? 0); ?>
             <div class="m-ofr">
                 <a class="m-ofr-main" href="?r=offer_view&id=<?= (int) $o['id'] ?>">
                     <div class="top">
