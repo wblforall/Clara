@@ -573,9 +573,10 @@ function mobile_transactions_page(PDO $pdo): void
         }
     }
     if ($search !== '') {
-        $where[] = '(c.company_name LIKE :s1 OR t.master_code LIKE :s2)';
+        $where[] = '(c.company_name LIKE :s1 OR c.brand_name LIKE :s3 OR t.master_code LIKE :s2)';
         $params[':s1'] = '%' . $search . '%';
         $params[':s2'] = '%' . $search . '%';
+        $params[':s3'] = '%' . $search . '%';
     }
     $whereStr = implode(' AND ', $where);
 

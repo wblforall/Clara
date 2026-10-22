@@ -1694,7 +1694,7 @@ function export_transactions_xlsx(PDO $pdo): void
 
     $where  = ['t.module = :module', 't.deleted_at IS NULL', 't.property_id = :property_id'];
     $params = [':module' => $module, ':property_id' => current_property_id()];
-    if ($search !== '')    { $where[] = '(c.company_name LIKE :search OR t.master_code LIKE :search)'; $params[':search'] = '%' . $search . '%'; }
+    if ($search !== '')    { $where[] = '(c.company_name LIKE :search OR c.brand_name LIKE :search OR t.master_code LIKE :search)'; $params[':search'] = '%' . $search . '%'; }
     if ($filterPic !== '') { $where[] = 't.pic_name = :pic'; $params[':pic'] = $filterPic; }
     if ($dateFrom !== '')  { $where[] = 't.start_date >= :date_from'; $params[':date_from'] = $dateFrom; }
     if ($dateTo !== '')    { $where[] = 't.end_date <= :date_to'; $params[':date_to'] = $dateTo; }

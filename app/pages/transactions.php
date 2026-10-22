@@ -27,10 +27,20 @@ function transactions_page(PDO $pdo): void
     $where  = ['t.module = :module', 't.deleted_at IS NULL', 't.property_id = :property_id'];
     $params = [':module' => $module, ':property_id' => current_property_id()];
 
-    // Daftar ini sejajar dengan perhitungan income: yang tampil di sini adalah
-    // yang terhitung di laporan, tidak kurang tidak lebih. Kalau salah satunya
-    // diubah, yang lain harus ikut — pernah terjadi angka muncul di laporan
-    // sementara transaksinya tak bisa ditemukan di mana pun.
+    // Daftar ini DIMAKSUDKAN sejajar dengan perhitungan income, dan sebagian
+    // besar memang begitu — tetapi belum sepenuhnya, jadi jangan dibaca sebagai
+    // jaminan. Laporan (app/pages/laporan.php) hanya membuang baris yang
+    // dibatalkan; ia tidak melihat status dokumen sama sekali. Maka transaksi
+    // yang alokasinya sudah terbentuk tetapi dokumennya ditolak, sedang
+    // direvisi, atau belum diteken klien akan TETAP terhitung di laporan
+    // sementara barisnya disaring keluar dari sini — persis gejala "angka
+    // muncul di laporan sementara transaksinya tak bisa ditemukan di mana pun"
+    // yang ingin dicegah komentar ini.
+    //
+    // Untuk melihat baris mana saja yang sedang dalam keadaan itu:
+    //   php scripts/cek_tersembunyi.php --bulan=YYYY-MM
+    // Kalau menutup celahnya, yang dibetulkan adalah ALOKASInya (jangan dibangun
+    // sebelum diteken) — bukan saringan di bawah ini yang dilonggarkan.
     //
     // Kesepakatan BARU (sejak aturan tanda tangan berlaku) baru tampil setelah
     // diteken client; sebelum itu berkasnya tertahan di menu SKP, bukan hilang.
@@ -60,9 +70,13 @@ function transactions_page(PDO $pdo): void
     // cukup — tidak ada aturan tambahan di sini.
 
     if ($search !== '') {
-        $where[]            = '(c.company_name LIKE :search1 OR t.master_code LIKE :search2)';
+        // brand_name ikut dicari: kolom penyewa di daftar ini menampilkannya,
+        // dan nama itulah yang dipakai orang. Tanpa ini, mengetik "Planet Surf"
+        // tidak menemukan baris yang di layarnya tertulis "Planet Surf".
+        $where[]            = '(c.company_name LIKE :search1 OR c.brand_name LIKE :search3 OR t.master_code LIKE :search2)';
         $params[':search1'] = '%' . $search . '%';
         $params[':search2'] = '%' . $search . '%';
+        $params[':search3'] = '%' . $search . '%';
     }
     if ($filterPic !== '') {
         $where[]           = 't.pic_name = :pic';
