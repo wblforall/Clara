@@ -1120,7 +1120,7 @@ function offers_list_page(PDO $pdo): void
         <div class="panel" style="margin-top:12px">
             <div class="table-wrap">
                 <table style="font-size:12.5px">
-                    <thead><tr><th>No. Penawaran</th><th>Modul</th><th>Client</th><th>Periode</th><th>Harga/bln</th><th>Revisi</th><th>Status</th><th></th></tr></thead>
+                    <thead><tr><th>No. Penawaran</th><th>Modul</th><th>Client</th><th>Periode</th><th>Nilai</th><th>Revisi</th><th>Status</th><th></th></tr></thead>
                     <tbody>
                     <?php if (!$rows): ?><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">Belum ada penawaran.</td></tr><?php endif; ?>
                     <?php foreach ($rows as $r): $b = $badge[$r['status']] ?? $badge['draft']; $href = '?r=offer_view&id=' . (int)$r['id']; ?>
@@ -1134,7 +1134,12 @@ function offers_list_page(PDO $pdo): void
                                 <span class="badge" style="color:<?= $mc ?>;background:<?= $mbg ?>"><?= h($ml) ?><?= $kmp >= 2 ? ' · ' . $kmp . ' lokasi' : '' ?></span></td>
                             <td><?= h($r['company_name'] ?? '-') ?></td>
                             <td style="white-space:nowrap;font-size:11.5px"><?= $r['start_date'] ? h(date('d/m/y', strtotime($r['start_date'])) . '–' . date('d/m/y', strtotime($r['end_date']))) : '—' ?></td>
-                            <td style="white-space:nowrap"><?= money($r['monthly_amount']) ?></td>
+                            <?php /* Dulu kolom ini "Harga/bln". Harga per bulan sekarang
+                                     diketik sendiri dan memang sering dikosongkan, jadi
+                                     kolomnya akan berisi "Rp 0" di hampir semua baris.
+                                     Nilai kontraknya selalu ada, dan justru itu yang
+                                     dicari orang saat memindai daftar. */ ?>
+                            <td style="white-space:nowrap"><?= money($r['override_amount'] ?: $r['total_calculated']) ?></td>
                             <td style="text-align:center"><?= (int)$r['revision_count'] ?>×</td>
                             <td><span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span><?php if ($r['status'] === 'cancelled' && !empty($r['lost_category'])): ?><div style="font-size:10.5px;color:#991b1b;margin-top:2px"><?= h(offer_lost_label($r['lost_category'])) ?></div><?php endif; ?></td>
                             <td style="white-space:nowrap">
@@ -1336,7 +1341,8 @@ function offer_view(PDO $pdo): void
             $row('Periode', h($periode) . ($days ? ' · <strong>' . $days . ' hari</strong>' : ''));
             $row('Total Kontrak', $rp($offer['total_calculated']));
             if (!empty($offer['override_amount'])) $row('Harga Nego Final', $rp($offer['override_amount']));
-            $row('Harga / Bulan', $rp($offer['monthly_amount']));
+            // Kosong = tidak ditampilkan, sama seperti di suratnya.
+            if ((float) ($offer['monthly_amount'] ?? 0) > 0) $row('Harga / Bulan', $rp($offer['monthly_amount']));
             /* Harga diskon memotong nilai kontraknya, bukan sekadar keterangan
                di surat. Tanpa baris ini orang melihat total yang jauh lebih
                kecil daripada yang diingatnya tanpa satu pun petunjuk kenapa —
@@ -2001,7 +2007,7 @@ function offer_form(PDO $pdo): void
                         <input type="hidden" name="unit_rate" id="unit_rate" value="<?= $rateNilai > 0 ? (int) $rateNilai : '' ?>">
                     </div>
                     <div class="help">Terisi sendiri dari <strong>Master</strong> saat unit dipilih &mdash; boleh diubah, boleh dikosongkan.
-                        Kosong = nilainya dihitung dari <em>Total</em> yang Anda isi.</div>
+                        <strong>Kosong = barisnya tidak tercetak</strong> di surat, PDF, maupun halaman tanda tangan client.</div>
                 </div>
                 <div class="wide"><label>Keterangan</label><input name="keterangan" value="<?= $v('keterangan') ?>" <?= $disabled ?>></div>
             </div>
@@ -2058,7 +2064,18 @@ function offer_form(PDO $pdo): void
             <h3 id="sp-harga">Harga</h3>
             <div class="form-grid">
                 <div class="single-price"><label>Total Kontrak <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="total_calc" value="" readonly><input type="hidden" name="total_calculated" id="total_calc_h" value="<?= $v('total_calculated') ?>"></div>
-                <div class="single-price"><label>Harga / Bulan <span class="muted" style="font-weight:400">(otomatis)</span></label><input type="text" id="monthly_disp" value="" readonly><input type="hidden" name="monthly_amount" id="monthly_amount" value="<?= $v('monthly_amount') ?>"></div>
+                <?php /* Harga per bulan DIKETIK SENDIRI. Dulu dihitung aplikasi
+                         (total dibagi jumlah bulan) lalu ikut tercetak di setiap
+                         surat — padahal tidak semua kontrak dibaca per bulan; ada
+                         yang disepakati setahun sekaligus. Angka yang muncul
+                         sendiri seperti itu dibaca client sebagai kesepakatan. */ ?>
+                <?php $blnNilai = (float) ($offer['monthly_amount'] ?? 0); ?>
+                <div class="single-price"><label>Harga / Bulan <span class="muted" style="font-weight:400">(opsional)</span></label>
+                    <input type="text" inputmode="numeric" id="monthly_disp" placeholder="Kosongkan bila tidak perlu"
+                           value="<?= $blnNilai > 0 ? h(number_format($blnNilai, 0, ',', '.')) : '' ?>" <?= $disabled ?>>
+                    <input type="hidden" name="monthly_amount" id="monthly_amount" value="<?= $blnNilai > 0 ? (int) $blnNilai : '' ?>">
+                    <div class="help"><strong>Kosong = tidak tercetak</strong> di surat mana pun.</div>
+                </div>
                 <div class="wide single-price"><label>Harga Nego Final <span class="muted" style="font-weight:400">(opsional — override)</span></label><input type="text" inputmode="numeric" id="override_fmt" placeholder="Kosongkan = pakai hasil kalkulasi di atas"><input type="hidden" name="override_amount" id="override_amount" value="<?= (int)($offer['override_amount'] ?? 0) ?: '' ?>"><div class="help">Override: isi bila nilai final tidak sama dengan hasil kalkulasi.</div></div>
                 <?php /* Biaya listrik — kolom biasa seperti isian lain, bukan panel
                          tersendiri. Lebar kotak centang dipatok karena CSS global
@@ -2568,6 +2585,20 @@ function offer_form(PDO $pdo): void
                 if (f) f.addEventListener('submit', function () { raw.value = (fmt.value || '').replace(/\D/g, ''); });
             })();
 
+            // Kotak Harga / Bulan: yang terlihat berformat ribuan, yang terkirim
+            // angka murni — pola yang sama dengan kotak Rate di atas.
+            (function () {
+                var fmt = document.getElementById('monthly_disp'), raw = document.getElementById('monthly_amount');
+                if (!fmt || !raw) return;
+                fmt.addEventListener('input', function () {
+                    var d = this.value.replace(/\D/g, '');
+                    this.value = d ? parseInt(d, 10).toLocaleString('id-ID') : '';
+                    raw.value = d;
+                });
+                var f = fmt.form || fmt.closest('form');
+                if (f) f.addEventListener('submit', function () { raw.value = (fmt.value || '').replace(/\D/g, ''); });
+            })();
+
             // Label satuan Rate — satu daftar, sama dengan yang dipakai PHP
             // (clara_satuan_harga) supaya tidak pernah berbeda sebutan.
             var SATUAN_RATE = {
@@ -2958,17 +2989,17 @@ function offer_form(PDO $pdo): void
                 // jumlah bulan. Rata-rata itu angka yang tidak ada di surat mana pun
                 // dan membuat DP serta deposit otomatis ikut meleset.
                 var pkM = document.getElementById('prorata_kalender');
-                var monthly = (pkM && pkM.checked && pricing === 'monthly')
+                // Dasar DP & deposit tetap dihitung di sini, tetapi TIDAK ditulis
+                // ke kotak Harga / Bulan: kotak itu diisi sendiri, dan kosong
+                // berarti suratnya memang tidak menyebut harga per bulan.
+                var dasarBulan = (pkM && pkM.checked && pricing === 'monthly')
                             ? Math.round(rate)
                             : (months > 0 ? Math.round(total / months) : total);
                 document.getElementById('total_calc').value = rp(total);
                 document.getElementById('total_calc_h').value = total;
-                document.getElementById('monthly_disp').value = rp(monthly);
-                document.getElementById('monthly_amount').value = monthly;
                 // DP/deposit auto bila kosong/0 (nego manual tidak ketimpa)
-                // DP & deposit = harga/bulan × jumlah bulan (otomatis), kecuali diisi manual.
-                setMoneyAuto('dp_fmt', 'dp_amount', monthly * num('dp_months'));
-                setMoneyAuto('dep_fmt', 'deposit_amount', monthly * num('deposit_months'));
+                setMoneyAuto('dp_fmt', 'dp_amount', dasarBulan * num('dp_months'));
+                setMoneyAuto('dep_fmt', 'deposit_amount', dasarBulan * num('deposit_months'));
                 // Ringkasan + estimasi spread
                 var res = document.getElementById('kalkulasi-result');
                 if (res) { res.style.display = ''; res.innerHTML = 'Kalkulasi: <strong>' + rp(calc) + '</strong> · ' + days + ' hari · ' + months + ' bulan' + (override > 0 ? ' · <span style="color:#b45309">override ' + rp(override) + '</span>' : ''); }
@@ -3256,13 +3287,14 @@ function _offer_sync_step_total(PDO $pdo, int $offerId, float $calcMesin = 0.0, 
     // (tarif x lama sewa) dan tidak diam-diam memakai angka jadwal yang sudah
     // tidak ada lagi.
     if ($tahapLama <= 0 || $calcMesin <= 0) return;
-    $st = $pdo->prepare('SELECT override_amount, contract_months FROM offers WHERE id = ?');
+    $st = $pdo->prepare('SELECT override_amount FROM offers WHERE id = ?');
     $st->execute([$offerId]);
     $o = $st->fetch();
     if (!$o || round((float) $o['override_amount']) !== round($tahapLama)) return;
-    $bulan = (int) ($o['contract_months'] ?? 0);
-    $pdo->prepare('UPDATE offers SET total_calculated = ?, override_amount = NULL, monthly_amount = ? WHERE id = ?')
-        ->execute([$calcMesin, $bulan > 0 ? round($calcMesin / $bulan) : $calcMesin, $offerId]);
+    // monthly_amount sengaja TIDAK disentuh: isinya diketik sendiri, bukan
+    // turunan dari nilai kontrak, jadi tidak boleh ikut ditimpa di sini.
+    $pdo->prepare('UPDATE offers SET total_calculated = ?, override_amount = NULL WHERE id = ?')
+        ->execute([$calcMesin, $offerId]);
 }
 
 function offer_save(PDO $pdo): void
@@ -3322,7 +3354,11 @@ function offer_save(PDO $pdo): void
     // Harga / Bulan. Untuk kontrak prorata, membagi total dengan jumlah bulan
     // menghasilkan rata-rata (mis. Rp 8.297.619) — bukan tarif yang disepakati
     // dan tidak ada di surat mana pun. Tarif sewanya yang ditampilkan.
-    $monthly  = $prorataKal ? round($rate) : ($months > 0 ? round($final / $months) : $final);
+    // Harga per bulan diambil dari yang DIKETIK, bukan dihitung ulang di sini.
+    // Kosong berarti kosong — suratnya lalu tidak menyebut harga per bulan sama
+    // sekali, dan itu memang yang diinginkan untuk kontrak yang disepakati
+    // setahun sekaligus.
+    $monthly  = round(parse_rupiah((string) post('monthly_amount', '0')));
     // Recurring/pengakuan ditentukan sales; default spread bila multi-bulan/lintas bulan.
     $crossMonth = $start && $end && substr($start, 0, 7) !== substr($end, 0, 7);
     $billing  = post('billing_method') === 'anchor_cycle' ? 'anchor_cycle'

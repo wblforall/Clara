@@ -80,10 +80,18 @@ $tarifPublish = (float) ($o['tarif_publish'] ?? 0);
 // sebenarnya, dan barisnya mencetak "sebelum diskon Rp 66.600.000" untuk
 // kontrak 3 bulan bertarif Rp 3.700.000/bulan.
 //
-// Tarif yang DIPAKAI pun diturunkan dari totalnya, bukan dibaca dari kolom —
-// dengan begitu tarif yang tercetak selalu benar-benar menghasilkan totalnya.
 $pengaliSewa  = function_exists('clara_pengali_harga') ? clara_pengali_harga($o) : 0.0;
-$tarifPakai   = $pengaliSewa > 0 ? $total / $pengaliSewa : (float) ($o['unit_rate'] ?? 0);
+// Tarif yang DICETAK adalah yang diketik di kotak Rate, apa adanya. Kotak itu
+// boleh dikosongkan, dan kosong berarti suratnya memang tidak menyebut tarif
+// per satuan — bukan isyarat supaya aplikasi mengarang angkanya dari total.
+// Surat yang menyebut tarif yang tidak pernah disepakati jauh lebih berbahaya
+// daripada surat yang tidak menyebut tarif sama sekali.
+$tarifCetak   = (float) ($o['unit_rate'] ?? 0);
+// Untuk HITUNGAN DISKON tarifnya tetap diturunkan dari total: baris diskon
+// membandingkan tarif publish dengan tarif yang benar-benar menghasilkan
+// totalnya, dan pada penawaran yang nilainya di-override kolom tarif bukan
+// lagi angka itu.
+$tarifPakai   = $pengaliSewa > 0 ? $total / $pengaliSewa : $tarifCetak;
 $diskonAktif  = !empty($o['diskon_aktif']) && $tarifPakai > 0 && $pengaliSewa > 0
               && $tarifPublish > $tarifPakai;
 $publishRp    = $diskonAktif ? round($tarifPublish * $pengaliSewa) : 0.0;
@@ -302,7 +310,11 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
         'masa_bulan_hari' => function_exists('offer_masa_bulan_hari')
                            ? offer_masa_bulan_hari($o['start_date'] ?? null, $o['end_date'] ?? null) : '',
         // Harga per bulan — beda dengan {harga} yang berisi total periode.
-        'harga_bulan' => $rp((float) ($o['unit_rate'] ?? 0)),
+        // Kosong bila tidak diisi, supaya kalimat yang memakainya tidak menyebut
+        // angka karangan. (Dulu keliru mengambil unit_rate, yang artinya tarif
+        // per satuan, bukan harga sebulan.)
+        'harga_bulan' => (float) ($o['monthly_amount'] ?? 0) > 0
+                       ? $rp((float) $o['monthly_amount']) : '',
         'periode'    => $periode,
         'periode_panjang' => function_exists('offer_periode_panjang')
                            ? offer_periode_panjang($o['start_date'] ?? null, $o['end_date'] ?? null) : $periode,
@@ -502,16 +514,22 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                     $blnKontrak = $b > 1 ? $b : 0;
                 }
             }
-            $perBulan = $blnKontrak > 1 ? round($total / $blnKontrak) : 0.0;
+            // Harga per bulan TIDAK dihitung sendiri dari total dibagi jumlah
+            // bulan. Tidak semua kontrak dibaca per bulan — ada yang disepakati
+            // setahun sekaligus — dan angka yang muncul sendiri di setiap surat
+            // membuat client menagih arti yang tidak pernah disepakati.
+            // Tercetak hanya bila memang diisi di formulir.
+            $perBulan = (float) ($o['monthly_amount'] ?? 0);
             ?>
             <?php /* Dasar harganya ditulis terang di surat: client harus tahu angka
                      tarif itu per m² per HARI atau per m² per BULAN. Satu angka
                      tanpa satuan bisa dibaca dua arti, dan itu baru ketahuan saat
                      ditagih. Satuannya diambil dari daftar yang sama dengan yang
                      dipakai SKP dan formulir, jadi tidak mungkin berbeda. */ ?>
-            <?php if ($tarifPakai > 0 && ($o['pricing_type'] ?? '') !== 'fixed'): ?>
+            <?php /* Kosong atau nol berarti barisnya tidak ada sama sekali. */ ?>
+            <?php if ($tarifCetak > 0 && ($o['pricing_type'] ?? '') !== 'fixed'): ?>
             <tr><td class="lbl"><?= $h(clara_satuan_harga((string) ($o['pricing_type'] ?? ''))) ?></td>
-                <td class="amt"><?= $rp($tarifPakai) ?></td></tr>
+                <td class="amt"><?= $rp($tarifCetak) ?></td></tr>
             <?php endif; ?>
             <?php if ($perBulan > 0): ?>
             <tr><td class="lbl">Harga Sewa / Bulan</td><td class="amt"><?= $rp($perBulan) ?></td></tr>

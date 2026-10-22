@@ -337,7 +337,11 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
                  angka, dua arti, dan client yang membacanya salah. */ ?>
         <?php $ptSkp = (string) ($d['pricing_type'] ?? '');
               $satuanSkp = $ptSkp !== '' ? clara_satuan_harga($ptSkp) : 'Biaya Sewa / m² / hari'; ?>
+        <?php /* Tarif boleh dikosongkan. Kosong berarti barisnya memang tidak ada
+                 di surat — bukan "Rp 0", yang terbaca sebagai gratis. */ ?>
+        <?php if ((float) ($a['rate_m_day'] ?? 0) > 0): ?>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?><?= $h($satuanSkp) ?></td><td class="amt"><?= $rp($a['rate_m_day'] ?? 0) ?></td></tr>
+        <?php endif; ?>
         <?php endif; ?>
         <?php if (($a['listrik'] ?? 0) > 0): ?>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Nilai Sewa</td><td class="amt"><?= $rp($a['sewa'] ?? 0) ?></td></tr>

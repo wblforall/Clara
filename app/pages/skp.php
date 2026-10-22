@@ -1202,8 +1202,12 @@ function skp_form(PDO $pdo): void
                     </select>
                     <div class="help">Menentukan arti kotak di sebelah, dan satuan yang tercetak di surat.</div>
                 </div>
-                <div><label><span id="p_rate_label"><?= h($satuanTarif) ?></span> <span style="color:#dc2626">*</span></label><?php skp_input_rp('p_unit_rate', $defDiskon && $defPublish > 0 ? $defPublish : (float) ($src['unit_rate'] ?? 0), '', true); ?>
-                    <div class="help">Diisi sendiri &mdash; boleh diubah, boleh dikosongkan. Kosong = dihitung dari <em>Total Biaya Sewa</em>.</div>
+                <?php /* TIDAK wajib. Kotak ini sejak dulu berketerangan "boleh
+                         dikosongkan", padahal atributnya required dan servernya
+                         menolak nilai nol — janji yang tidak pernah ditepati. */ ?>
+                <div><label><span id="p_rate_label"><?= h($satuanTarif) ?></span> <span class="muted" style="font-weight:400">(opsional)</span></label><?php skp_input_rp('p_unit_rate', $defDiskon && $defPublish > 0 ? $defPublish : (float) ($src['unit_rate'] ?? 0), '', false); ?>
+                    <div class="help">Boleh dikosongkan &mdash; isi <em>Total Biaya Sewa</em> di bawah sebagai gantinya.
+                        <strong>Kosong = barisnya tidak tercetak</strong> di surat, PDF, maupun halaman tanda tangan client.</div>
                 </div>
                 <script>
                     // Label kotak tarif ikut dasar harga yang dipilih, seketika.
@@ -2430,7 +2434,12 @@ function _skp_simpan_periode(PDO $pdo, int $pid, int $trxId, ?array $skp, array 
     };
     if (!$sah($mulai) || !$sah($selesai)) { flash('Tanggal masa sewa tidak sah — masa sewa & harga tidak diubah.'); return ''; }
     if ($selesai < $mulai)                { flash('Tanggal selesai lebih awal dari tanggal mulai — masa sewa & harga tidak diubah.'); return ''; }
-    if ($tarif <= 0)                      { flash('Harga harus lebih besar dari nol — masa sewa & harga tidak diubah.'); return ''; }
+    // Tarif BOLEH kosong asal nilainya disebut lewat Total Biaya Sewa. Yang
+    // tidak boleh adalah dua-duanya kosong: dokumen tanpa angka sama sekali.
+    if ($tarif <= 0 && $totalKetik <= 0) {
+        flash('Isi tarifnya, atau isi Total Biaya Sewa — salah satu harus ada. Masa sewa & harga tidak diubah.');
+        return '';
+    }
 
     $trx = $src;
     $trx['start_date'] = $mulai;
@@ -2465,7 +2474,9 @@ function _skp_simpan_periode(PDO $pdo, int $pid, int $trxId, ?array $skp, array 
         flash('Masa sewa / harga tidak bisa dihitung: ' . $e->getMessage() . ' — tidak ada yang diubah.');
         return '';
     }
-    if ($hitung <= 0) { flash('Masa sewa & harga itu menghasilkan nilai nol — tidak ada yang diubah.'); return ''; }
+    // Nol wajar bila tarifnya memang dikosongkan: nilainya datang dari Total
+    // Biaya Sewa yang diketik, bukan dari perkalian tarif.
+    if ($hitung <= 0 && $totalKetik <= 0) { flash('Masa sewa & harga itu menghasilkan nilai nol — tidak ada yang diubah.'); return ''; }
 
     // Nilai yang berlaku: angka yang diketik bila ada, kalau tidak hasil hitung.
     //

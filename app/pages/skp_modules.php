@@ -431,8 +431,10 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
             $o .= '<tr>'
                 . '<td class="n">' . $h($r['lokasi'] ?? '') . '</td>'
                 . '<td class="n">' . $h(skp_num($r['luas'] ?? '')) . ($r['luas'] !== '' ? ' m' : '') . '</td>'
-                . '<td class="n">' . $h($rp($r['harga_m2'] ?? '')) . '</td>'
-                . '<td class="n">' . $h($rp($r['harga_bulan'] ?? '')) . '</td>'
+                // Tarif dan harga per bulan boleh dikosongkan — kosong dicetak
+                // kosong, bukan "Rp 0" yang terbaca sebagai gratis.
+                . '<td class="n">' . ((float) ($r['harga_m2'] ?? 0) > 0 ? $h($rp($r['harga_m2'])) : '&nbsp;') . '</td>'
+                . '<td class="n">' . ((float) ($r['harga_bulan'] ?? 0) > 0 ? $h($rp($r['harga_bulan'])) : '&nbsp;') . '</td>'
                 . '<td class="n">' . $h($rp($r['total'] ?? '')) . '</td>'
                 . '<td class="ket">' . ($ket ?: '&nbsp;') . '</td></tr>';
         }
