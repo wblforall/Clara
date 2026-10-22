@@ -69,6 +69,54 @@ function langkah_dari_sandingan(string $berkas, string $picXlsx, string $bln): a
         ];
     }
 
+    // 1b. SUDAH diinput tetapi belum menyumbang income. Inilah golongan yang
+    //     paling berbahaya kalau salah disebut "belum diinput": orangnya akan
+    //     membuat transaksi kedua untuk kontrak yang sudah ada.
+    $sudahAda = [];
+    foreach ($d['belum_diakui'] ?? [] as $z) {
+        $kunci = mb_strtolower((string) $z['nama']) . '|' . (string) $z['status_dokumen'];
+        $sudahAda[$kunci][] = $z;
+    }
+    foreach ($sudahAda as $grup) {
+        $z0 = $grup[0];
+        $jml = array_sum(array_map(fn($g) => (float) $g['nilai'], $grup));
+        $kode = implode(', ', array_map(fn($g) => (string) $g['kode'], $grup));
+        $trx  = implode(', ', array_map(fn($g) => '#' . $g['trx'], $grup));
+        $st   = (string) $z0['status_dokumen'];
+        if ($st === 'approved') {
+            $L[] = [
+                'judul' => 'Akui income ' . $z0['nama'] . (count($grup) > 1 ? ' (' . count($grup) . ' unit)' : ''),
+                'hasil' => $jml,
+                'apa'   => 'Kontrak ini *sudah diinput lengkap* dan dokumennya *sudah disetujui Manager* '
+                         . '(' . $kode . ' · ' . $trx . '). Yang belum: tanda tangan klien. Karena itu nilainya masih Rp 0 di laporan.',
+                'isi'   => [
+                    '*Jangan diinput ulang.* Datanya sudah ada — menginput lagi membuat transaksi kembar.',
+                    'Buka *Input → SKP Pameran*, tab *Perlu TTD*, cari ' . $trx . '.',
+                    'Kirim ke klien untuk ditandatangani. Begitu diteken, nilainya langsung masuk laporan.',
+                    'Kalau tanda tangannya di kertas dan sudah ada berkasnya: buka SKP-nya, unggah berkas yang sudah diteken.',
+                    'Kalau tanda tangannya belum bisa didapat sekarang tetapi kesepakatannya sudah pasti, minta admin menjalankan '
+                        . '*php scripts/akui_approved.php --trx=' . implode(',', array_map(fn($g) => (string) $g['trx'], $grup)) . ' --terapkan*.'],
+                'awas'  => 'Ini sebabnya angkamu kelihatan kurang padahal kamu merasa sudah menginput semuanya. Barisnya memang ada di menu modul — nilainya saja yang Rp 0.',
+                'selesai' => 'Di *Analisa → Laporan PIC* bulan ini, *' . $z0['nama'] . '* bernilai ' . $fmt($jml) . '.',
+            ];
+        } else {
+            $L[] = [
+                'judul' => 'Selesaikan dokumen ' . $z0['nama'],
+                'hasil' => 0.0,
+                'apa'   => 'Kontrak ini sudah diinput (' . $kode . ' · ' . $trx . ') senilai ' . $fmt($jml)
+                         . ', tetapi dokumennya berstatus *' . $st . '* — belum selesai, jadi nilainya belum boleh dihitung.',
+                'isi'   => [
+                    '*Jangan diinput ulang.* Datanya sudah ada.',
+                    'Buka *Input → SKP Pameran*, cari ' . $trx . '.',
+                    $st === 'rejected'
+                        ? 'Dokumennya ditolak. Perbaiki isinya lalu ajukan ulang, atau batalkan transaksinya lewat *Pengajuan Hapus Data* kalau kontraknya memang tidak jadi.'
+                        : 'Teruskan sampai disetujui Manager, lalu kirim ke klien untuk ditandatangani.'],
+                'awas'  => 'Langkah ini *tidak menaikkan angkamu sekarang*. Nilainya baru masuk setelah dokumennya selesai dan diteken klien.',
+                'selesai' => 'Dokumen ' . $trx . ' sudah berstatus Ditandatangani.',
+            ];
+        }
+    }
+
     // 2. Belum ada di CLARA — jalurnya berbeda per modul.
     foreach ($d['kurang'] ?? [] as $k) {
         $mod  = $k['modul'] ?? null;
@@ -124,6 +172,27 @@ function langkah_dari_sandingan(string $berkas, string $picXlsx, string $bln): a
     $sisa = [];
     foreach ($d['lebih'] ?? [] as $c) {
         if (($c['ada_bulan_depan'] ?? null) === true) { $sisa[] = $c; continue; }
+        // Mulai di bulan sebelumnya: yang benar menggeser pengakuannya ke bulan
+        // mulai, bukan menghapus kontraknya.
+        if (($c['saran'] ?? '') === 'geser_ke_awal') {
+            $L[] = [
+                'judul' => 'Pindahkan pengakuan ' . $c['nama'] . ' ke ' . $c['bulan_mulai'],
+                'hasil' => -(float) $c['nilai'],
+                'apa'   => 'Kontraknya mulai ' . $c['mulai'] . ', jadi seluruh nilainya (' . $fmt($c['nilai_kontrak'])
+                         . ') seharusnya diakui di ' . $c['bulan_mulai'] . '. Sekarang CLARA membaginya, dan '
+                         . $bln . ' ikut kebagian ' . $fmt($c['nilai']) . '.',
+                'isi'   => [
+                    'Buka menu *Input → ' . ($modul[$c['modul']] ?? $c['modul']) . '*.',
+                    'Cari *' . $c['nama'] . '* (*' . $c['kode'] . '*, transaksi *#' . $c['trx'] . '*), tekan *Edit*.',
+                    'Di dropdown *Nilai Diakui di Bulan*, ganti dari *Spread per Bulan (Recurring)* jadi *Bulan Awal (bulan mulai)*.',
+                    '*Jangan ubah nilainya* dan *jangan hapus kontraknya*.',
+                    'Tekan *Simpan*.'],
+                'awas'  => 'Nilainya tidak hilang — pindah ke ' . $c['bulan_mulai'] . '. Bulan itu akan naik '
+                         . $fmt($c['nilai']) . ', jadi kalau ' . $c['bulan_mulai'] . ' sudah pernah ditutup, beri tahu dulu.',
+                'selesai' => '*' . $c['nama'] . '* tidak lagi muncul di Laporan PIC ' . $bln . ', dan muncul utuh di ' . $c['bulan_mulai'] . '.',
+            ];
+            continue;
+        }
         $L[] = [
             'judul' => 'Pastikan ' . $c['nama'] . ' (' . $c['kode'] . ')',
             'hasil' => -(float) $c['nilai'],

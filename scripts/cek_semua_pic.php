@@ -177,6 +177,31 @@ $tebakUnit = function (string $ket) use ($unit): ?array {
 
 $qTot = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM transaction_allocations
                         WHERE property_id = ? AND pic_name = ? AND period_key = ?');
+
+/**
+ * Kontrak yang menyentuh bulan ini tetapi belum menyumbang satu rupiah pun.
+ *
+ * Inilah yang paling sering disalahpahami sebagai "belum diinput": datanya
+ * lengkap, dokumennya bahkan sudah disetujui Manager, tetapi alokasi bulanan
+ * baru dibangun saat klien meneken. Kalau golongan ini tidak dipisahkan,
+ * daftar perbaikan akan menyuruh orang menginput ulang sesuatu yang sudah ada
+ * — dan transaksinya jadi kembar.
+ */
+$qNol = $pdo->prepare(
+    "SELECT t.id, t.module, t.master_code, t.start_date, t.end_date,
+            COALESCE(NULLIF(t.final_amount,0), t.total_calculated) nilai,
+            COALESCE(c.brand_name, c.company_name, '(tanpa nama)') nama,
+            COALESCE((SELECT s2.status FROM skp_documents s2
+                       WHERE s2.property_id = t.property_id
+                         AND (s2.transaction_id = t.id OR s2.id = t.skp_id)
+                       ORDER BY s2.id DESC LIMIT 1), '') st_doc
+       FROM transactions t LEFT JOIN master_clients c ON c.id = t.client_id
+      WHERE t.property_id = ? AND t.pic_name = ? AND t.deleted_at IS NULL
+        AND t.start_date <= ? AND t.end_date >= ?
+        AND NOT EXISTS (SELECT 1 FROM transaction_allocations a
+                         WHERE a.transaction_id = t.id AND a.amount > 0)
+      ORDER BY COALESCE(NULLIF(t.final_amount,0), t.total_calculated) DESC"
+);
 $qRinci = $pdo->prepare(
     "SELECT a.amount, t.id trx, t.module, t.master_code, t.start_date, t.end_date,
             t.billing_method, t.pricing_type,
@@ -250,12 +275,68 @@ foreach ($ss as $ssPic => $data) {
         $beda[] = [$sRow, $sisaCl[$pilih]];
         unset($sisaCl[$pilih], $sisaSs[$j]);
     }
+    // Tahap 4: sebelum sebuah baris disebut "belum diinput", cek dulu apakah
+    // kontraknya sebenarnya SUDAH ADA tetapi belum diakui.
+    $akhirBln = date('Y-m-t', strtotime($bln . '-01'));
+    $qNol->execute([$pid, $pic, $akhirBln, $bln . '-01']);
+    $nolRows = $qNol->fetchAll();
+    $belumDiakui = [];
+    foreach ($sisaSs as $j => $sRow) {
+        $pilih = null; $best = -1;
+        foreach ($nolRows as $i => $z) {
+            if (!isset($nolRows[$i])) continue;
+            $sama = round((float) $z['nilai']) === round((float) $sRow['nilai']);
+            $sk   = _mirip2((string) $sRow['ket'], (string) $z['nama']);
+            if (!$sama && $sk < 85) continue;
+            $nilaiSkor = ($sama ? 100 : 0) + $sk;
+            if ($nilaiSkor > $best) { $best = $nilaiSkor; $pilih = $i; }
+        }
+        if ($pilih === null) continue;
+        $belumDiakui[] = [$sRow, $nolRows[$pilih]];
+        unset($nolRows[$pilih], $sisaSs[$j]);
+    }
+    // Satu baris spreadsheet kerap mewakili BEBERAPA transaksi: satu acara yang
+    // memakai empat island ditulis sebagai satu angka gabungan. Dicocokkan
+    // per penyewa, dengan syarat jumlahnya pas — kalau tidak, baris itu tetap
+    // dilaporkan sebagai belum diinput padahal keempatnya sudah ada.
+    foreach ($sisaSs as $j => $sRow) {
+        $grup = [];
+        foreach ($nolRows as $i => $z) {
+            if (!isset($nolRows[$i])) continue;
+            $grup[mb_strtolower((string) $z['nama'])][] = $i;
+        }
+        foreach ($grup as $idx) {
+            if (count($idx) < 2) continue;
+            $jml = 0.0;
+            foreach ($idx as $i) $jml += (float) $nolRows[$i]['nilai'];
+            if (round($jml) !== round((float) $sRow['nilai'])) continue;
+            foreach ($idx as $i) { $belumDiakui[] = [$sRow, $nolRows[$i]]; unset($nolRows[$i]); }
+            unset($sisaSs[$j]);
+            break;
+        }
+    }
+
+    // Sisanya yang nol juga dilaporkan: nilainya belum masuk laporan sekalipun
+    // barisnya tidak tertulis di spreadsheet bulan ini.
+    foreach ($nolRows as $z) $belumDiakui[] = [null, $z];
+
     $kurang = array_values($sisaSs); $lebih = array_values($sisaCl);
 
     $keluar[$ssPic] = [
         'pic_clara' => $pic, 'clara' => $cl, 'spreadsheet' => $target,
         'cocok' => count($cocok), 'ragu' => [], 'beda' => [], 'kurang' => [], 'lebih' => [],
+        'belum_diakui' => [],
     ];
+    foreach ($belumDiakui as [$sRow, $z]) {
+        $keluar[$ssPic]['belum_diakui'][] = [
+            'ket' => $sRow['ket'] ?? null, 'nama' => $z['nama'], 'kode' => $z['master_code'],
+            'modul' => $z['module'], 'trx' => (int) $z['id'], 'nilai' => (float) $z['nilai'],
+            'mulai' => substr((string) $z['start_date'], 0, 10),
+            'selesai' => substr((string) $z['end_date'], 0, 10),
+            'status_dokumen' => $z['st_doc'] !== '' ? $z['st_doc'] : '(tanpa dokumen)',
+            'di_spreadsheet' => $sRow !== null,
+        ];
+    }
     foreach ($beda as [$sRow, $c]) {
         $ssN = (float) $sRow['nilai']; $clN = (float) $c['amount'];
         // Kelipatan bulat berarti nilainya dibagi ke beberapa bulan. Itu dugaan
@@ -301,10 +382,19 @@ foreach ($ss as $ssPic => $data) {
                     && _mirip2((string) $r['ket'], (string) $c['nama']) > 0) { $adaDepan = true; break; }
             }
         }
+        // Kontrak yang MULAI di bulan sebelumnya tetapi nilainya dibagi ke
+        // bulan ini juga: yang benar bukan menghapusnya, melainkan mengakui
+        // seluruhnya di bulan mulainya. Menghapus akan membuang income yang
+        // sah; menggesernya memindahkannya ke bulan yang tepat.
+        $blnMulai = substr((string) $c['start_date'], 0, 7);
+        $saran = ($blnMulai < $bln && ($c['billing_method'] ?? '') === 'spread')
+            ? 'geser_ke_awal' : 'periksa';
         $keluar[$ssPic]['lebih'][] = ['nama' => $c['nama'], 'kode' => $c['master_code'],
             'modul' => $c['module'], 'trx' => (int) $c['trx'], 'nilai' => (float) $c['amount'],
             'mulai' => substr((string) $c['start_date'], 0, 10), 'selesai' => substr((string) $c['end_date'], 0, 10),
-            'metode' => $c['billing_method'], 'lintas_bulan' => $silang, 'ada_bulan_depan' => $adaDepan];
+            'metode' => $c['billing_method'], 'lintas_bulan' => $silang, 'ada_bulan_depan' => $adaDepan,
+            'bulan_mulai' => $blnMulai, 'saran' => $saran,
+            'nilai_kontrak' => (float) $c['nilai_kontrak']];
     }
 }
 
@@ -317,13 +407,18 @@ foreach ($ringkas as [$a, $b, $cl, $tg, $sel]) {
 echo "\n";
 
 foreach ($keluar as $ssPic => $d) {
-    if (!$d['kurang'] && !$d['lebih'] && !$d['ragu'] && !$d['beda']) {
+    if (!$d['kurang'] && !$d['lebih'] && !$d['ragu'] && !$d['beda'] && !$d['belum_diakui']) {
         printf("  %s — %d baris cocok, tidak ada selisih baris.\n\n", $ssPic, $d['cocok']);
         continue;
     }
-    printf("  %s (%s) — %d cocok · %d nilainya beda · %d perlu dipastikan · %d belum ada · %d di CLARA saja\n",
-        $ssPic, $d['pic_clara'], $d['cocok'], count($d['beda']), count($d['ragu']),
-        count($d['kurang']), count($d['lebih']));
+    printf("  %s (%s) — %d cocok · %d sudah diinput belum diakui · %d nilainya beda · %d perlu dipastikan · %d belum ada · %d di CLARA saja\n",
+        $ssPic, $d['pic_clara'], $d['cocok'], count($d['belum_diakui']), count($d['beda']),
+        count($d['ragu']), count($d['kurang']), count($d['lebih']));
+    foreach ($d['belum_diakui'] as $z) {
+        printf("      BELUM DIAKUI %-26s %-9s %16s  #%-5s dokumen \"%s\"%s\n",
+            mb_substr($z['nama'], 0, 26), $z['kode'], $rp($z['nilai']), $z['trx'],
+            $z['status_dokumen'], $z['di_spreadsheet'] ? '' : '  (tidak tertulis di spreadsheet bulan ini)');
+    }
     foreach ($d['beda'] as $b) {
         printf("      NILAI BEDA  %-28s %-9s xlsx %14s  CLARA %14s  #%s\n",
             mb_substr($b['nama'], 0, 28), $b['kode'], $rp($b['nilai_ss']), $rp($b['nilai_clara']), $b['trx']);
@@ -342,8 +437,10 @@ foreach ($keluar as $ssPic => $d) {
                 : '(unit tidak dikenali)');
     }
     foreach ($d['lebih'] as $c) {
-        $ket = $c['ada_bulan_depan'] === true ? 'lintas bulan, ada di bulan depan — biarkan'
-             : ($c['lintas_bulan'] ? 'lintas bulan, bulan depan pun tidak ada — PERIKSA' : 'PERIKSA');
+        $ket = $c['saran'] === 'geser_ke_awal'
+             ? 'mulai ' . $c['bulan_mulai'] . ' — akui seluruhnya di bulan mulainya'
+             : ($c['ada_bulan_depan'] === true ? 'lintas bulan, ada di bulan depan — biarkan'
+             : ($c['lintas_bulan'] ? 'lintas bulan, bulan depan pun tidak ada — PERIKSA' : 'PERIKSA'));
         printf("      DI CLARA    %-28s %-10s %16s  #%-5s %s\n", mb_substr($c['nama'], 0, 28),
             $c['kode'], $rp($c['nilai']), $c['trx'], $ket);
     }
