@@ -622,7 +622,8 @@ menu <b>SKP Pameran &rarr; + Buat Dokumen</b>. Urutan untuk Exhibition baru:</p>
         <b>Perpanjang</b> tidak melewati tahap ini: nilainya terhitung begitu disimpan.</li>
     <li><b>Tanggal disalin dari kontrak</b>, jangan dibulatkan. Perpanjangan mulai <b>sehari setelah</b>
         siklus sebelumnya berakhir.</li>
-    <li><b>Kolom PIC Sales diisi <?= $h($pic) ?></b> &mdash; kosong berarti tidak masuk ke siapa pun.</li>
+    <li><b>Kolom PIC diisi <?= $h($pic) ?></b> &mdash; di Surat Penawaran namanya <b>PIC Sales</b>,
+        di formulir transaksi <b>PIC Dealing</b>. Kosong berarti tidak masuk ke siapa pun.</li>
     <li><b>Lalu periksa daftar B.</b> Abaikan baris yang sudah ditandai <i>muncul di spreadsheet bulan
         berikutnya</i> &mdash; itu memang bukan kesalahan. Sisanya perlu dipastikan dulu ke orangnya:
         kalau kontraknya benar-benar tidak ada atau dobel, ajukan lewat <b>Pengajuan Hapus Data</b>

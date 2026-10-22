@@ -126,7 +126,8 @@ function langkah_dari_sandingan(string $berkas, string $picXlsx, string $bln): a
             $isi = [
                 'Buka menu *Input → Surat Penawaran*, tekan *+ Buat Penawaran Exhibition*.',
                 'Isi client dan unit ' . $unit . ', PIC *' . ($d['pic_clara'] ?? '') . '*, dan periodenya sesuai kontrak.',
-                'Isi harganya sampai *Grand Total* di kotak Ringkasan Biaya tertulis tepat ' . $fmt($k['nilai']) . '.',
+                'Isi harganya sampai baris *Grand Total* di kotak *Ringkasan biaya — yang akan tercetak di surat* '
+                    . 'tertulis tepat ' . $fmt($k['nilai']) . '. Kalau tarif per hari tidak menghasilkan angka itu, isi *Harga Nego Final*.',
                 'Simpan, buka *Preview*, tekan *Tandai DEAL*, lalu buat SKP-nya.',
                 'Alurnya: paraf Asst. Manager → disetujui Manager → dikirim ke klien untuk tanda tangan.'];
             $awas = 'Income baru terhitung *setelah klien menandatangani*. Sebelum itu barisnya sudah kelihatan tetapi nilainya Rp 0 — itu bukan error.';
