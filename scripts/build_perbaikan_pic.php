@@ -47,6 +47,11 @@ $fokus = $opt['bulan'] !== ''
     ? array_values(array_filter(array_map('trim', explode(',', (string) $opt['bulan']))))
     : [date('Y-m')];
 
+// Zona waktu hanya diatur di public/index.php, dan skrip ini tidak lewat sana.
+// Tanpa baris ini stempel "dibuat ..." di dokumen memakai jam UTC — selisih
+// delapan jam dari jam orang yang memegang kertasnya.
+date_default_timezone_set((string) (env_value('APP_TIMEZONE') ?: 'Asia/Makassar'));
+
 $pdo = Database::connect();
 $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 $h  = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -372,14 +377,42 @@ Kalau ternyata berbeda, berarti yang kiri belum diinput dan yang kanan perlu dip
 </table>
 <?php endif; ?>
 
-<?php if ($lebih): ?>
+<?php if ($lebih):
+    // "Lintas bulan" sering dipakai untuk menenangkan: nilainya memang dibukukan
+    // di bulan mulai, sementara spreadsheet menaruhnya di bulan berikutnya. Tapi
+    // itu hanya benar kalau barisnya BENAR-BENAR muncul di bulan berikutnya pada
+    // spreadsheet. Kalau di sana pun tidak ada, kalimat itu justru menyuruh orang
+    // mendiamkan satu-satunya baris yang perlu diperiksa.
+    $blnDepan = date('Y-m', strtotime($bln . '-01 +1 month'));
+    $ssDepan  = $ss['rincian'][$blnDepan] ?? null;
+    // Nilai saja tidak cukup: dua penyewa berbeda kerap bernilai sama persis.
+    // Namanya ikut diperiksa, dengan pencocokan longgar yang sama seperti
+    // sandingkan() — ejaan di dua berkas memang tidak pernah sama.
+    $adaBulanDepan = function (array $c) use ($ssDepan): ?bool {
+        if ($ssDepan === null) return null;
+        foreach ($ssDepan as $r) {
+            if (round((float) $r['nilai']) !== round((float) $c['amount'])) continue;
+            if (_mirip((string) $r['ket'], (string) $c['nama']) > 0) return true;
+        }
+        return false;
+    };
+    $adaYangPerluDiperiksa = false;
+?>
 <h3>B. PERIKSA &mdash; ada di CLARA, tidak ada di daftar spreadsheet</h3>
 <table>
     <tr><th>Penyewa</th><th>Unit</th><th>Periode</th><th class="n">Nilai</th><th class="n">Trx</th></tr>
     <?php foreach ($lebih as $c):
-        $silang = substr((string) $c['start_date'], 0, 7) !== substr((string) $c['end_date'], 0, 7); ?>
+        $silang = substr((string) $c['start_date'], 0, 7) !== substr((string) $c['end_date'], 0, 7);
+        $depan  = $silang ? $adaBulanDepan($c) : false;
+        if ($depan !== true) $adaYangPerluDiperiksa = true; ?>
     <tr class="buang">
-        <td><?= $h($c['nama']) ?><?= $silang ? ' <span class="muted">(lintas bulan)</span>' : '' ?></td>
+        <td><?= $h($c['nama']) ?><?php if ($depan === true): ?>
+            <span class="muted">(lintas bulan &mdash; muncul di spreadsheet <?= $h($blnDepan) ?>)</span>
+            <?php elseif ($depan === false && $silang): ?>
+            <span class="merah">(lintas bulan, tetapi di spreadsheet <?= $h($blnDepan) ?> juga tidak ada)</span>
+            <?php elseif ($depan === null): ?>
+            <span class="muted">(lintas bulan &mdash; <?= $h($blnDepan) ?> tidak ikut dibandingkan)</span>
+            <?php endif; ?></td>
         <td><?= $h($c['master_code']) ?></td>
         <td><?= $h(date('d/m/y', strtotime($c['start_date'])) . '–' . date('d/m/y', strtotime($c['end_date']))) ?></td>
         <td class="n"><?= $rp($c['amount']) ?></td>
@@ -388,11 +421,13 @@ Kalau ternyata berbeda, berarti yang kiri belum diinput dan yang kanan perlu dip
     <?php endforeach; ?>
 </table>
 <div class="box warn">
-    <p style="margin:0">Baris bertanda <b>(lintas bulan)</b> hampir pasti <b>bukan kesalahan</b>:
-    masa sewanya menyeberang ke bulan berikutnya, dan CLARA memang membukukan seluruh nilainya di
-    bulan mulai. Spreadsheet menaruhnya di bulan berikutnya. <b>Jangan dihapus.</b>
-    Yang perlu diperiksa hanya baris yang periodenya utuh di dalam bulan ini &mdash;
-    itu bisa jadi dobel, atau memang belum tercatat di spreadsheet.</p>
+    <p style="margin:0">Baris bertanda <b>muncul di spreadsheet <?= $h($blnDepan) ?></b> <b>bukan kesalahan</b>:
+    masa sewanya menyeberang, CLARA membukukan seluruh nilainya di bulan mulai sedangkan spreadsheet
+    menaruhnya di bulan berikutnya. <b>Jangan dihapus.</b>
+    <?php if ($adaYangPerluDiperiksa): ?>
+    Sisanya <b>perlu diperiksa</b> &mdash; baik yang periodenya utuh di dalam bulan ini maupun yang
+    lintas bulan tetapi di bulan berikutnya pun tidak tercatat. Itu bisa jadi dobel, atau memang
+    kontraknya tidak ada.<?php endif; ?></p>
 </div>
 <?php endif; ?>
 <?php endforeach; ?>
@@ -455,7 +490,7 @@ foreach ($fokus as $bln) {
         <td class="n"><?= $rp($jalan) ?></td></tr>
     <?php endforeach; ?>
     <?php foreach ($aksi as $a): $jalan += (float) $a['nilai']; ?>
-    <tr class="buang"><td>Geser: <?= $h(mb_substr((string) $a['ket'], 0, 70)) ?></td>
+    <tr class="buang"><td><?= $h($a['label'] ?? 'Geser') ?>: <?= $h(mb_substr((string) $a['ket'], 0, 90)) ?></td>
         <td class="n"><?= ((float) $a['nilai'] >= 0 ? '+' : '&minus;')
             . number_format(abs((float) $a['nilai']), 0, ',', '.') ?></td>
         <td class="n"><?= $rp($jalan) ?></td></tr>
@@ -472,8 +507,8 @@ foreach ($fokus as $bln) {
 
 <?php foreach ($aksi as $a): ?>
 <div class="box warn">
-    <p style="margin:0"><span class="tebal">Cara menggesernya.</span>
-    <?= $h($a['cara'] ?? '') ?></p>
+    <p style="margin:0"><span class="tebal"><?= $h($a['judul_cara'] ?? 'Cara menggesernya.') ?></span>
+    <?= $tb($a['cara'] ?? '') ?></p>
 </div>
 <?php endforeach; ?>
 
@@ -546,9 +581,10 @@ menu <b>SKP Pameran &rarr; + Buat Dokumen</b>. Urutan untuk Exhibition baru:</p>
     <li><b>Tanggal disalin dari kontrak</b>, jangan dibulatkan. Perpanjangan mulai <b>sehari setelah</b>
         siklus sebelumnya berakhir.</li>
     <li><b>Kolom PIC Sales diisi <?= $h($pic) ?></b> &mdash; kosong berarti tidak masuk ke siapa pun.</li>
-    <li><b>Lalu periksa daftar B.</b> Abaikan yang bertanda lintas bulan. Sisanya: kalau benar dobel,
-        ajukan lewat <b>Pengajuan Hapus Data</b> dengan alasan <b>Dobel / duplikat</b> &mdash;
-        jangan dihapus diam-diam.</li>
+    <li><b>Lalu periksa daftar B.</b> Abaikan baris yang sudah ditandai <i>muncul di spreadsheet bulan
+        berikutnya</i> &mdash; itu memang bukan kesalahan. Sisanya perlu dipastikan dulu ke orangnya:
+        kalau kontraknya benar-benar tidak ada atau dobel, ajukan lewat <b>Pengajuan Hapus Data</b>
+        dengan alasannya &mdash; jangan dihapus diam-diam.</li>
     <li><b>Buka Dashboard lagi</b> dan bandingkan ulang. Kalau masih beda, cetak dokumen ini
         sekali lagi &mdash; isinya ikut data terbaru.</li>
 </ol>
@@ -556,8 +592,10 @@ menu <b>SKP Pameran &rarr; + Buat Dokumen</b>. Urutan untuk Exhibition baru:</p>
 <div class="box">
     <p style="margin:0"><span class="tebal">Dua hal yang BUKAN kesalahan input.</span></p>
     <ul style="margin:4px 0 0 16px">
-        <li><b>Kontrak lintas bulan.</b> Nilainya tidak hilang, hanya dibukukan di bulan mulainya.
-            Setahun penuh jumlahnya tetap sama.</li>
+        <li><b>Kontrak lintas bulan yang barisnya muncul di bulan berikutnya pada spreadsheet.</b>
+            Nilainya tidak hilang, hanya dibukukan di bulan mulainya. Setahun penuh jumlahnya tetap
+            sama. Tetapi kalau di bulan berikutnya pun tidak tercatat, itu bukan soal lintas bulan
+            &mdash; itu memang perlu diperiksa.</li>
         <li><b>Baris bertanda TBC / belum deal di spreadsheet.</b> Spreadsheet boleh menuliskan
             proyeksi; CLARA hanya menghitung yang sudah benar-benar jadi. Selama belum deal,
             CLARA memang tidak akan menampilkannya &mdash; dan itu yang benar.</li>
