@@ -1,14 +1,21 @@
 <?php
 /**
- * Bagan alir (flowchart) kerja CLARA.
+ * Bagan alir kerja CLARA — satu halaman HTML.
  *
- * Bentuknya bagan alir sungguhan, bukan diagram kotak-kotak: belah ketupat
- * untuk titik keputusan, garis penghubung berpanah, cabang Ya/Tidak yang
- * kelihatan ke mana perginya, dan panah balik untuk langkah yang berulang.
+ * Keluarannya SENGAJA cuma HTML, bukan PDF. Dipaksa masuk A4, bagannya jadi
+ * berdesakan: kotak mengecil, teks terpotong, cabang bertumpuk. Di halaman web
+ * tidak ada batas tinggi, jadi alurnya boleh memanjang ke bawah dengan kotak
+ * yang lega dan cabang yang melebar ke samping.
  *
- * Teks di dalam kotak sengaja pendek. Bagan alir dibaca sambil menelusuri
- * garis; kalimat panjang membuat orang berhenti membaca dan alurnya justru
- * hilang. Keterangan yang panjang dikumpulkan di lembar rujukan terakhir.
+ * Bentuknya bagan alir sungguhan: belah ketupat untuk titik keputusan, garis
+ * penghubung berpanah, cabang Ya/Tidak yang kelihatan ke mana perginya, dan
+ * panah balik untuk langkah yang berulang.
+ *
+ * Caranya digambar: bentuk & garis digambar di SVG (biar tikungan dan panahnya
+ * rapi), teksnya ditulis sebagai elemen HTML di atasnya pada koordinat yang
+ * sama (biar pemenggalan kata, pilihan font, dan penyalinan teksnya benar).
+ * Tinggi tiap kotak dihitung lebih dulu dari isinya supaya kedua lapisan itu
+ * selalu bertemu di tempat yang sama.
  *
  * Isinya diambil dari kode, bukan dari ingatan:
  *   - jenis dokumen per modul      → skp_doc_type() di app/pages/skp_modules.php
@@ -17,10 +24,6 @@
  *   - kapan income dihitung        → _skp_bangun_alokasi(), dipanggil saat TTD client
  *   - batas tautan tanda tangan    → sign_token_expiry_sql() di app/helpers.php
  *   - aturan wajib TTD berlaku     → settings.ttd_wajib_mulai
- *
- * Keluarannya dua: satu berkas HTML yang berdiri sendiri (gambar ditanam
- * sebagai data-URI, jadi bisa dikirim apa adanya) dan satu PDF A4 menyamping
- * bila Chrome tersedia di mesin ini.
  *
  * Pakai:
  *   php scripts/build_alur_clara.php
@@ -42,7 +45,7 @@ date_default_timezone_set((string) (env_value('APP_TIMEZONE') ?: 'Asia/Makassar'
 $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
 
 // ── Pengaturan yang hidup di basis data ──────────────────────────────────────
-// Nama pemaraf dan tanggal berlakunya aturan tanda tangan diambil dari sistem,
+// Nama pemaraf dan tanggal berlakunya aturan tanda tangan dibaca dari sistem,
 // bukan ditulis tetap di sini — supaya bagan ini tidak jadi usang diam-diam
 // ketika alurnya diubah lewat halaman Alur Persetujuan.
 $tahap = ['skp' => [], 'sks' => [], 'fu' => []];
@@ -70,7 +73,6 @@ try {
         foreach ($perTahap as $n => $orang) {
             $bagian = [];
             foreach ($orang as $nama => $mals) {
-                // Satu orang yang memegang kedua mal tidak perlu disebut dua kali.
                 $bagian[] = count($mals) >= 2 ? $nama : $nama . ' (' . array_key_first($mals) . ')';
             }
             $tahap[$d][$n]['orang'] = implode(' · ', $bagian);
@@ -89,8 +91,9 @@ $lbl1 = (string) ($tahap['skp'][1]['label'] ?? 'Asst. Manager');
 $lbl2 = (string) ($tahap['skp'][2]['label'] ?? 'Manager');
 $org1 = (string) ($tahap['skp'][1]['orang'] ?? '');
 $org2 = (string) ($tahap['skp'][2]['orang'] ?? '');
+$pem1 = $lbl1 . ($org1 ? ' — ' . $org1 : '');
+$pem2 = $lbl2 . ($org2 ? ' — ' . $org2 : '');
 
-// date('F') berbahasa Inggris; dokumen ini berbahasa Indonesia seluruhnya.
 $BULAN = [1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli',
           'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 $ttdTgl = '';
@@ -98,116 +101,104 @@ if ($ttdMulai !== '' && ($ts = strtotime($ttdMulai))) {
     $ttdTgl = date('j', $ts) . ' ' . $BULAN[(int) date('n', $ts)] . ' ' . date('Y', $ts);
 }
 
-// ── Potongan kop surat, ditanam sebagai data-URI ─────────────────────────────
-// Kop aslinya dibuat untuk halaman tegak selebar 210mm. Dipasang utuh di
-// halaman menyamping (297mm) gambarnya akan melar 1,4x dan logonya ikut
-// penyok. Jadi kop dipotong jadi blok-blok: pola kiri, logo tengah, pola
-// kanan — yang melebar cuma jarak putih di antaranya.
+/** Logo kop surat, ditanam sebagai data-URI supaya berkasnya berdiri sendiri. */
 function potong_uri(string $src, int $x, int $w): string
 {
     $im = @imagecreatefromjpeg($src);
     if (!$im) return '';
     $p = imagecreatetruecolor($w, imagesy($im));
     imagecopy($p, $im, 0, 0, $x, 0, $w, imagesy($im));
-    ob_start(); imagejpeg($p, null, 92); $bin = (string) ob_get_clean();
+    ob_start(); imagejpeg($p, null, 94); $bin = (string) ob_get_clean();
     return 'data:image/jpeg;base64,' . base64_encode($bin);
 }
-$A        = $root . '/public/assets/';
-$kopKiri  = potong_uri($A . 'letterhead-head.jpg', 0, 376);
-$kopLogo  = potong_uri($A . 'letterhead-head.jpg', 410, 420);
-$kopKanan = potong_uri($A . 'letterhead-head.jpg', 864, 376);
-$kakiKiri = potong_uri($A . 'letterhead-foot.jpg', 40, 560);
-$kakiKanan= potong_uri($A . 'letterhead-foot.jpg', 628, 612);
+$logoMal = potong_uri($root . '/public/assets/letterhead-head.jpg', 410, 420);
+$logoWbl = potong_uri($root . '/public/assets/letterhead-foot.jpg', 40, 560);
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  Mesin bagan alir
+//  Mesin bagan alir — satuan PIKSEL, tanpa batas tinggi.
 //
-//  Seluruh koordinat dalam MILIMETER, sama dengan satuan halaman — "lebar 56"
-//  benar-benar 56 mm di kertas. Simpul ditempatkan sendiri, bukan oleh mesin
-//  penata otomatis: bagan alir yang enak dibaca butuh penataan yang
-//  dipikirkan, dan jumlah simpulnya di sini masih sedikit.
+//  Tiga lajur tetap: tulang punggung di kiri, cabang di tengah, catatan di
+//  kanan. Alur utama selalu turun lurus di lajur pertama, jadi mata cukup
+//  mengikuti satu garis; yang menyimpang baru melebar ke kanan.
 // ═══════════════════════════════════════════════════════════════════════════
+
+const LEBAR  = 1240;   // lebar kanvas
+const L1     = 60;     // x lajur tulang punggung
+const L2     = 540;    // x lajur cabang
+const L3     = 1000;   // x lajur catatan
+const WN     = 400;    // lebar kotak lajur 1 & 2
+const WC     = 240;    // lebar kotak catatan
 
 const WARNA = [
-    'sales'   => ['#0F766E', '#F0FDFA', '#5EEAD4'],
-    'asst'    => ['#B45309', '#FFFBEB', '#FCD34D'],
-    'manager' => ['#6D28D9', '#F5F3FF', '#C4B5FD'],
-    'client'  => ['#0369A1', '#F0F9FF', '#7DD3FC'],
-    'legal'   => ['#BE185D', '#FDF2F8', '#F9A8D4'],
-    'sistem'  => ['#475569', '#F8FAFC', '#CBD5E1'],
-    'tanya'   => ['#C2410C', '#FFF7ED', '#FB923C'],
-    'hasil'   => ['#15803D', '#F0FDF4', '#4ADE80'],
-    'stop'    => ['#B91C1C', '#FEF2F2', '#FCA5A5'],
-    'mulai'   => ['#334155', '#E2E8F0', '#94A3B8'],
+    'sales'   => ['#0F766E', '#F0FDFA', '#99F6E4'],
+    'asst'    => ['#B45309', '#FFFBEB', '#FDE68A'],
+    'manager' => ['#6D28D9', '#F5F3FF', '#DDD6FE'],
+    'client'  => ['#0369A1', '#F0F9FF', '#BAE6FD'],
+    'legal'   => ['#BE185D', '#FDF2F8', '#FBCFE8'],
+    'sistem'  => ['#475569', '#F8FAFC', '#E2E8F0'],
+    'tanya'   => ['#C2410C', '#FFF7ED', '#FED7AA'],
+    'hasil'   => ['#15803D', '#F0FDF4', '#BBF7D0'],
+    'stop'    => ['#B91C1C', '#FEF2F2', '#FECACA'],
+    'ujung'   => ['#1E293B', '#E2E8F0', '#CBD5E1'],
 ];
-const PANAH = ['#94A3B8' => 'u0', '#DC2626' => 'u1', '#B45309' => 'u2', '#0F766E' => 'u3'];
+const PANAH = ['#94A3B8' => 'p0', '#DC2626' => 'p1', '#B45309' => 'p2', '#0D9488' => 'p3'];
 
-/** Lebar kira-kira satu aksara, dipakai membungkus teks tanpa mengukur font. */
+/** Lebar kira-kira satu aksara — untuk menaksir tinggi kotak sebelum dirender. */
 function _lebarAksara(string $c, float $fs, bool $tebal): float
 {
     $sempit = "iljtfr.,;:'!|()[]/ ";
     $lebar  = "mwMW@%";
-    $f = str_contains($sempit, $c) ? 0.34 : (str_contains($lebar, $c) ? 0.84 : 0.54);
-    if (ctype_upper($c)) $f += 0.08;
-    return $fs * $f * ($tebal ? 1.07 : 1.0);
+    $f = str_contains($sempit, $c) ? 0.33 : (str_contains($lebar, $c) ? 0.85 : 0.53);
+    if (ctype_upper($c)) $f += 0.09;
+    return $fs * $f * ($tebal ? 1.06 : 1.0);
 }
 
-/** Bungkus teks jadi baris yang muat di $lebar mm. *kata* dicetak tebal. */
-function _bungkus(string $teks, float $lebar, float $fs): array
+/** Berapa baris teks ini kalau dibungkus selebar $lebar px. */
+function _barisTeks(string $teks, float $lebar, float $fs, bool $tebal): int
 {
     $kata = preg_split('/\s+/', trim($teks)) ?: [];
-    $baris = []; $kini = []; $w = 0.0;
+    $n = 1; $w = 0.0;
     foreach ($kata as $k) {
         if ($k === '') continue;
-        $tebal = str_starts_with($k, '*') || str_ends_with($k, '*');
-        $bersih = trim($k, '*');
         $lw = 0.0;
-        foreach (preg_split('//u', $bersih, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $c) {
+        foreach (preg_split('//u', strip_tags($k), -1, PREG_SPLIT_NO_EMPTY) ?: [] as $c) {
             $lw += _lebarAksara($c, $fs, $tebal);
         }
-        $spasi = $kini ? $fs * 0.30 : 0.0;
-        if ($kini && $w + $spasi + $lw > $lebar) { $baris[] = $kini; $kini = []; $w = 0.0; $spasi = 0.0; }
-        $kini[] = [$bersih, $tebal];
-        $w += $spasi + $lw;
+        $spasi = $w > 0 ? $fs * 0.30 : 0.0;
+        if ($w > 0 && $w + $spasi + $lw > $lebar) { $n++; $w = $lw; }
+        else                                      { $w += $spasi + $lw; }
     }
-    if ($kini) $baris[] = $kini;
-    return $baris;
-}
-
-function _barisSvg(array $baris): string
-{
-    $out = [];
-    foreach ($baris as [$kata, $tebal]) {
-        $e = htmlspecialchars($kata, ENT_QUOTES, 'UTF-8');
-        $out[] = $tebal ? '<tspan font-weight="700">' . $e . '</tspan>' : $e;
-    }
-    return implode(' ', $out);
+    return $n;
 }
 
 $SIMPUL = [];
 
 /**
- * Tambahkan satu simpul. Tingginya dihitung dari isinya, jadi kotak tidak
- * pernah kesempitan sendiri.
+ * Daftarkan satu simpul.
  *
  * $bentuk: proses | tanya | ujung | hasil | catatan
+ * Tingginya dihitung dari isinya, jadi kotak tidak pernah kesempitan sendiri
+ * dan garis penghubungnya selalu menempel di tepi yang benar.
  */
 function S(string $id, float $x, float $y, float $w, string $bentuk, string $peran,
            string $judul, string $isi = ''): void
 {
     global $SIMPUL;
-    $fsJ = 2.75; $fsI = 2.35;
-    $pad = $bentuk === 'tanya' ? 9.0 : 3.6;
-    $bJud = _bungkus($judul, $w - 2 * $pad, $fsJ);
-    $bIsi = $isi !== '' ? _bungkus($isi, $w - 2 * $pad, $fsI) : [];
-    $h = 3.0 + count($bJud) * ($fsJ * 1.24) + (count($bIsi) ? 1.1 + count($bIsi) * ($fsI * 1.28) : 0) + 3.0;
-    if ($bentuk === 'tanya') $h += 9.0;
-    if ($bentuk === 'ujung') $h = max($h, 9.5);
-    $SIMPUL[$id] = compact('x', 'y', 'w', 'h', 'bentuk', 'peran')
-                 + ['jud' => $bJud, 'isi' => $bIsi, 'fsJ' => $fsJ, 'fsI' => $fsI];
+    $fsJ = $bentuk === 'ujung' ? 15.5 : 16.0;
+    $fsI = 13.0;
+    // Di belah ketupat, teks hanya muat di bagian tengahnya.
+    $pad  = $bentuk === 'tanya' ? $w * 0.22 : 22.0;
+    $lebarTeks = $w - 2 * $pad;
+    $nJ = _barisTeks($judul, $lebarTeks, $fsJ, true);
+    $nI = $isi !== '' ? _barisTeks($isi, $lebarTeks, $fsI, false) : 0;
+    $hTeks = $nJ * ($fsJ * 1.35) + ($nI ? 7 + $nI * ($fsI * 1.5) : 0);
+    $h = $hTeks + 36;
+    if ($bentuk === 'tanya') $h = $hTeks + 74;
+    if ($bentuk === 'ujung') $h = max($h, 56);
+    $SIMPUL[$id] = compact('x', 'y', 'w', 'h', 'bentuk', 'peran', 'judul', 'isi')
+                 + ['pad' => $pad];
 }
 
-/** Titik tempel di tepi simpul. */
 function T(string $id, string $sisi): array
 {
     global $SIMPUL;
@@ -221,487 +212,621 @@ function T(string $id, string $sisi): array
         default => [$cx, $cy],
     };
 }
-/** Sisi bawah simpul, tetapi pada ketinggian apa adanya (untuk rute siku). */
-function B(string $id): float { global $SIMPUL; return $SIMPUL[$id]['y'] + $SIMPUL[$id]['h']; }
-function Y(string $id): float { global $SIMPUL; return $SIMPUL[$id]['y']; }
+/** Tepi bawah sebuah simpul — dipakai menata simpul berikutnya. */
+function BW(string $id): float { global $SIMPUL; return $SIMPUL[$id]['y'] + $SIMPUL[$id]['h']; }
 
-function gambarSimpul(array $n): string
+/** Bentuk simpul, digambar di lapisan SVG. */
+function svgSimpul(array $n): string
 {
-    [$grs, $isiWarna, $tepi] = WARNA[$n['peran']] ?? WARNA['sistem'];
+    [$grs, $bg, $tepi] = WARNA[$n['peran']] ?? WARNA['sistem'];
     $x = $n['x']; $y = $n['y']; $w = $n['w']; $h = $n['h'];
-    $putus = $n['bentuk'] === 'catatan' ? ' stroke-dasharray="1.8 1.3"' : '';
-    $tbl   = $n['bentuk'] === 'hasil' ? 0.85 : 0.45;
-    $s = '';
     if ($n['bentuk'] === 'tanya') {
-        $p = sprintf('%.2f,%.2f %.2f,%.2f %.2f,%.2f %.2f,%.2f',
+        $p = sprintf('%.1f,%.1f %.1f,%.1f %.1f,%.1f %.1f,%.1f',
             $x + $w / 2, $y, $x + $w, $y + $h / 2, $x + $w / 2, $y + $h, $x, $y + $h / 2);
-        $s .= '<polygon points="' . $p . '" fill="' . $isiWarna . '" stroke="' . $tepi . '" stroke-width="' . $tbl . '"/>';
-    } elseif ($n['bentuk'] === 'ujung') {
-        $s .= '<rect x="' . $x . '" y="' . $y . '" width="' . $w . '" height="' . $h . '" rx="' . ($h / 2)
-            . '" fill="' . $isiWarna . '" stroke="' . $tepi . '" stroke-width="' . $tbl . '"/>';
-    } else {
-        $s .= '<rect x="' . $x . '" y="' . $y . '" width="' . $w . '" height="' . $h . '" rx="1.8" fill="'
-            . $isiWarna . '" stroke="' . $tepi . '" stroke-width="' . $tbl . '"' . $putus . '/>';
-        if ($n['bentuk'] !== 'catatan') {
-            // Pita warna di tepi kiri = siapa yang mengerjakan, terbaca sekilas.
-            $s .= '<path d="M' . ($x + 1.8) . ' ' . $y . ' h-0.2 a1.8,1.8 0 0 0 -1.6,1.8 V' . ($y + $h - 1.8)
-                . ' a1.8,1.8 0 0 0 1.6,1.8 h0.2 Z" fill="' . $grs . '"/>';
-        }
+        return '<polygon points="' . $p . '" fill="' . $bg . '" stroke="' . $tepi . '" stroke-width="2"/>';
     }
-    $ty = $y + ($n['bentuk'] === 'tanya' ? 4.5 : 0) + 3.0 + $n['fsJ'] * 0.84;
-    $cx = $x + $w / 2 + ($n['bentuk'] === 'proses' || $n['bentuk'] === 'hasil' ? 0.9 : 0);
-    foreach ($n['jud'] as $b) {
-        $s .= '<text x="' . round($cx, 2) . '" y="' . round($ty, 2) . '" text-anchor="middle" font-size="'
-            . $n['fsJ'] . '" font-weight="700" fill="' . $grs . '">' . _barisSvg($b) . '</text>';
-        $ty += $n['fsJ'] * 1.24;
+    if ($n['bentuk'] === 'ujung') {
+        return '<rect x="' . $x . '" y="' . $y . '" width="' . $w . '" height="' . $h . '" rx="' . ($h / 2)
+             . '" fill="' . $bg . '" stroke="' . $tepi . '" stroke-width="2"/>';
     }
-    if ($n['isi']) {
-        $ty += 0.9;
-        foreach ($n['isi'] as $b) {
-            $s .= '<text x="' . round($cx, 2) . '" y="' . round($ty, 2) . '" text-anchor="middle" font-size="'
-                . $n['fsI'] . '" fill="#475569">' . _barisSvg($b) . '</text>';
-            $ty += $n['fsI'] * 1.28;
-        }
+    $putus = $n['bentuk'] === 'catatan' ? ' stroke-dasharray="7 5"' : '';
+    $tbl   = $n['bentuk'] === 'hasil' ? 3 : 1.6;
+    $s = '<rect x="' . $x . '" y="' . $y . '" width="' . $w . '" height="' . $h . '" rx="12" fill="'
+       . $bg . '" stroke="' . $tepi . '" stroke-width="' . $tbl . '"' . $putus . '/>';
+    if ($n['bentuk'] !== 'catatan') {
+        // Pita warna di tepi kiri = siapa pelakunya, terbaca sekilas.
+        $s .= '<path d="M' . ($x + 12) . ' ' . $y . ' h-1 a12,12 0 0 0 -11,12 V' . ($y + $h - 12)
+            . ' a12,12 0 0 0 11,12 h1 Z" fill="' . $grs . '"/>';
     }
     return $s;
 }
 
-/** Garis penghubung berpanah, bersiku. $label ditaruh di ruas pertama. */
-function P(array $titik, string $label = '', string $warna = '#94A3B8', bool $putus = false, ?array $lp = null): string
+/** Teks simpul, ditulis sebagai HTML di atas bentuknya. */
+function htmlSimpul(array $n): string
 {
-    $d = [];
-    foreach ($titik as $i => [$px, $py]) $d[] = ($i ? 'L' : 'M') . round($px, 2) . ' ' . round($py, 2);
-    $m = PANAH[$warna] ?? 'u0';
-    $s = '<path d="' . implode(' ', $d) . '" fill="none" stroke="' . $warna . '" stroke-width="0.5"'
-       . ($putus ? ' stroke-dasharray="1.6 1.2"' : '') . ' marker-end="url(#' . $m . ')"/>';
-    if ($label !== '') {
-        if ($lp !== null) {
-            [$mx, $my] = $lp;
-        } else {
-            [$x1, $y1] = $titik[0]; [$x2, $y2] = $titik[1];
-            $mx = ($x1 + $x2) / 2; $my = ($y1 + $y2) / 2;
-            if (abs($x2 - $x1) < 0.5) $mx += 1.0 + strlen($label) * 0.70; else $my -= 2.1;
-        }
-        $lw = 1.6 + strlen($label) * 1.28;
-        $s .= '<rect x="' . round($mx - $lw / 2, 2) . '" y="' . round($my - 2.2, 2) . '" width="' . round($lw, 2)
-            . '" height="3.4" rx="1.7" fill="#fff" stroke="' . $warna . '" stroke-width="0.3"/>';
-        $s .= '<text x="' . round($mx, 2) . '" y="' . round($my + 0.45, 2) . '" text-anchor="middle" font-size="2.2"'
-            . ' font-weight="700" fill="' . $warna . '">' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</text>';
-    }
-    return $s;
+    [$grs] = WARNA[$n['peran']] ?? WARNA['sistem'];
+    $gy = $n['bentuk'] === 'tanya' ? 0 : 0;
+    $st = 'left:' . round($n['x'] + $n['pad']) . 'px;top:' . round($n['y'] + $gy) . 'px;'
+        . 'width:' . round($n['w'] - 2 * $n['pad']) . 'px;height:' . round($n['h']) . 'px;';
+    $s = '<div class="tx" style="' . $st . '">';
+    $s .= '<b style="color:' . $grs . '">' . $n['judul'] . '</b>';
+    if ($n['isi'] !== '') $s .= '<i>' . $n['isi'] . '</i>';
+    return $s . '</div>';
 }
 
-function bagan(array $garis, float $tinggi = 150): string
+/** Polyline bersiku dengan tikungan membulat. */
+function _rute(array $pts, float $r = 14): string
 {
-    global $SIMPUL;
+    $d = 'M' . round($pts[0][0], 1) . ' ' . round($pts[0][1], 1);
+    for ($i = 1, $n = count($pts) - 1; $i < $n; $i++) {
+        [$px, $py] = $pts[$i - 1]; [$cx, $cy] = $pts[$i]; [$nx, $ny] = $pts[$i + 1];
+        $d1 = hypot($cx - $px, $cy - $py); $d2 = hypot($nx - $cx, $ny - $cy);
+        if ($d1 < 1 || $d2 < 1) continue;
+        $rr = min($r, $d1 / 2, $d2 / 2);
+        $ax = $cx + ($px - $cx) / $d1 * $rr; $ay = $cy + ($py - $cy) / $d1 * $rr;
+        $bx = $cx + ($nx - $cx) / $d2 * $rr; $by = $cy + ($ny - $cy) / $d2 * $rr;
+        $d .= ' L' . round($ax, 1) . ' ' . round($ay, 1)
+            . ' Q' . round($cx, 1) . ' ' . round($cy, 1) . ' ' . round($bx, 1) . ' ' . round($by, 1);
+    }
+    $last = end($pts);
+    return $d . ' L' . round($last[0], 1) . ' ' . round($last[1], 1);
+}
+
+$GARIS = []; $LABEL = [];
+
+/** Garis penghubung + label cabangnya. $lp menentukan letak label bila perlu. */
+function P(array $titik, string $label = '', string $warna = '#94A3B8', bool $putus = false, ?array $lp = null): void
+{
+    global $GARIS, $LABEL;
+    $m = PANAH[$warna] ?? 'p0';
+    $GARIS[] = '<path d="' . _rute($titik) . '" fill="none" stroke="' . $warna . '" stroke-width="2.2"'
+        . ($putus ? ' stroke-dasharray="7 6"' : '') . ' marker-end="url(#' . $m . ')"/>';
+    if ($label === '') return;
+    if ($lp === null) {
+        [$x1, $y1] = $titik[0]; [$x2, $y2] = $titik[1];
+        $lp = [($x1 + $x2) / 2, ($y1 + $y2) / 2];
+        if (abs($x2 - $x1) < 1) $lp[0] += 34; else $lp[1] -= 15;
+    }
+    $LABEL[] = '<span class="lb" style="left:' . round($lp[0]) . 'px;top:' . round($lp[1]) . 'px;'
+        . 'color:' . $warna . ';border-color:' . $warna . '33">' . $label . '</span>';
+}
+
+/** Bungkus satu bagan: SVG (bentuk + garis) dan HTML (teks) pada koordinat sama. */
+function bagan(float $tinggi): string
+{
+    global $SIMPUL, $GARIS, $LABEL;
     $def = '';
     foreach (PANAH as $w => $id) {
-        $def .= '<marker id="' . $id . '" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="4.6"'
-              . ' markerHeight="4.6" orient="auto-start-reverse"><path d="M0,1.2 L9,5 L0,8.8 z" fill="' . $w . '"/></marker>';
+        $def .= '<marker id="' . $id . '" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5"'
+              . ' markerHeight="6.5" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="' . $w . '"/></marker>';
     }
-    $s = '<svg class="bagan" viewBox="0 0 268 ' . $tinggi . '" preserveAspectRatio="xMidYMin meet"><defs>'
-       . $def . '</defs>';
-    foreach ($garis as $g) $s .= $g;
-    foreach ($SIMPUL as $n) $s .= gambarSimpul($n);
-    $SIMPUL = [];
-    return $s . '</svg>';
+    $svg = '<svg viewBox="0 0 ' . LEBAR . ' ' . $tinggi . '" width="' . LEBAR . '" height="' . $tinggi . '"><defs>'
+         . $def . '</defs>';
+    foreach ($GARIS as $g) $svg .= $g;
+    foreach ($SIMPUL as $n) $svg .= svgSimpul($n);
+    $svg .= '</svg>';
+
+    $teks = '';
+    foreach ($SIMPUL as $n) $teks .= htmlSimpul($n);
+    foreach ($LABEL as $l) $teks .= $l;
+
+    $SIMPUL = []; $GARIS = []; $LABEL = [];
+    return '<div class="bagan" style="height:' . round($tinggi) . 'px">' . $svg . $teks . '</div>';
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  Isi bagan
+// ═══════════════════════════════════════════════════════════════════════════
+$bab = [];
+
+/* ── 1. Ringkasan: tulang punggung bersama ──────────────────────────────── */
+$y = 0;
+S('m',  L1 + 60, $y, WN - 120, 'ujung', 'ujung', 'MULAI', '');              $y = BW('m') + 54;
+S('tm', L1,      $y, WN, 'tanya',  'tanya',   'Modul yang mana?', '');      $y = BW('tm') + 70;
+S('ex', L1,      $y, WN, 'proses', 'sales',   'EXHIBITION &rarr; dokumen SKP',
+    'Wajib lewat Surat Penawaran. SKP baru hanya lahir dari penawaran yang sudah diteken client.');
+S('gd', L2,      $y, WN, 'proses', 'sales',   'GUDANG &rarr; SKS &nbsp;&middot;&nbsp; MEDIA &rarr; FU',
+    'Boleh langsung dibuat tanpa Surat Penawaran.');
+$y = max(BW('ex'), BW('gd')) + 64;
+S('aj', L1,      $y, WN, 'proses', 'sales',   'Sales mengajukan dokumen', 'Status berubah jadi Menunggu Approval.'); $y = BW('aj') + 56;
+S('p1', L1,      $y, WN, 'tanya',  'asst',    'Diparaf ' . $lbl1 . '?', $org1 ?: '');  $y = BW('p1') + 56;
+S('p2', L1,      $y, WN, 'tanya',  'manager', 'Disetujui ' . $lbl2 . '?', $org2 ?: ''); $y = BW('p2') + 56;
+S('bl', L2,      $SIMPUL['p1']['y'] + 30, WN, 'proses', 'stop', 'Dikembalikan ke sales',
+    'Dokumen diperbaiki lalu diajukan ulang. Alokasi income dilepas selama itu.');
+S('no', L1,      $y, WN, 'hasil',  'hasil',   'NOMOR DOKUMEN TERBIT',
+    'Transaksi lahir di sini, isinya dibekukan. Bukan saat dokumen dibuat, bukan pula saat diparaf.'); $y = BW('no') + 56;
+S('tt', L1,      $y, WN, 'tanya',  'client',  'Client menandatangani?', 'Tautan berlaku 30 hari'); $y = BW('tt') + 56;
+S('ic', L1,      $y, WN, 'hasil',  'hasil',   'INCOME MASUK LAPORAN',
+    'Dashboard, Laporan PIC, dan Achievement' . ($ttdTgl ? ' — untuk kesepakatan sejak ' . $ttdTgl : '') . '.');
+S('wt', L2,      $SIMPUL['tt']['y'] + 10, WN, 'proses', 'sistem', 'Menunggu di daftar "Perlu TTD"',
+    'Nilainya belum terhitung di laporan mana pun.');
+$tinggi = BW('ic') + 30;
+
+P([T('m', 'bawah'), T('tm', 'atas')]);
+P([T('tm', 'bawah'), T('ex', 'atas')], 'Exhibition', '#0D9488');
+P([T('tm', 'kanan'), [L2 - 44, $SIMPUL['tm']['y'] + $SIMPUL['tm']['h'] / 2], [L2 - 44, $SIMPUL['gd']['y'] + 42], T('gd', 'kiri')], 'Gudang / Media', '#0D9488');
+P([T('ex', 'bawah'), T('aj', 'atas')]);
+P([T('gd', 'bawah'), [L2 + WN / 2, BW('gd') + 34], [L1 + WN / 2, BW('gd') + 34], T('aj', 'atas')]);
+P([T('aj', 'bawah'), T('p1', 'atas')]);
+P([T('p1', 'bawah'), T('p2', 'atas')], 'Ya', '#0D9488');
+P([T('p1', 'kanan'), T('bl', 'kiri')], 'Tidak', '#DC2626');
+P([T('p2', 'kanan'), [L2 - 26, $SIMPUL['p2']['y'] + $SIMPUL['p2']['h'] / 2], [L2 - 26, BW('bl') - 20], [L2, BW('bl') - 20]], 'Tidak', '#DC2626');
+P([T('p2', 'bawah'), T('no', 'atas')], 'Ya', '#0D9488');
+P([T('no', 'bawah'), T('tt', 'atas')]);
+P([T('tt', 'bawah'), T('ic', 'atas')], 'Ya', '#0D9488');
+P([T('tt', 'kanan'), T('wt', 'kiri')], 'Belum', '#B45309');
+P([T('bl', 'atas'), [L2 + WN / 2, $SIMPUL['aj']['y'] - 34], [L1 + WN + 46, $SIMPUL['aj']['y'] - 34], [L1 + WN + 46, $SIMPUL['aj']['y'] + $SIMPUL['aj']['h'] / 2], T('aj', 'kanan')], 'diajukan ulang', '#94A3B8', true, [L1 + WN + 120, $SIMPUL['aj']['y'] - 34]);
+$bab['ringkas'] = bagan($tinggi);
+
+/* ── 2. Exhibition ──────────────────────────────────────────────────────── */
+$y = 0;
+S('e1', L1 + 60, $y, WN - 120, 'ujung', 'ujung', 'MULAI', '');                       $y = BW('e1') + 50;
+S('e2', L1, $y, WN, 'tanya', 'tanya', 'Client &amp; unit sudah ada di Master Data?', '');
+S('e2b', L2, $y + 12, WN, 'proses', 'sales', 'Daftarkan dulu',
+    '<b>Master Data &rarr; Client</b> (perusahaan, merek, alamat, NPWP, dan minimal satu kontak PJ) serta <b>Master Exhibition</b> (kode unit, lantai, luas, tarif per hari/m&sup2;).');
+$y = max(BW('e2'), BW('e2b')) + 50;
+S('e3', L1, $y, WN, 'proses', 'sales', 'Buat Surat Penawaran',
+    'Pilih client, kontak PJ, unit, periode, harga, diskon, DP &amp; deposit.');      $y = BW('e3') + 42;
+S('e4', L1, $y, WN, 'proses', 'sistem', 'Nomor penawaran terbit otomatis',
+    'Keluar begitu disimpan. Status awal <b>Draft</b>.');                            $y = BW('e4') + 42;
+S('e5', L1, $y, WN, 'proses', 'sales', 'Periksa lalu kirim ke client',
+    'Buka <b>Lihat Contoh Surat</b> dulu untuk memastikan isinya, baru cetak PDF dan kirim. Ubah status jadi <b>Terkirim</b>, lalu <b>Nego</b> bila ada tawar-menawar.'); $y = BW('e5') + 50;
+S('e6', L1, $y, WN, 'tanya', 'tanya', 'Client setuju dengan penawarannya?', '');
+S('e6b', L2, $y + 12, WN, 'proses', 'stop', 'Tutup penawaran',
+    'Wajib mengisi alasannya. Alasan itulah yang dipakai menganalisa kenapa deal lepas.');
+S('e6c', L2 + 60, BW('e6b') + 36, WN - 120, 'ujung', 'ujung', 'SELESAI — tidak jadi', '');
+$y = max(BW('e6'), BW('e6c')) + 50;
+S('e7', L1, $y, WN, 'proses', 'client', 'Client menandatangani penawaran',
+    'Lewat tautan tanda tangan online, <b>atau</b> unggah surat penawaran yang sudah diteken basah.'); $y = BW('e7') + 42;
+S('e8', L1, $y, WN, 'hasil', 'hasil', 'STATUS DEAL',
+    'Nilainya dikunci — penawaran tidak bisa diubah lagi.');                         $y = BW('e8') + 42;
+S('e9', L1, $y, WN, 'proses', 'sales', 'Buat SKP dari penawaran',
+    'Tombol <b>&rarr; Buat SKP (Konfirmasi)</b> di halaman penawaran. Lengkapi penanggung jawab, KTP/NPWP/SIUP, lampiran berkas, dan <b>Pembagian PIC</b> bila deal ini dikerjakan lebih dari satu orang.');
+S('e9n', L3, $y + 20, WC, 'catatan', 'sistem', 'Syaratnya satu',
+    'Penawarannya harus sudah ditandatangani client. Kalau belum, tombolnya menolak.');
+$y = BW('e9') + 42;
+S('e10', L1, $y, WN, 'proses', 'sales', 'Ajukan', 'Status berubah jadi <b>Menunggu Approval</b> dan dokumen masuk antrean pemeriksa.'); $y = BW('e10') + 50;
+S('e11', L1, $y, WN, 'tanya', 'asst', 'Diparaf ' . $lbl1 . '?', $org1 ?: '');
+S('e11b', L2, $y + 12, WN, 'proses', 'stop', 'Dikembalikan ke sales',
+    '<b>Kembalikan satu tahap</b> bila yang kurang cuma ketelitian tahap di bawahnya, atau <b>Tolak ke PIC</b> bila isinya memang salah.');
+$y = max(BW('e11'), BW('e11b')) + 50;
+S('e12', L1, $y, WN, 'tanya', 'manager', 'Disetujui ' . $lbl2 . '?', $org2 ?: ''); $y = BW('e12') + 50;
+S('e13', L1, $y, WN, 'hasil', 'hasil', 'NOMOR SKP TERBIT &middot; TRANSAKSI LAHIR',
+    'Isinya dibekukan di sini, jadi cetakan ulangnya tidak pernah berubah.');       $y = BW('e13') + 42;
+S('e14', L1, $y, WN, 'proses', 'sales', 'Kirim tautan tanda tangan ke client',
+    'Tersedia tombol WhatsApp di halaman SKP. <b>Tautannya berlaku 30 hari.</b>');  $y = BW('e14') + 50;
+S('e15', L1, $y, WN, 'tanya', 'client', 'Client meneken dalam 30 hari?', '');
+S('e15b', L2, $y + 12, WN, 'proses', 'asst', 'Ajukan revisi',
+    'Diputus ' . $lbl1 . '. Tautan baru terbit, nomornya tetap sama — hanya naik versi.');
+$y = max(BW('e15'), BW('e15b')) + 50;
+S('e16', L1, $y, WN, 'hasil', 'hasil', 'INCOME MASUK LAPORAN',
+    'Alokasi bulanan terbentuk. Baru pada titik ini nilainya muncul di Dashboard, Laporan PIC, dan Achievement.'); $y = BW('e16') + 50;
+S('e17', L1, $y, WN, 'tanya', 'tanya', 'Perlu kontrak dari Legal?', '');
+S('e17b', L2, $y + 12, WN, 'proses', 'legal', 'Ajukan Kontrak ke Legal',
+    'Berkas tidak bisa dikirim sebelum <b>bukti transfer</b> diunggah.');
+$y = max(BW('e17'), BW('e17b')) + 50;
+S('e18', L1 + 60, $y, WN - 120, 'ujung', 'ujung', 'SELESAI', '');
+$tinggi = BW('e18') + 30;
+
+P([T('e1', 'bawah'), T('e2', 'atas')]);
+P([T('e2', 'kanan'), T('e2b', 'kiri')], 'Belum', '#B45309');
+P([T('e2b', 'bawah'), [L2 + WN / 2, BW('e2b') + 26], [L1 + WN / 2, BW('e2b') + 26], T('e3', 'atas')]);
+P([T('e2', 'bawah'), T('e3', 'atas')], 'Sudah', '#0D9488');
+P([T('e3', 'bawah'), T('e4', 'atas')]);
+P([T('e4', 'bawah'), T('e5', 'atas')]);
+P([T('e5', 'bawah'), T('e6', 'atas')]);
+P([T('e6', 'kanan'), T('e6b', 'kiri')], 'Tidak', '#DC2626');
+P([T('e6b', 'bawah'), T('e6c', 'atas')], '', '#DC2626');
+P([T('e6', 'bawah'), T('e7', 'atas')], 'Ya', '#0D9488');
+P([T('e7', 'bawah'), T('e8', 'atas')]);
+P([T('e8', 'bawah'), T('e9', 'atas')]);
+P([T('e9', 'kanan'), T('e9n', 'kiri')], '', '#94A3B8', true);
+P([T('e9', 'bawah'), T('e10', 'atas')]);
+P([T('e10', 'bawah'), T('e11', 'atas')]);
+P([T('e11', 'kanan'), T('e11b', 'kiri')], 'Tidak', '#DC2626');
+P([T('e11', 'bawah'), T('e12', 'atas')], 'Ya', '#0D9488');
+P([T('e12', 'kanan'), [L2 - 26, $SIMPUL['e12']['y'] + $SIMPUL['e12']['h'] / 2], [L2 - 26, BW('e11b') - 24], [L2, BW('e11b') - 24]], 'Tidak', '#DC2626');
+P([T('e11b', 'kanan'), [L2 + WN + 34, $SIMPUL['e11b']['y'] + $SIMPUL['e11b']['h'] / 2], [L2 + WN + 34, $SIMPUL['e9']['y'] + 30], T('e9', 'kanan')], 'perbaiki, ajukan ulang', '#94A3B8', true, [L2 + WN + 34, $SIMPUL['e11']['y'] - 34]);
+P([T('e12', 'bawah'), T('e13', 'atas')], 'Ya', '#0D9488');
+P([T('e13', 'bawah'), T('e14', 'atas')]);
+P([T('e14', 'bawah'), T('e15', 'atas')]);
+P([T('e15', 'kanan'), T('e15b', 'kiri')], 'Lewat 30 hari', '#B45309');
+P([T('e15b', 'kanan'), [L2 + WN + 34, $SIMPUL['e15b']['y'] + $SIMPUL['e15b']['h'] / 2], [L2 + WN + 34, $SIMPUL['e14']['y'] + 28], T('e14', 'kanan')], 'kirim ulang', '#94A3B8', true, [L2 + WN + 34, $SIMPUL['e15']['y'] - 34]);
+P([T('e15', 'bawah'), T('e16', 'atas')], 'Ya', '#0D9488');
+P([T('e16', 'bawah'), T('e17', 'atas')]);
+P([T('e17', 'kanan'), T('e17b', 'kiri')], 'Ya', '#0D9488');
+P([T('e17b', 'bawah'), [L2 + WN / 2, BW('e17b') + 26], [L1 + WN / 2, BW('e17b') + 26], T('e18', 'atas')]);
+P([T('e17', 'bawah'), T('e18', 'atas')], 'Tidak');
+$bab['exhibition'] = bagan($tinggi);
+
+/* ── 3. Gudang & Media ──────────────────────────────────────────────────── */
+$y = 0;
+S('g1', L1 + 60, $y, WN - 120, 'ujung', 'ujung', 'MULAI', '');                   $y = BW('g1') + 50;
+S('g2', L1, $y, WN, 'tanya', 'tanya', 'Client &amp; unit sudah ada di Master Data?', '');
+S('g2b', L2, $y + 12, WN, 'proses', 'sales', 'Daftarkan dulu',
+    '<b>Master Client</b>, lalu <b>Master Gudang</b> (kode, lokasi, luas, tarif per m&sup2;/bulan) atau <b>Master Media</b> (kode, jenis, titik, ukuran, slot per hari, tarif).');
+$y = max(BW('g2'), BW('g2b')) + 50;
+S('g3', L1, $y, WN, 'tanya', 'tanya', 'Client minta penawaran resmi dulu?', '');
+S('g3b', L2, $y + 12, WN, 'proses', 'sales', 'PINTU B &middot; lewat Surat Penawaran',
+    'Buat penawaran dengan modul Gudang/Media, client menandatangani, lalu tekan <b>Buat SKS/Form</b> dari halaman penawaran.');
+S('g3c', L2, BW('g3b') + 32, WN, 'proses', 'sales', 'PINTU C &middot; dari transaksi lama',
+    'Menu <b>&uarr; Dari transaksi yang sudah ada</b> &rarr; pilih barisnya. Untuk transaksi yang dokumennya belum pernah dibuat.');
+S('g3n', L3, BW('g3b') + 52, WC, 'catatan', 'sistem', 'Satu transaksi, satu dokumen',
+    'Yang sudah punya akan membuka dokumen itu, bukan membuat yang kedua.');
+$y = max(BW('g3'), BW('g3c')) + 50;
+S('g4', L1, $y, WN, 'proses', 'sales', 'PINTU A &middot; buat dokumen langsung',
+    'Menu <b>SKP Pameran</b> &rarr; tombol <b>SKS Gudang</b> atau <b>Form Utilities</b>. Seluruh isian diketik di formulir itu. Cara yang paling sering dipakai.'); $y = BW('g4') + 50;
+S('g5', L1, $y, WN, 'proses', 'sales', 'Lengkapi lalu ajukan',
+    'Client, kontak PJ, kode unit, periode, luas, tarif, biaya listrik, deposit, dan lampiran. Periksa dulu dengan <b>Lihat Contoh Surat</b>.'); $y = BW('g5') + 50;
+S('g6', L1, $y, WN, 'tanya', 'asst', 'Diparaf ' . ($tahap['sks'][1]['label'] ?? $lbl1) . '?', (string) ($tahap['sks'][1]['orang'] ?? $org1));
+S('g6b', L2, $y + 12, WN, 'proses', 'stop', 'Dikembalikan ke sales', 'Diperbaiki lalu diajukan ulang — lihat bagian Koreksi.');
+$y = max(BW('g6'), BW('g6b')) + 50;
+S('g7', L1, $y, WN, 'tanya', 'manager', 'Disetujui ' . ($tahap['sks'][2]['label'] ?? $lbl2) . '?', (string) ($tahap['sks'][2]['orang'] ?? $org2)); $y = BW('g7') + 50;
+S('g8', L1, $y, WN, 'hasil', 'hasil', 'NOMOR SKS / FU TERBIT',
+    'Transaksinya lahir di sini juga — pada Pintu A memang belum ada sebelumnya.'); $y = BW('g8') + 42;
+S('g9', L1, $y, WN, 'proses', 'sales', 'Kirim tautan tanda tangan', 'Berlaku 30 hari sejak dokumen disetujui.'); $y = BW('g9') + 50;
+S('g10', L1, $y, WN, 'tanya', 'client', 'Client meneken?', '');
+S('g10b', L2, $y + 12, WN, 'proses', 'sistem', 'Menunggu di daftar "Perlu TTD"', 'Nilainya belum terhitung.');
+$y = max(BW('g10'), BW('g10b')) + 50;
+S('g11', L1, $y, WN, 'hasil', 'hasil', 'INCOME MASUK LAPORAN',
+    'Sewa berbulan-bulan dipecah per bulan secara otomatis, jadi tiap bulan kebagian porsinya.');
+$tinggi = BW('g11') + 30;
+
+P([T('g1', 'bawah'), T('g2', 'atas')]);
+P([T('g2', 'kanan'), T('g2b', 'kiri')], 'Belum', '#B45309');
+P([T('g2b', 'bawah'), [L2 + WN / 2, BW('g2b') + 26], [L1 + WN / 2, BW('g2b') + 26], T('g3', 'atas')]);
+P([T('g2', 'bawah'), T('g3', 'atas')], 'Sudah', '#0D9488');
+P([T('g3', 'kanan'), T('g3b', 'kiri')], 'Ya', '#0D9488');
+P([T('g3b', 'bawah'), T('g3c', 'atas')], 'atau', '#94A3B8', true);
+P([T('g3c', 'kanan'), T('g3n', 'kiri')], '', '#94A3B8', true);
+P([T('g3', 'bawah'), T('g4', 'atas')], 'Tidak');
+P([T('g3c', 'bawah'), [L2 + WN / 2, BW('g3c') + 30], [L1 + WN / 2 + 90, BW('g3c') + 30], [L1 + WN / 2 + 90, $SIMPUL['g5']['y'] - 22], T('g5', 'atas')]);
+P([T('g4', 'bawah'), T('g5', 'atas')]);
+P([T('g5', 'bawah'), T('g6', 'atas')]);
+P([T('g6', 'kanan'), T('g6b', 'kiri')], 'Tidak', '#DC2626');
+P([T('g6', 'bawah'), T('g7', 'atas')], 'Ya', '#0D9488');
+P([T('g7', 'kanan'), [L2 - 26, $SIMPUL['g7']['y'] + $SIMPUL['g7']['h'] / 2], [L2 - 26, BW('g6b') - 24], [L2, BW('g6b') - 24]], 'Tidak', '#DC2626');
+P([T('g6b', 'kanan'), [L2 + WN + 34, $SIMPUL['g6b']['y'] + $SIMPUL['g6b']['h'] / 2], [L2 + WN + 34, $SIMPUL['g5']['y'] + 26], T('g5', 'kanan')], 'ajukan ulang', '#94A3B8', true, [L2 + WN + 34, $SIMPUL['g6']['y'] - 34]);
+P([T('g7', 'bawah'), T('g8', 'atas')], 'Ya', '#0D9488');
+P([T('g8', 'bawah'), T('g9', 'atas')]);
+P([T('g9', 'bawah'), T('g10', 'atas')]);
+P([T('g10', 'kanan'), T('g10b', 'kiri')], 'Belum', '#B45309');
+P([T('g10', 'bawah'), T('g11', 'atas')], 'Ya', '#0D9488');
+$bab['gudang'] = bagan($tinggi);
+
+/* ── 4. Perpanjangan & kasus data ───────────────────────────────────────── */
+$y = 0;
+S('r0', L1 + 60, $y, WN - 120, 'ujung', 'ujung', 'KONTRAK HAMPIR HABIS', '');    $y = BW('r0') + 46;
+S('r1', L1, $y, WN, 'proses', 'sales', 'Buka Papan Renewal',
+    'Isinya kontrak yang berakhir dalam <b>30 hari</b> ke depan atau baru lewat <b>7 hari</b>. Yang tersisa &le;15 hari ditandai merah.'); $y = BW('r1') + 42;
+S('r2', L1, $y, WN, 'proses', 'sales', 'Catat status pendekatan',
+    'Belum dihubungi &rarr; sedang nego &rarr; dan seterusnya, supaya tidak ada yang terlewat.'); $y = BW('r2') + 50;
+S('r3', L1, $y, WN, 'tanya', 'tanya', 'Client mau perpanjang?', '');
+S('r3b', L2, $y + 12, WN, 'proses', 'sistem', 'Tandai saja di papan', 'Kontraknya tetap tercatat sebagai tidak diperpanjang.');
+$y = max(BW('r3'), BW('r3b')) + 50;
+S('r4', L1, $y, WN, 'proses', 'sales', 'Tekan + Perpanjang',
+    'Terbuka <b>Surat Penawaran baru</b> yang sudah terisi data kontrak lama. Lanjutkan seperti jalur baku.');
+S('r4n', L2, $y + 12, WN, 'catatan', 'sales', 'Jalan pintas tanpa penawaran',
+    'Dari daftar <b>Transaksi</b>, tombol <b>Perpanjang</b> pada baris kontraknya. Status Sewa di dokumennya otomatis terisi "Perpanjangan".');
+$y = max(BW('r4'), BW('r4n')) + 80;
+
+S('c0', L1 + 60, $y, WN - 120, 'ujung', 'ujung', 'SATU DEAL, BEBERAPA PIC', ''); $y = BW('c0') + 46;
+S('c1', L1, $y, WN, 'tanya', 'tanya', 'Satu acara dikerjakan beberapa PIC?', '');
+S('c1b', L2, $y + 12, WN, 'proses', 'sales', 'Jalur biasa', 'Satu PIC, satu dokumen — tidak ada yang perlu dibagi.');
+$y = max(BW('c1'), BW('c1b')) + 50;
+S('c2', L1, $y, WN, 'proses', 'stop', 'Jangan buat transaksi sendiri-sendiri',
+    'Nilainya akan terhitung berkali-kali di Dashboard, Laporan PIC, dan Achievement.'); $y = BW('c2') + 42;
+S('c3', L1, $y, WN, 'proses', 'sales', 'Buat SATU dokumen, lalu isi Pembagian PIC',
+    'Nilai kontraknya dibagi sesuai porsi masing-masing, bukan digandakan.');
+S('c3n', L2, $y + 12, WN, 'catatan', 'sistem', 'Kalau tetap dicoba',
+    'Sejak 23 Oktober 2026 sistem menolak transaksi yang unit, client, dan periodenya sama persis — lengkap dengan nomor transaksi yang sudah ada.');
+$y = max(BW('c3'), BW('c3n')) + 42;
+S('c4', L1, $y, WN, 'catatan', 'sales', 'Beberapa unit untuk satu acara',
+    'Nyalakan <b>paket</b> di penawaran lalu tambahkan komponennya. Satu dokumen memayungi semuanya; saat disetujui, lahir satu transaksi per komponen.');
+$tinggi = BW('c4') + 30;
+
+P([T('r0', 'bawah'), T('r1', 'atas')]);
+P([T('r1', 'bawah'), T('r2', 'atas')]);
+P([T('r2', 'bawah'), T('r3', 'atas')]);
+P([T('r3', 'kanan'), T('r3b', 'kiri')], 'Tidak', '#94A3B8');
+P([T('r3', 'bawah'), T('r4', 'atas')], 'Ya', '#0D9488');
+P([T('r4', 'kanan'), T('r4n', 'kiri')], 'atau', '#94A3B8', true);
+P([T('c0', 'bawah'), T('c1', 'atas')]);
+P([T('c1', 'kanan'), T('c1b', 'kiri')], 'Tidak', '#94A3B8');
+P([T('c1', 'bawah'), T('c2', 'atas')], 'Ya', '#DC2626');
+P([T('c2', 'bawah'), T('c3', 'atas')]);
+P([T('c3', 'kanan'), T('c3n', 'kiri')], '', '#94A3B8', true);
+P([T('c3', 'bawah'), T('c4', 'atas')], '', '#94A3B8', true);
+$bab['perpanjangan'] = bagan($tinggi);
+
+/* ── 5. Koreksi ─────────────────────────────────────────────────────────── */
+$y = 0;
+S('k0', L1 + 60, $y, WN - 120, 'ujung', 'ujung', 'ADA YANG SALAH DI DOKUMEN', ''); $y = BW('k0') + 50;
+S('k1', L1, $y, WN, 'tanya', 'tanya', 'Sudah diajukan?', '');
+S('k1b', L2, $y + 12, WN, 'proses', 'sales', 'Masih draft — perbaiki langsung',
+    'Buka, ubah isinya, simpan. Tidak perlu izin siapa pun. Mau dibuang pun boleh: nomornya belum terbit, jadi tidak ada urutan yang bolong.');
+$y = max(BW('k1'), BW('k1b')) + 50;
+S('k2', L1, $y, WN, 'tanya', 'tanya', 'Sudah disetujui ' . $lbl2 . '?', '');
+S('k2b', L2, $y + 12, WN, 'proses', 'asst', 'Masih menunggu approval',
+    'Pemeriksa punya dua pilihan: <b>Kembalikan satu tahap</b> (nilai &amp; transaksinya tidak diubah), atau <b>Tolak ke PIC</b> (hanya PIC yang bisa memperbaiki, lalu mengajukan ulang dari awal).');
+S('k2n', L3, $y + 32, WC, 'catatan', 'sistem', 'Yang ikut terjadi',
+    'Alokasi income dilepas supaya berhenti terhitung selama diperbaiki. Transaksinya sengaja tidak dihapus.');
+$y = max(BW('k2'), BW('k2b')) + 50;
+S('k3', L1, $y, WN, 'tanya', 'tanya', 'Client sudah meneken?', '');
+S('k3b', L2, $y + 12, WN, 'proses', 'sales', 'Sudah disetujui, belum diteken',
+    'Ajukan <b>permintaan revisi</b> beserta alasannya, lalu diputus ' . $lbl1 . '. Nomornya tetap sama — hanya naik versi.');
+$y = max(BW('k3'), BW('k3b')) + 50;
+S('k4', L1, $y, WN, 'tanya', 'tanya', 'Datanya memang harus hilang?', '');
+S('k4b', L2, $y + 12, WN, 'proses', 'stop', 'Sudah diteken — terkunci',
+    'Tidak bisa direvisi lagi. Kalau isinya memang berubah, <b>terbitkan dokumen baru</b>. Kalau kontraknya batal jalan, pakai <b>Batalkan Kesepakatan</b>.');
+$y = max(BW('k4'), BW('k4b')) + 50;
+S('k5', L1, $y, WN, 'proses', 'sales', 'Ajukan Hapus Data',
+    'Sertakan alasan yang jelas — alasan itu yang dibaca pemutus.');                 $y = BW('k5') + 50;
+S('k6', L1, $y, WN, 'tanya', 'manager', 'Disetujui pemutus?', '');
+S('k6b', L2, $y + 12, WN, 'proses', 'stop', 'Ditolak — data tetap ada', 'Statusnya batal, alasan penolakannya ikut tercatat.');
+$y = max(BW('k6'), BW('k6b')) + 50;
+S('k7', L1, $y, WN, 'hasil', 'hasil', 'Pindah ke Data Terhapus',
+    'Bukan hilang — masih bisa dipulihkan bila ternyata keliru.');
+S('k7n', L2, $y + 12, WN, 'catatan', 'sistem', 'Semuanya tercatat',
+    'Siapa yang mengajukan, siapa yang memutus, kapan, dan alasannya tersimpan di jejak audit.');
+$tinggi = max(BW('k7'), BW('k7n')) + 30;
+
+P([T('k0', 'bawah'), T('k1', 'atas')]);
+P([T('k1', 'kanan'), T('k1b', 'kiri')], 'Belum', '#0D9488');
+P([T('k1', 'bawah'), T('k2', 'atas')], 'Sudah');
+P([T('k2', 'kanan'), T('k2b', 'kiri')], 'Belum', '#0D9488');
+P([T('k2b', 'kanan'), T('k2n', 'kiri')], '', '#94A3B8', true);
+P([T('k2', 'bawah'), T('k3', 'atas')], 'Sudah');
+P([T('k3', 'kanan'), T('k3b', 'kiri')], 'Belum', '#0D9488');
+P([T('k3', 'bawah'), T('k4', 'atas')], 'Sudah');
+P([T('k4', 'kanan'), T('k4b', 'kiri')], 'Tidak', '#0D9488');
+P([T('k4', 'bawah'), T('k5', 'atas')], 'Ya', '#DC2626');
+P([T('k5', 'bawah'), T('k6', 'atas')]);
+P([T('k6', 'kanan'), T('k6b', 'kiri')], 'Tidak', '#DC2626');
+P([T('k6', 'bawah'), T('k7', 'atas')], 'Ya', '#0D9488');
+P([T('k7', 'kanan'), T('k7n', 'kiri')], '', '#94A3B8', true);
+$bab['koreksi'] = bagan($tinggi);
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Halaman
+// ═══════════════════════════════════════════════════════════════════════════
 $CSS = <<<'CSS'
 *{box-sizing:border-box;margin:0;padding:0}
-@page{size:A4 landscape;margin:0}
-html,body{background:#fff}
-body{font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;
-     color:#1F2937;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-@media screen{body{background:#E2E8F0}.lembar{box-shadow:0 2mm 6mm rgba(15,23,42,.18)}}
-.lembar{position:relative;width:297mm;height:210mm;background:#fff;overflow:hidden;
-        page-break-after:always;margin:0 auto 6mm}
-.lembar:last-child{page-break-after:auto}
-@media print{.lembar{margin:0}}
-.kop{position:absolute;top:0;left:0;right:0;height:19mm;display:flex;
-     justify-content:space-between;align-items:flex-start}
-.kop img{height:19mm;display:block}
-.kop .tengah{height:19mm;display:flex;align-items:center}
-.kop .tengah img{height:14mm}
-.kaki{position:absolute;bottom:0;left:0;right:0;height:20mm;display:flex;
-      justify-content:space-between;align-items:flex-end}
-.kaki img{display:block;height:20mm}
-.isi{position:absolute;top:18mm;left:14.5mm;right:14.5mm;bottom:20mm;display:flex;flex-direction:column}
-h1{font-size:14pt;letter-spacing:-.2pt;margin-bottom:.5mm}
-h1 small{font-weight:400;font-size:9.6pt;color:#64748B;letter-spacing:0}
-.sub{font-size:8.4pt;color:#64748B;margin-bottom:1.6mm;line-height:1.4}
-.bagan{width:100%;flex:1;min-height:0}
-.legenda{display:flex;gap:4.6mm;flex-wrap:wrap;font-size:7.6pt;color:#475569;
-         margin-top:1.2mm;padding-top:1.5mm;border-top:1px solid #F1F5F9}
-.legenda span{display:flex;align-items:center;gap:1.3mm}
-.legenda i{width:3.4mm;height:3.4mm;border-radius:.8mm;display:inline-block;border:.35mm solid}
-.legenda i.d{border-radius:0;transform:rotate(45deg);width:2.8mm;height:2.8mm}
-.legenda i.s{border-radius:1.7mm}
-.nomor{position:absolute;right:14.5mm;bottom:21.4mm;font-size:7.6pt;color:#94A3B8}
-table.ref{width:100%;border-collapse:collapse;font-size:8.3pt}
-table.ref th{background:#F0FDF4;color:#0A7267;font-size:7.6pt;text-transform:uppercase;
-             letter-spacing:.03em;text-align:left;padding:1.8mm 2.4mm;border:.3mm solid #D1D5DB}
-table.ref td{padding:1.8mm 2.4mm;border:.3mm solid #E2E8F0;vertical-align:top;line-height:1.45}
-table.ref td.k{width:44mm;font-weight:700;color:#1F2937;background:#FCFDFE}
-.duakolom{display:grid;grid-template-columns:1fr 1fr;gap:5mm;flex:1;align-content:start}
+:root{
+  --tinta:#0F172A; --redup:#64748B; --garis:#E2E8F0; --latar:#F1F5F9;
+  --merek:#0D9488; --kartu:#FFFFFF;
+}
+html{scroll-behavior:smooth}
+body{font-family:"Inter","Segoe UI",-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;
+     background:var(--latar);color:var(--tinta);line-height:1.55;
+     -webkit-font-smoothing:antialiased}
+.bungkus{max-width:1360px;margin:0 auto;padding:0 28px}
+
+/* ── kepala ─────────────────────────────────────────────── */
+.kepala{background:linear-gradient(160deg,#0F766E 0%,#115E59 55%,#134E4A 100%);color:#fff;
+        padding:40px 0 34px}
+.kepala .logo{height:54px;background:#fff;border-radius:10px;padding:7px 14px;display:inline-block}
+.kepala h1{font-size:40px;font-weight:800;letter-spacing:-1.1px;margin:22px 0 10px;line-height:1.1}
+.kepala p{font-size:17px;color:#A7F3D0;max-width:760px}
+.kepala .cap{display:inline-block;margin-top:18px;font-size:13px;color:#CCFBF1;
+             background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);
+             padding:6px 14px;border-radius:999px}
+
+/* ── navigasi lengket ───────────────────────────────────── */
+.nav{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.92);
+     backdrop-filter:blur(10px);border-bottom:1px solid var(--garis)}
+.nav .bungkus{display:flex;gap:6px;overflow-x:auto;padding-top:10px;padding-bottom:10px}
+.nav a{flex:none;font-size:14px;font-weight:600;color:var(--redup);text-decoration:none;
+       padding:8px 16px;border-radius:999px;white-space:nowrap;transition:.15s}
+.nav a:hover{background:#F1F5F9;color:var(--tinta)}
+.nav a.utama{background:var(--merek);color:#fff}
+.nav a.utama:hover{background:#0F766E;color:#fff}
+
+/* ── bagian ─────────────────────────────────────────────── */
+section{padding:52px 0 8px;scroll-margin-top:66px}
+.judul{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:8px}
+.judul h2{font-size:28px;font-weight:800;letter-spacing:-.6px}
+.judul .no{font-size:13px;font-weight:700;color:var(--merek);background:#CCFBF1;
+           padding:4px 11px;border-radius:999px;letter-spacing:.4px}
+.lead{font-size:16px;color:var(--redup);max-width:900px;margin-bottom:26px}
+.lead b{color:var(--tinta)}
+
+.kartu{background:var(--kartu);border:1px solid var(--garis);border-radius:18px;
+       padding:26px 22px;box-shadow:0 1px 2px rgba(15,23,42,.04),0 10px 30px -18px rgba(15,23,42,.25);
+       overflow-x:auto}
+
+/* ── bagan ──────────────────────────────────────────────── */
+.bagan{position:relative;width:1240px;margin:0 auto}
+.bagan svg{position:absolute;inset:0;display:block}
+.bagan .tx{position:absolute;display:flex;flex-direction:column;align-items:center;
+           justify-content:center;text-align:center;pointer-events:none}
+.bagan .tx b{font-size:16px;font-weight:700;line-height:1.3;letter-spacing:-.2px}
+.bagan .tx i{font-style:normal;font-size:13px;color:#475569;line-height:1.5;margin-top:7px}
+.bagan .tx i b{font-size:13px;color:#1E293B}
+.bagan .lb{position:absolute;transform:translate(-50%,-50%);font-size:12px;font-weight:700;
+           background:#fff;border:1.5px solid;border-radius:999px;padding:3px 11px;
+           white-space:nowrap;letter-spacing:.2px}
+
+/* ── tabel rujukan ──────────────────────────────────────── */
+.dua{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:14.5px}
+caption{text-align:left;font-size:15px;font-weight:800;padding:0 0 12px;color:var(--merek)}
+th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--garis);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.k{width:38%;font-weight:700;color:var(--tinta)}
+td.v{color:#475569}
+
+/* ── legenda ────────────────────────────────────────────── */
+.legenda{display:flex;flex-wrap:wrap;gap:10px 26px;font-size:13.5px;color:#475569;
+         background:#fff;border:1px solid var(--garis);border-radius:14px;padding:16px 20px;
+         margin-bottom:26px}
+.legenda .baris2{flex-basis:100%;border-top:1px solid var(--garis);padding-top:12px;
+                 margin-top:2px;flex-wrap:wrap;gap:8px 16px}
+.legenda span{display:flex;align-items:center;gap:9px}
+.legenda .f{width:22px;height:15px;border-radius:4px;border:2px solid;flex:none}
+.legenda .f.d{width:16px;height:16px;border-radius:2px;transform:rotate(45deg)}
+.legenda .f.u{border-radius:999px}
+.legenda .p{width:14px;height:14px;border-radius:4px;flex:none}
+
+/* ── kaki ───────────────────────────────────────────────── */
+.kaki{margin-top:56px;padding:30px 0 44px;border-top:1px solid var(--garis);
+      font-size:13.5px;color:var(--redup)}
+.kaki img{width:230px;height:auto;display:block;margin-bottom:14px;mix-blend-mode:multiply}
+
+@media (max-width:980px){
+  .dua{grid-template-columns:1fr}
+  .kepala h1{font-size:30px}
+  .bungkus{padding:0 16px}
+}
 CSS;
 
-$lembar = [];
+$nav = [
+    'ringkas'      => ['01', 'Ringkasan'],
+    'exhibition'   => ['02', 'Exhibition'],
+    'gudang'       => ['03', 'Gudang &amp; Media'],
+    'perpanjangan' => ['04', 'Perpanjangan &amp; PIC'],
+    'koreksi'      => ['05', 'Koreksi &amp; hapus'],
+    'rujukan'      => ['06', 'Rujukan isian'],
+];
 
-/* ═══ Lembar 1 — tulang punggung bersama ════════════════════════════════ */
+$lead = [
+    'ringkas' => 'Apa pun modulnya, begitu dokumen diajukan jalurnya <b>sama persis</b>: diparaf, disetujui, '
+        . 'ditandatangani client, baru masuk laporan. Yang membedakan ketiga modul hanya pintu masuknya.',
+    'exhibition' => 'Jalur baku untuk sewa unit pameran. Dokumennya <b>SKP</b>. '
+        . 'Ikuti garis di lajur kiri dari atas ke bawah; yang melebar ke kanan adalah cabang kalau jawabannya tidak.',
+    'gudang' => 'Dokumennya <b>SKS</b> (Gudang) dan <b>FU</b> (Media). Berbeda dari Exhibition, keduanya '
+        . '<b>tidak wajib lewat Surat Penawaran</b> — ada tiga pintu masuk yang bertemu di satu titik.',
+    'perpanjangan' => 'Dua keadaan yang paling sering bikin bingung: kontrak yang hampir habis, dan satu acara '
+        . 'yang dijual beberapa PIC bersama.',
+    'koreksi' => 'Yang masih bisa dilakukan berbeda-beda menurut sejauh mana dokumennya sudah berjalan. '
+        . 'Turuti rantai pertanyaan di lajur kiri.',
+    'rujukan' => 'Dua hal ini bukan alur, melainkan pilihan di dalam formulir — dikumpulkan di sini supaya '
+        . 'bagannya tetap ringkas.',
+];
+
 ob_start(); ?>
-<h1>Alur Kerja CLARA <small>&mdash; tulang punggung yang dipakai ketiga modul</small></h1>
-<div class="sub">Apa pun modulnya, sesudah dokumen diajukan jalurnya sama persis. Yang berbeda hanya pintu masuknya.</div>
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alur Kerja CLARA</title>
+<style><?= $CSS ?></style>
+</head>
+<body>
+
+<header class="kepala">
+  <div class="bungkus">
+    <?php if ($logoMal): ?><img class="logo" src="<?= $logoMal ?>" alt="e-Walk &amp; Pentacity"><?php endif; ?>
+    <h1>Alur Kerja CLARA</h1>
+    <p>Bagaimana sebuah kesepakatan berjalan di CLARA, dari permintaan client sampai angkanya
+       muncul di laporan — untuk Exhibition, Gudang, dan Media.</p>
+    <span class="cap">Dibuat <?= $h(date('j') . ' ' . $BULAN[(int) date('n')] . ' ' . date('Y')) ?> ·
+      alur persetujuan dibaca langsung dari sistem</span>
+  </div>
+</header>
+
+<nav class="nav"><div class="bungkus">
+  <?php foreach ($nav as $id => [$no, $teks]): ?>
+    <a href="#<?= $id ?>"<?= $id === 'ringkas' ? ' class="utama"' : '' ?>><?= $teks ?></a>
+  <?php endforeach; ?>
+</div></nav>
+
+<main class="bungkus">
+
+  <section id="ringkas">
+    <div class="judul"><span class="no">01</span><h2>Ringkasan</h2></div>
+    <p class="lead"><?= $lead['ringkas'] ?></p>
+    <div class="legenda">
+      <span><i class="f u" style="background:#E2E8F0;border-color:#CBD5E1"></i> Mulai / selesai</span>
+      <span><i class="f" style="background:#F0FDFA;border-color:#99F6E4"></i> Langkah</span>
+      <span><i class="f d" style="background:#FFF7ED;border-color:#FED7AA"></i> Titik keputusan</span>
+      <span><i class="f" style="background:#F0FDF4;border-color:#4ADE80;border-width:3px"></i> Titik yang menentukan angka</span>
+      <span><i class="f" style="background:#FEF2F2;border-color:#FECACA"></i> Jalan kalau tidak lolos</span>
+      <span><i class="f" style="background:#F8FAFC;border-color:#E2E8F0;border-style:dashed"></i> Catatan</span>
+      <span class="baris2">Pita kiri = pelakunya:
+        <i class="p" style="background:#0F766E"></i> Sales
+        <i class="p" style="background:#B45309"></i> <?= $h($pem1) ?>
+        <i class="p" style="background:#6D28D9"></i> <?= $h($pem2) ?>
+        <i class="p" style="background:#0369A1"></i> Client
+        <i class="p" style="background:#BE185D"></i> Legal
+        <i class="p" style="background:#475569"></i> Sistem</span>
+    </div>
+    <div class="kartu"><?= $bab['ringkas'] ?></div>
+  </section>
+
+  <?php foreach (['exhibition', 'gudang', 'perpanjangan', 'koreksi'] as $id): ?>
+  <section id="<?= $id ?>">
+    <div class="judul"><span class="no"><?= $nav[$id][0] ?></span><h2><?= $nav[$id][1] ?></h2></div>
+    <p class="lead"><?= $lead[$id] ?></p>
+    <div class="kartu"><?= $bab[$id] ?></div>
+  </section>
+  <?php endforeach; ?>
+
+  <section id="rujukan">
+    <div class="judul"><span class="no">06</span><h2>Rujukan isian</h2></div>
+    <p class="lead"><?= $lead['rujukan'] ?></p>
+    <div class="dua">
+      <div class="kartu"><table>
+        <caption>Bagian Harga di Surat Penawaran</caption>
+        <tr><td class="k">Total Kontrak</td><td class="v">Terhitung sendiri dari tarif &times; luas &times; lama sewa. Tidak bisa diketik.</td></tr>
+        <tr><td class="k">Harga Nego Final</td><td class="v">Diisi hanya bila hasil nego berbeda. <b>Angka inilah yang dipakai</b>, menggantikan hitungan otomatis.</td></tr>
+        <tr><td class="k">Harga / Bulan</td><td class="v">Boleh dikosongkan. Kosong atau 0 &rarr; barisnya <b>tidak dicetak</b> di surat maupun PDF.</td></tr>
+        <tr><td class="k">Jadwal Harga Bertahap</td><td class="v">Untuk kontrak yang tarifnya naik di tengah jalan. Tiap tahap punya tanggal berlakunya sendiri.</td></tr>
+        <tr><td class="k">Biaya Listrik</td><td class="v">Ikut masuk nilai kontrak. Bisa dimatikan — yang dimatikan tidak muncul di surat.</td></tr>
+        <tr><td class="k">PPN 12%</td><td class="v">Bawaannya menyala. Lepas centang bila harganya sudah bersih.</td></tr>
+        <tr><td class="k">Service Charge</td><td class="v">Bawaannya mati. Ditagih per bulan, tercetak sebagai blok tersendiri.</td></tr>
+        <tr><td class="k">DP &amp; Deposit</td><td class="v">Dalam bulan atau nominal, plus centang &ldquo;Security Deposit sudah dibayarkan&rdquo;.</td></tr>
+      </table></div>
+      <div class="kartu"><table>
+        <caption>Kapan nilainya masuk bulan mana</caption>
+        <tr><td class="k">Otomatis (ikut periode)</td><td class="v">Bawaannya. Multi-bulan atau lintas bulan jadi <i>Spread</i>; selainnya <i>Sekaligus</i>.</td></tr>
+        <tr><td class="k">Sekaligus (anchor)</td><td class="v">Seluruh nilainya diakui di satu bulan.</td></tr>
+        <tr><td class="k">Spread per Bulan</td><td class="v">Dipecah ke tiap bulan masa sewa. Dipakai kontrak panjang seperti gudang.</td></tr>
+        <tr><td class="k">Pengakuan per Siklus</td><td class="v">Bulan awal siklus, atau bulan akhir siklus.</td></tr>
+        <tr><td class="k">Prorata ikut bulan kalender</td><td class="v">Centang bila kontrak tidak mulai tanggal 1. Bulan yang tidak penuh dihitung per hari (11&ndash;30 Nov = 20/30 bulan). Tanpa centang, siklusnya ikut tanggal mulai (11 &rarr; 10) dan totalnya bisa beda ratusan ribu.</td></tr>
+        <tr><td class="k">Diakui Recurring</td><td class="v">Centang bila kontraknya berulang. Diteruskan ke transaksi saat konfirmasi disetujui.</td></tr>
+      </table></div>
+      <div class="kartu" style="grid-column:1/-1"><table>
+        <caption>Tiga hal yang paling sering salah paham</caption>
+        <tr><td class="k">Nomor dokumen terbit &amp; transaksi lahir</td>
+            <td class="v">Saat <b><?= $h($pem2) ?></b> menekan <b>Setujui</b> — bukan saat dokumen dibuat, bukan pula saat diparaf.</td></tr>
+        <tr><td class="k">Income masuk Dashboard &amp; Achievement</td>
+            <td class="v">Saat <b>client menandatangani</b> surat konfirmasi<?= $ttdTgl ? ". Aturan ini mengikat kesepakatan yang dibuat sejak <b>" . $h($ttdTgl) . "</b>; yang lebih lama tetap memakai cara lama" : '' ?>.</td></tr>
+        <tr><td class="k">Tautan tanda tangan</td>
+            <td class="v">Berlaku <b>30 hari</b> sejak dokumen disetujui. Lewat dari itu client tidak bisa lagi membukanya, dan jalan keluarnya lewat permintaan revisi.</td></tr>
+      </table></div>
+    </div>
+  </section>
+
+  <footer class="kaki">
+    <?php if ($logoWbl): ?><img src="<?= $logoWbl ?>" alt="PT Wulandari Bangun Laksana, Tbk"><?php endif; ?>
+    Casual Leasing Achievement &amp; Revenue Analytics (CLARA) &middot;
+    e-Walk Simply FUNtastic &amp; Pentacity Shopping Venue.<br>
+    Alur persetujuan dan nama pemaraf pada halaman ini dibaca langsung dari pengaturan sistem saat
+    dokumen ini dibangun — bila alurnya diubah di halaman <b>Alur Persetujuan</b>, bangun ulang
+    halaman ini agar ikut berubah.
+  </footer>
+</main>
+
+<script>
+// Sorot menu bagian yang sedang dibaca.
+var bagian = [].slice.call(document.querySelectorAll('section'));
+var tautan = {};
+[].forEach.call(document.querySelectorAll('.nav a'), function (a) { tautan[a.getAttribute('href').slice(1)] = a; });
+var pengamat = new IntersectionObserver(function (masuk) {
+    masuk.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        for (var k in tautan) tautan[k].classList.remove('utama');
+        if (tautan[e.target.id]) tautan[e.target.id].classList.add('utama');
+    });
+}, { rootMargin: '-64px 0px -70% 0px' });
+bagian.forEach(function (s) { pengamat.observe(s); });
+</script>
+</body>
+</html>
 <?php
-$g = [];
-S('m',   104,   0, 60, 'ujung',  'mulai',   'MULAI', 'Client minta sewa');
-S('tm',   92,  14, 84, 'tanya',  'tanya',   'Modul apa?');
-S('ex',    0,  44, 82, 'proses', 'sales',   'EXHIBITION → *SKP*', 'Wajib lewat Surat Penawaran');
-S('gd',    93, 44, 82, 'proses', 'sales',   'GUDANG → *SKS*', 'Boleh tanpa penawaran');
-S('md',   186, 44, 82, 'proses', 'sales',   'MEDIA → *FU*', 'Boleh tanpa penawaran');
-S('aj',    93, 66, 82, 'proses', 'sales',   'Sales ajukan dokumen', 'Status: Menunggu Approval');
-S('p1',    93, 86, 82, 'tanya',  'asst',    'Diparaf ' . $lbl1 . '?');
-S('p2',    93,116, 82, 'tanya',  'manager', 'Disetujui ' . $lbl2 . '?');
-S('bl',     0, 92, 82, 'proses', 'stop',    'Kembali ke sales', 'Alokasi income dilepas');
-S('no',   186, 84, 82, 'hasil',  'hasil',   'NOMOR TERBIT', 'Transaksi lahir di sini');
-S('tt',   186,110, 82, 'tanya',  'client',  'Client meneken?');
-S('ic',   186,140, 82, 'hasil',  'hasil',   'INCOME MASUK LAPORAN');
-S('wt',    93,142, 82, 'proses', 'sistem',  'Menunggu di "Perlu TTD"', 'Belum terhitung');
-
-$g[] = P([T('m', 'bawah'), T('tm', 'atas')]);
-$g[] = P([[134, 36], [134, 40], [41, 40], T('ex', 'atas')]);
-$g[] = P([[134, 36], [134, 44]]);
-$g[] = P([[134, 36], [134, 40], [227, 40], T('md', 'atas')]);
-$g[] = P([T('ex', 'bawah'), [41, 61], [134, 61], [134, 66]]);
-$g[] = P([T('md', 'bawah'), [227, 61], [134, 61], [134, 66]]);
-$g[] = P([T('aj', 'bawah'), T('p1', 'atas')]);
-$g[] = P([T('p1', 'bawah'), T('p2', 'atas')], 'Ya', '#0F766E', false, [140, 110]);
-$g[] = P([T('p1', 'kiri'), [88, 97], T('bl', 'kanan')], 'Tidak', '#DC2626', false, [86, 92]);
-$g[] = P([T('p2', 'kiri'), [88, 127], [88, 114], [41, 114], T('bl', 'bawah')], 'Tidak', '#DC2626', false, [86, 133]);
-$g[] = P([T('p2', 'kanan'), [181, 127], [181, 95], T('no', 'kiri')], 'Ya', '#0F766E', false, [181, 133]);
-$g[] = P([T('no', 'bawah'), T('tt', 'atas')]);
-$g[] = P([T('tt', 'bawah'), T('ic', 'atas')], 'Ya', '#0F766E', false, [233, 136]);
-$g[] = P([T('tt', 'kiri'), [181, 121], [181, 150], T('wt', 'kanan')], 'Belum', '#B45309', false, [172, 121]);
-$g[] = P([T('bl', 'atas'), [41, 86], [88, 86], [88, 75], T('aj', 'kiri')], 'diajukan ulang', '#94A3B8', true, [62, 84]);
-echo bagan($g, 158);
-?>
-<div class="legenda">
-    <span><i class="s" style="background:#E2E8F0;border-color:#94A3B8"></i> Mulai / selesai</span>
-    <span><i style="background:#F0FDFA;border-color:#5EEAD4"></i> Langkah</span>
-    <span><i class="d" style="background:#FFF7ED;border-color:#FB923C"></i> Keputusan</span>
-    <span><i style="background:#F0FDF4;border-color:#4ADE80"></i> Titik yang menentukan angka</span>
-    <span><i style="background:#FEF2F2;border-color:#FCA5A5"></i> Jalan kalau tidak lolos</span>
-    <span>Pita kiri = pelakunya:
-        <i style="background:#0F766E;border-color:#0F766E"></i> Sales
-        <i style="background:#B45309;border-color:#B45309"></i> <?= $h($lbl1) ?><?= $org1 ? ' (' . $h($org1) . ')' : '' ?>
-        <i style="background:#6D28D9;border-color:#6D28D9"></i> <?= $h($lbl2) ?><?= $org2 ? ' (' . $h($org2) . ')' : '' ?>
-        <i style="background:#0369A1;border-color:#0369A1"></i> Client</span>
-</div>
-<?php $lembar[] = ob_get_clean();
-
-/* ═══ Lembar 2 — Exhibition ═════════════════════════════════════════════ */
-ob_start(); ?>
-<h1>Exhibition <small>&mdash; SKP, dari nol sampai masuk laporan</small></h1>
-<div class="sub">Mulai dari kiri atas, telusuri garisnya. Tiap belah ketupat punya dua jalan keluar yang dilabeli.</div>
-<?php
-$g = [];
-// ── Lajur 1
-S('m1',  2,   0, 58, 'ujung',  'mulai',  'MULAI');
-S('t1',  2,  12, 58, 'tanya',  'tanya',  'Client & unit sudah terdaftar?');
-S('d1',  2,  42, 58, 'proses', 'sales',  'Daftarkan di Master Data', 'Client · Master Exhibition');
-S('p1',  2,  64, 58, 'proses', 'sales',  'Buat Surat Penawaran');
-S('p2',  2,  80, 58, 'proses', 'sistem', 'Nomor penawaran terbit', 'Otomatis saat disimpan');
-S('p3',  2, 100, 58, 'proses', 'sales',  'Kirim ke client', 'PDF + tautan tanda tangan');
-// ── Lajur 2
-S('t2', 68,   0, 58, 'tanya',  'tanya',  'Client setuju?');
-S('x1', 68,  30, 58, 'proses', 'stop',   'Tutup penawaran', 'Wajib isi alasan');
-S('x2', 68,  48, 58, 'ujung',  'stop',   'SELESAI — tidak jadi');
-S('c1', 68,  66, 58, 'proses', 'client', 'Client meneken penawaran', 'Online atau unggah berteken');
-S('c2', 68,  88, 58, 'hasil',  'hasil',  'STATUS DEAL', 'Nilai dikunci');
-S('c3', 68, 106, 58, 'proses', 'sales',  'Buat SKP dari penawaran', 'Lengkapi PJ, KTP/NPWP, lampiran');
-S('c4', 68, 132, 58, 'proses', 'sales',  'Ajukan', 'Status: Menunggu Approval');
-// ── Lajur 3
-S('a1',134,   4, 58, 'tanya',  'asst',   'Diparaf ' . $lbl1 . '?');
-S('a2',134,  40, 58, 'tanya',  'manager','Disetujui ' . $lbl2 . '?');
-S('a3',134,  78, 58, 'proses', 'stop',   'Kembali ke sales', 'Dikembalikan 1 tahap, atau ditolak ke PIC');
-S('a4',134, 110, 58, 'hasil',  'hasil',  'NOMOR SKP TERBIT', 'Transaksi lahir, isinya dibekukan');
-// ── Lajur 4
-S('b1',208,   0, 58, 'proses', 'sales',  'Kirim tautan TTD', 'Berlaku 30 hari');
-S('b2',208,  18, 58, 'tanya',  'client', 'Client meneken?');
-S('b3',208,  48, 58, 'proses', 'asst',   'Ajukan revisi', 'Tautan baru terbit, nomor tetap');
-S('b4',208,  70, 58, 'hasil',  'hasil',  'INCOME MASUK LAPORAN', 'Dashboard · Laporan PIC · Achievement');
-S('b5',208,  96, 58, 'tanya',  'tanya',  'Perlu kontrak Legal?');
-S('b6',208, 124, 58, 'proses', 'legal',  'Ajukan ke Legal', 'Wajib unggah bukti transfer');
-S('b7',208, 142, 58, 'ujung',  'mulai',  'SELESAI');
-
-$g[] = P([T('m1', 'bawah'), T('t1', 'atas')]);
-$g[] = P([T('t1', 'bawah'), T('d1', 'atas')], 'Belum', '#B45309');
-$g[] = P([T('d1', 'bawah'), T('p1', 'atas')]);
-$g[] = P([T('t1', 'kanan'), [64, 27], [64, 56], [31, 56], [31, 64]], 'Sudah', '#0F766E');
-$g[] = P([T('p1', 'bawah'), T('p2', 'atas')]);
-$g[] = P([T('p2', 'bawah'), T('p3', 'atas')]);
-$g[] = P([T('p3', 'kanan'), [64, 108], [64, 7], [68, 7]]);
-$g[] = P([T('t2', 'bawah'), T('x1', 'atas')], 'Tidak', '#DC2626');
-$g[] = P([T('x1', 'bawah'), T('x2', 'atas')]);
-$g[] = P([T('t2', 'kanan'), [130, 13], [130, 58], [97, 58], [97, 66]], 'Ya', '#0F766E');
-$g[] = P([T('c1', 'bawah'), T('c2', 'atas')]);
-$g[] = P([T('c2', 'bawah'), T('c3', 'atas')]);
-$g[] = P([T('c3', 'bawah'), T('c4', 'atas')]);
-$g[] = P([T('c4', 'kanan'), [130, 139], [130, 11], [134, 11]]);
-$g[] = P([T('a1', 'bawah'), T('a2', 'atas')], 'Ya', '#0F766E');
-$g[] = P([T('a2', 'bawah'), T('a3', 'atas')], 'Tidak', '#DC2626');
-$g[] = P([T('a1', 'kiri'), [130, 18], [130, 86], T('a3', 'kiri')], 'Tidak', '#DC2626', false, [130, 44]);
-$g[] = P([T('a3', 'bawah'), [163, 102], [198, 102], [198, 139], T('c4', 'kanan')], 'perbaiki, ajukan ulang', '#94A3B8', true, [180, 100]);
-$g[] = P([T('a2', 'kanan'), [202, 54], [202, 118], T('a4', 'kanan')], 'Ya', '#0F766E', false, [199, 60]);
-$g[] = P([T('a4', 'atas'), [163, 106], [194, 106], [194, 7], [208, 7]]);
-$g[] = P([T('b1', 'bawah'), T('b2', 'atas')]);
-$g[] = P([T('b2', 'bawah'), T('b3', 'atas')], 'Lewat 30 hari', '#B45309', false, [248, 44]);
-$g[] = P([T('b3', 'kiri'), [206, 56], [206, 8], T('b1', 'kiri')], 'kirim ulang', '#94A3B8', true, [206, 66]);
-$g[] = P([T('b2', 'kanan'), [264, 27], [264, 78], T('b4', 'kanan')], 'Ya', '#0F766E', false, [262, 34]);
-$g[] = P([T('b4', 'bawah'), T('b5', 'atas')]);
-$g[] = P([T('b5', 'bawah'), T('b6', 'atas')], 'Ya', '#0F766E', false, [243, 120]);
-$g[] = P([T('b6', 'bawah'), T('b7', 'atas')]);
-$g[] = P([T('b5', 'kiri'), [203, 105], [203, 147], T('b7', 'kiri')], 'Tidak', '#94A3B8', false, [203, 115]);
-echo bagan($g, 154);
-?>
-<?php $lembar[] = ob_get_clean();
-
-/* ═══ Lembar 3 — Gudang & Media ═════════════════════════════════════════ */
-ob_start(); ?>
-<h1>Gudang &amp; Media <small>&mdash; SKS dan FU, tiga pintu masuk</small></h1>
-<div class="sub">Tidak wajib lewat Surat Penawaran. Tiga pintu masuknya bertemu di satu titik, sesudah itu sama dengan Exhibition.</div>
-<?php
-$g = [];
-S('m1',  2,   0, 58, 'ujung',  'mulai',  'MULAI');
-S('t0',  2,  12, 58, 'tanya',  'tanya',  'Client & unit sudah terdaftar?');
-S('d0',  2,  44, 58, 'proses', 'sales',  'Daftarkan di Master Data', 'Client · Gudang / Media');
-S('t1',  2,  70, 58, 'tanya',  'tanya',  'Client minta penawaran resmi?');
-S('PA',  2, 108, 58, 'proses', 'sales',  'PINTU A · Buat dokumen langsung', 'Menu SKP Pameran → SKS / Form Utilities');
-S('PB', 68,  22, 58, 'proses', 'sales',  'PINTU B · Lewat penawaran', 'Client meneken → "Buat SKS/Form"');
-S('PC', 68,  76, 58, 'proses', 'sales',  'PINTU C · Dari transaksi lama', '"↑ Dari transaksi yang sudah ada"');
-S('cx', 68, 108, 58, 'catatan','sistem', 'Satu transaksi, satu dokumen', 'Yang sudah punya akan membukanya');
-S('is',134,  12, 58, 'proses', 'sales',  'Lengkapi lalu ajukan', 'Periode, luas, tarif, listrik, lampiran');
-S('a1',134,  46, 58, 'tanya',  'asst',   'Diparaf ' . $lbl1 . '?');
-S('a2',134,  86, 58, 'tanya',  'manager','Disetujui ' . $lbl2 . '?');
-S('a3',134, 128, 58, 'proses', 'stop',   'Kembali ke sales', 'Lihat lembar 5');
-S('n1',208,  12, 58, 'hasil',  'hasil',  'NOMOR SKS / FU TERBIT', 'Transaksi lahir di sini juga');
-S('n2',208,  44, 58, 'proses', 'sales',  'Kirim tautan TTD', 'Berlaku 30 hari');
-S('n3',208,  68, 58, 'tanya',  'client', 'Client meneken?');
-S('n4',208, 104, 58, 'hasil',  'hasil',  'INCOME MASUK LAPORAN', 'Kontrak panjang dipecah per bulan');
-S('n5',208, 136, 58, 'proses', 'sistem', 'Menunggu di "Perlu TTD"', 'Belum terhitung');
-
-$g[] = P([T('m1', 'bawah'), T('t0', 'atas')]);
-$g[] = P([T('t0', 'bawah'), T('d0', 'atas')], 'Belum', '#B45309');
-$g[] = P([T('d0', 'bawah'), T('t1', 'atas')]);
-$g[] = P([T('t0', 'kanan'), [64, 27], [64, 62], [31, 62], [31, 70]], 'Sudah', '#0F766E');
-$g[] = P([T('t1', 'kanan'), [64, 85], [64, 35], T('PB', 'kiri')], 'Ya', '#0F766E');
-$g[] = P([T('t1', 'bawah'), T('PA', 'atas')], 'Tidak');
-$g[] = P([T('PA', 'kanan'), [64, 118], [64, 89], T('PC', 'kiri')], 'atau', '#94A3B8', true, [64, 104]);
-$g[] = P([T('PB', 'kanan'), [130, 35], [130, 20], T('is', 'kiri')]);
-$g[] = P([T('PC', 'kanan'), [130, 89], [130, 24], [134, 24]]);
-$g[] = P([T('PC', 'bawah'), T('cx', 'atas')], '', '#94A3B8', true);
-$g[] = P([T('is', 'bawah'), T('a1', 'atas')]);
-$g[] = P([T('a1', 'bawah'), T('a2', 'atas')], 'Ya', '#0F766E', false, [169, 80]);
-$g[] = P([T('a2', 'bawah'), T('a3', 'atas')], 'Tidak', '#DC2626', false, [169, 122]);
-$g[] = P([T('a1', 'kiri'), [130, 60], [130, 136], T('a3', 'kiri')], 'Tidak', '#DC2626', false, [130, 72]);
-$g[] = P([T('a3', 'kanan'), [198, 136], [198, 24], T('is', 'kanan')], 'ajukan ulang', '#94A3B8', true, [198, 116]);
-$g[] = P([T('a2', 'kanan'), [202, 100], [202, 23], T('n1', 'kiri')], 'Ya', '#0F766E', false, [199, 108]);
-$g[] = P([T('n1', 'bawah'), T('n2', 'atas')]);
-$g[] = P([T('n2', 'bawah'), T('n3', 'atas')]);
-$g[] = P([T('n3', 'bawah'), T('n4', 'atas')], 'Ya', '#0F766E', false, [243, 100]);
-$g[] = P([T('n3', 'kiri'), [204, 81], [204, 145], T('n5', 'kiri')], 'Belum', '#B45309', false, [204, 92]);
-echo bagan($g, 154);
-?>
-<?php $lembar[] = ob_get_clean();
-
-/* ═══ Lembar 4 — perpanjangan & kasus ═══════════════════════════════════ */
-ob_start(); ?>
-<h1>Perpanjangan &amp; kasus data <small>&mdash; tiga bagan kecil</small></h1>
-<div class="sub">Keadaan yang tidak masuk jalur baku.</div>
-<?php
-$g = [];
-// A — perpanjangan
-S('hA',  2,   0, 80, 'ujung',  'mulai',  'A · KONTRAK HAMPIR HABIS');
-S('r1',  2,  16, 80, 'proses', 'sales',  'Buka Papan Renewal', 'Berakhir ≤30 hari, atau baru lewat ≤7 hari');
-S('r2',  2,  44, 80, 'proses', 'sales',  'Catat status pendekatan', 'Belum dihubungi → nego → dst.');
-S('r3',  2,  70, 80, 'tanya',  'tanya',  'Client mau perpanjang?');
-S('r4',  2, 102, 80, 'proses', 'sales',  'Tekan + Perpanjang', 'Terbuka penawaran baru berisi data lama');
-S('r5',  2, 126, 80, 'proses', 'sales',  'Lanjut jalur baku');
-S('r6',  2, 142, 80, 'catatan','sistem', 'Jalan pintas tanpa penawaran', 'Tombol Perpanjang di daftar Transaksi');
-$g[] = P([T('hA', 'bawah'), T('r1', 'atas')]);
-$g[] = P([T('r1', 'bawah'), T('r2', 'atas')]);
-$g[] = P([T('r2', 'bawah'), T('r3', 'atas')]);
-$g[] = P([T('r3', 'bawah'), T('r4', 'atas')], 'Ya', '#0F766E', false, [48, 96]);
-$g[] = P([T('r4', 'bawah'), T('r5', 'atas')]);
-$g[] = P([T('r3', 'kanan'), [86, 82], [86, 111], T('r4', 'kanan')], 'Tidak — tandai saja', '#94A3B8', false, [57, 97]);
-$g[] = P([T('r5', 'bawah'), T('r6', 'atas')], 'atau', '#94A3B8', true, [48, 140]);
-
-// B — data master
-S('hB',  94,   0, 76, 'ujung',  'mulai',  'B · DATA BELUM ADA');
-S('s1',  94,  16, 76, 'tanya',  'tanya',  'Client pernah sewa di sini?');
-S('s2',  94,  52, 76, 'proses', 'sales',  'Master Data → Client → Tambah', 'Perusahaan, merek, alamat, NPWP');
-S('s3',  94,  80, 76, 'proses', 'sales',  'Tambah kontak PJ', 'Nama ini yang tercetak di surat');
-S('s4',  94, 106, 76, 'proses', 'stop',   'Client lama: jangan buat baru', 'Cukup tambah kontak di profilnya');
-S('s5',  94, 134, 76, 'proses', 'sales',  'Unit belum ada?', 'Master Exhibition / Gudang / Media → Tambah');
-$g[] = P([T('hB', 'bawah'), T('s1', 'atas')]);
-$g[] = P([T('s1', 'bawah'), T('s2', 'atas')], 'Belum', '#B45309', false, [140, 48]);
-$g[] = P([T('s2', 'bawah'), T('s3', 'atas')]);
-$g[] = P([T('s1', 'kiri'), [90, 31], [90, 114], T('s4', 'kiri')], 'Sudah', '#0F766E', false, [90, 44]);
-$g[] = P([T('s3', 'bawah'), T('s4', 'atas')]);
-$g[] = P([T('s4', 'bawah'), T('s5', 'atas')]);
-
-// C — berbagi PIC
-S('hC', 182,   0, 84, 'ujung',  'mulai',  'C · SATU DEAL, BEBERAPA PIC');
-S('q1', 182,  16, 84, 'tanya',  'tanya',  'Satu acara, beberapa PIC?');
-S('q2', 182,  52, 84, 'proses', 'stop',   'Jangan buat transaksi sendiri-sendiri', 'Nilainya terhitung berkali-kali');
-S('q3', 182,  82, 84, 'proses', 'sales',  'Buat SATU dokumen', 'Lalu isi Pembagian PIC di dalamnya');
-S('q4', 182, 110, 84, 'catatan','sistem', 'Kalau tetap dicoba', 'Ditolak sistem, disebutkan nomor transaksi yang sudah ada');
-S('q5', 182, 140, 84, 'catatan','sales',  'Beberapa unit, satu acara', 'Pakai "paket" — satu SKP, transaksi per komponen');
-$g[] = P([T('hC', 'bawah'), T('q1', 'atas')]);
-$g[] = P([T('q1', 'bawah'), T('q2', 'atas')], 'Ya', '#DC2626', false, [230, 48]);
-$g[] = P([T('q2', 'bawah'), T('q3', 'atas')]);
-$g[] = P([T('q3', 'bawah'), T('q4', 'atas')], '', '#94A3B8', true);
-$g[] = P([T('q4', 'bawah'), T('q5', 'atas')], '', '#94A3B8', true);
-echo bagan($g, 158);
-?>
-<?php $lembar[] = ob_get_clean();
-
-/* ═══ Lembar 5 — koreksi ════════════════════════════════════════════════ */
-ob_start(); ?>
-<h1>Kalau ada yang perlu dibetulkan <small>&mdash; mulai dari: dokumennya sudah sampai mana?</small></h1>
-<div class="sub">Turuti rantai pertanyaan di kiri; jawabannya menentukan apa yang masih bisa dilakukan.</div>
-<?php
-$g = [];
-S('m',   2,   0, 58, 'ujung',  'mulai',  'ADA YANG SALAH');
-S('k1',  2,  14, 58, 'tanya',  'tanya',  'Sudah diajukan?');
-S('k2',  2,  50, 58, 'tanya',  'tanya',  'Sudah disetujui ' . $lbl2 . '?');
-S('k3',  2,  88, 58, 'tanya',  'tanya',  'Client sudah meneken?');
-S('k4',  2, 126, 58, 'tanya',  'tanya',  'Datanya harus hilang?');
-
-S('v1', 68,  14, 58, 'proses', 'sales',  'MASIH DRAFT', 'Perbaiki langsung, atau buang drafnya');
-S('v2', 68,  48, 58, 'proses', 'asst',   'MENUNGGU APPROVAL', 'Pemeriksa punya dua pilihan');
-S('v3', 68,  86, 58, 'proses', 'sales',  'SUDAH DISETUJUI', 'Ajukan revisi + alasan → diputus ' . $lbl1);
-S('v4', 68, 126, 58, 'proses', 'stop',   'SUDAH DITEKEN CLIENT', 'Terkunci, tidak bisa direvisi');
-
-S('w1',134,  36, 58, 'proses', 'asst',   'Kembalikan 1 tahap', 'Nilai & transaksi tidak diubah');
-S('w2',134,  64, 58, 'proses', 'stop',   'Tolak ke PIC', 'Diperbaiki, diajukan ulang dari awal');
-S('w3',134,  92, 58, 'proses', 'sistem', 'Alokasi income dilepas', 'Berhenti terhitung selama diperbaiki');
-S('w4',134,   4, 58, 'catatan','sistem', 'Nomornya tetap sama', 'Revisi hanya menaikkan versi');
-S('w5',134, 126, 58, 'proses', 'sales',  'Terbitkan dokumen baru', 'Atau Batalkan Kesepakatan');
-
-S('z1',208,  40, 58, 'proses', 'sales',  'Ajukan Hapus Data', 'Wajib isi alasan');
-S('z2',208,  66, 58, 'tanya',  'manager','Disetujui pemutus?');
-S('z3',208, 102, 58, 'hasil',  'hasil',  'Pindah ke DATA TERHAPUS', 'Masih bisa dipulihkan');
-S('z4',208, 132, 58, 'catatan','sistem', 'Tercatat di jejak audit', 'Siapa, kapan, dan alasannya');
-S('z5',208,   4, 58, 'proses', 'stop',   'Ditolak — data tetap ada');
-
-$g[] = P([T('m', 'bawah'), T('k1', 'atas')]);
-$g[] = P([T('k1', 'kanan'), [64, 29], [64, 24], T('v1', 'kiri')], 'Belum', '#0F766E', false, [62, 21]);
-$g[] = P([T('k1', 'bawah'), T('k2', 'atas')], 'Sudah', '#94A3B8', false, [40, 46]);
-$g[] = P([T('k2', 'kanan'), [64, 65], [64, 58], T('v2', 'kiri')], 'Belum', '#0F766E', false, [62, 57]);
-$g[] = P([T('k2', 'bawah'), T('k3', 'atas')], 'Sudah', '#94A3B8', false, [40, 84]);
-$g[] = P([T('k3', 'kanan'), [64, 103], [64, 96], T('v3', 'kiri')], 'Belum', '#0F766E', false, [62, 95]);
-$g[] = P([T('k3', 'bawah'), T('k4', 'atas')], 'Sudah', '#94A3B8', false, [40, 122]);
-$g[] = P([T('k4', 'kanan'), [64, 141], [64, 134], T('v4', 'kiri')], 'Tidak', '#0F766E', false, [62, 133]);
-$g[] = P([T('k4', 'kiri'), [0, 141], [0, 158], [194, 158], [194, 49], T('z1', 'kiri')], 'Ya — harus dihapus', '#DC2626', false, [40, 155]);
-$g[] = P([T('v2', 'kanan'), [130, 58], [130, 45], T('w1', 'kiri')], 'ringan', '#94A3B8', false, [150, 32]);
-$g[] = P([T('v2', 'kanan'), [130, 58], [130, 73], T('w2', 'kiri')], 'berat', '#DC2626', false, [150, 60]);
-$g[] = P([T('w2', 'bawah'), T('w3', 'atas')]);
-$g[] = P([T('v3', 'kanan'), [130, 96], [130, 13], T('w4', 'kiri')]);
-$g[] = P([T('v4', 'kanan'), [130, 134], [130, 135], T('w5', 'kiri')]);
-$g[] = P([T('z1', 'bawah'), T('z2', 'atas')]);
-$g[] = P([T('z2', 'bawah'), T('z3', 'atas')], 'Ya', '#0F766E', false, [243, 98]);
-$g[] = P([T('z3', 'bawah'), T('z4', 'atas')], '', '#94A3B8', true);
-$g[] = P([T('z2', 'kiri'), [204, 78], [204, 13], T('z5', 'kiri')], 'Tidak', '#DC2626', false, [204, 92]);
-echo bagan($g, 162);
-?>
-<?php $lembar[] = ob_get_clean();
-
-/* ═══ Lembar 6 — rujukan isian ══════════════════════════════════════════ */
-ob_start(); ?>
-<h1>Rujukan isian <small>&mdash; bagian Harga &amp; cara nilainya diakui</small></h1>
-<div class="sub">Dua hal ini bukan alur, melainkan pilihan di dalam formulir &mdash; dikumpulkan di sini
-    supaya bagan di lembar sebelumnya tetap ringkas.</div>
-<div class="duakolom">
-    <table class="ref">
-        <tr><th colspan="2">Bagian Harga di Surat Penawaran</th></tr>
-        <tr><td class="k">Total Kontrak</td><td>Terhitung sendiri dari tarif &times; luas &times; lama sewa. Tidak bisa diketik.</td></tr>
-        <tr><td class="k">Harga Nego Final</td><td>Diisi hanya bila hasil nego berbeda. <b>Angka inilah yang dipakai</b>, menggantikan hitungan otomatis.</td></tr>
-        <tr><td class="k">Harga / Bulan</td><td>Boleh dikosongkan. Kosong atau 0 &rarr; barisnya <b>tidak dicetak</b> di surat maupun PDF.</td></tr>
-        <tr><td class="k">Jadwal Harga Bertahap</td><td>Untuk kontrak yang tarifnya naik di tengah jalan. Tiap tahap punya tanggal berlakunya sendiri.</td></tr>
-        <tr><td class="k">Biaya Listrik</td><td>Ikut masuk nilai kontrak. Bisa dimatikan &mdash; yang dimatikan tidak muncul di surat.</td></tr>
-        <tr><td class="k">PPN 12%</td><td>Bawaannya menyala. Lepas centang bila harganya sudah bersih.</td></tr>
-        <tr><td class="k">Service Charge</td><td>Bawaannya mati. Ditagih per bulan, tercetak sebagai blok tersendiri.</td></tr>
-        <tr><td class="k">DP &amp; Deposit</td><td>Dalam bulan atau nominal, plus centang &ldquo;Security Deposit sudah dibayarkan&rdquo;.</td></tr>
-    </table>
-    <table class="ref">
-        <tr><th colspan="2">Kapan nilainya masuk bulan mana</th></tr>
-        <tr><td class="k">Otomatis (ikut periode)</td><td>Bawaannya. Multi-bulan atau lintas bulan jadi <i>Spread</i>; selainnya <i>Sekaligus</i>.</td></tr>
-        <tr><td class="k">Sekaligus (anchor)</td><td>Seluruh nilainya diakui di satu bulan.</td></tr>
-        <tr><td class="k">Spread per Bulan</td><td>Dipecah ke tiap bulan masa sewa. Dipakai kontrak panjang seperti gudang.</td></tr>
-        <tr><td class="k">Pengakuan per Siklus</td><td>Bulan awal siklus, atau bulan akhir siklus.</td></tr>
-        <tr><td class="k">Prorata ikut bulan kalender</td><td>Centang bila kontrak tidak mulai tanggal 1. Bulan tak penuh dihitung per hari (11&ndash;30 Nov = 20/30 bulan). Tanpa centang, siklusnya ikut tanggal mulai (11 &rarr; 10).</td></tr>
-        <tr><td class="k">Diakui Recurring</td><td>Centang bila kontraknya berulang. Diteruskan ke transaksi saat konfirmasi disetujui.</td></tr>
-        <tr><th colspan="2">Dua titik yang menentukan angka</th></tr>
-        <tr><td class="k">Nomor terbit &amp; transaksi lahir</td><td>Saat <b><?= $h($lbl2) ?><?= $org2 ? ' (' . $h($org2) . ')' : '' ?></b> menekan Setujui.</td></tr>
-        <tr><td class="k">Income masuk laporan</td><td>Saat <b>client menandatangani</b><?= $ttdTgl ? ', untuk kesepakatan yang dibuat sejak <b>' . $h($ttdTgl) . '</b>' : '' ?>.</td></tr>
-        <tr><td class="k">Tautan tanda tangan</td><td>Berlaku <b>30 hari</b> sejak dokumen disetujui.</td></tr>
-    </table>
-</div>
-<?php $lembar[] = ob_get_clean();
-
-// ── Rakit berkas HTML ────────────────────────────────────────────────────────
-$judul = 'Alur Kerja CLARA';
-$html = "<!doctype html>\n<html lang=\"id\"><head><meta charset=\"utf-8\">\n"
-      . "<title>$judul</title>\n<style>$CSS</style></head><body>\n";
-foreach ($lembar as $i => $isi) {
-    $html .= '<div class="lembar">'
-        . '<div class="kop">'
-        . ($kopKiri ? '<img src="' . $kopKiri . '" alt="">' : '')
-        . '<div class="tengah">' . ($kopLogo ? '<img src="' . $kopLogo . '" alt="">' : '') . '</div>'
-        . ($kopKanan ? '<img src="' . $kopKanan . '" alt="">' : '')
-        . '</div>'
-        . '<div class="isi">' . $isi . '</div>'
-        . '<div class="nomor">' . ($i + 1) . ' / ' . count($lembar) . '</div>'
-        . '<div class="kaki">'
-        . ($kakiKiri ? '<img src="' . $kakiKiri . '" alt="">' : '')
-        . ($kakiKanan ? '<img src="' . $kakiKanan . '" alt="">' : '')
-        . '</div>'
-        . "</div>\n";
-}
-$html .= "</body></html>\n";
-
-$berkasHtml = $keluar . '/Alur_Kerja_CLARA.html';
-file_put_contents($berkasHtml, $html);
-printf("HTML  %s (%s KB)\n", $berkasHtml, number_format(filesize($berkasHtml) / 1024, 0));
-
-// ── Cetak jadi PDF lewat Chrome bila ada ─────────────────────────────────────
-// mPDF tidak dipakai: bagannya SVG, dan mPDF menggambarnya seadanya. Chrome
-// memakai mesin yang sama dengan yang dipakai memeriksa tampilannya.
-$chrome = null;
-foreach ([
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-    trim((string) @shell_exec('command -v google-chrome 2>/dev/null')),
-    trim((string) @shell_exec('command -v chromium 2>/dev/null')),
-] as $c) { if ($c && is_executable($c)) { $chrome = $c; break; } }
-
-if (!$chrome) {
-    echo "PDF   dilewati — Chrome tidak ditemukan. Berkas HTML-nya sudah bisa dibuka & dicetak sendiri.\n";
-    exit(0);
-}
-$berkasPdf = $keluar . '/Alur_Kerja_CLARA.pdf';
-$profil = sys_get_temp_dir() . '/clara-alur-' . getmypid();
-$cmd = escapeshellarg($chrome) . ' --headless --disable-gpu --no-sandbox'
-     . ' --user-data-dir=' . escapeshellarg($profil)
-     . ' --no-pdf-header-footer --print-to-pdf-no-header'
-     . ' --print-to-pdf=' . escapeshellarg($berkasPdf)
-     . ' ' . escapeshellarg('file://' . $berkasHtml) . ' 2>&1';
-@shell_exec($cmd);
-@shell_exec('rm -rf ' . escapeshellarg($profil));
-if (is_file($berkasPdf)) {
-    printf("PDF   %s (%s KB)\n", $berkasPdf, number_format(filesize($berkasPdf) / 1024, 0));
-} else {
-    echo "PDF   gagal dibuat — pakai berkas HTML-nya.\n";
-    exit(1);
-}
+$html = (string) ob_get_clean();
+$berkas = $keluar . '/Alur_Kerja_CLARA.html';
+file_put_contents($berkas, $html);
+printf("HTML  %s (%s KB)\n", $berkas, number_format(strlen($html) / 1024, 0));
