@@ -63,9 +63,10 @@ function _paraf_simpan_gambar(int $uid, string $jenis): ?string
     if ($f['size'] <= 0 || $f['size'] > 2 * 1024 * 1024) { flash('Ukuran gambar maksimal 2 MB.'); return null; }
     $ext = strtolower(pathinfo((string) $f['name'], PATHINFO_EXTENSION));
     if (!in_array($ext, ['png', 'jpg', 'jpeg', 'webp'], true)) { flash('Format gambar harus PNG/JPG/WEBP.'); return null; }
-    $info = @getimagesize($f['tmp_name']);
-    if (!$info || !in_array($info[2], [IMAGETYPE_PNG, IMAGETYPE_JPEG, IMAGETYPE_WEBP], true)) {
-        flash('Berkas itu bukan gambar yang sah.'); return null;
+    // Satu pemeriksaan yang sama dengan seluruh unggahan lain — di sini jenis
+    // gambarnya juga harus COCOK dengan ekstensinya, bukan sekadar gambar.
+    if (!clara_isi_berkas_sah($f['tmp_name'], $ext)) {
+        flash('Berkas itu bukan gambar ' . strtoupper($ext) . ' yang sah.'); return null;
     }
     if (!is_dir($dir)) @mkdir($dir, 0777, true);
     $nama = 'paraf_u' . $uid . '_' . $jenis . '_' . bin2hex(random_bytes(4)) . '.' . $ext;

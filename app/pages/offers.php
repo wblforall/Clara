@@ -3957,6 +3957,10 @@ function offer_sign_upload(PDO $pdo): void
     if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'], true)) {
         flash('Format harus jpg/png/webp/pdf.'); redirect_to('offer_view', ['id' => $id]);
     }
+    // Isinya dibuktikan, bukan cuma namanya — lihat clara_isi_berkas_sah().
+    if (!clara_isi_berkas_sah($f['tmp_name'], $ext)) {
+        flash('Isi berkasnya bukan ' . strtoupper($ext) . ' yang sah.'); redirect_to('offer_view', ['id' => $id]);
+    }
 
     $dir = dirname(__DIR__, 2) . '/public/uploads/offer';
     if (!is_dir($dir)) @mkdir($dir, 0777, true);

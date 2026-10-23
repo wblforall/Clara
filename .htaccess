@@ -13,12 +13,39 @@ Options -Indexes
 
 # Skrip maintenance CLI — blokir akses HTTP (temuan pentest H1). Guard PHP_SAPI
 # di tiap file adalah pertahanan utama; ini lapisan kedua.
-<FilesMatch "^(db_check|db_migrate|migrate)\.php$">
+<FilesMatch "^(db_check|db_migrate|migrate|generate_pdf_report|seed|setup|install|test|phpinfo)[^/]*\.php$">
     Require all denied
 </FilesMatch>
 
 # Blok seluruh direktori .git/ (cegah dump source + history)
 RedirectMatch 403 (?i)(^|/)\.git(/|$)
+
+# Direktori bertitik lainnya (.claude, .github, .vscode, .idea): berisi berkas
+# kerja, bukan aset yang perlu disajikan.
+#
+# .well-known DIKECUALIKAN: di situlah Let's Encrypt menaruh berkas pembuktian
+# saat memperpanjang sertifikat. Memblokirnya membuat HTTPS mati sendiri
+# beberapa bulan kemudian, dan penyebabnya tidak akan terhubung ke baris ini.
+RedirectMatch 403 (?i)(^|/)\.(?!well-known/)[A-Za-z0-9_-]+(/|$)
+
+# Berkas kerja yang IKUT ter-commit, jadi ikut terkirim ke server, tetapi tidak
+# pernah dimaksudkan dibuka orang luar:
+#
+#   testing/   laporan UAT dan TANGKAPAN LAYAR aplikasi berisi data client
+#              sungguhan — nama penyewa, nilai kontrak, nomor dokumen.
+#   docs/      panduan internal.
+#   tmp/       berkas sementara hasil unggahan Excel (lihat import.php).
+#
+# Tanpa baris ini semuanya terbuka tanpa login, karena aturan rewrite di bawah
+# hanya meneruskan permintaan yang berkasnya TIDAK ada — berkas yang ada
+# disajikan apa adanya oleh Apache.
+RedirectMatch 403 (?i)^/?(testing|docs|tmp|node_modules|arsip-surat-klien)(/|$)
+
+# Lembar kerja & laporan yang kadang tertinggal di ROOT saat bekerja.
+# Dibatasi ke root saja (tidak ada garis miring sesudah nama) — <FilesMatch> di
+# sini akan berlaku ke seluruh subdirektori, termasuk PDF yang memang disajikan
+# aplikasi, dan memutusnya tanpa ada yang tahu sebabnya.
+RedirectMatch 403 (?i)^/?[^/]+\.(xlsx|xls|csv|docx|doc|pptx|zip|tar|7z|rar)$
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
@@ -34,7 +61,7 @@ RedirectMatch 403 (?i)(^|/)\.git(/|$)
 
     RewriteRule ^public/ - [L]
     RewriteRule (^|/)\.git(/|$) - [F,L]
-    RewriteRule ^(app|database|scripts|storage)/ - [F,L]
+    RewriteRule ^(app|database|scripts|storage|testing|docs|tmp|node_modules)/ - [F,L]
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^(.*)$ public/$1 [L]

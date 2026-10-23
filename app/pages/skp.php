@@ -2263,6 +2263,12 @@ function _skp_handle_uploads(PDO $pdo, int $skpId, string $uname, int $clientId 
                      . ($ext === 'heic' || $ext === 'heif' ? ' (foto iPhone: ubah dulu ke JPG lewat Bagikan → Pilihan → JPEG)' : '');
             continue;
         }
+        // Isinya dibuktikan, bukan cuma namanya — lihat clara_isi_berkas_sah().
+        if (!clara_isi_berkas_sah($f['tmp_name'], $ext)) {
+            $gagal[] = $nama . ': isinya bukan ' . strtoupper($ext) . ' yang sah — berkasnya rusak,'
+                     . ' atau namanya diubah dari format lain';
+            continue;
+        }
         $fname = 'skp' . $skpId . '_' . $kind . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
         if (!@move_uploaded_file($f['tmp_name'], $dir . '/' . $fname)) {
             $gagal[] = $nama . ': server gagal menyimpan berkasnya — folder uploads mungkin tidak bisa ditulis';
@@ -3796,6 +3802,8 @@ function skp_sign_upload(PDO $pdo): void
     if ($f['size'] <= 0 || $f['size'] > 8 * 1024 * 1024) { flash('Ukuran file maksimal 8MB.'); redirect_to('skp_form', ['id' => $id]); }
     $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
     if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'], true)) { flash('Format harus jpg/png/webp/pdf.'); redirect_to('skp_form', ['id' => $id]); }
+    // Isinya dibuktikan, bukan cuma namanya — lihat clara_isi_berkas_sah().
+    if (!clara_isi_berkas_sah($f['tmp_name'], $ext)) { flash('Isi berkasnya bukan ' . strtoupper($ext) . ' yang sah.'); redirect_to('skp_form', ['id' => $id]); }
 
     $dir = dirname(__DIR__, 2) . '/public/uploads/skp';
     if (!is_dir($dir)) @mkdir($dir, 0777, true);

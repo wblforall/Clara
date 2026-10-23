@@ -21,6 +21,8 @@ function my_signature_save(PDO $pdo): void
     if ($f['size'] <= 0 || $f['size'] > 2 * 1024 * 1024) { flash('Ukuran maksimal 2 MB.'); redirect_to('my_signature'); }
     $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
     if (!in_array($ext, ['png', 'jpg', 'jpeg', 'webp'], true)) { flash('Format harus PNG/JPG/WEBP.'); redirect_to('my_signature'); }
+    // Isinya dibuktikan, bukan cuma namanya — lihat clara_isi_berkas_sah().
+    if (!clara_isi_berkas_sah($f['tmp_name'], $ext)) { flash('Isi berkasnya bukan gambar yang sah.'); redirect_to('my_signature'); }
 
     $dir = _sig_dir();
     if (!is_dir($dir)) @mkdir($dir, 0777, true);

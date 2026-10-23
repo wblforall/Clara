@@ -80,6 +80,8 @@ function _cr_upload_bukti(PDO $pdo, int $skpId, string $uname): void
     if ($f['size'] <= 0 || $f['size'] > 5 * 1024 * 1024) return;
     $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
     if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'], true)) return;
+    // Isinya dibuktikan, bukan cuma namanya — lihat clara_isi_berkas_sah().
+    if (!clara_isi_berkas_sah($f['tmp_name'], $ext)) return;
     $dir = dirname(__DIR__, 2) . '/public/uploads/skp';
     if (!is_dir($dir)) @mkdir($dir, 0777, true);
     $fname = 'skp' . $skpId . '_bukti_transfer_' . bin2hex(random_bytes(4)) . '.' . $ext;
@@ -345,6 +347,8 @@ function _cr_handle_uploads(PDO $pdo, int $crId): void
         if ($f['size'] <= 0 || $f['size'] > 8 * 1024 * 1024) continue;
         $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
         if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'], true)) continue;
+        // Isinya dibuktikan, bukan cuma namanya — lihat clara_isi_berkas_sah().
+        if (!clara_isi_berkas_sah($f['tmp_name'], $ext)) continue;
         $fname = 'cr' . $crId . '_' . substr($field, 5) . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
         if (!@move_uploaded_file($f['tmp_name'], $dir . '/' . $fname)) continue;
         $pdo->prepare("UPDATE contract_requests SET $pathCol=?, $flagCol=1 WHERE id=?")

@@ -417,6 +417,55 @@ function current_role(): string
 }
 
 /**
+ * Jenis berkas yang boleh diunggah, beserta cara membuktikannya.
+ *
+ * Kuncinya ekstensi; nilainya daftar IMAGETYPE_* yang sah untuk ekstensi itu.
+ * PDF tidak punya IMAGETYPE, jadi ditandai null dan diperiksa lewat tanda
+ * pengenalnya sendiri.
+ */
+const CLARA_JENIS_UNGGAH = [
+    'jpg'  => [IMAGETYPE_JPEG],
+    'jpeg' => [IMAGETYPE_JPEG],
+    'png'  => [IMAGETYPE_PNG],
+    'webp' => [IMAGETYPE_WEBP],
+    'pdf'  => null,
+];
+
+/**
+ * ISI berkas unggahan benar-benar sesuai ekstensinya?
+ *
+ * Nama berkas selalu dibuat ulang oleh aplikasi dengan ekstensi dari daftar
+ * putih, jadi muatan tidak mungkin tersimpan sebagai .php — dan .htaccess di
+ * folder unggahan menolak menjalankan skrip apa pun. Yang selama ini TIDAK
+ * diperiksa adalah isinya: berkas apa pun diterima asal namanya berakhiran
+ * .jpg. Folder unggahan jadi tempat penitipan muatan, dan satu-satunya yang
+ * menahannya adalah berlakunya .htaccess itu — yang bisa gagal diam-diam bila
+ * konfigurasi server berubah (AllowOverride mati, pindah ke Nginx, pindah
+ * hosting).
+ *
+ * Pemeriksaan ini lapisan terakhirnya, dan sengaja dibuat ketat: gambar harus
+ * benar-benar gambar DENGAN JENIS YANG SAMA dengan ekstensinya, PDF harus
+ * benar-benar diawali %PDF-. Berkas yang tidak bisa dibuktikan ditolak, bukan
+ * diterima dengan syarat.
+ */
+function clara_isi_berkas_sah(string $tmp, string $ext): bool
+{
+    $ext = strtolower($ext);
+    if (!array_key_exists($ext, CLARA_JENIS_UNGGAH)) return false;
+    if (!is_file($tmp) || filesize($tmp) <= 0) return false;
+
+    if ($ext === 'pdf') {
+        // %PDF- boleh didahului beberapa byte sampah; pembaca PDF mencarinya di
+        // 1 KB pertama, jadi batas yang sama dipakai di sini.
+        $awal = (string) @file_get_contents($tmp, false, null, 0, 1024);
+        return strpos($awal, '%PDF-') !== false;
+    }
+
+    $info = @getimagesize($tmp);
+    return is_array($info) && in_array($info[2] ?? 0, CLARA_JENIS_UNGGAH[$ext], true);
+}
+
+/**
  * Nama pelaku untuk JEJAK dokumen — siapa yang membuat, mengubah, memaraf,
  * menolak, menyetujui, atau menghapus.
  *
