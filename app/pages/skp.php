@@ -971,17 +971,12 @@ function skp_form(PDO $pdo): void
                  diarahkan ke daftar dokumen saja. */ ?>
         <?php $kembaliDaftar = $standalone || $sumberHilang; ?>
         <div class="toolbar" style="gap:8px"><a class="btn light" href="?r=<?= $kembaliDaftar ? 'skp' : ($offerId ? 'offer_form&id=' . (int)$offerId : 'allocation_detail&id=' . (int)$trxId) ?>">← <?= $kembaliDaftar ? 'Daftar Dokumen' : ($offerId ? 'Penawaran' : 'Detail Alokasi') ?></a><a class="btn light" href="?r=skp">Daftar Dokumen</a>
-            <?php /* Pratinjau bercap. Ditaruh di sini, bukan di baris tombol Simpan,
-                     karena baris itu hilang begitu dokumen tidak lagi bisa diedit —
-                     padahal saat menunggu paraf/persetujuan itulah pemeriksa paling
-                     butuh melihat hasil jadinya. Berlaku untuk SKP, SKS, dan Form
-                     Utilities, termasuk dokumen yang belum pernah disimpan. */ ?>
+            <?php /* Alamat pratinjau disiapkan di sini karena dipakai di baris
+                     tombol di bawah; dokumen yang belum pernah disimpan pun punya
+                     alamatnya sendiri (dari penawaran, transaksi, atau modulnya). */ ?>
             <?php $prevQ = $skp ? 'id=' . (int) $skp['id']
                     : ($offerId ? 'offer_id=' . (int) $offerId
                         : ($trxId ? 'transaction_id=' . (int) $trxId : 'module=' . h($modKind))); ?>
-            <a class="btn light" style="background:#ecfdf5;color:#065f46;border-color:#a7f3d0"
-               href="?r=skp_form&<?= $prevQ ?>&pratinjau=1" target="_blank" rel="noopener"
-               title="Surat contoh bercap &quot;CONTOH — BELUM SAH&quot;, tanpa nomor dokumen">👁 Lihat Contoh Surat</a>
             <span class="badge" style="background:#e0f2fe;color:#0369a1"><?= h($docLabel) ?></span></div>
 
         <?php /* Transaksi/penawaran asalnya sudah tidak ada. Dokumennya tetap bisa
@@ -1527,10 +1522,19 @@ function skp_form(PDO $pdo): void
             <p class="help" style="margin-top:16px;color:#92400e">Submit untuk approval hanya bisa setelah <strong>Scan KTP</strong> dan <strong>Scan NPWP</strong> ada. Untuk client yang pernah dibuatkan dokumen, scan lamanya otomatis dipakai ulang (centang <strong>Pakai ulang</strong> sudah aktif) &mdash; tidak perlu unggah lagi.<br>
                 <strong>Bukti Transfer</strong> tidak diunggah di sini &mdash; tempatnya di <strong>Permintaan Kontrak</strong>, sebelum berkas dikirim ke Legal.</p>
             <p class="help" style="margin-top:6px">Tombol <strong>Cetak / Simpan PDF</strong> baru muncul setelah manager menyetujui &mdash; saat itulah nomor dokumen terbit dan isinya dikunci. Sebelum itu, pakai <strong>Lihat Contoh Surat</strong> untuk melihat hasil jadinya.</p>
-            <p class="form-actions" style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">
+            <?php endif; ?>
+            <?php /* Baris tombol SELALU tampil, walau dokumennya tidak bisa diedit:
+                     tombol pratinjau duduk di sini, dan justru saat menunggu paraf
+                     itulah pemeriksa paling butuh melihat hasil jadinya. */ ?>
+            <p class="form-actions" style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+                <?php if ($editable): ?>
                 <button type="submit" onclick="document.getElementById('skp-action').value='save'" class="btn secondary">Simpan Draft</button>
                 <button type="submit" onclick="document.getElementById('skp-action').value='submit'" style="background:#0369a1">Simpan & Submit untuk Approval</button>
                 <a class="btn secondary" href="?r=skp">Batal</a>
+                <?php endif; ?>
+                <a class="btn light" style="background:#ecfdf5;color:#065f46;border-color:#a7f3d0"
+                   href="?r=skp_form&<?= $prevQ ?>&pratinjau=1" target="_blank" rel="noopener"
+                   title="Surat contoh bercap &quot;CONTOH — BELUM SAH&quot;, tanpa nomor dokumen">👁 Lihat Contoh Surat</a>
                 <?php /* Draft yang belum jadi apa-apa boleh dibuang di sini juga.
                          Tanpa ini, perpanjangan yang ditinggal di tengah jalan
                          menumpuk sebagai draft kosong di daftar dokumen — dan
@@ -1546,39 +1550,7 @@ function skp_form(PDO $pdo): void
                 </form>
                 <?php endif; ?>
             </p>
-            <?php endif; ?>
         </form>
-
-        <?php /* Ganti berkas tanpa menolak dokumen. Formulir di atas terkunci
-                 begitu disubmit, padahal scan yang salah cukup diganti — tidak
-                 perlu menolak yang membatalkan transaksinya. Form terpisah
-                 supaya tidak tersarang di dalam form utama. */ ?>
-        <?php if ($skp && !$editable && can('manage_skp')): ?>
-        <div class="panel" style="margin-top:12px;border:1px solid #fde68a;background:#fffbeb">
-            <h3 style="margin-top:0;color:#92400e">Ganti Berkas Lampiran</h3>
-            <p class="help" style="margin-top:0">Dokumen sudah terkunci, tapi <strong>scan</strong>-nya masih boleh diperbaiki &mdash; misalnya KTP yang salah unggah. Nilai, periode dan nomor dokumen tidak ikut berubah.</p>
-            <div class="form-grid">
-                <?php foreach (['ktp' => 'Scan KTP', 'npwp' => 'Scan NPWP', 'siup' => 'Scan SIUP', 'pengajuan' => 'Pengajuan'] as $gk => $gl):
-                    $gAda = $atts[$gk] ?? null; ?>
-                <div>
-                    <label><?= $gl ?></label>
-                    <div style="font-size:12px;margin-bottom:5px">
-                        <?= $gAda
-                            ? '📎 <a href="' . h(upload_url($gAda['file_path'])) . '" target="_blank">' . h($gAda['original_name'] ?: 'lihat') . '</a>'
-                            : '<span class="muted">belum ada</span>' ?>
-                    </div>
-                    <form method="post" action="?r=skp_attachment_replace" enctype="multipart/form-data" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-                        <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
-                        <input type="hidden" name="id" value="<?= (int) $skp['id'] ?>">
-                        <input type="hidden" name="kind" value="<?= h($gk) ?>">
-                        <input type="file" name="berkas" accept="image/*,application/pdf" required style="flex:1;min-width:0">
-                        <button type="submit" class="btn secondary" style="flex:none">Ganti</button>
-                    </form>
-                </div>
-                <?php endforeach; ?>
-            </div>
-        </div>
-        <?php endif; ?>
 
         <?php /* ── Permintaan revisi ──────────────────────────────────────────
                  Dokumen yang sudah disetujui memang dikunci. Tetapi selama client
@@ -1651,7 +1623,14 @@ function skp_form(PDO $pdo): void
         <div class="panel" style="margin-top:12px">
             <h3 style="margin-top:0">Alur Persetujuan</h3>
             <?php if ($alur): ?>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:stretch;margin-bottom:9px">
+            <?php /* Stepper: satu baris bulatan bernomor yang terhubung garis.
+                     Keadaan tiap tahap dibaca dari warnanya, bukan dari kalimat —
+                     hijau sudah lewat, kuning sedang ditunggu, abu-abu belum
+                     giliran. Karena itu tidak ada lagi spanduk "masih menunggu
+                     ..." di bawahnya: isinya persis sama dengan yang sudah
+                     terbaca di sini. */ ?>
+            <?php $nAlur = count($alur); ?>
+            <div style="display:flex;align-items:flex-start;margin:2px 0 4px">
                 <?php foreach ($alur as $i => $tp):
                     // Tahap yang sedang menunggu ditentukan lebih dulu, lalu
                     // dikeluarkan dari hitungan "sudah lewat" — kalau tidak,
@@ -1663,45 +1642,50 @@ function skp_form(PDO $pdo): void
                     // sama dengan mengarang bahwa seseorang sudah memeriksanya.
                     $tanpaBukti = !$alurJejak && (int) ($skp['approval_level'] ?? 0) >= 99;
                     $lewat  = !$kini && !$tanpaBukti && ($i < (int) ($skp['approval_level'] ?? 0) || in_array($skp['status'], ['approved','signed'], true));
-                    $warna  = $lewat ? ['#166534','#dcfce7','#bbf7d0'] : ($kini ? ['#92400e','#fef3c7','#fde68a'] : ['#64748b','#f8fafc','#e2e8f0']);
+                    $bulat  = $lewat ? ['#166534', '#bbf7d0'] : ($kini ? ['#fff', '#f59e0b'] : ['#94a3b8', '#e2e8f0']);
+                    $garisKiri  = $lewat || $kini ? '#bbf7d0' : '#e2e8f0';
+                    $garisKanan = $lewat ? '#bbf7d0' : '#e2e8f0';
+                    $ket = $lewat ? 'Selesai' : ($kini ? 'Menunggu' : ($tanpaBukti ? 'Sebelum alur ini' : 'Belum giliran'));
                 ?>
-                <div style="flex:1;min-width:170px;border:1px solid <?= $warna[2] ?>;background:<?= $warna[1] ?>;border-radius:9px;padding:8px 11px">
-                    <div style="font-size:11px;color:<?= $warna[0] ?>;font-weight:700;text-transform:uppercase;letter-spacing:.04em">
-                        Tahap <?= (int) $tp['step_no'] ?><?= $lewat ? ' · selesai' : ($kini ? ' · menunggu' : ($tanpaBukti ? ' · sebelum alur ini' : '')) ?>
+                <div style="flex:1;min-width:0;text-align:center;position:relative;padding:0 2px">
+                    <?php if ($i > 0): ?><div style="position:absolute;left:0;right:50%;top:12px;height:2px;background:<?= $garisKiri ?>"></div><?php endif; ?>
+                    <?php if ($i < $nAlur - 1): ?><div style="position:absolute;left:50%;right:0;top:12px;height:2px;background:<?= $garisKanan ?>"></div><?php endif; ?>
+                    <div style="position:relative;width:26px;height:26px;margin:0 auto;border-radius:50%;
+                                background:<?= $bulat[1] ?>;color:<?= $bulat[0] ?>;font-weight:800;font-size:12px;
+                                line-height:26px"><?= $lewat ? '&#10003;' : (int) $tp['step_no'] ?></div>
+                    <div style="font-weight:700;font-size:12.5px;margin-top:5px;line-height:1.3"><?= h($tp['label']) ?></div>
+                    <div style="font-size:11px;color:<?= $kini ? '#b45309' : 'var(--muted)' ?>;line-height:1.35">
+                        <?= $kini ? '<strong>' . h($ket) . '</strong>' : h($ket) ?><?= $tp['pic_name'] ? ' &middot; ' . h($tp['pic_name']) : '' ?>
                     </div>
-                    <div style="font-weight:700;margin-top:2px"><?= h($tp['label']) ?></div>
-                    <?php if ($tp['pic_name']): ?><div style="font-size:11.5px;color:var(--muted)">khusus <?= h($tp['pic_name']) ?></div><?php endif; ?>
                 </div>
                 <?php endforeach; ?>
             </div>
             <?php endif; ?>
-            <?php /* Keteranganannya sudah menyebut nama orangnya (keteranganNama),
-                     jadi tidak perlu ditambah daftar nama lagi di belakangnya. */ ?>
-            <?php if ($skp['status'] === 'submitted' && $alurKet): ?>
-            <p style="margin:0 0 6px;padding:9px 12px;border-radius:8px;background:#fffbeb;border:1px solid #fde68a;color:#92400e">
-                <strong>&#9203; <?= h($alurKet) ?></strong>
-            </p>
-            <?php endif; ?>
             <?php if ($alurJejak): ?>
-            <div class="table-wrap" style="margin-top:4px">
-                <table style="max-width:720px;font-size:12.5px">
-                    <thead><tr><th>Tahap</th><th>Tindakan</th><th>Oleh</th><th>Waktu</th><th>Catatan</th></tr></thead>
-                    <tbody>
-                    <?php foreach ($alurJejak as $j):
-                        $lbl = ['paraf' => 'Diparaf', 'approve' => 'Disetujui', 'tolak' => 'Dikembalikan ke PIC',
-                                'kembali' => 'Dikembalikan ke tahap sebelumnya', 'batal' => 'Kesepakatan dibatalkan',
-                                'ulang' => 'Alur diubah — diulang'][$j['action']] ?? $j['action'];
-                        $w   = in_array($j['action'], ['tolak', 'batal', 'kembali'], true) ? '#b91c1c' : ($j['action'] === 'ulang' ? '#92400e' : '#15803d'); ?>
-                    <tr>
-                        <td><?= (int) $j['step_no'] ?>. <?= h($j['role_name'] ?: '-') ?></td>
-                        <td style="color:<?= $w ?>;font-weight:700"><?= h($lbl) ?></td>
-                        <td><?= h($j['approver_name'] ?: '-') ?></td>
-                        <td style="white-space:nowrap"><?= h(substr((string) $j['created_at'], 0, 16)) ?></td>
-                        <td><?= h($j['note'] ?: '—') ?></td>
-                    </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
+            <?php /* Riwayat sebagai garis waktu, bukan tabel lima kolom: judul
+                     kolom dan tanda "—" untuk catatan kosong dulu memakan lebih
+                     banyak ruang daripada isinya sendiri. */ ?>
+            <div style="margin-top:12px;border-top:1px solid #e2e8f0;padding-top:9px">
+                <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:5px">Riwayat</div>
+                <?php foreach ($alurJejak as $k => $j):
+                    $lbl = ['paraf' => 'Diparaf', 'approve' => 'Disetujui', 'tolak' => 'Dikembalikan ke PIC',
+                            'kembali' => 'Dikembalikan ke tahap sebelumnya', 'batal' => 'Kesepakatan dibatalkan',
+                            'ulang' => 'Alur diubah — diulang'][$j['action']] ?? $j['action'];
+                    $w = in_array($j['action'], ['tolak', 'batal', 'kembali'], true) ? '#b91c1c'
+                       : ($j['action'] === 'ulang' ? '#b45309' : '#15803d');
+                    $jam = strtotime((string) $j['created_at']); ?>
+                <div style="display:flex;gap:9px;padding:4px 0<?= $k ? ';border-top:1px solid #f1f5f9' : '' ?>">
+                    <span style="flex:none;width:7px;height:7px;border-radius:50%;background:<?= $w ?>;margin-top:6px"></span>
+                    <div style="flex:1;min-width:0;font-size:12.5px;line-height:1.45">
+                        <strong style="color:<?= $w ?>"><?= h($lbl) ?></strong>
+                        <span style="color:var(--muted)">&middot; <?= h($j['approver_name'] ?: '-') ?><?= $j['role_name'] ? ' (' . h($j['role_name']) . ')' : '' ?>
+                            &middot; <?= $jam ? h(date('d/m/Y H:i', $jam)) : '-' ?></span>
+                        <?php if (trim((string) ($j['note'] ?? '')) !== ''): ?>
+                        <div style="color:#475569;font-size:12px">&ldquo;<?= h($j['note']) ?>&rdquo;</div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endforeach; ?>
             </div>
             <?php endif; ?>
         </div>
@@ -1710,9 +1694,10 @@ function skp_form(PDO $pdo): void
         <?php if ($skp && $skp['status'] === 'submitted' && $alurBoleh): ?>
         <div class="panel" style="margin-top:12px;border:1px solid #bae6fd;background:#f0f9ff">
             <h3 style="margin-top:0;color:#0369a1"><?= $alurAkhir ? 'Persetujuan Akhir' : 'Paraf ' . h($alurTahap['label'] ?? '') ?></h3>
+            <?php /* Stepper di atas sudah memperlihatkan tahap berikutnya siapa,
+                     jadi di sini cukup akibat parafnya saja. */ ?>
             <?php if (!$alurAkhir): ?>
-            <p style="margin:0 0 8px;font-size:12.5px;color:#0c4a6e">Paraf Anda <strong>belum menerbitkan nomor dokumen</strong> &mdash;
-               dokumen diteruskan ke tahap berikutnya untuk persetujuan akhir.</p>
+            <p style="margin:0 0 8px;font-size:12.5px;color:#0c4a6e">Paraf Anda <strong>belum menerbitkan nomor dokumen</strong>.</p>
             <?php endif; ?>
             <?php if ($alurWakil): ?>
             <p style="margin:0 0 8px;font-size:12.5px;color:#92400e">Anda bertindak <strong>mewakili <?= h($alurTahap['label'] ?? '') ?></strong>. Hal ini akan tercatat di jejak persetujuan.</p>
@@ -1735,7 +1720,8 @@ function skp_form(PDO $pdo): void
                      . '\n\nDokumen jatuh ke status Ditolak dan harus diajukan ulang dari awal.'
                      . '\nAlokasi bulanannya dilepas dari laporan sampai disetujui kembali.'
                      . '\nKesepakatannya TIDAK dibatalkan.'
-                     . '\n\nKalau hanya salah scan KTP/NPWP, tidak perlu ditolak — pakai Ganti Berkas Lampiran.';
+                     . '\n\nBerkas lampiran tidak bisa diganti setelah dokumen terkunci — scan yang salah'
+                     . '\nharus lewat penolakan ini supaya perubahannya tercatat.';
             ?>
             <form method="post" action="?r=skp_reject" style="display:inline-flex;gap:8px;align-items:center;margin-left:10px;flex-wrap:wrap">
                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>"><input type="hidden" name="id" value="<?= (int)$skp['id'] ?>">
@@ -1754,14 +1740,16 @@ function skp_form(PDO $pdo): void
                 <button type="submit" name="ke_pic" value="1" class="btn warn" style="background:#b91c1c"
                         onclick="return confirm('<?= $konfPic ?>')">✗ Tolak &amp; kembalikan ke PIC</button>
             </form>
+            <?php /* Urutan tahapnya tidak disebut lagi di sini — stepper di atas
+                     sudah menggambarkannya, dan mengulangnya sebagai kalimat
+                     membuat panel ini penuh tulisan yang sama. */ ?>
             <p class="help" style="margin:8px 0 0">
                <?php if ($keBawah): ?>
-               <strong>Kembalikan</strong> = turun satu tahap ke <?= h($keBawah['label']) ?>, isinya tidak diubah &mdash; dipakai bila cukup diperiksa ulang.
-               <strong>Tolak</strong> = balik ke PIC untuk diperbaiki, lalu diajukan dari awal lagi.
+               <strong>Kembalikan</strong> = turun satu tahap ke <?= h($keBawah['label']) ?>, isi dokumen tidak diubah.
+               <strong>Tolak</strong> = balik ke PIC untuk diperbaiki, lalu diajukan dari awal.
                <?php else: ?>
-               Menolak mengembalikan dokumen ke PIC untuk diperbaiki, bukan membatalkan kesepakatan.
-               <?php endif; ?>
-               Urutannya PIC &rarr; <?= implode(' &rarr; ', array_map('h', array_column($alur, 'label'))) ?>. Hanya <strong>PIC</strong> yang bisa memperbaiki isinya.</p>
+               <strong>Tolak</strong> = balik ke PIC untuk diperbaiki. Kesepakatannya tidak dibatalkan.
+               <?php endif; ?></p>
         </div>
 
         <?php /* Membatalkan kesepakatan adalah tindakan tersendiri, wewenang
@@ -3682,110 +3670,6 @@ function skp_cancel_deal(PDO $pdo): void
     audit($pdo, 'skp_batal', 'skp_documents', (string) $id, ['alasan' => $note, 'transaksi' => $trx ? $trxId : null], (array) ($trx ?: []));
     flash('Kesepakatan dibatalkan.' . ($trx ? ' Transaksi #' . $trxId . ' ikut dibatalkan & dihapus dari laporan.' : ''));
     redirect_to('skp_form', ['id' => $id]);
-}
-
-/**
- * Ganti satu berkas lampiran pada dokumen yang sudah terkunci (submitted /
- * approved / signed). Hanya berkasnya yang berubah — nilai, periode dan nomor
- * dokumen tetap. Snapshot ikut disegarkan supaya PDF menunjuk berkas yang baru.
- */
-function skp_attachment_replace(PDO $pdo): void
-{
-    require_permission('manage_skp');
-    verify_csrf();
-    $pid  = current_property_id();
-    $id   = (int) post('id');
-    $kind = strtolower(trim((string) post('kind')));
-    $kembali = ['skp_form', ['id' => $id]];
-
-    if (!in_array($kind, ['ktp', 'npwp', 'siup', 'pengajuan'], true)) {
-        flash('Jenis lampiran tidak dikenal.');
-        redirect_to(...$kembali);
-    }
-    $st = $pdo->prepare('SELECT * FROM skp_documents WHERE id = ? AND property_id = ?');
-    $st->execute([$id, $pid]);
-    $skp = $st->fetch();
-    if (!$skp) { flash('Dokumen tidak ditemukan.'); redirect_to('skp'); }
-
-    // Pembatasan per-sales sama seperti halaman dokumennya.
-    if ($sc = current_sales_scope($pdo, $pid)) {
-        $milik = ($sc['pic'] !== '' && (string) ($skp['pic_name'] ?? '') === $sc['pic'])
-            || ($skp['created_by'] ?? '') === $sc['uname'];
-        if (!$milik && $skp['transaction_id']) {
-            $q = $pdo->prepare('SELECT pic_name FROM transactions WHERE id = ?');
-            $q->execute([(int) $skp['transaction_id']]);
-            $milik = $sc['pic'] !== '' && (string) $q->fetchColumn() === $sc['pic'];
-        }
-        if (!$milik && $skp['offer_id']) {
-            $q = $pdo->prepare('SELECT pic_name FROM offers WHERE id = ?');
-            $q->execute([(int) $skp['offer_id']]);
-            $milik = $sc['pic'] !== '' && (string) $q->fetchColumn() === $sc['pic'];
-        }
-        if (!$milik) { flash('SKP ini bukan milik Anda.'); redirect_to('skp'); }
-    }
-
-    $f = $_FILES['berkas'] ?? null;
-    if (!$f || empty($f['tmp_name']) || !is_uploaded_file($f['tmp_name'])) {
-        flash('Berkas belum dipilih.');
-        redirect_to(...$kembali);
-    }
-    if ($f['size'] <= 0 || $f['size'] > 5 * 1024 * 1024) {
-        flash('Ukuran berkas maksimal 5 MB.');
-        redirect_to(...$kembali);
-    }
-    $ext = strtolower(pathinfo((string) $f['name'], PATHINFO_EXTENSION));
-    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'], true)) {
-        flash('Format berkas harus JPG, PNG, WEBP atau PDF.');
-        redirect_to(...$kembali);
-    }
-
-    $dir = dirname(__DIR__, 2) . '/public/uploads/skp';
-    if (!is_dir($dir)) @mkdir($dir, 0777, true);
-    $nama = 'skp' . $id . '_' . $kind . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-    if (!@move_uploaded_file($f['tmp_name'], $dir . '/' . $nama)) {
-        flash('Gagal menyimpan berkas.');
-        redirect_to(...$kembali);
-    }
-
-    $lamaQ = $pdo->prepare('SELECT file_path FROM skp_attachments WHERE skp_id = ? AND kind = ?');
-    $lamaQ->execute([$id, $kind]);
-    $lama = (string) ($lamaQ->fetchColumn() ?: '');
-
-    $uname = $_SESSION['user']['name'] ?? 'system';
-    $pdo->beginTransaction();
-    try {
-        $pdo->prepare('DELETE FROM skp_attachments WHERE skp_id = ? AND kind = ?')->execute([$id, $kind]);
-        $pdo->prepare('INSERT INTO skp_attachments (skp_id, kind, file_path, original_name, uploaded_by) VALUES (?,?,?,?,?)')
-            ->execute([$id, $kind, 'uploads/skp/' . $nama, substr((string) $f['name'], 0, 190), $uname . ' (ganti)']);
-        // Snapshot dokumen menyimpan daftar lampiran — ikut disegarkan agar PDF
-        // & halaman TTD menunjuk berkas yang benar. Angka di dalamnya tak disentuh.
-        if (!empty($skp['snapshot_json'])) {
-            $snap = json_decode((string) $skp['snapshot_json'], true);
-            if (is_array($snap)) {
-                $snap['attachments'] = _skp_attachment_list($pdo, $id);
-                $pdo->prepare('UPDATE skp_documents SET snapshot_json = ? WHERE id = ? AND property_id = ?')
-                    ->execute([json_encode($snap, JSON_UNESCAPED_UNICODE), $id, $pid]);
-            }
-        }
-        $pdo->commit();
-    } catch (Throwable $e) {
-        $pdo->rollBack();
-        @unlink($dir . '/' . $nama);
-        throw $e;
-    }
-
-    // Berkas lama dibuang hanya bila tidak dipakai dokumen lain (scan bisa dipakai ulang).
-    if ($lama !== '') {
-        $pakai = $pdo->prepare('SELECT COUNT(*) FROM skp_attachments WHERE file_path = ?');
-        $pakai->execute([$lama]);
-        if ((int) $pakai->fetchColumn() === 0) {
-            $abs = dirname(__DIR__, 2) . '/public/' . ltrim($lama, '/');
-            if (is_file($abs)) @unlink($abs);
-        }
-    }
-    audit($pdo, 'ganti_lampiran', 'skp_documents', (string) $id, ['kind' => $kind, 'file' => 'uploads/skp/' . $nama]);
-    flash('Berkas ' . strtoupper($kind) . ' diganti. Nilai & nomor dokumen tidak berubah.');
-    redirect_to(...$kembali);
 }
 // ─── Opsi B: unggah dokumen ber-TTD — setara TTD online lewat tautan ─────────
 function skp_sign_upload(PDO $pdo): void

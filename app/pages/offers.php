@@ -1718,15 +1718,6 @@ function offer_form(PDO $pdo): void
             <?php /* Bagian Catatan hanya ada saat penawarannya masih bisa diedit —
                      tautannya ikut, supaya tidak ada tombol yang menuju ke mana pun. */ ?>
             <?php if ($offer && $editable): ?><a href="#sp-catatan">Catatan</a><?php endif; ?>
-            <?php /* Pratinjau dari isian yang SEDANG diketik — tidak perlu disimpan
-                     dulu. Tombolnya mengirim formulir ini ke ?r=offer_preview di tab
-                     baru; tidak ada satu pun baris yang ditulis ke basis data.
-                     formaction/formtarget dipakai supaya nilainya ikut apa adanya,
-                     termasuk yang baru diketik dan belum pernah tersimpan. */ ?>
-            <button type="submit" form="offer-form" formaction="?r=offer_preview" formtarget="_blank"
-                    formnovalidate class="btn light"
-                    style="margin-left:auto;background:#ecfdf5;color:#065f46;border-color:#a7f3d0;font-size:12px;padding:4px 10px"
-                    title="Surat contoh bercap &quot;CONTOH — BELUM SAH&quot;, tanpa nomor penawaran">👁 Lihat Contoh Surat</button>
         </div>
         <form class="panel" method="post" action="?r=offer_save" style="margin-top:12px" id="offer-form">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
@@ -2379,9 +2370,28 @@ function offer_form(PDO $pdo): void
             <input name="rev_note" placeholder="mis. turun harga jadi 20jt, tambah 1 bulan gratis…" <?= $disabled ?> style="width:100%">
             <?php endif; ?>
 
-            <?php if ($editable): ?>
-            <p class="form-actions" style="margin-top:16px"><button type="submit">💾 <?= $existing ? 'Simpan Revisi' : 'Simpan Penawaran' ?></button> <a class="btn secondary" href="?r=offers">Batal</a></p>
-            <?php endif; ?>
+            <p class="form-actions" style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+                <?php if ($editable): ?>
+                <button type="submit">💾 <?= $existing ? 'Simpan Revisi' : 'Simpan Penawaran' ?></button>
+                <a class="btn secondary" href="?r=offers">Batal</a>
+                <?php /* Pratinjau dari isian yang SEDANG diketik — tidak perlu disimpan
+                         dulu. Tombolnya mengirim formulir ini ke ?r=offer_preview di tab
+                         baru; tidak ada satu pun baris yang ditulis ke basis data.
+                         formaction/formtarget dipakai supaya nilainya ikut apa adanya,
+                         termasuk yang baru diketik dan belum pernah tersimpan. */ ?>
+                <button type="submit" formaction="?r=offer_preview" formtarget="_blank"
+                        formnovalidate class="btn light"
+                        style="background:#ecfdf5;color:#065f46;border-color:#a7f3d0"
+                        title="Surat contoh bercap &quot;CONTOH — BELUM SAH&quot;, tanpa nomor penawaran">👁 Lihat Contoh Surat</button>
+                <?php elseif (!empty($offer['offer_no'])): ?>
+                <?php /* Penawaran yang sudah terkunci: isiannya dimatikan, jadi
+                         pratinjau dari formulir hanya akan menghasilkan surat
+                         kosong. Suratnya sendiri sudah terbit — itu yang dibuka. */ ?>
+                <a class="btn light" style="background:#ecfdf5;color:#065f46;border-color:#a7f3d0"
+                   href="?r=offer_print&id=<?= (int) $offer['id'] ?>" target="_blank" rel="noopener"
+                   title="Surat penawaran yang sudah terbit">🖨 Lihat Surat</a>
+                <?php endif; ?>
+            </p>
         </form>
 
         <script>
