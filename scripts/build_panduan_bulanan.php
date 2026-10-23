@@ -176,7 +176,86 @@ function sandingkan(array $ss, array $cl): array
 
     $pastikan = $ambil(fn($s, $c) => round((float) $c['amount']) === round((float) $s['nilai']) ? 0.0 : null);
 
-    return [$cocok, $koreksi, $pastikan, array_values($sisaSs), array_values($sisaCl)];
+    // ── Baris GABUNGAN ──────────────────────────────────────────────────────
+    //
+    // Satu baris spreadsheet kerap mewakili BEBERAPA transaksi sekaligus.
+    // Contohnya nyata: "4/GF ISLAND — Rp 66.080.000" adalah empat unit island
+    // @ Rp 16.520.000, dan di CLARA tercatat sebagai empat transaksi terpisah
+    // (GF-005, GF-006, ...). Pencocokan satu-lawan-satu tidak akan pernah
+    // menemukan pasangannya, lalu keempatnya dilaporkan "tidak ada di
+    // spreadsheet" dan disuruh dihapus — padahal semuanya sah. Mengikuti
+    // panduan seperti itu berarti membuang pendapatan yang benar.
+    //
+    // Penandanya: beberapa transaksi dengan penyewa & nilai yang SAMA PERSIS,
+    // dan ada baris spreadsheet yang nilainya kelipatan bulat dari nilai itu.
+    $gabungan = [];
+    $perGrup = [];
+    foreach ($sisaCl as $i => $c) {
+        $perGrup[mb_strtolower((string) $c['nama']) . '|' . round((float) $c['amount'])][] = $i;
+    }
+    foreach ($perGrup as $idx) {
+        if (count($idx) < 2) continue;
+        // (int) wajib: round() mengembalikan float, sedangkan % dan intdiv()
+        // hanya menerima bilangan bulat.
+        $satuan = (int) round((float) $sisaCl[$idx[0]]['amount']);
+        if ($satuan <= 0) continue;
+        foreach ($sisaSs as $j => $s) {
+            $nilai = (int) round((float) $s['nilai']);
+            if ($nilai < $satuan || $nilai % $satuan !== 0) continue;
+            $n = intdiv($nilai, $satuan);
+            // Kelipatan harus masuk akal: minimal sebanyak yang sudah ada, dan
+            // tidak jauh di atasnya — kalau tidak, angka yang kebetulan habis
+            // dibagi akan tertarik jadi "gabungan" yang tidak pernah ada.
+            if ($n < count($idx) || $n > count($idx) + 4) continue;
+            $anggota = array_map(fn($i) => $sisaCl[$i], $idx);
+            $gabungan[] = ['ss' => $s, 'cl' => $anggota, 'satuan' => (float) $satuan,
+                           'jumlah_seharusnya' => $n, 'jumlah_ada' => count($idx)];
+            foreach ($idx as $i) unset($sisaCl[$i]);
+            unset($sisaSs[$j]);
+            break;
+        }
+    }
+
+    // ── Baris DOBEL di CLARA ────────────────────────────────────────────────
+    //
+    // Penyewa, unit, dan nilai sama persis, tercatat lebih dari sekali —
+    // sementara spreadsheet hanya memuatnya satu kali. Dipisahkan dari
+    // "tidak ada di spreadsheet" karena alasannya berbeda, dan yang dikerjakan
+    // juga berbeda: yang satu disimpan, kelebihannya yang dibuang.
+    $dobel = [];
+    $kunci = static fn(array $c): string => mb_strtolower((string) $c['nama']) . '|'
+        . (string) $c['master_code'] . '|' . round((float) $c['amount']);
+
+    // Kembarannya dicari di SELURUH daftar CLARA, bukan hanya di sisa yang
+    // belum berpasangan.
+    //
+    // Pada sepasang transaksi kembar, satu di antaranya hampir selalu sudah
+    // dipasangkan dengan baris spreadsheet-nya — yang tertinggal tinggal satu,
+    // sehingga pencarian di antara sisa saja tidak pernah menemukan pasangan
+    // dan baris itu dilaporkan sebagai "tidak ada di spreadsheet". Alasannya
+    // jadi keliru: bukan tidak ada, melainkan tercatat dua kali.
+    $sisaId = [];
+    foreach ($sisaCl as $c) $sisaId[(int) $c['trx']] = true;
+    foreach ($sisaCl as $i => $c) {
+        $k = $kunci($c);
+        $pasangan = null;
+        foreach ($cl as $lain) {
+            if ((int) $lain['trx'] === (int) $c['trx']) continue;
+            if ($kunci($lain) !== $k) continue;
+            // Yang SUDAH berpasangan didahulukan sebagai "yang disimpan": itu
+            // yang sudah terbukti punya baris di spreadsheet.
+            if (!isset($sisaId[(int) $lain['trx']])) { $pasangan = $lain; break; }
+            // Dua-duanya belum berpasangan: yang id-nya lebih kecil (dibuat
+            // lebih dulu) yang disimpan.
+            if ($pasangan === null && (int) $lain['trx'] < (int) $c['trx']) $pasangan = $lain;
+        }
+        if ($pasangan === null) continue;
+        $dobel[] = ['cl' => $c, 'simpan' => $pasangan];
+        unset($sisaCl[$i], $sisaId[(int) $c['trx']]);
+    }
+
+    return [$cocok, $koreksi, $pastikan, $gabungan, $dobel,
+            array_values($sisaSs), array_values($sisaCl)];
 }
 
 $CSS = '<style>
@@ -224,20 +303,62 @@ foreach ($data['pic'] as $kunci => $d) {
     $clTotal = array_sum(array_map(fn($r) => (float) $r['amount'], $clRows));
     $ssTotal = (float) $d['total'];
 
-    [$cocok, $koreksi, $pastikan, $inputBaru, $lebih] = sandingkan($d['rincian'], $clRows);
+    [$cocok, $koreksi, $pastikan, $gabungan, $dobel, $inputBaru, $lebih] =
+        sandingkan($d['rincian'], $clRows);
 
     // Nomor urut pekerjaan berjalan lintas golongan, supaya orang bisa bilang
     // "nomor 4 sudah" tanpa harus menyebut golongannya.
+    //
+    // Tiap pekerjaan membawa 'kenapa': alasan yang bisa diperiksa sendiri oleh
+    // yang mengerjakan. Daftar yang hanya memerintah "hapus #2120" membuat
+    // orang menebak-nebak, dan menebak pada data uang berakhir buruk.
     $no = 0; $kerja = [];
     foreach ($inputBaru as $s) $kerja[] = ['jenis' => 'input', 'ss' => $s, 'cl' => null,
-        'nilai' => (float) $s['nilai']];
+        'nilai' => (float) $s['nilai'],
+        'kenapa' => 'Baris ini ada di spreadsheet Anda, tetapi di CLARA tidak ada satu pun '
+                  . 'transaksi Oktober atas nama Anda yang nilainya ' . $rp($s['nilai'])
+                  . ' maupun yang namanya mirip.'];
     foreach ($koreksi as [$s, $c]) {
         if (round((float) $c['amount']) === round((float) $s['nilai'])) continue;
         $kerja[] = ['jenis' => 'koreksi', 'ss' => $s, 'cl' => $c,
-            'nilai' => (float) $s['nilai'] - (float) $c['amount']];
+            'nilai' => (float) $s['nilai'] - (float) $c['amount'],
+            'kenapa' => 'Penyewanya sama, hanya nilainya berbeda: spreadsheet ' . $rp($s['nilai'])
+                      . ', CLARA ' . $rp($c['amount']) . '. Jadi transaksinya tidak perlu dibuat ulang '
+                      . 'atau dihapus — cukup nilainya disamakan.'];
+    }
+    // Baris gabungan yang jumlah unitnya belum lengkap → yang kurang DIINPUT.
+    // Yang sudah ada TIDAK diganggu: itu bagian sah dari baris yang sama.
+    foreach ($gabungan as $g) {
+        $kurang = $g['jumlah_seharusnya'] - $g['jumlah_ada'];
+        if ($kurang <= 0) continue;
+        $ids = implode(', ', array_map(fn($c) => '#' . (int) $c['trx'], $g['cl']));
+        for ($i = 0; $i < $kurang; $i++) {
+            $kerja[] = ['jenis' => 'input', 'ss' => $g['ss'], 'cl' => null, 'nilai' => $g['satuan'],
+                'gabungan' => $g,
+                'kenapa' => 'Baris spreadsheet ini satu baris untuk ' . $g['jumlah_seharusnya']
+                          . ' unit (' . $rp($g['ss']['nilai']) . ' = ' . $g['jumlah_seharusnya']
+                          . ' × ' . $rp($g['satuan']) . '). Di CLARA baru ada ' . $g['jumlah_ada']
+                          . ' (' . $ids . '), jadi kurang ' . $kurang . ' unit lagi. '
+                          . 'Yang sudah ada JANGAN dihapus — semuanya bagian dari baris yang sama.'];
+        }
+    }
+    foreach ($dobel as $x) {
+        $c = $x['cl']; $simpan = $x['simpan'];
+        $kerja[] = ['jenis' => 'dobel', 'ss' => null, 'cl' => $c, 'simpan' => $simpan,
+            'nilai' => -(float) $c['amount'],
+            'kenapa' => 'Penyewa, unit, dan nilainya sama persis dengan transaksi #'
+                      . (int) $simpan['trx'] . ' — dua baris untuk satu sewa yang sama, '
+                      . 'sementara spreadsheet hanya memuatnya satu kali. Yang disimpan #'
+                      . (int) $simpan['trx'] . ', karena itulah yang sudah berpasangan dengan '
+                      . 'baris spreadsheet Anda; yang ini kelebihannya.'];
     }
     foreach ($lebih as $c) $kerja[] = ['jenis' => 'hapus', 'ss' => null, 'cl' => $c,
-        'nilai' => -(float) $c['amount']];
+        'nilai' => -(float) $c['amount'],
+        'kenapa' => 'Di spreadsheet Oktober Anda tidak ada baris bernilai ' . $rp($c['amount'])
+                  . ', tidak ada nama yang mirip &ldquo;' . $h($c['nama']) . '&rdquo;, dan nilainya '
+                  . 'juga bukan bagian dari baris gabungan mana pun. '
+                  . '<b>Periksa dulu sebelum diajukan hapus</b> — kalau ternyata tercatat di '
+                  . 'spreadsheet dengan nama atau lokasi lain, jangan dihapus.'];
 
     usort($kerja, fn($a, $b) => abs($b['nilai']) <=> abs($a['nilai']));
 
@@ -279,10 +400,13 @@ foreach ($data['pic'] as $kunci => $d) {
     <?php foreach ($kerja as $k): $no++;
         $s = $k['ss']; $c = $k['cl'];
         $menu = $c ? ($MENU[$c['module']] ?? 'Exhibition') : $tebakMenu((string) ($s['ket'] ?? ''));
-        $warna = ['input' => '#047857', 'hapus' => '#B91C1C', 'koreksi' => '#B45309'][$k['jenis']];
-        $tag   = ['input' => 'INPUT BARU', 'hapus' => 'HAPUS', 'koreksi' => 'KOREKSI NILAI'][$k['jenis']];
+        $warna = ['input' => '#047857', 'hapus' => '#B91C1C', 'koreksi' => '#B45309',
+                  'dobel' => '#B91C1C'][$k['jenis']];
+        $tag   = ['input' => 'INPUT BARU', 'hapus' => 'TIDAK ADA DI SPREADSHEET',
+                  'koreksi' => 'KOREKSI NILAI', 'dobel' => 'DOBEL — BUANG SATU'][$k['jenis']];
+        $kelas = $k['jenis'] === 'dobel' ? 'hapus' : $k['jenis'];
     ?>
-    <div class="item <?= $k['jenis'] ?>">
+    <div class="item <?= $kelas ?>">
         <div class="judul"><?= $no ?>. <?= $h($s['ket'] ?? ($c['nama'] . ' — ' . $c['master_code'])) ?>
             <span class="tag" style="background:<?= $warna ?>"><?= $tag ?></span></div>
         <table class="kv">
@@ -304,6 +428,10 @@ foreach ($data['pic'] as $kunci => $d) {
                 <?= $h($c['nama']) ?> &middot; diakui <?= $rp($c['amount']) ?> di bulan ini
                 <?php else: ?><span class="muted">belum ada</span><?php endif; ?>
             </td></tr>
+            <?php /* Alasannya ditulis, bukan diperintahkan begitu saja. Yang
+                     mengerjakan harus bisa memeriksa sendiri apakah kesimpulan
+                     ini benar sebelum menyentuh data. */ ?>
+            <tr><td class="k">Kenapa</td><td><?= $k['kenapa'] ?? '' ?></td></tr>
         </table>
         <div style="font-size:8.4pt;color:#6B7280;margin-bottom:1mm">Langkah:</div>
         <ol>
@@ -332,17 +460,33 @@ foreach ($data['pic'] as $kunci => $d) {
                 lain, perbaiki tanggalnya juga.</li>
             <li>Simpan, lalu pastikan di <b>Alokasi</b> bulan <b><?= $h($per) ?></b>
                 tertulis <b><?= $rp($s['nilai']) ?></b>.</li>
+        <?php elseif ($k['jenis'] === 'dobel'): ?>
+            <li>Buka menu <b><?= $h($menu) ?></b>, bandingkan dulu kedua transaksinya:
+                <b>#<?= (int) $k['simpan']['trx'] ?></b> (yang sudah berpasangan dengan
+                baris spreadsheet) dan <b>#<?= (int) $c['trx'] ?></b> &mdash; keduanya
+                <?= $h($c['master_code']) ?>, <?= $h($c['nama']) ?>, <?= $rp($c['amount']) ?>.</li>
+            <li>Kalau isinya memang sama, yang dibuang <b>#<?= (int) $c['trx'] ?></b> dan yang
+                disimpan <b>#<?= (int) $k['simpan']['trx'] ?></b>.
+                Kalau ternyata keduanya sewa yang BERBEDA (mis. periode atau unitnya tidak sama),
+                jangan dihapus &mdash; berarti spreadsheet-nya yang perlu ditambah satu baris.</li>
+            <li>Buka <b>Pengajuan Hapus Data</b> &rarr; <b>+ Ajukan Hapus</b>, pilih
+                <b>#<?= (int) $c['trx'] ?></b>.</li>
+            <li>Alasannya: &ldquo;dobel dengan #<?= (int) $k['simpan']['trx'] ?> &mdash;
+                <?= $h($c['master_code']) ?> <?= $h($c['nama']) ?> tercatat dua kali,
+                di spreadsheet hanya satu&rdquo;.</li>
+            <li>Kirim. Penghapusan dikerjakan oleh penyetuju hapus.</li>
         <?php else: ?>
             <li>Buka menu <b><?= $h($menu) ?></b>, cari transaksi <b>#<?= (int) $c['trx'] ?></b>
                 (<?= $h($c['master_code']) ?>, <?= $h($c['nama']) ?>,
                 <?= $h($tgl($c['start_date'])) ?>&ndash;<?= $h($tgl($c['end_date'])) ?>).</li>
-            <li><b>Sebelum diajukan hapus:</b> pastikan betul baris ini memang tidak ada
-                padanannya di spreadsheet <?= $h($d['bulan']) ?> milik Anda. Kalau ternyata ada
-                tetapi tertulis dengan nama lain, jangan dihapus &mdash; cukup cocokkan namanya.</li>
-            <li>Kalau memang tidak ada: buka <b>Pengajuan Hapus Data</b> &rarr;
+            <li><b>Periksa dulu tiga hal ini</b> sebelum mengajukan hapus:
+                (a) apakah penyewanya tercatat di spreadsheet Anda dengan nama lokasi, bukan nama penyewa;
+                (b) apakah ia bagian dari satu baris gabungan beberapa unit;
+                (c) apakah ia sebenarnya milik bulan lain. Kalau salah satunya ya, <b>jangan dihapus</b>.</li>
+            <li>Kalau ketiganya tidak: buka <b>Pengajuan Hapus Data</b> &rarr;
                 <b>+ Ajukan Hapus</b>, pilih transaksi <b>#<?= (int) $c['trx'] ?></b>.</li>
-            <li>Tulis alasannya singkat dan jelas, mis. &ldquo;tidak ada di spreadsheet
-                <?= $h($d['bulan']) ?>, dobel dengan transaksi lain&rdquo;.</li>
+            <li>Tulis alasannya apa adanya, mis. &ldquo;tidak ditemukan di spreadsheet
+                <?= $h($d['bulan']) ?> milik <?= $h($pic) ?>&rdquo;.</li>
             <li>Kirim. Penghapusan dikerjakan oleh penyetuju hapus &mdash; Anda tidak bisa
                 dan tidak perlu menghapusnya sendiri.</li>
         <?php endif; ?>
@@ -374,7 +518,8 @@ foreach ($data['pic'] as $kunci => $d) {
         <tr><th style="width:62%">Langkah</th><th class="n">Nilai</th><th class="n">Jadi</th></tr>
         <tr><td>CLARA sekarang</td><td class="n">&mdash;</td><td class="n"><?= $rp($clTotal) ?></td></tr>
         <?php $jalan = $clTotal; $i = 0; foreach ($kerja as $k): $i++; $jalan += $k['nilai'];
-            $lbl = ['input' => 'Input', 'koreksi' => 'Koreksi', 'hapus' => 'Hapus'][$k['jenis']];
+            $lbl = ['input' => 'Input', 'koreksi' => 'Koreksi', 'hapus' => 'Hapus',
+                    'dobel' => 'Buang dobel'][$k['jenis']];
             $nm  = $k['ss']['ket'] ?? ($k['cl']['nama'] . ' #' . $k['cl']['trx']); ?>
         <tr><td><?= $i ?>. <?= $lbl ?>: <?= $h(mb_substr((string) $nm, 0, 58)) ?></td>
             <td class="n"><?= $k['nilai'] >= 0 ? '+' : '&minus;' ?><?= number_format(abs($k['nilai']), 0, ',', '.') ?></td>
