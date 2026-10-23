@@ -41,8 +41,8 @@ require_once $root . '/app/Database.php';
 require_once $root . '/app/helpers.php';
 require_once $root . '/app/pdf.php';
 
-$opt = array_merge(['banding' => '', 'pic' => '', 'keluar' => $root . '/docs'],
-    getopt('', ['banding:', 'pic:', 'keluar:']));
+$opt = array_merge(['banding' => '', 'pic' => '', 'keluar' => $root . '/docs', 'ss' => ''],
+    getopt('', ['banding:', 'pic:', 'keluar:', 'ss:']));
 if ($opt['banding'] === '') {
     fwrite(STDERR, "Pakai: php scripts/build_panduan_bulanan.php --banding=berkas.json [--pic=Nama]\n");
     exit(2);
@@ -95,6 +95,100 @@ $qCl = $pdo->prepare(
         AND a.amount > 0 AND t.deleted_at IS NULL
       ORDER BY a.amount DESC"
 );
+
+/**
+ * Keadaan DOKUMEN di belakang sebuah transaksi.
+ *
+ * Angka di laporan tidak berdiri sendiri: ia lahir dari Surat Penawaran, lalu
+ * SKP, lalu tanda tangan client. Tanpa menyebut rantai itu, panduan ini hanya
+ * bisa berkata "tidak ada di spreadsheet" — dan orang yang memegangnya tidak
+ * tahu apakah yang di depannya kontrak yang sudah diteken client atau draft
+ * yang belum disetujui siapa pun. Dua hal itu diperlakukan sangat berbeda.
+ */
+function _panduan_dokumen(PDO $pdo, int $trxId): array
+{
+    static $simpan = [];
+    if (isset($simpan[$trxId])) return $simpan[$trxId];
+    $st = $pdo->prepare(
+        "SELECT s.id skp_id, s.skp_no, s.status s_status, s.approval_level, s.doc_type,
+                s.signed_at s_signed, s.approved_by, s.approved_at,
+                o.id off_id, o.offer_no, o.status o_status, o.signed_at o_signed
+           FROM transactions t
+           LEFT JOIN skp_documents s ON (s.transaction_id = t.id OR s.id = t.skp_id) AND s.deleted_at IS NULL
+           LEFT JOIN offers o ON o.id = s.offer_id AND o.deleted_at IS NULL
+          WHERE t.id = ? LIMIT 1"
+    );
+    $st->execute([$trxId]);
+    return $simpan[$trxId] = ($st->fetch() ?: []);
+}
+
+/** Satu kalimat yang menerangkan sampai mana dokumen itu berjalan. */
+function _panduan_kalimat_dokumen(array $dok, PDO $pdo, int $pid): string
+{
+    if (!$dok || empty($dok['skp_id'])) {
+        return 'Transaksi ini <b>tidak punya dokumen SKP</b> — nilainya masuk laporan '
+             . 'tanpa surat yang menaunginya.';
+    }
+    $no  = $dok['skp_no'] ? 'No. <b>' . htmlspecialchars((string) $dok['skp_no'], ENT_QUOTES, 'UTF-8') . '</b>'
+                          : '<b>nomor belum terbit</b>';
+    $sp  = $dok['offer_no']
+        ? ' Berasal dari Surat Penawaran <b>' . htmlspecialchars((string) $dok['offer_no'], ENT_QUOTES, 'UTF-8') . '</b>.'
+        : ' Dokumen ini <b>tanpa Surat Penawaran</b> (dibuat langsung).';
+    switch ((string) $dok['s_status']) {
+        case 'signed':
+            return 'SKP ' . $no . ' <b>sudah ditandatangani client</b>'
+                 . ($dok['s_signed'] ? ' pada ' . date('d/m/Y', strtotime((string) $dok['s_signed'])) : '')
+                 . '.' . $sp . ' Kontrak ini sudah jadi — jangan dihapus sebelum benar-benar yakin.';
+        case 'approved':
+            return 'SKP ' . $no . ' <b>sudah disetujui Manager</b> tetapi <b>belum ditandatangani client</b>.'
+                 . $sp . ' Karena itu nilainya belum masuk laporan.';
+        case 'submitted':
+            $tahap = 'tahap ' . ((int) $dok['approval_level'] + 1);
+            return 'SKP ' . $no . ' <b>masih menunggu persetujuan</b> (' . $tahap . ').' . $sp
+                 . ' Nilainya baru masuk laporan setelah disetujui dan ditandatangani client.';
+        case 'rejected':
+            return 'SKP ' . $no . ' <b>ditolak</b> dan dikembalikan ke PIC untuk diperbaiki.' . $sp;
+        case 'draft':
+            return 'SKP ' . $no . ' <b>masih draft</b> — belum disubmit ke approval.' . $sp;
+    }
+    return 'SKP ' . $no . ' berstatus ' . htmlspecialchars((string) $dok['s_status'], ENT_QUOTES, 'UTF-8') . '.' . $sp;
+}
+
+/**
+ * Cari dokumen yang MUNGKIN sudah ada untuk sebuah baris spreadsheet.
+ *
+ * "Belum ada di CLARA" terlalu sering tidak benar. Yang sebenarnya terjadi
+ * biasanya salah satu dari ini, dan tindakannya berbeda-beda:
+ *   - Surat Penawaran sudah ada, SKP-nya yang belum dibuat;
+ *   - SKP sudah ada tetapi belum disetujui atau belum diteken client, sehingga
+ *     nilainya memang belum muncul di laporan;
+ *   - Penawarannya ada DUA untuk sewa yang sama.
+ * Menyuruh menginput ulang pada ketiga keadaan itu akan melahirkan data dobel.
+ */
+function _panduan_calon(PDO $pdo, int $pid, string $periode, string $ket, float $nilai): array
+{
+    $awal = $periode . '-01';
+    $akhir = date('Y-m-t', strtotime($awal));
+    $st = $pdo->prepare(
+        "SELECT o.id, o.offer_no, o.status, o.signed_at, o.master_code, o.start_date, o.end_date,
+                COALESCE(NULLIF(o.override_amount,0), o.total_calculated) nilai,
+                COALESCE(c.brand_name, c.company_name, '') nama,
+                (SELECT COUNT(*) FROM skp_documents s WHERE s.offer_id = o.id AND s.deleted_at IS NULL) punya_skp
+           FROM offers o LEFT JOIN master_clients c ON c.id = o.client_id
+          WHERE o.property_id = ? AND o.deleted_at IS NULL
+            AND o.start_date <= ? AND o.end_date >= ?
+          ORDER BY o.id"
+    );
+    $st->execute([$pid, $akhir, $awal]);
+    $calon = [];
+    foreach ($st->fetchAll() as $o) {
+        $skor = _mirip($ket, (string) $o['nama']);
+        $samaNilai = abs((float) $o['nilai'] - $nilai) < 1;
+        if ($skor < 0.5 && !$samaNilai) continue;
+        $calon[] = $o + ['skor' => $skor, 'sama_nilai' => $samaNilai];
+    }
+    return $calon;
+}
 
 /** Kata penting sebuah nama — yang pendek tidak membedakan apa pun. */
 function _kata(string $t): array
@@ -258,6 +352,48 @@ function sandingkan(array $ss, array $cl): array
             array_values($sisaSs), array_values($sisaCl)];
 }
 
+/**
+ * Tangkapan layar APLIKASI untuk temuan dobel.
+ *
+ * Daftar yang menyebut "dobel dengan #2095" masih menuntut orang membuka
+ * CLARA dan mencarinya sendiri. Gambar daftar dokumen yang tersaring nama
+ * penyewanya memperlihatkan kedua barisnya sekaligus — bukti yang bisa dilihat
+ * tanpa meninggalkan kertasnya.
+ *
+ * Hanya berjalan bila diminta lewat --ss, dan butuh Chrome. Di server tidak
+ * ada Chrome, jadi tanpa bendera itu panduannya tetap terbit lengkap, hanya
+ * tanpa gambar.
+ *
+ * Kredensial dibaca dari peubah lingkungan, bukan dari baris perintah — baris
+ * perintah tersimpan di riwayat shell.
+ */
+function _panduan_tangkap(string $alamat, string $berkas, string $cookie): bool
+{
+    $chrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    if (!is_file($chrome)) return false;
+    $tmp = dirname($berkas) . '/_halaman.html';
+    $ch = curl_init($alamat);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_COOKIEFILE => $cookie,
+                            CURLOPT_COOKIEJAR => $cookie, CURLOPT_TIMEOUT => 30]);
+    $html = (string) curl_exec($ch);
+    curl_close($ch);
+    if ($html === '' || stripos($html, '<table') === false) return false;
+    // <base> supaya gaya & gambar tetap termuat saat halaman dibuka dari berkas.
+    $asal = preg_replace('#(\?|/\?).*$#', '/', $alamat);
+    $html = preg_replace('/<head>/i', '<head><base href="' . $asal . '">', $html, 1);
+    file_put_contents($tmp, $html);
+    $profil = dirname($berkas) . '/_chrome';
+    @mkdir($profil, 0777, true);
+    $cmd = escapeshellarg($chrome) . ' --headless=new --disable-gpu --no-first-run'
+         . ' --user-data-dir=' . escapeshellarg($profil)
+         . ' --window-size=1500,760 --hide-scrollbars --virtual-time-budget=4000'
+         . ' --screenshot=' . escapeshellarg($berkas)
+         . ' ' . escapeshellarg('file://' . $tmp) . ' 2>/dev/null';
+    shell_exec($cmd);
+    @unlink($tmp);
+    return is_file($berkas) && filesize($berkas) > 2000;
+}
+
 $CSS = '<style>
  body { font-family: sans-serif; font-size: 9.5pt; color:#1F2937; line-height:1.5; }
  h1 { font-size:17pt; margin:0 0 1mm; }
@@ -291,6 +427,28 @@ $CSS = '<style>
 $dibuat = date('d/m/Y H:i');
 $hasilAkhir = [];
 
+// Sesi aplikasi untuk tangkapan layar (opsional, hanya saat --ss).
+$ssAktif = false; $ssCookie = ''; $ssUrl = rtrim((string) getenv('CLARA_URL'), '/');
+$ssDir = rtrim((string) $opt['keluar'], '/') . '/bukti';
+if ($opt['ss'] !== '' && $ssUrl !== '' && getenv('CLARA_EMAIL') && getenv('CLARA_PASS')) {
+    @mkdir($ssDir, 0777, true);
+    $ssCookie = $ssDir . '/_sesi.txt';
+    @unlink($ssCookie);
+    $ch = curl_init($ssUrl . '/?r=login');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_COOKIEJAR => $ssCookie,
+                            CURLOPT_COOKIEFILE => $ssCookie, CURLOPT_TIMEOUT => 20]);
+    $hal = (string) curl_exec($ch); curl_close($ch);
+    if (preg_match('/name="_csrf" value="([^"]+)"/', $hal, $m)) {
+        $ch = curl_init($ssUrl . '/?r=login');
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_COOKIEJAR => $ssCookie,
+            CURLOPT_COOKIEFILE => $ssCookie, CURLOPT_POST => true, CURLOPT_TIMEOUT => 20,
+            CURLOPT_POSTFIELDS => http_build_query([
+                '_csrf' => $m[1], 'email' => getenv('CLARA_EMAIL'), 'password' => getenv('CLARA_PASS')])]);
+        curl_exec($ch); curl_close($ch);
+        $ssAktif = true;
+    }
+}
+
 foreach ($data['pic'] as $kunci => $d) {
     if ($opt['pic'] !== '' && mb_strtolower((string) $d['pic']) !== mb_strtolower((string) $opt['pic'])) continue;
     $pic = (string) $d['pic'];
@@ -298,6 +456,12 @@ foreach ($data['pic'] as $kunci => $d) {
     $per = (string) $d['periode'];
     $namaProp = (string) ($pdo->query('SELECT name FROM properties WHERE id = ' . $pid)->fetchColumn() ?: '-');
 
+    if ($ssAktif) {
+        $ch = curl_init($ssUrl . '/?r=switch_property&to=' . $pid);
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_COOKIEFILE => $ssCookie,
+            CURLOPT_COOKIEJAR => $ssCookie, CURLOPT_TIMEOUT => 20]);
+        curl_exec($ch); curl_close($ch);
+    }
     $qCl->execute([$pid, $pic, $per]);
     $clRows = $qCl->fetchAll();
     $clTotal = array_sum(array_map(fn($r) => (float) $r['amount'], $clRows));
@@ -313,15 +477,46 @@ foreach ($data['pic'] as $kunci => $d) {
     // yang mengerjakan. Daftar yang hanya memerintah "hapus #2120" membuat
     // orang menebak-nebak, dan menebak pada data uang berakhir buruk.
     $no = 0; $kerja = [];
-    foreach ($inputBaru as $s) $kerja[] = ['jenis' => 'input', 'ss' => $s, 'cl' => null,
-        'nilai' => (float) $s['nilai'],
-        'kenapa' => 'Baris ini ada di spreadsheet Anda, tetapi di CLARA tidak ada satu pun '
-                  . 'transaksi Oktober atas nama Anda yang nilainya ' . $rp($s['nilai'])
-                  . ' maupun yang namanya mirip.'];
+    foreach ($inputBaru as $s) {
+        // Sebelum menyuruh input: periksa apakah dokumennya sudah ada tetapi
+        // belum selesai jalannya. Menginput ulang pada keadaan itu melahirkan
+        // data dobel — persis yang sedang kita bereskan.
+        $calon = _panduan_calon($pdo, $pid, $per, (string) $s['ket'], (float) $s['nilai']);
+        $dokTxt = ''; $jenis = 'input';
+        if ($calon) {
+            $baris = [];
+            foreach ($calon as $o) {
+                $baris[] = 'SP <b>' . $h($o['offer_no'] ?: '(nomor belum terbit)') . '</b> &middot; '
+                    . $h($o['nama'] ?: '-') . ' &middot; ' . $h($o['master_code'] ?: '-') . ' &middot; '
+                    . $rp($o['nilai']) . ' &middot; status <b>' . $h($o['status']) . '</b>'
+                    . ($o['signed_at'] ? ', sudah diteken client' : ', <b>belum diteken client</b>')
+                    . ' &middot; ' . ((int) $o['punya_skp'] > 0
+                        ? 'SKP-nya <b>sudah ada</b>' : 'SKP-nya <b>belum dibuat</b>');
+            }
+            $jenis  = 'lanjutkan';
+            $dokTxt = 'Ditemukan ' . count($calon) . ' Surat Penawaran yang cocok untuk baris ini:<br>&bull; '
+                    . implode('<br>&bull; ', $baris)
+                    . (count($calon) > 1
+                        ? '<br><b>Ada lebih dari satu SP untuk sewa yang sama.</b> Pakai yang sudah diteken client; '
+                        . 'kalau dua-duanya diteken, pakai yang nomornya terbit lebih dulu dan ajukan hapus yang satunya.'
+                        : '');
+        }
+        $kerja[] = ['jenis' => $jenis, 'ss' => $s, 'cl' => null, 'calon' => $calon,
+            'nilai' => (float) $s['nilai'],
+            'dokumen' => $dokTxt,
+            'kenapa' => $calon
+                ? 'Nilainya belum muncul di laporan Oktober BUKAN karena belum diinput, melainkan '
+                . 'karena dokumennya belum selesai jalannya. Nilai baru dihitung setelah SKP-nya '
+                . 'disetujui <b>dan</b> ditandatangani client.'
+                : 'Baris ini ada di spreadsheet Anda, tetapi di CLARA tidak ada transaksi Oktober '
+                . 'bernilai ' . $rp($s['nilai']) . ', tidak ada nama yang mirip, dan tidak ada Surat '
+                . 'Penawaran yang periodenya menyentuh Oktober. Jadi memang belum pernah dibuat.'];
+    }
     foreach ($koreksi as [$s, $c]) {
         if (round((float) $c['amount']) === round((float) $s['nilai'])) continue;
         $kerja[] = ['jenis' => 'koreksi', 'ss' => $s, 'cl' => $c,
             'nilai' => (float) $s['nilai'] - (float) $c['amount'],
+            'dokumen' => _panduan_kalimat_dokumen(_panduan_dokumen($pdo, (int) $c['trx']), $pdo, $pid),
             'kenapa' => 'Penyewanya sama, hanya nilainya berbeda: spreadsheet ' . $rp($s['nilai'])
                       . ', CLARA ' . $rp($c['amount']) . '. Jadi transaksinya tidak perlu dibuat ulang '
                       . 'atau dihapus — cukup nilainya disamakan.'];
@@ -345,15 +540,30 @@ foreach ($data['pic'] as $kunci => $d) {
     foreach ($dobel as $x) {
         $c = $x['cl']; $simpan = $x['simpan'];
         $kerja[] = ['jenis' => 'dobel', 'ss' => null, 'cl' => $c, 'simpan' => $simpan,
+            'dokumen' => _panduan_kalimat_dokumen(_panduan_dokumen($pdo, (int) $c['trx']), $pdo, $pid)
+                       . ' Pembandingnya: '
+                       . _panduan_kalimat_dokumen(_panduan_dokumen($pdo, (int) $simpan['trx']), $pdo, $pid),
             'nilai' => -(float) $c['amount'],
             'kenapa' => 'Penyewa, unit, dan nilainya sama persis dengan transaksi #'
                       . (int) $simpan['trx'] . ' — dua baris untuk satu sewa yang sama, '
                       . 'sementara spreadsheet hanya memuatnya satu kali. Yang disimpan #'
                       . (int) $simpan['trx'] . ', karena itulah yang sudah berpasangan dengan '
                       . 'baris spreadsheet Anda; yang ini kelebihannya.'];
+        if ($ssAktif) {
+            $modul  = in_array((string) $c['module'], ['media', 'gudang'], true) ? (string) $c['module'] : 'cl';
+            $berkas = $ssDir . '/dobel_' . preg_replace('/[^A-Za-z0-9]+/', '_', $pic)
+                    . '_' . (int) $c['trx'] . '.png';
+            $alamat = $ssUrl . '/?r=skp&module=' . $modul . '&q=' . rawurlencode((string) $c['nama']);
+            if (_panduan_tangkap($alamat, $berkas, $ssCookie)) {
+                $kerja[count($kerja) - 1]['gambar'] = $berkas;
+                $kerja[count($kerja) - 1]['gambar_ket'] = 'Daftar dokumen CLARA disaring nama &ldquo;'
+                    . $h($c['nama']) . '&rdquo; — kedua barisnya terlihat berdampingan.';
+            }
+        }
     }
     foreach ($lebih as $c) $kerja[] = ['jenis' => 'hapus', 'ss' => null, 'cl' => $c,
         'nilai' => -(float) $c['amount'],
+        'dokumen' => _panduan_kalimat_dokumen(_panduan_dokumen($pdo, (int) $c['trx']), $pdo, $pid),
         'kenapa' => 'Di spreadsheet Oktober Anda tidak ada baris bernilai ' . $rp($c['amount'])
                   . ', tidak ada nama yang mirip &ldquo;' . $h($c['nama']) . '&rdquo;, dan nilainya '
                   . 'juga bukan bagian dari baris gabungan mana pun. '
@@ -401,10 +611,11 @@ foreach ($data['pic'] as $kunci => $d) {
         $s = $k['ss']; $c = $k['cl'];
         $menu = $c ? ($MENU[$c['module']] ?? 'Exhibition') : $tebakMenu((string) ($s['ket'] ?? ''));
         $warna = ['input' => '#047857', 'hapus' => '#B91C1C', 'koreksi' => '#B45309',
-                  'dobel' => '#B91C1C'][$k['jenis']];
+                  'dobel' => '#B91C1C', 'lanjutkan' => '#4338CA'][$k['jenis']];
         $tag   = ['input' => 'INPUT BARU', 'hapus' => 'TIDAK ADA DI SPREADSHEET',
-                  'koreksi' => 'KOREKSI NILAI', 'dobel' => 'DOBEL — BUANG SATU'][$k['jenis']];
-        $kelas = $k['jenis'] === 'dobel' ? 'hapus' : $k['jenis'];
+                  'koreksi' => 'KOREKSI NILAI', 'dobel' => 'DOBEL — BUANG SATU',
+                  'lanjutkan' => 'DOKUMEN SUDAH ADA — TINGGAL DISELESAIKAN'][$k['jenis']];
+        $kelas = ['dobel' => 'hapus', 'lanjutkan' => 'cek'][$k['jenis']] ?? $k['jenis'];
     ?>
     <div class="item <?= $kelas ?>">
         <div class="judul"><?= $no ?>. <?= $h($s['ket'] ?? ($c['nama'] . ' — ' . $c['master_code'])) ?>
@@ -432,6 +643,12 @@ foreach ($data['pic'] as $kunci => $d) {
                      mengerjakan harus bisa memeriksa sendiri apakah kesimpulan
                      ini benar sebelum menyentuh data. */ ?>
             <tr><td class="k">Kenapa</td><td><?= $k['kenapa'] ?? '' ?></td></tr>
+            <?php /* Rantai dokumennya disebut: SP -> SKP -> tanda tangan client.
+                     Tanpa ini orang tidak bisa membedakan kontrak yang sudah
+                     diteken dari draft yang belum disetujui siapa pun. */ ?>
+            <?php if (!empty($k['dokumen'])): ?>
+            <tr><td class="k">Keadaan dokumen</td><td><?= $k['dokumen'] ?></td></tr>
+            <?php endif; ?>
         </table>
         <div style="font-size:8.4pt;color:#6B7280;margin-bottom:1mm">Langkah:</div>
         <ol>
@@ -460,6 +677,30 @@ foreach ($data['pic'] as $kunci => $d) {
                 lain, perbaiki tanggalnya juga.</li>
             <li>Simpan, lalu pastikan di <b>Alokasi</b> bulan <b><?= $h($per) ?></b>
                 tertulis <b><?= $rp($s['nilai']) ?></b>.</li>
+        <?php elseif ($k['jenis'] === 'lanjutkan'): ?>
+            <?php $c1 = $k['calon'][0] ?? []; $adaSkp = (int) ($c1['punya_skp'] ?? 0) > 0; ?>
+            <li><b>Jangan input transaksi baru</b> &mdash; dokumennya sudah ada. Menginput ulang
+                akan membuat nilainya terhitung dua kali.</li>
+            <?php if (count($k['calon']) > 1): ?>
+            <li><b>Pilih dulu SP mana yang dipakai.</b> Yang sudah diteken client yang dipakai.
+                Kalau dua-duanya sudah diteken, pakai yang nomornya terbit lebih dulu, lalu
+                ajukan hapus yang satunya lewat <b>Pengajuan Hapus Data</b>.</li>
+            <?php endif; ?>
+            <?php if (!$adaSkp): ?>
+            <li>Buka <b>Surat Penawaran</b>, cari No. <b><?= $h($c1['offer_no'] ?? '-') ?></b>.</li>
+            <li>Pastikan sudah <b>ditandatangani client</b>. Kalau belum, kirim dulu tautan tanda
+                tangannya &mdash; SKP tidak bisa dibuat sebelum SP diteken.</li>
+            <li>Sesudah diteken: tekan <b>+ Buat SKP</b> dari penawaran itu.</li>
+            <li>Lengkapi Scan KTP &amp; NPWP, lalu <b>Simpan &amp; Submit untuk Approval</b>.</li>
+            <?php else: ?>
+            <li>Buka <b>SKP Exhibition</b>, cari dokumen milik
+                <b><?= $h($c1['nama'] ?? '-') ?></b> (<?= $h($c1['master_code'] ?? '-') ?>).</li>
+            <li>Lihat <b>Alur Persetujuan</b> di dokumen itu &mdash; di situ tertulis sedang
+                menunggu siapa. Kalau menunggu Anda, kerjakan; kalau menunggu Asst. Manager atau
+                Manager, ingatkan orangnya.</li>
+            <li>Sesudah disetujui, kirim tautan <b>tanda tangan</b> ke client.</li>
+            <li>Nilainya baru masuk laporan Oktober <b>setelah client menandatangani</b>.</li>
+            <?php endif; ?>
         <?php elseif ($k['jenis'] === 'dobel'): ?>
             <li>Buka menu <b><?= $h($menu) ?></b>, bandingkan dulu kedua transaksinya:
                 <b>#<?= (int) $k['simpan']['trx'] ?></b> (yang sudah berpasangan dengan
@@ -491,6 +732,13 @@ foreach ($data['pic'] as $kunci => $d) {
                 dan tidak perlu menghapusnya sendiri.</li>
         <?php endif; ?>
         </ol>
+        <?php if (!empty($k['gambar']) && is_file((string) $k['gambar'])): ?>
+        <div style="margin:2.5mm 0 1mm">
+            <img src="<?= $h($k['gambar']) ?>" style="width:100%">
+            <div style="font-size:7.6pt;color:#6B7280;font-style:italic;margin-top:0.8mm">
+                <?= $k['gambar_ket'] ?? '' ?></div>
+        </div>
+        <?php endif; ?>
         <div class="dampak">Dampak ke <?= $h($d['bulan']) ?>:
             <?= $k['nilai'] >= 0 ? '+' : '&minus;' ?><?= number_format(abs($k['nilai']), 0, ',', '.') ?></div>
     </div>
@@ -519,7 +767,7 @@ foreach ($data['pic'] as $kunci => $d) {
         <tr><td>CLARA sekarang</td><td class="n">&mdash;</td><td class="n"><?= $rp($clTotal) ?></td></tr>
         <?php $jalan = $clTotal; $i = 0; foreach ($kerja as $k): $i++; $jalan += $k['nilai'];
             $lbl = ['input' => 'Input', 'koreksi' => 'Koreksi', 'hapus' => 'Hapus',
-                    'dobel' => 'Buang dobel'][$k['jenis']];
+                    'dobel' => 'Buang dobel', 'lanjutkan' => 'Selesaikan dokumen'][$k['jenis']];
             $nm  = $k['ss']['ket'] ?? ($k['cl']['nama'] . ' #' . $k['cl']['trx']); ?>
         <tr><td><?= $i ?>. <?= $lbl ?>: <?= $h(mb_substr((string) $nm, 0, 58)) ?></td>
             <td class="n"><?= $k['nilai'] >= 0 ? '+' : '&minus;' ?><?= number_format(abs($k['nilai']), 0, ',', '.') ?></td>
