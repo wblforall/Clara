@@ -82,3 +82,9 @@ scripts/build_laporan_gudang_media.php
 /scripts/audit/
 /generate_pdf_report.php
 /pembanding-*.json
+
+# Berkas banding spreadsheet<->CLARA: memuat nama penyewa dan nilai kontrak
+# sungguhan. Repo ini PUBLIK, jadi isinya tidak boleh ikut ter-commit —
+# skrip pembuatnya yang dibagikan, bukan datanya.
+docs/banding_*/
+docs/banding_*.json

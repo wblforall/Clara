@@ -487,9 +487,20 @@ foreach ($fokus as $bln) {
 
     $qRinci->execute([$pid, $pic, $bln]);
     [$ck, $rg, $kr, $lb] = sandingkan($ss['rincian'][$bln] ?? [], $qRinci->fetchAll());
-    $raguSama = array_map('mb_strtolower', (array) ($ss['ragu_sama'][$bln] ?? []));
+    // Baris RAGU — nilainya sama dengan sebuah transaksi di CLARA, tetapi
+    // namanya tidak mirip — TIDAK dihitung sebagai "harus diinput".
+    //
+    // Dulu sebaliknya: setiap baris ragu masuk daftar input kecuali disebut satu
+    // per satu di 'ragu_sama'. Akibatnya dokumen ini menyuruh orang menginput
+    // sesuatu yang SUDAH ADA di CLARA — keluhan yang paling sering terdengar —
+    // dan tabel langkah di bawah berakhir di angka yang melebihi spreadsheet,
+    // sehingga mengikuti dokumen ini justru membuat datanya salah.
+    //
+    // Bawaannya sekarang: ragu = sudah ada, cukup dipastikan. Hanya yang
+    // benar-benar terbukti BEDA yang disebut di 'ragu_beda' dan ikut diinput.
+    $raguBeda = array_map('mb_strtolower', (array) ($ss['ragu_beda'][$bln] ?? []));
     foreach ($rg as [$sRow, $cRow]) {
-        if (!in_array(mb_strtolower((string) $sRow['ket']), $raguSama, true)) $kr[] = $sRow;
+        if (in_array(mb_strtolower((string) $sRow['ket']), $raguBeda, true)) $kr[] = $sRow;
     }
     usort($kr, fn($a, $b) => (float) $b['nilai'] <=> (float) $a['nilai']);
     // Baris yang ditahan dikeluarkan dari daftar input DAN dipotong dari target
