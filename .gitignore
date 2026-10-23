@@ -88,3 +88,8 @@ scripts/build_laporan_gudang_media.php
 # skrip pembuatnya yang dibagikan, bukan datanya.
 docs/banding_*/
 docs/banding_*.json
+
+# Laporan UAT, tangkapan layar aplikasi, dan skrip uji: memuat nama client,
+# nomor dokumen, nilai kontrak, serta email & password akun sungguhan.
+# Repo ini PUBLIK — isinya pernah bisa diunduh siapa pun lewat raw.githubusercontent.
+/testing/
