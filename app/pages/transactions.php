@@ -1090,6 +1090,18 @@ function transaction_save(PDO $pdo): void
     $clientId  = (int) post('client_id');
     $contactId = (int) post('contact_id');
 
+    // Kembar persis ditolak di SINI, bukan cuma di peringatan JavaScript pada
+    // formulir. Peringatan itu bisa dilewati — dan memang dilewati: 17 kontrak
+    // senilai Rp 1,175 miliar masuk dua kali dengan cara ini.
+    $kembar = transaksi_kembar(
+        $pdo, current_property_id(), (string) post('module'), (string) post('master_code'),
+        $clientId ?: null, $start, $end
+    );
+    if ($kembar) {
+        flash(pesan_transaksi_kembar($kembar, (string) post('master_code'), $start, $end));
+        redirect_to('transactions', $kembali);
+    }
+
     $trx = [
         'module'       => post('module'),
         'master_code'  => post('master_code'),
@@ -1878,6 +1890,18 @@ function transaction_update(PDO $pdo): void
 
     $clientId  = (int) post('client_id');
     $contactId = (int) post('contact_id');
+
+    // Menyunting baris B sampai persis sama dengan baris A menghasilkan kembar
+    // yang sama saja — jadi diperiksa di sini juga, dengan baris ini sendiri
+    // dikecualikan (menyimpan tanpa mengubah apa pun tidak boleh ditolak).
+    $kembar = transaksi_kembar(
+        $pdo, current_property_id(), (string) $existing['module'], (string) post('master_code'),
+        $clientId ?: null, $start, $end, $id
+    );
+    if ($kembar) {
+        flash(pesan_transaksi_kembar($kembar, (string) post('master_code'), $start, $end));
+        redirect_to('transaction_edit', ['id' => $id]);
+    }
 
     $trx = [
         'module'          => $existing['module'],
@@ -2786,8 +2810,8 @@ function transaction_overlaps_page(PDO $pdo): void
              AND t1.end_date   >= t2.start_date
          LEFT JOIN master_clients c1 ON c1.id = t1.client_id
          LEFT JOIN master_clients c2 ON c2.id = t2.client_id
-         WHERE t1.deleted_at IS NULL
-           AND t2.deleted_at IS NULL
+         WHERE " . transaksi_sah_sql('t1') . "
+           AND " . transaksi_sah_sql('t2') . "
            AND t1.property_id = ?
            $extraWhere
          ORDER BY t1.master_code, t1.start_date
@@ -2901,7 +2925,7 @@ function transaction_overlap_check(PDO $pdo): void
          LEFT JOIN master_clients c ON c.id = t.client_id
          WHERE t.master_code = ?
            AND t.property_id = ?
-           AND t.deleted_at IS NULL
+           AND " . transaksi_sah_sql('t') . "
            AND t.start_date <= ?
            AND t.end_date   >= ?
            AND (? = 0 OR t.id != ?)

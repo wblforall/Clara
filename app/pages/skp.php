@@ -2346,7 +2346,7 @@ function _skp_update_master(PDO $pdo, int $clientId, ?string $ktp, ?string $npwp
  * Pembagian income dari formulir: [['pic' => ..., 'amount' => ...], ...].
  * Baris tanpa PIC atau bernilai 0 dibuang; PIC ganda digabung jadi satu.
  */
-function _skp_bagi_dari_post(PDO $pdo = null, int $pid = 0): array
+function _skp_bagi_dari_post(?PDO $pdo = null, int $pid = 0): array
 {
     $pic = (array) ($_POST['bagi_pic'] ?? []);
     $rp  = (array) ($_POST['bagi_nominal'] ?? []);
@@ -3242,6 +3242,47 @@ function skp_approve(PDO $pdo): void
         'npwp_no'  => $src['npwp'] ?? null,
         'doc_date' => date('Y-m-d'),
     ];
+
+    // Persetujuan inilah yang melahirkan transaksi — dan karenanya income. Bila
+    // kesepakatan yang sama sudah punya transaksi (mis. sudah diinput manual
+    // lebih dulu, atau ada penawaran kedua untuk deal yang sama), menyetujui
+    // dokumen ini akan menghitungnya dua kali. Dihentikan SEBELUM beginTransaction
+    // supaya bisa berhenti dengan penjelasan, bukan dengan error 500.
+    //
+    // Yang diperiksa persis sama dengan yang akan dibuat _skp_create_transaction
+    // di bawah: dokumen mandiri → satu baris; paket → satu baris per komponen.
+    // Dokumen yang transaksinya SUDAH tertaut tidak membuat baris baru sama
+    // sekali (revisi, perpanjangan), jadi tidak ikut diperiksa.
+    $akanDibuat = [];
+    if ($standalone) {
+        $akanDibuat[] = [(string) $src['module'], (string) $src['master_code']];
+    } elseif (empty($skp['transaction_id']) && !empty($skp['offer_id'])) {
+        if ($isBundleSrc && $bundleRows) {
+            foreach ($bundleRows as $it) {
+                $akanDibuat[] = [(string) $it['segment'], (string) $it['master_code']];
+            }
+        } else {
+            $akanDibuat[] = [(string) $src['module'], (string) $src['master_code']];
+        }
+    }
+    foreach ($akanDibuat as [$modDibuat, $kodeDibuat]) {
+        $kembar = transaksi_kembar(
+            $pdo, $pid, $modDibuat, $kodeDibuat, ((int) $src['client_id']) ?: null,
+            (string) $src['start_date'], (string) $src['end_date']
+        );
+        if (!$kembar) continue;
+        flash('Dokumen TIDAK disetujui — kesepakatan ini sudah punya transaksi. '
+            . 'Unit ' . $kodeDibuat . ' untuk client yang sama, periode '
+            . date('d/m/Y', strtotime((string) $src['start_date'])) . ' s/d '
+            . date('d/m/Y', strtotime((string) $src['end_date'])) . ', sudah tercatat sebagai '
+            . 'transaksi #' . (int) $kembar['id'] . ' atas nama '
+            . (trim((string) ($kembar['pic_name'] ?? '')) ?: 'PIC lain') . ' senilai '
+            . money((float) $kembar['nilai']) . '. Menyetujui dokumen ini akan membuat '
+            . 'baris kedua dan menghitung income dua kali. Pilih salah satu dulu: '
+            . 'ajukan hapus transaksi #' . (int) $kembar['id'] . ' bila baris itu yang keliru, '
+            . 'atau tolak dokumen ini bila transaksinya yang benar.');
+        redirect_to('skp_form', ['id' => $id]);
+    }
 
     $signToken = bin2hex(random_bytes(20));
 

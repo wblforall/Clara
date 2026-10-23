@@ -18,10 +18,11 @@ function daily_occupancy_page(PDO $pdo): void
                 COUNT(occ.master_code) occupied
          FROM master_cl_units m
          LEFT JOIN (
-             SELECT DISTINCT master_code
-             FROM transactions
-             WHERE property_id=? AND module='cl' AND deleted_at IS NULL
-               AND start_date<=? AND end_date>=?
+             SELECT DISTINCT t9.master_code
+             FROM transactions t9
+             WHERE t9.property_id=? AND t9.module='cl'
+               AND " . transaksi_sah_sql('t9') . "
+               AND t9.start_date<=? AND t9.end_date>=?
          ) occ ON occ.master_code=m.code
          WHERE m.property_id=? AND m.status='active'
          GROUP BY m.floor
@@ -40,7 +41,8 @@ function daily_occupancy_page(PDO $pdo): void
          FROM transactions t
          JOIN master_cl_units m ON m.code=t.master_code AND m.property_id=t.property_id
          LEFT JOIN master_clients c ON c.id=t.client_id
-         WHERE t.property_id=? AND t.module='cl' AND t.deleted_at IS NULL
+         WHERE t.property_id=? AND t.module='cl'
+           AND " . transaksi_sah_sql('t') . "
            AND t.start_date<=? AND t.end_date>=?
          ORDER BY $floorOrder, m.code"
     );
@@ -54,10 +56,11 @@ function daily_occupancy_page(PDO $pdo): void
                 COUNT(occ.master_code) occupied
          FROM master_media m
          LEFT JOIN (
-             SELECT DISTINCT master_code
-             FROM transactions
-             WHERE property_id=? AND module='media' AND deleted_at IS NULL
-               AND start_date<=? AND end_date>=?
+             SELECT DISTINCT t9.master_code
+             FROM transactions t9
+             WHERE t9.property_id=? AND t9.module='media'
+               AND " . transaksi_sah_sql('t9') . "
+               AND t9.start_date<=? AND t9.end_date>=?
          ) occ ON occ.master_code=m.code
          WHERE m.property_id=? AND m.status='active'
          GROUP BY m.media_type
@@ -76,7 +79,8 @@ function daily_occupancy_page(PDO $pdo): void
          FROM transactions t
          JOIN master_media m ON m.code=t.master_code AND m.property_id=t.property_id
          LEFT JOIN master_clients c ON c.id=t.client_id
-         WHERE t.property_id=? AND t.module='media' AND t.deleted_at IS NULL
+         WHERE t.property_id=? AND t.module='media'
+           AND " . transaksi_sah_sql('t') . "
            AND t.start_date<=? AND t.end_date>=?
          ORDER BY m.media_type, m.code"
     );

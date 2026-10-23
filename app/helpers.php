@@ -1094,3 +1094,116 @@ function clara_format_bold(?string $text): string
     $escaped = h($text);
     return preg_replace('/\*\*(.*?)\*\*/s', '<strong>$1</strong>', $escaped);
 }
+
+/**
+ * Cari transaksi KEMBAR PERSIS: properti, modul, unit, client, dan rentang
+ * tanggal yang sama persis. Mengembalikan barisnya, atau null bila tidak ada.
+ *
+ * Dua baris seperti ini tidak pernah benar. Satu unit tidak bisa disewa oleh
+ * client yang sama, untuk tanggal yang sama, dua kali — yang terjadi di
+ * lapangan selalu salah satu dari ini:
+ *
+ *   - beberapa PIC sama-sama menginput satu deal supaya sama-sama kebagian
+ *     achievement (yang mereka cari sebenarnya Pembagian PIC, bukan baris baru);
+ *   - satu orang menekan Simpan dua kali;
+ *   - transaksi sudah diinput manual, lalu dibuatkan penawaran + SKP untuk
+ *     kesepakatan yang sama.
+ *
+ * Akibatnya nilainya terhitung PENUH dua kali di laporan, dashboard, dan
+ * achievement — per 23 Oktober 2026 ada 17 kontrak seperti ini senilai
+ * Rp 1,175 miliar, yang tertua sejak April 2026. Peringatan overlap di
+ * formulir sudah ada sejak lama, tetapi ia hanya peringatan JavaScript yang
+ * bisa dilewati; karena itu penjagaan ini ada di sisi server.
+ *
+ * Barisnya dikembalikan utuh (bukan sekadar true) supaya pesan penolakan bisa
+ * menyebut nomor transaksi & PIC yang sudah ada — tanpa itu orang tidak tahu
+ * harus mencari ke mana, dan akhirnya menginput ulang dengan tanggal digeser
+ * sehari supaya lolos.
+ *
+ * Yang SENGAJA tidak dicakup: periode yang cuma bertindih sebagian. Itu bisa
+ * sah (unit berganti penyewa di tengah bulan, kontrak diperpanjang dengan
+ * tanggal menyambung) dan urusannya peringatan overlap, bukan penolakan.
+ *
+ * client_id dibandingkan dengan <=> supaya dua baris yang sama-sama tanpa
+ * client (NULL) tetap terbaca kembar; dengan '=' biasa NULL tidak pernah sama
+ * dengan apa pun, termasuk NULL lain.
+ */
+function transaksi_kembar(
+    PDO $pdo,
+    int $pid,
+    string $module,
+    string $masterCode,
+    ?int $clientId,
+    string $start,
+    string $end,
+    int $kecualiId = 0
+): ?array {
+    // Tanpa kode unit tidak ada yang bisa dibandingkan — modul Media lama
+    // menyimpan baris tanpa master_code, dan menolaknya berdasar tanggal saja
+    // akan memblokir pekerjaan yang sah.
+    if (trim($masterCode) === '' || $start === '' || $end === '') return null;
+
+    $q = $pdo->prepare(
+        "SELECT t.id, t.pic_name, t.created_by, t.created_at,
+                COALESCE(t.final_amount, t.total_calculated) nilai,
+                COALESCE(c.company_name, c.brand_name, '') client_name
+         FROM transactions t
+         LEFT JOIN master_clients c ON c.id = t.client_id
+         WHERE t.property_id = ? AND t.module = ? AND t.master_code = ?
+           AND t.client_id <=> ?
+           AND t.start_date = ? AND t.end_date = ?
+           AND t.deleted_at IS NULL
+           AND COALESCE(t.status, '') <> 'cancelled'
+           AND (? = 0 OR t.id <> ?)
+         ORDER BY t.id LIMIT 1"
+    );
+    $q->execute([$pid, $module, $masterCode, $clientId, $start, $end, $kecualiId, $kecualiId]);
+    return $q->fetch() ?: null;
+}
+
+/**
+ * Kalimat penolakan untuk transaksi kembar. Dipisah dari pencariannya supaya
+ * formulir transaksi dan persetujuan SKP menyebut hal yang sama persis —
+ * dua kalimat berbeda untuk satu aturan membuat orang mengira ada dua aturan.
+ */
+function pesan_transaksi_kembar(array $kembar, string $masterCode, string $start, string $end): string
+{
+    $pic = trim((string) ($kembar['pic_name'] ?? '')) ?: trim((string) ($kembar['created_by'] ?? '')) ?: 'PIC lain';
+    return 'Transaksi tidak disimpan — kesepakatan ini SUDAH ada di sistem. '
+        . 'Unit ' . $masterCode . ' untuk client yang sama, periode '
+        . date('d/m/Y', strtotime($start)) . ' s/d ' . date('d/m/Y', strtotime($end)) . ', sudah tercatat sebagai '
+        . 'transaksi #' . (int) $kembar['id'] . ' atas nama ' . $pic
+        . ' senilai ' . money((float) $kembar['nilai']) . '. '
+        . 'Kalau deal ini memang dikerjakan lebih dari satu PIC, JANGAN dibuat ulang — '
+        . 'buka transaksi #' . (int) $kembar['id'] . ' lalu pakai Pembagian PIC, '
+        . 'supaya nilainya dibagi, bukan dihitung dua kali.';
+}
+
+/**
+ * Penyaring "transaksi ini benar-benar mengikat" untuk dipakai di WHERE.
+ *
+ * Tiga keadaan membuat sebuah baris transaksi TIDAK boleh lagi dianggap
+ * mengunci unitnya:
+ *
+ *   - sudah dihapus (deleted_at);
+ *   - dibatalkan (status 'cancelled');
+ *   - dokumennya DITOLAK. Saat SKP ditolak, alokasi income-nya dilepas
+ *     (lihat skp_reject) tetapi barisnya sengaja dibiarkan hidup supaya
+ *     dokumennya masih bisa diperbaiki. Akibat sampingannya: unit itu tetap
+ *     terbaca "terisi" di Occupancy Harian, jadi sales tidak menawarkannya
+ *     padahal kosong. Per 23 Oktober 2026 ada 5 unit yang terkunci begini
+ *     sampai Desember (UG-005, LG-005, LG-049, GF-019, GF-004).
+ *
+ * $alias selalu datang dari kode pemanggil (huruf alias tabel), tidak pernah
+ * dari input user — karena itu aman diinterpolasi.
+ */
+function transaksi_sah_sql(string $alias = 't'): string
+{
+    $a = $alias;
+    return "$a.deleted_at IS NULL
+            AND COALESCE($a.status, '') <> 'cancelled'
+            AND COALESCE((SELECT s9.status FROM skp_documents s9
+                           WHERE s9.property_id = $a.property_id
+                             AND (s9.transaction_id = $a.id OR s9.id = $a.skp_id)
+                           ORDER BY s9.id DESC LIMIT 1), '') <> 'rejected'";
+}
