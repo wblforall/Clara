@@ -761,6 +761,36 @@ function skp_form(PDO $pdo): void
         }
     }
     $editable = ($skp === null || in_array($skp['status'], ['draft', 'rejected'], true)) && $sayaPic && !$dibatalkan;
+
+    // ─── Pratinjau LIVE ──────────────────────────────────────────────────────
+    //
+    // Halaman ini juga bisa dibuka dengan metode POST, dari tombol "Lihat Contoh
+    // Surat" di formulir. Isinya lalu diambil dari yang SEDANG diketik, bukan
+    // dari baris yang tersimpan.
+    //
+    // Tanpa ini pratinjaunya selalu memperlihatkan keadaan terakhir yang
+    // disimpan: centang "Sudah dibayarkan" yang baru dilepas masih tercetak
+    // sebagai sudah dibayar, tarif yang baru diturunkan masih tarif lama — dan
+    // yang diperiksa orang bukan surat yang akan terbit. Tidak ada satu pun
+    // baris yang ditulis ke basis data di sini; hanya salinan di memori.
+    //
+    // Hanya berlaku bila dokumennya memang bisa diedit. Pada dokumen terkunci
+    // seluruh isian dimatikan, sehingga pengirimannya kosong dan suratnya justru
+    // akan tampil melompong.
+    $pratinjauLive = getv('pratinjau') === '1'
+        && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST'
+        && $editable;
+    if ($pratinjauLive) {
+        $skp = array_merge($skp ?? [
+            'id' => 0, 'skp_no' => null, 'doc_type' => $docType, 'status' => 'draft',
+            'property_id' => $pid, 'offer_id' => $offerId ?: null, 'transaction_id' => $trxId ?: null,
+            'approved_by' => null, 'sign_method' => null, 'sign_name' => null,
+            'sign_token' => null, 'signature_data' => null, 'signed_at' => null,
+            'revisi_ke' => 0, 'approval_level' => 0,
+        ], _skp_fields_dari_post($docType));
+        $src = _skp_src_dari_post($src, $standalone);
+    }
+
     $days     = _skp_days($src['start_date'], $src['end_date']);
     $total    = (float) ($src['final_amount'] ?: $src['total_calculated']);
     $defDeposit = (float) ($skp['deposit_amount'] ?? $src['deposit_amount'] ?? 0);
@@ -1532,9 +1562,23 @@ function skp_form(PDO $pdo): void
                 <button type="submit" onclick="document.getElementById('skp-action').value='submit'" style="background:#0369a1">Simpan & Submit untuk Approval</button>
                 <a class="btn secondary" href="?r=skp">Batal</a>
                 <?php endif; ?>
+                <?php /* Dokumen yang masih bisa diedit: formulirnya DIKIRIM apa adanya
+                         ke halaman ini sendiri dengan ?pratinjau=1, jadi suratnya
+                         memperlihatkan isian di layar — termasuk yang baru diketik dan
+                         belum pernah disimpan. formnovalidate supaya pratinjau tetap
+                         bisa dibuka walau ada isian wajib yang belum lengkap. */ ?>
+                <?php if ($editable): ?>
+                <button type="submit" formaction="?r=skp_form&<?= $prevQ ?>&pratinjau=1" formtarget="_blank"
+                        formnovalidate class="btn light"
+                        style="background:#ecfdf5;color:#065f46;border-color:#a7f3d0"
+                        title="Surat contoh bercap &quot;CONTOH — BELUM SAH&quot;, dari isian yang sedang diketik">👁 Lihat Contoh Surat</button>
+                <?php else: ?>
+                <?php /* Terkunci: seluruh isian dimatikan, jadi pengiriman formulir akan
+                         kosong. Yang dibuka dokumen tersimpannya. */ ?>
                 <a class="btn light" style="background:#ecfdf5;color:#065f46;border-color:#a7f3d0"
                    href="?r=skp_form&<?= $prevQ ?>&pratinjau=1" target="_blank" rel="noopener"
                    title="Surat contoh bercap &quot;CONTOH — BELUM SAH&quot;, tanpa nomor dokumen">👁 Lihat Contoh Surat</a>
+                <?php endif; ?>
                 <?php /* Draft yang belum jadi apa-apa boleh dibuang di sini juga.
                          Tanpa ini, perpanjangan yang ditinggal di tengah jalan
                          menumpuk sebagai draft kosong di daftar dokumen — dan
@@ -2544,6 +2588,97 @@ function _skp_simpan_periode(PDO $pdo, int $pid, int $trxId, ?array $skp, array 
     return $pesan;
 }
 
+/**
+ * Masa sewa & harga menurut FORMULIR, ditempel ke salinan sumbernya.
+ *
+ * Kolom-kolom ini milik transaksi/penawaran, bukan milik dokumen, jadi tidak
+ * ikut _skp_fields_dari_post(). Hanya dipakai pratinjau — tidak ada satu pun
+ * baris yang ditulis ke basis data di sini.
+ */
+function _skp_src_dari_post(array $src, bool $standalone): array
+{
+    $sah = static function (string $t): bool {
+        $d = DateTimeImmutable::createFromFormat('Y-m-d', $t);
+        return $d instanceof DateTimeImmutable && $d->format('Y-m-d') === $t;
+    };
+    $pre     = $standalone ? 's_' : 'p_';
+    $mulai   = trim((string) post($pre . 'start_date', ''));
+    $selesai = trim((string) post($pre . 'end_date', ''));
+    if ($sah($mulai) && $sah($selesai) && $selesai >= $mulai) {
+        $src['start_date'] = $mulai;
+        $src['end_date']   = $selesai;
+    }
+    // Kotak tarif di formulir adalah tarif PUBLISH; tarif hasil nego diketik di
+    // kotak diskon — dibaca persis seperti cara penyimpanan membacanya.
+    if (isset($_POST[$pre . 'unit_rate'])) {
+        $pub = (float) parse_rupiah((string) post($pre . 'unit_rate', '0'));
+        $dis = (float) parse_rupiah((string) post('tarif_diskon', '0'));
+        $src['unit_rate'] = (post('diskon_aktif') && $dis > 0 && $pub > 0 && $dis < $pub) ? $dis : $pub;
+    }
+    $pt = (string) post('p_pricing_type', '');
+    if ($pt !== '' && array_key_exists($pt, clara_pilihan_harga())) $src['pricing_type'] = $pt;
+    if (($src['pricing_type'] ?? '') === 'monthly' && isset($_POST['p_contract_months'])) {
+        $bln = (int) post('p_contract_months', 0);
+        $src['contract_months'] = $bln > 0 ? min(60, $bln) : null;
+    }
+    // Total: diketik = itu harganya; kosong = dihitung dari tarif x masa sewa,
+    // sama seperti saat disimpan.
+    $ketik  = (float) parse_rupiah((string) post($standalone ? 's_total_amount' : 'p_total', '0'));
+    $hitung = 0.0;
+    try { $hitung = (float) AllocationService::totalCalculated($src); } catch (Throwable $e) { $hitung = 0.0; }
+    $src['total_calculated'] = $hitung;
+    $src['final_amount']     = $ketik > 0 ? $ketik : $hitung;
+    return $src;
+}
+
+/**
+ * Kolom dokumen SKP/SKS/Media yang berasal dari FORMULIR.
+ *
+ * Dipakai bersama oleh penyimpanan dan oleh pratinjau. Dulu hanya penyimpanan
+ * yang membacanya, sedangkan pratinjau membaca baris yang sudah tersimpan —
+ * sehingga centang yang baru dilepas (mis. "Sudah dibayarkan") masih tercetak
+ * sebagai sudah dibayar, dan pemeriksa menilai surat yang bukan surat yang akan
+ * terbit. Satu sumber bacaan membuat keduanya tidak bisa berbeda lagi.
+ */
+function _skp_fields_dari_post(string $docType): array
+{
+    $ktp  = trim((string) post('ktp_pj')) ?: null;
+    $npwp = trim((string) post('npwp_no')) ?: null;
+    $siup = trim((string) post('siup_no')) ?: null;
+    return [
+        'cp_name'       => trim((string) post('cp_name')) ?: null,
+        'ktp_pj'        => $ktp,
+        'phone_pj'      => trim((string) post('phone_pj')) ?: null,
+        'seating_area'  => trim((string) post('seating_area', '')) !== '' ? (float) str_replace(',', '.', (string) post('seating_area')) : null,
+        'produk'        => trim((string) post('produk')) ?: null,
+        'status_sewa'   => post('status_sewa') ?: 'Baru',
+        'deposit_amount'=> (float) post('deposit_raw', 0),
+        // Sudah disetor di kontrak sebelumnya → dicetak di surat, tapi di luar Grand Total.
+        'deposit_paid'  => post('deposit_paid') ? 1 : 0,
+        // Harga bersih tanpa PPN untuk penyewa yang pajaknya di luar sistem.
+        'ppn_flag'      => post('ppn_flag') ? 1 : 0,
+        // Service Charge bulanan (kosong = tidak dikenakan).
+        'sc_flag'       => post('sc_flag') ? 1 : 0,
+        'sc_monthly'    => parse_rupiah((string) post('sc_monthly', '0')) ?: null,
+        // Harga publish: tarif sebelum diskon, dicetak di dokumen supaya client,
+        // legal, dan finance sama-sama melihat bahwa harganya memang diskon.
+        // Tarif yang DIPAKAI tersimpan di unit_rate transaksinya; kolom ini
+        // hanya pembandingnya, dan hanya sah bila benar-benar lebih besar.
+        'diskon_aktif'  => post('diskon_aktif') ? 1 : 0,
+        'tarif_publish' => _skp_tarif_publish_post() ?: null,
+        // Listrik yang dicatat di dokumen ini (kosong = tidak menagih listrik).
+        'electricity_flag'    => post('electricity_flag') ? 1 : 0,
+        'electricity_monthly' => parse_rupiah((string) post('electricity_monthly', '0')) ?: null,
+        'electricity_units'   => (int) post('electricity_units', 0) > 0 ? min(12, (int) post('electricity_units')) : null,
+        'electricity_amount'  => parse_rupiah((string) post('electricity_amount', '0')) ?: null,
+        'admin_siup'    => $siup ? 1 : 0,
+        'admin_npwp'    => $npwp ? 1 : 0,
+        'admin_ktp'     => $ktp ? 1 : 0,
+        'note'          => trim((string) post('note')) ?: null,
+        'detail_json'   => $docType === 'skp' ? null : json_encode(skp_detail_from_post($docType), JSON_UNESCAPED_UNICODE),
+    ];
+}
+
 function skp_save(PDO $pdo): void
 {
     require_permission('manage_skp');
@@ -2616,38 +2751,7 @@ function skp_save(PDO $pdo): void
     $ktp  = trim((string) post('ktp_pj')) ?: null;
     $npwp = trim((string) post('npwp_no')) ?: null;
     $siup = trim((string) post('siup_no')) ?: null;
-    $fields = [
-        'cp_name'       => trim((string) post('cp_name')) ?: null,
-        'ktp_pj'        => $ktp,
-        'phone_pj'      => trim((string) post('phone_pj')) ?: null,
-        'seating_area'  => trim((string) post('seating_area', '')) !== '' ? (float) str_replace(',', '.', (string) post('seating_area')) : null,
-        'produk'        => trim((string) post('produk')) ?: null,
-        'status_sewa'   => post('status_sewa') ?: 'Baru',
-        'deposit_amount'=> (float) post('deposit_raw', 0),
-        // Sudah disetor di kontrak sebelumnya → dicetak di surat, tapi di luar Grand Total.
-        'deposit_paid'  => post('deposit_paid') ? 1 : 0,
-        // Harga bersih tanpa PPN untuk penyewa yang pajaknya di luar sistem.
-        'ppn_flag'      => post('ppn_flag') ? 1 : 0,
-        // Service Charge bulanan (kosong = tidak dikenakan).
-        'sc_flag'       => post('sc_flag') ? 1 : 0,
-        'sc_monthly'    => parse_rupiah((string) post('sc_monthly', '0')) ?: null,
-        // Harga publish: tarif sebelum diskon, dicetak di dokumen supaya client,
-        // legal, dan finance sama-sama melihat bahwa harganya memang diskon.
-        // Tarif yang DIPAKAI tersimpan di unit_rate transaksinya; kolom ini
-        // hanya pembandingnya, dan hanya sah bila benar-benar lebih besar.
-        'diskon_aktif'  => post('diskon_aktif') ? 1 : 0,
-        'tarif_publish' => _skp_tarif_publish_post() ?: null,
-        // Listrik yang dicatat di dokumen ini (kosong = tidak menagih listrik).
-        'electricity_flag'    => post('electricity_flag') ? 1 : 0,
-        'electricity_monthly' => parse_rupiah((string) post('electricity_monthly', '0')) ?: null,
-        'electricity_units'   => (int) post('electricity_units', 0) > 0 ? min(12, (int) post('electricity_units')) : null,
-        'electricity_amount'  => parse_rupiah((string) post('electricity_amount', '0')) ?: null,
-        'admin_siup'    => $siup ? 1 : 0,
-        'admin_npwp'    => $npwp ? 1 : 0,
-        'admin_ktp'     => $ktp ? 1 : 0,
-        'note'          => trim((string) post('note')) ?: null,
-        'detail_json'   => $docType === 'skp' ? null : json_encode(skp_detail_from_post($docType), JSON_UNESCAPED_UNICODE),
-    ];
+    $fields = _skp_fields_dari_post($docType);
     $fields = array_merge($fields, $sFields);
     $uname = $_SESSION['user']['name'] ?? 'system';
     // Nomor identitas wajib sebelum submit approval (KTP/NPWP/SIUP).
