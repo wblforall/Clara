@@ -422,7 +422,7 @@ function approval_flow_save(PDO $pdo): void
     verify_csrf();
     $pid   = current_property_id();
     $jenis = in_array(post('doc_type'), ['skp', 'sks', 'fu'], true) ? post('doc_type') : 'skp';
-    $uname = $_SESSION['user']['name'] ?? 'system';
+    $uname = clara_pelaku();
 
     // Formulir pemutus revisi dikirim terpisah — jangan sampai menyentuh
     // rantai persetujuan (yang field-nya tidak ikut terkirim) dan menghapusnya.

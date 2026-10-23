@@ -417,6 +417,35 @@ function current_role(): string
 }
 
 /**
+ * Nama pelaku untuk JEJAK dokumen — siapa yang membuat, mengubah, memaraf,
+ * menolak, menyetujui, atau menghapus.
+ *
+ * Super Admin mengerjakan banyak hal atas nama orang lain. Di jejak dokumen
+ * namanya dulu tercatat polos, persis seperti pemeriksa sungguhan, sehingga
+ * "adil menolak" tidak bisa dibedakan dari "Asst. Manager menolak". Jabatannya
+ * ikut ditulis supaya siapa pun yang membacanya tahu itu tindakan Super Admin.
+ *
+ * Mode "Lihat sebagai" juga disebut: yang tercatat nama orang yang dipinjam
+ * sudut pandangnya, dan tanpa keterangan ini tindakan Super Admin akan tertulis
+ * sepenuhnya atas nama orang itu.
+ *
+ * BUKAN untuk mencocokkan kepemilikan ("apakah dokumen ini milik saya").
+ * Pencocokan memakai nama polos dari sesi; menambahkan jabatan di situ membuat
+ * orang kehilangan akses ke dokumennya sendiri.
+ */
+function clara_pelaku(string $bilaKosong = 'system'): string
+{
+    $nama = trim((string) ($_SESSION['user']['name'] ?? ''));
+    if ($nama === '') return $bilaKosong;
+    $asli = class_exists('ViewAs') ? ViewAs::asli() : null;
+    if ($asli) {
+        $oleh = trim((string) ($asli['name'] ?? ''));
+        return $oleh !== '' ? $nama . ' (lewat ' . $oleh . ')' : $nama;
+    }
+    return current_role() === 'superadmin' ? $nama . ' (superadmin)' : $nama;
+}
+
+/**
  * Pembatasan visibilitas per-sales. Role 'sales' hanya melihat data miliknya
  * (penawaran/SKP dengan PIC = dirinya, atau yang ia buat). Role lain → null
  * (lihat semua). Return ['pic'=>nama PIC tertaut|'', 'uname'=>nama user] atau null.

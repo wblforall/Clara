@@ -2533,7 +2533,7 @@ function _skp_simpan_periode(PDO $pdo, int $pid, int $trxId, ?array $skp, array 
                     WHERE id = ? AND property_id = ?')
         ->execute([$mulai, $selesai, $tarif, $trx['contract_months'] ?? null, $ptSah, $pkBaru,
                    $hitung, $pakaiKetik ? $totalKetik : null, $nilaiFinal,
-                   $_SESSION['user']['name'] ?? 'system', $trxId, $pid]);
+                   clara_pelaku(), $trxId, $pid]);
 
     $trx['period_key']       = $pkBaru;
     $trx['total_calculated'] = $hitung;
@@ -2753,7 +2753,7 @@ function skp_save(PDO $pdo): void
     $siup = trim((string) post('siup_no')) ?: null;
     $fields = _skp_fields_dari_post($docType);
     $fields = array_merge($fields, $sFields);
-    $uname = $_SESSION['user']['name'] ?? 'system';
+    $uname = clara_pelaku();
     // Nomor identitas wajib sebelum submit approval (KTP/NPWP/SIUP).
     $missNum = [];
     // CLIENT wajib — dan ini yang paling mudah terlewat. Kotak client adalah
@@ -2992,7 +2992,7 @@ function _skp_create_transaction(PDO $pdo, array $skp, array $src, int $pid, ?ar
         'referrer_name'    => $src['referrer_name'] ?? null,
         'remarks'          => 'Dari ' . skp_doc_short((string) ($skp['doc_type'] ?? 'skp')) . ' ' . ($skp['skp_no'] ?? '') . ($noteAdd ? ' · ' . $noteAdd : ''),
         'invoice_no'       => null,
-        'created_by'       => $_SESSION['user']['name'] ?? 'system',
+        'created_by'       => clara_pelaku(),
     ];
     $cols = array_keys($trx);
     $ph   = array_map(fn($c) => ':' . $c, $cols);
@@ -3243,7 +3243,7 @@ function skp_approve(PDO $pdo): void
              snapshot_json=?, sign_token=?, sign_token_expires_at=' . sign_token_expiry_sql() . '
              WHERE id=? AND property_id=? AND status=\'submitted\''
         );
-        $updApp->execute([$skpNo, $_SESSION['user']['name'] ?? 'manager', json_encode($snapshot, JSON_UNESCAPED_UNICODE), $signToken, $id, $pid]);
+        $updApp->execute([$skpNo, clara_pelaku('manager'), json_encode($snapshot, JSON_UNESCAPED_UNICODE), $signToken, $id, $pid]);
         if ($updApp->rowCount() === 0) {
             $pdo->rollBack();
             flash('Dokumen ini baru saja disetujui orang lain — silakan muat ulang halamannya.');
@@ -3601,7 +3601,7 @@ function skp_revision_request(PDO $pdo): void
                    (property_id, skp_id, alasan, status, requested_by, requested_user_id)
                    VALUES (?,?,?,\'pending\',?,?)')
         ->execute([$pid, $id, mb_substr($alasan, 0, 500),
-                   $_SESSION['user']['name'] ?? 'system', (int) ($_SESSION['user']['id'] ?? 0) ?: null]);
+                   clara_pelaku(), (int) ($_SESSION['user']['id'] ?? 0) ?: null]);
 
     audit($pdo, 'skp_revisi_ajukan', 'skp_documents', (string) $id, ['alasan' => $alasan]);
     flash('Permintaan revisi dikirim' . ($tahap ? ' ke ' . $tahap['label'] : '')
@@ -3652,7 +3652,7 @@ function skp_revision_decide(PDO $pdo): void
         $upd = $pdo->prepare("UPDATE skp_revision_requests
                                  SET status = ?, decided_by = ?, decided_role = ?, decided_at = NOW(), decision_note = ?
                                WHERE id = ? AND status = 'pending'");
-        $upd->execute([$setuju ? 'approved' : 'rejected', $_SESSION['user']['name'] ?? 'system',
+        $upd->execute([$setuju ? 'approved' : 'rejected', clara_pelaku(),
                        $jab ?: null, $note !== '' ? mb_substr($note, 0, 500) : null, (int) $minta['id']]);
         if ($upd->rowCount() === 0) {
             $pdo->rollBack();

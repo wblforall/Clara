@@ -99,7 +99,7 @@ function _renewal_update(PDO $pdo): void
     }
 
     if ($before) {
-        $actor = $_SESSION['user']['name'] ?? ($_SESSION['user']['username'] ?? null);
+        $actor = clara_pelaku((string) ($_SESSION['user']['username'] ?? '')) ?: null;
         $upd = $pdo->prepare(
             "UPDATE transactions
                 SET renewal_status = ?, renewal_note = ?, renewal_updated_at = NOW(), renewal_updated_by = ?

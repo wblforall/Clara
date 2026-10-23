@@ -3317,7 +3317,7 @@ function offer_save(PDO $pdo): void
     verify_csrf();
     $pid = current_property_id();
     $id  = (int) post('id');
-    $uname = $_SESSION['user']['name'] ?? 'system';
+    $uname = clara_pelaku();
 
     $module   = in_array(post('module'), ['cl', 'media', 'gudang'], true) ? post('module') : 'cl';
     $isBundleAwal = post('is_bundle') === '1';
@@ -3728,7 +3728,7 @@ function offer_close(PDO $pdo): void
     $pdo->prepare(
         "UPDATE offers SET status='cancelled', cancelled_at=CURRENT_TIMESTAMP,
                 lost_category=?, status_note=?, closed_by=? WHERE id=? AND property_id=?"
-    )->execute([$cat, $note, $_SESSION['user']['name'] ?? 'system', $id, $pid]);
+    )->execute([$cat, $note, clara_pelaku(), $id, $pid]);
     audit($pdo, 'close', 'offers', (string) $id, ['lost_category' => $cat, 'note' => $note]);
     flash('Penawaran ditutup (tidak deal) dengan alasan: ' . offer_lost_label($cat) . '.');
     redirect_to('offer_view', ['id' => $id]);

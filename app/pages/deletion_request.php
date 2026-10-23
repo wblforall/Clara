@@ -1476,7 +1476,7 @@ function deletion_request_save(PDO $pdo): void
     $pid    = current_property_id();
     $alasan = trim((string) post('alasan'));
     $jenis  = array_key_exists((string) post('jenis'), _dr_jenis_alasan()) ? (string) post('jenis') : 'lainnya';
-    $uname  = (string) ($_SESSION['user']['name'] ?? 'system');
+    $uname  = clara_pelaku();
 
     // pilih[] berisi kunci "s:<id dokumen>" atau "t:<id transaksi>" — satu daftar
     // untuk dua jenis baris. skp_id[] lama tetap diterima supaya tautan atau
@@ -1651,7 +1651,7 @@ function deletion_request_decide(PDO $pdo): void
     $id      = (int) post('id');
     $setuju  = post('putusan') === 'setuju';
     $catatan = trim((string) post('catatan'));
-    $uname   = (string) ($_SESSION['user']['name'] ?? 'system');
+    $uname   = clara_pelaku();
     $jab     = ApprovalLine::jabatan($pdo, $pid);
 
     $st = $pdo->prepare("SELECT * FROM deletion_requests WHERE id = ? AND property_id = ? AND status = 'menunggu'");
@@ -1763,7 +1763,7 @@ function deletion_request_restore(PDO $pdo): void
     verify_csrf();
     $pid   = current_property_id();
     $id    = (int) post('id');
-    $uname = (string) ($_SESSION['user']['name'] ?? 'system');
+    $uname = clara_pelaku();
     $nota  = trim((string) post('catatan'));
 
     if (!can('manage_deleted') && !_dr_boleh_putus($pdo, $pid)) {
@@ -1893,7 +1893,7 @@ function deletion_request_execute(PDO $pdo): void
     verify_csrf();
     $pid   = current_property_id();
     $id    = (int) post('id');
-    $uname = (string) ($_SESSION['user']['name'] ?? 'system');
+    $uname = clara_pelaku();
 
     $st = $pdo->prepare("SELECT * FROM deletion_requests WHERE id = ? AND property_id = ? AND status = 'disetujui'");
     $st->execute([$id, $pid]);
@@ -1938,7 +1938,7 @@ function deletion_approver_save(PDO $pdo): void
                    VALUES (?,?,?,?)
                    ON DUPLICATE KEY UPDATE role_name = VALUES(role_name), pic_name = VALUES(pic_name),
                                            updated_by = VALUES(updated_by)')
-        ->execute([$pid, $role, $pic !== '' ? $pic : null, (string) ($_SESSION['user']['name'] ?? 'system')]);
+        ->execute([$pid, $role, $pic !== '' ? $pic : null, clara_pelaku()]);
 
     audit($pdo, 'update', 'deletion_approver', (string) $pid, ['role_name' => $role, 'pic_name' => $pic]);
     flash('Pemutus pengajuan penghapusan disimpan: ' . $role . ($pic !== '' ? ' — ' . $pic : '') . '.');

@@ -576,7 +576,7 @@ function recurring_merge_execute(PDO $pdo): void
     $pdo->beginTransaction();
     try {
         $now = date('Y-m-d H:i:s');
-        $actor = $_SESSION['user']['name'] ?? 'system';
+        $actor = clara_pelaku();
 
         // Pembagian income transaksi lama dijumlahkan per PIC supaya ikut pindah
         // ke transaksi gabungan. Tanpa ini seluruh income jatuh ke satu nama dan

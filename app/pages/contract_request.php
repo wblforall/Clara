@@ -360,7 +360,7 @@ function contract_request_save(PDO $pdo): void
     $pid   = current_property_id();
     $id    = (int) post('id');
     $skpId = (int) post('skp_id');
-    $uname = $_SESSION['user']['name'] ?? 'system';
+    $uname = clara_pelaku();
     $action = post('action') === 'send' ? 'send' : 'save';
 
     // Validasi SKP signed (untuk pembuatan baru).
@@ -699,7 +699,7 @@ function contract_legal_approve(PDO $pdo): void
     if (!$cr) { http_response_code(404); exit('Tautan tidak valid.'); }
     if ($cr['status'] === 'sent') {
         // Identitas penyetuju dari sesi login (bukan input bebas).
-        $by   = trim((string) ($_SESSION['user']['name'] ?? '')) ?: 'Departemen Legal';
+        $by   = clara_pelaku('Departemen Legal');
         $note = trim((string) post('legal_note')) ?: null;
         $pdo->prepare("UPDATE contract_requests SET status='approved', legal_by=?, legal_note=?, legal_approved_at=CURRENT_TIMESTAMP WHERE id=?")
             ->execute([substr($by, 0, 120), $note ? substr($note, 0, 500) : null, (int) $cr['id']]);

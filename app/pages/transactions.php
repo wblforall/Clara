@@ -1126,7 +1126,7 @@ function transaction_save(PDO $pdo): void
         }
     }
 
-    $createdBy = $_SESSION['user']['name'] ?? 'system';
+    $createdBy = clara_pelaku();
     $stmt = $pdo->prepare(
         'INSERT INTO transactions
         (property_id, module, master_code, period_key, client_id, contact_id, content_note, start_date, end_date, quantity, slots, area_sqm,
@@ -1217,7 +1217,7 @@ function transaction_save(PDO $pdo): void
                 $trx['client_id'] ?: null, $trx['contact_id'] ?? null, $trx['master_code'] ?? null,
                 $trx['start_date'] ?? null, $trx['end_date'] ?? null,
                 (float) ($trx['unit_rate'] ?? 0), (float) ($trx['final_amount'] ?? 0),
-                $trx['pic_name'] ?? null, $id, $_SESSION['user']['name'] ?? 'system',
+                $trx['pic_name'] ?? null, $id, clara_pelaku(),
             ]);
             $skpId = (int) $pdo->lastInsertId();
             audit($pdo, 'create', 'skp_documents', (string) $skpId, ['dari_perpanjangan' => $id]);
@@ -1965,7 +1965,7 @@ function transaction_update(PDO $pdo): void
         ':referrer_name'     => $trx['referrer_name'],
         ':remarks'           => $trx['remarks'],
         ':invoice_no'        => $trx['invoice_no'],
-        ':updated_by'        => $_SESSION['user']['name'] ?? 'system',
+        ':updated_by'        => clara_pelaku(),
         ':id'                => $id,
         ':property_id'       => current_property_id(),
     ]);
@@ -2047,7 +2047,7 @@ function price_step_save(PDO $pdo): void
     }
 
     require_once dirname(__DIR__) . '/AllocationService.php';
-    $uname = $_SESSION['user']['name'] ?? 'system';
+    $uname = clara_pelaku();
     $pdo->beginTransaction();
     try {
         // Tahap pertama = harga yang berlaku sekarang, supaya bulan sebelum
@@ -2140,7 +2140,7 @@ function pic_split_save(PDO $pdo): void
     $lama = $lama->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
     require_once dirname(__DIR__) . '/AllocationService.php';
-    $uname = $_SESSION['user']['name'] ?? 'system';
+    $uname = clara_pelaku();
     $skpId = $pdo->prepare('SELECT id FROM skp_documents WHERE transaction_id = ? AND property_id = ? ORDER BY id DESC LIMIT 1');
     $skpId->execute([$id, $pid]);
     $skpId = (int) ($skpId->fetchColumn() ?: 0);
@@ -2579,7 +2579,7 @@ function allocation_amount_override(PDO $pdo): void
         $newFinal = (float) ($sumStmt->fetchColumn() ?: 0);
 
         $pdo->prepare('UPDATE transactions SET final_amount = ?, override_amount = ?, updated_by = ?, updated_at = NOW() WHERE id = ?')
-            ->execute([$newFinal, $newFinal, $_SESSION['user']['name'] ?? 'system', $trxId]);
+            ->execute([$newFinal, $newFinal, clara_pelaku(), $trxId]);
 
         // Bila income transaksi ini dibagi ke beberapa PIC, nominal pembagiannya
         // ikut disamakan dengan alokasi yang baru. Tanpa ini jumlah pembagian

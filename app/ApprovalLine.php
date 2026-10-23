@@ -223,7 +223,7 @@ final class ApprovalLine
             )->execute([
                 $pid, $skpId, $stepNo, $roleName, $action,
                 (int) ($_SESSION['user']['id'] ?? 0) ?: null,
-                $_SESSION['user']['name'] ?? 'system',
+                clara_pelaku(),
                 $note !== '' ? mb_substr($note, 0, 500) : null,
             ]);
         } catch (Throwable $e) {
