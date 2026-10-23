@@ -3206,6 +3206,20 @@ function skp_approve(PDO $pdo): void
         // Jenis harga ikut dibekukan supaya label rincian pembayaran bisa
         // menyebut satuan yang benar ("per bulan" vs "per m² per hari").
         'pricing_type' => (string) ($src['pricing_type'] ?? ''),
+        // Biaya sewa per BULAN, dibekukan sebagai kunci tersendiri.
+        //
+        // Kuncinya baru: dokumen yang sudah terbit sebelum ini tidak memilikinya,
+        // dan cetakan ulangnya memang tidak boleh berubah — surat yang sudah
+        // diserahkan ke client harus tetap sama persis. Baris barunya hanya
+        // muncul pada dokumen yang diterbitkan sejak sekarang.
+        'sewa_per_bulan' => (function () use ($src, $amt): float {
+            $pt = (string) ($src['pricing_type'] ?? '');
+            if (!in_array($pt, ['monthly', 'monthly_area'], true)) return 0.0;
+            $tarif = (float) ($amt['rate_m_day'] ?? 0);
+            return $pt === 'monthly_area'
+                ? $tarif * (float) ($src['area_sqm'] ?: $src['unit_area'])
+                : $tarif;
+        })(),
         // Jadwal harga bertahap ikut dibekukan supaya cetakan ulang tidak berubah.
         'tahap_harga' => AllocationService::priceSteps($pdo, (int) ($skp['transaction_id'] ?? 0), (int) ($skp['offer_id'] ?? 0)),
         // Paraf tahap-tahap sebelum persetujuan akhir ikut dibekukan, supaya

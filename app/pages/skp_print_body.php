@@ -336,6 +336,38 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
         <?php if ((float) ($a['rate_m_day'] ?? 0) > 0): ?>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?><?= $h($satuanSkp) ?></td><td class="amt"><?= $rp($a['rate_m_day'] ?? 0) ?></td></tr>
         <?php endif; ?>
+        <?php /* Biaya sewa per BULAN.
+                 Hanya untuk kontrak yang memang DIHARGAI per bulan. Pada kontrak
+                 harian angka ini tidak punya arti: ia akan terbaca client sebagai
+                 kesepakatan bulanan yang tidak pernah ada, dan tagihannya tidak
+                 pernah sebesar itu.
+                 Angkanya bukan karangan — tarif per m² per bulan dikalikan luas
+                 areanya, dua angka yang sama-sama tercetak di surat ini juga,
+                 jadi pembacanya bisa menjumlah ulang sendiri.
+                 Dokumen LAMA tidak menyimpan pricing_type di snapshotnya,
+                 sehingga baris ini tidak muncul di sana — surat yang sudah
+                 terbit tetap persis seperti saat diterbitkan. */ ?>
+        <?php
+        // Dokumen yang SUDAH TERBIT dicetak dari snapshotnya. Yang terbit
+        // sebelum baris ini ada tidak punya kunci 'sewa_per_bulan', dan
+        // cetakan ulangnya harus tetap sama persis seperti saat diserahkan ke
+        // client — jadi barisnya tidak dimunculkan di sana. Dokumen yang belum
+        // terbit (draft & pratinjau) dihitung langsung.
+        $perBulanSkp = 0.0;
+        if (array_key_exists('sewa_per_bulan', (array) $d)) {
+            $perBulanSkp = (float) $d['sewa_per_bulan'];
+        } elseif (empty($skp['skp_no']) && in_array($ptSkp, ['monthly', 'monthly_area'], true)) {
+            $tarifSkp = (float) ($a['rate_m_day'] ?? 0);
+            $perBulanSkp = $ptSkp === 'monthly_area'
+                ? $tarifSkp * (float) ($d['area'] ?? 0)
+                : $tarifSkp;
+        }
+        ?>
+        <?php if ($perBulanSkp > 0): ?>
+        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Biaya Sewa / Bulan<?= $ptSkp === 'monthly_area'
+                ? ' <span class="muted">(' . $h(rtrim(rtrim(number_format((float) ($d['area'] ?? 0), 2, ',', '.'), '0'), ',')) . ' m² × ' . $rp($a['rate_m_day'] ?? 0) . ')</span>' : '' ?></td>
+            <td class="amt"><?= $rp($perBulanSkp) ?></td></tr>
+        <?php endif; ?>
         <?php endif; ?>
         <?php if (($a['listrik'] ?? 0) > 0): ?>
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Nilai Sewa</td><td class="amt"><?= $rp($a['sewa'] ?? 0) ?></td></tr>
