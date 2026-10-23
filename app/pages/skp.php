@@ -2632,8 +2632,17 @@ function _skp_src_dari_post(array $src, bool $standalone): array
     $ketik  = (float) parse_rupiah((string) post($standalone ? 's_total_amount' : 'p_total', '0'));
     $hitung = 0.0;
     try { $hitung = (float) AllocationService::totalCalculated($src); } catch (Throwable $e) { $hitung = 0.0; }
+    // final_amount dari sumbernya SUDAH memuat biaya listrik — lihat
+    // _skp_source_from_offer(), yang menambahkannya tepat setelah membaca
+    // penawaran. Hitungan di sini hanya menghasilkan nilai SEWA, jadi
+    // listriknya ditambahkan kembali.
+    //
+    // Tanpa ini pratinjau kehilangan satu biaya listrik beserta PPN-nya,
+    // sehingga Grand Total di surat contoh berbeda dari yang tertera di
+    // formulir — padahal keduanya menggambarkan dokumen yang sama persis.
+    $listrik = (float) ($src['electricity'] ?? 0);
     $src['total_calculated'] = $hitung;
-    $src['final_amount']     = $ketik > 0 ? $ketik : $hitung;
+    $src['final_amount']     = ($ketik > 0 ? $ketik : $hitung) + $listrik;
     return $src;
 }
 
