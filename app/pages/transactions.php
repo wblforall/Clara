@@ -209,7 +209,7 @@ function transactions_page(PDO $pdo): void
                             <?= h($row['company_name'] ?? '-') ?>
                             <?= !empty($row['brand_name']) ? '<br><span style="font-size:11px;color:var(--muted)">' . h($row['brand_name']) . '</span>' : '' ?>
                             <?= !empty($row['invoice_no']) ? '<br><span style="font-size:10px;color:var(--muted)">' . h($row['invoice_no']) . '</span>' : '' ?>
-                            <?php if (can('manage_payments')): ?><br><a href="?r=payment_form&id=<?= (int) $row['id'] ?>" title="Invoice & pembayaran" style="text-decoration:none"><?= pembayaran_badge((string) $row['bayar_status'], (bool) $row['bayar_lewat']) ?></a><?php endif; ?>
+                            <?php if (can('view_payments') || can('manage_payments')): ?><br><a href="?r=payment_form&id=<?= (int) $row['id'] ?>" title="Invoice & pembayaran" style="text-decoration:none"><?= pembayaran_badge((string) $row['bayar_status'], (bool) $row['bayar_lewat']) ?></a><?php endif; ?>
                         </td>
                         <td style="white-space:nowrap"><?= h($row['start_date'] . ' s/d ' . $row['end_date']) ?></td>
                         <td>

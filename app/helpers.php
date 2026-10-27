@@ -629,7 +629,11 @@ function permission_for_route(string $route): string
         // berbeda. Rute tanpa daftar jatuh ke default di bawah.
         'transaction_cancel', 'price_step_save', 'pic_split_save' => 'approve_skp',
         'transaction_history', 'calendar' => 'view_transactions',
-        'payments', 'payments_csv', 'payment_form', 'payment_invoice_save', 'payment_add', 'payment_delete' => 'manage_payments',
+        // Membuka & mengunduh cukup izin lihat; yang MENGUBAH angka tetap
+        // menuntut manage_payments. Pemegang manage_payments diberi
+        // view_payments juga (migrasi 082), jadi tidak ada yang terkunci.
+        'payments', 'payments_csv', 'payment_form' => 'view_payments',
+        'payment_invoice_save', 'payment_add', 'payment_delete' => 'manage_payments',
         'master' => 'view_master',
         'master_form', 'master_save', 'generate_periods' => 'manage_master',
         'import_media', 'import_template' => 'import_master',

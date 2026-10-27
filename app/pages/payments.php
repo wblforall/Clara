@@ -83,7 +83,7 @@ function _pay_query(PDO $pdo, bool $semuaBaris): array
 
 function payments_page(PDO $pdo): void
 {
-    require_permission('manage_payments');
+    require_permission('view_payments');
     $d    = _pay_query($pdo, false);
     $f    = $d['f'];
     $sum  = $d['sum'];
@@ -177,7 +177,7 @@ function payments_page(PDO $pdo): void
 
 function payments_csv(PDO $pdo): void
 {
-    require_permission('manage_payments');
+    require_permission('view_payments');
     $d = _pay_query($pdo, true);
     $st = pembayaran_status_daftar();
     header('Content-Type: text/csv; charset=utf-8');
@@ -197,16 +197,20 @@ function payments_csv(PDO $pdo): void
 }
 
 /** Muat transaksi yang boleh diisi pengguna ini; kalau tidak boleh → kembali ke daftar. */
-function _pay_muat(PDO $pdo, int $id): array
+function _pay_muat(PDO $pdo, int $id, bool $untukUbah = false): array
 {
     $st = $pdo->prepare("SELECT t.*, c.company_name, c.brand_name, " . pembayaran_select_sql('t') . "
                          FROM transactions t LEFT JOIN master_clients c ON c.id = t.client_id
                          WHERE t.id = ? AND t.property_id = ? AND t.deleted_at IS NULL");
     $st->execute([$id, current_property_id()]);
     $trx = $st->fetch();
-    if (!$trx || !pembayaran_boleh_isi($pdo, $trx)) {
+    if (!$trx || !pembayaran_boleh_lihat($pdo, $trx)) {
         flash('Transaksi tidak ditemukan atau bukan milik Anda.');
         redirect_to('payments');
+    }
+    if ($untukUbah && !pembayaran_boleh_isi($pdo, $trx)) {
+        flash('Anda hanya bisa melihat tagihan ini, tidak mengubahnya.');
+        redirect_to('payment_form', ['id' => $id]);
     }
     return $trx;
 }
@@ -227,9 +231,13 @@ function _pay_kembali(int $id): never
 
 function payment_form(PDO $pdo): void
 {
-    require_permission('manage_payments');
+    require_permission('view_payments');
     $id  = (int) getv('id', 0);
     $trx = _pay_muat($pdo, $id);
+    // Manager membuka halaman ini untuk memeriksa, bukan mengisi. Isiannya
+    // dimatikan di sini supaya ia tidak sempat mengetik lalu ditolak saat
+    // menyimpan — penolakan sesudah mengetik terasa seperti kerusakan.
+    $bisaIsi = pembayaran_boleh_isi($pdo, $trx);
     $pb  = $pdo->prepare('SELECT * FROM transaction_payments WHERE transaction_id = ? AND deleted_at IS NULL ORDER BY paid_at, id');
     $pb->execute([$id]);
     $bayar = $pb->fetchAll();
@@ -237,7 +245,7 @@ function payment_form(PDO $pdo): void
     $sisa  = (float) $trx['tagihan'] - (float) $trx['terbayar'];
     $modLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
 
-    layout('Invoice & Pembayaran', function () use ($trx, $bayar, $back, $sisa, $modLabel, $id) {
+    layout('Invoice & Pembayaran', function () use ($trx, $bayar, $back, $sisa, $modLabel, $id, $bisaIsi) {
         ?>
         <div class="toolbar"><a class="btn light" href="?<?= $back !== '' ? h($back) : 'r=payments' ?>">← Kembali</a>
             <div><?= pembayaran_badge((string) $trx['bayar_status'], (bool) $trx['bayar_lewat']) ?></div></div>
@@ -255,6 +263,13 @@ function payment_form(PDO $pdo): void
             </div>
         </div>
 
+        <?php $kunci = $bisaIsi ? '' : ' disabled'; ?>
+        <?php if (!$bisaIsi): ?>
+            <div class="panel" style="padding:12px 18px;margin-bottom:14px;background:#F8FAFC;border:1px solid #E2E8F0">
+                <b>Hanya melihat.</b> Anda bisa memeriksa invoice dan pembayaran di halaman ini,
+                tetapi tidak mengubahnya. Yang mengisi adalah Admin Sales dan PIC transaksinya.
+            </div>
+        <?php endif; ?>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;align-items:start">
             <form method="post" action="?r=payment_invoice_save" class="panel" style="padding:16px 20px">
                 <h3 style="margin:0 0 10px">Invoice</h3>
@@ -262,18 +277,18 @@ function payment_form(PDO $pdo): void
                 <input type="hidden" name="id" value="<?= (int) $id ?>">
                 <input type="hidden" name="back" value="<?= h($back) ?>">
                 <label>No. Invoice</label>
-                <input type="text" name="invoice_no" value="<?= h((string) $trx['invoice_no']) ?>" maxlength="60" placeholder="INV/CL-EWALK/26/X/001">
+                <input type="text" name="invoice_no" value="<?= h((string) $trx['invoice_no']) ?>" maxlength="60" placeholder="INV/CL-EWALK/26/X/001"<?= $kunci ?>>
                 <label>Tanggal invoice</label>
-                <input type="date" name="invoice_date" value="<?= h((string) $trx['invoice_date']) ?>">
+                <input type="date" name="invoice_date" value="<?= h((string) $trx['invoice_date']) ?>"<?= $kunci ?>>
                 <label>Jatuh tempo</label>
-                <input type="date" name="invoice_due" value="<?= h((string) $trx['invoice_due']) ?>">
+                <input type="date" name="invoice_due" value="<?= h((string) $trx['invoice_due']) ?>"<?= $kunci ?>>
                 <label>Jumlah tagihan <span class="muted" style="font-weight:400">(kosong = nilai transaksi <?= money($trx['final_amount']) ?>)</span></label>
-                <input type="text" name="invoice_amount" id="inv-amt" inputmode="numeric" value="<?= $trx['invoice_amount'] === null ? '' : h((string) (int) round((float) $trx['invoice_amount'])) ?>" placeholder="Rp">
+                <input type="text" name="invoice_amount" id="inv-amt" inputmode="numeric" value="<?= $trx['invoice_amount'] === null ? '' : h((string) (int) round((float) $trx['invoice_amount'])) ?>" placeholder="Rp"<?= $kunci ?>>
                 <div style="display:flex;gap:6px;margin:6px 0 12px;flex-wrap:wrap">
                     <button type="button" class="btn light" onclick="document.getElementById('inv-amt').value=<?= (int) round((float) $trx['final_amount'] * 1.11) ?>">Nilai + PPN 11%</button>
                     <button type="button" class="btn light" onclick="document.getElementById('inv-amt').value=<?= (int) round((float) $trx['final_amount']) ?>">Sama dengan nilai transaksi</button>
                 </div>
-                <button type="submit">Simpan invoice</button>
+                <?php if ($bisaIsi): ?><button type="submit">Simpan invoice</button><?php endif; ?>
             </form>
 
             <div class="panel" style="padding:16px 20px">
@@ -283,23 +298,23 @@ function payment_form(PDO $pdo): void
                     <?php foreach ($bayar as $p): ?>
                         <tr><td><?= h($p['paid_at']) ?></td><td style="text-align:right"><?= money($p['amount']) ?></td>
                             <td><?= h(trim(($p['method'] ?? '') . ' ' . ($p['ref_no'] ?? ''))) ?><?= $p['note'] ? '<br><span class="muted" style="font-size:11px">' . h($p['note']) . '</span>' : '' ?></td>
-                            <td><form method="post" action="?r=payment_delete" onsubmit="return confirm('Hapus pembayaran ini?')">
+                            <td><?php if ($bisaIsi): ?><form method="post" action="?r=payment_delete" onsubmit="return confirm('Hapus pembayaran ini?')">
                                 <input type="hidden" name="_csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="id" value="<?= (int) $id ?>">
                                 <input type="hidden" name="pay_id" value="<?= (int) $p['id'] ?>"><input type="hidden" name="back" value="<?= h($back) ?>">
-                                <button type="submit" class="btn light" style="color:#B91C1C">Hapus</button></form></td></tr>
+                                <button type="submit" class="btn light" style="color:#B91C1C">Hapus</button></form><?php endif; ?></td></tr>
                     <?php endforeach; ?></tbody></table>
                 <?php endif; ?>
                 <form method="post" action="?r=payment_add">
                     <input type="hidden" name="_csrf" value="<?= h(csrf_token()) ?>">
                     <input type="hidden" name="id" value="<?= (int) $id ?>">
                     <input type="hidden" name="back" value="<?= h($back) ?>">
-                    <label>Tanggal bayar</label><input type="date" name="paid_at" value="<?= h(date('Y-m-d')) ?>" required>
-                    <label>Jumlah dibayar</label><input type="text" name="amount" id="pay-amt" inputmode="numeric" value="<?= $sisa > 0.5 ? (int) round($sisa) : '' ?>" placeholder="Rp" required>
+                    <label>Tanggal bayar</label><input type="date" name="paid_at" value="<?= h(date('Y-m-d')) ?>" required<?= $kunci ?>>
+                    <label>Jumlah dibayar</label><input type="text" name="amount" id="pay-amt" inputmode="numeric" value="<?= $sisa > 0.5 ? (int) round($sisa) : '' ?>" placeholder="Rp" required<?= $kunci ?>>
                     <label>Cara bayar</label>
-                    <select name="method"><option>Transfer</option><option>Tunai</option><option>Giro</option><option>Lainnya</option></select>
-                    <label>No. referensi / bukti <span class="muted" style="font-weight:400">(opsional)</span></label><input type="text" name="ref_no" maxlength="80">
-                    <label>Catatan <span class="muted" style="font-weight:400">(mis. DP 50%, pelunasan)</span></label><input type="text" name="note" maxlength="190">
-                    <div style="margin-top:12px"><button type="submit">Catat pembayaran</button></div>
+                    <select name="method"<?= $kunci ?>><option>Transfer</option><option>Tunai</option><option>Giro</option><option>Lainnya</option></select>
+                    <label>No. referensi / bukti <span class="muted" style="font-weight:400">(opsional)</span></label><input type="text" name="ref_no" maxlength="80"<?= $kunci ?>>
+                    <label>Catatan <span class="muted" style="font-weight:400">(mis. DP 50%, pelunasan)</span></label><input type="text" name="note" maxlength="190"<?= $kunci ?>>
+                    <?php if ($bisaIsi): ?><div style="margin-top:12px"><button type="submit">Catat pembayaran</button></div><?php endif; ?>
                 </form>
             </div>
         </div>
@@ -312,7 +327,7 @@ function payment_invoice_save(PDO $pdo): void
     require_permission('manage_payments');
     verify_csrf();
     $id  = (int) post('id', 0);
-    $trx = _pay_muat($pdo, $id);
+    $trx = _pay_muat($pdo, $id, true);
     $tgl = fn($v) => (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $v) && strtotime((string) $v) !== false) ? (string) $v : null;
     $jml = trim((string) post('invoice_amount', ''));
     $jml = $jml === '' ? null : parse_rupiah($jml);
@@ -337,7 +352,7 @@ function payment_add(PDO $pdo): void
     require_permission('manage_payments');
     verify_csrf();
     $id  = (int) post('id', 0);
-    _pay_muat($pdo, $id);
+    _pay_muat($pdo, $id, true);
     $tgl = (string) post('paid_at', '');
     $jml = parse_rupiah((string) post('amount', ''));
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $tgl) || strtotime($tgl) === false) { flash('Tanggal bayar tidak valid.'); _pay_kembali($id); }
@@ -361,7 +376,7 @@ function payment_delete(PDO $pdo): void
     require_permission('manage_payments');
     verify_csrf();
     $id = (int) post('id', 0);
-    _pay_muat($pdo, $id);
+    _pay_muat($pdo, $id, true);
     $payId = (int) post('pay_id', 0);
     $st = $pdo->prepare('SELECT * FROM transaction_payments WHERE id = ? AND transaction_id = ? AND deleted_at IS NULL');
     $st->execute([$payId, $id]);

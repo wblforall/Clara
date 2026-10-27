@@ -91,7 +91,7 @@ function calendar_page(PDO $pdo): void
     usort($semuaGrup, fn($a, $b) => [_cal_urutan_lantai($a), $a] <=> [_cal_urutan_lantai($b), $b]);
 
     // ── Susun selot per unit: jalur (lane) supaya yang bersamaan tidak saling menimpa
-    $bisaBayar = can('manage_payments');
+    $bisaBayar = can('view_payments') || can('manage_payments');
     $baris = []; $terisiHari = 0; $kapasitas = 0; $unitTerisiHariIni = 0;
     foreach ($unit as $kode => $u) {
         $lanes = [];   // tiap jalur: daftar selot

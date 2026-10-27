@@ -338,6 +338,7 @@ function roles_page(PDO $pdo): void
         'manage_users'        => 'Kelola Users',
         'manage_deleted'      => 'Hapus Transaksi',
         'request_delete'      => 'Ajukan Hapus Data',
+        'view_payments'       => 'Lihat Invoice & Pembayaran',
         'manage_payments'     => 'Isi Invoice & Pembayaran',
         'approve_delete'      => 'Putuskan Pengajuan Hapus',
     ];

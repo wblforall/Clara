@@ -89,9 +89,24 @@ function transaksi_tampil_kondisi(PDO $pdo, string $t = 't'): array
  * Apakah pengguna ini boleh mengisi pembayaran untuk transaksi ini?
  * Sales hanya miliknya sendiri (PIC-nya, atau yang ia buat); peran lain bebas.
  */
+function pembayaran_boleh_lihat(PDO $pdo, array $trx): bool
+{
+    // Melihat dan mengisi dipisah. Manager perlu memeriksa tagihan tanpa boleh
+    // mengubah angkanya; yang memegang manage_payments otomatis boleh melihat,
+    // supaya tidak ada peran yang harus diberi dua izin sekaligus.
+    if (!can('view_payments') && !can('manage_payments')) return false;
+    return _pembayaran_dalam_lingkup($pdo, $trx);
+}
+
 function pembayaran_boleh_isi(PDO $pdo, array $trx): bool
 {
     if (!can('manage_payments')) return false;
+    return _pembayaran_dalam_lingkup($pdo, $trx);
+}
+
+/** Sales hanya menyentuh barisnya sendiri; peran lain bebas. */
+function _pembayaran_dalam_lingkup(PDO $pdo, array $trx): bool
+{
     $scope = current_sales_scope($pdo, (int) $trx['property_id']);
     if (!$scope) return true;
     if ($scope['pic'] !== '' && (string) $trx['pic_name'] === $scope['pic']) return true;
