@@ -1379,10 +1379,39 @@ function skp_form(PDO $pdo): void
                 </div>
                 <div><label>PPN 12% <span class="muted" style="font-weight:400">(nilai × 11/12 × 12%)</span></label><?php skp_input_rp('d_ppn', $fuPpn, $editable ? '' : 'disabled'); ?></div>
                 <div><label>Total Biaya Sewa + PPN 12%</label><?php skp_input_rp('d_grand', $fuGrand, $editable ? '' : 'disabled'); ?></div>
+                <?php /* Jaminan area memakai kolom yang sama dengan SKP & SKS
+                         (deposit_amount / deposit_paid), bukan kolom baru — jadi
+                         satu client tidak pernah punya dua angka jaminan yang
+                         berbeda tergantung dokumen mana yang dibuka.
+                         Dicentang   = sudah disetor; tercetak sebagai keterangan
+                                       dan tidak ditagih lagi.
+                         Tidak       = ditagih di dokumen ini.
+                         Kosong / 0  = tidak ada jaminan; barisnya tidak tercetak. */ ?>
+                <div>
+                    <label>Jaminan / Security Deposit</label>
+                    <input name="deposit_amount" class="skp-dep-fmt" value="<?= $defDeposit > 0 ? number_format($defDeposit, 0, ',', '.') : '' ?>" inputmode="numeric" placeholder="0" <?= $editable ? '' : 'disabled' ?>>
+                    <input type="hidden" name="deposit_raw" class="skp-dep-val" value="<?= (int) $defDeposit ?>">
+                    <label style="display:flex;align-items:center;gap:7px;margin-top:7px;cursor:pointer;font-weight:400">
+                        <input type="checkbox" name="deposit_paid" id="skp_dep_paid" value="1" style="width:15px;height:15px;flex:none;margin:0" <?= $defDepPaid ? 'checked' : '' ?> <?= $editable ? '' : 'disabled' ?>>
+                        <span style="color:#166534;font-weight:600">Sudah dibayarkan</span>
+                    </label>
+                    <div class="help" id="skp_dep_help">Kosongkan atau isi 0 bila tidak ada jaminan.</div>
+                </div>
                 <div class="wide"><label>Terbilang</label><input name="d_terbilang" id="fu-terbilang" value="<?= h($detail['terbilang'] ?? '') ?>" placeholder="terisi otomatis dari total di atas" <?= $editable ? '' : 'disabled' ?>></div>
             </div>
             <p class="help" id="fu-cek-hitung" style="margin-top:6px"></p>
-            <p class="help" style="margin-top:6px">Tercetak di surat: <strong id="fu-baris"><?= h($nf($amt['total']) . ' + ' . $nf($fuPpn) . ' = Rp. ' . $nf($fuGrand) . ',-') ?></strong></p>
+            <?php
+            // Yang benar-benar harus ditransfer: sewa + PPN, ditambah jaminan
+            // bila belum disetor. Jaminan yang sudah disetor tetap tercetak,
+            // tapi sebagai keterangan — bukan tagihan baru.
+            $fuBayar = $fuGrand + ($defDeposit > 0 && !$defDepPaid ? $defDeposit : 0);
+            $fuCetak = $nf($amt['total']) . ' + ' . $nf($fuPpn) . ' = Rp. ' . $nf($fuGrand) . ',-'
+                . ($defDeposit > 0
+                    ? ' · Jaminan Rp. ' . $nf($defDeposit) . ',-' . ($defDepPaid ? ' (sudah dibayarkan)' : '')
+                      . ' · harus dibayar Rp. ' . $nf($fuBayar) . ',-'
+                    : '');
+            ?>
+            <p class="help" style="margin-top:6px">Tercetak di surat: <strong id="fu-baris"><?= h($fuCetak) ?></strong></p>
             <?php else: ?>
             <h3 id="sec-bayar">Rincian Pembayaran</h3>
             <div class="form-grid">

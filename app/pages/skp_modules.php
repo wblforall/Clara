@@ -574,6 +574,18 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
             . '<p style="' . $baris . 'margin:0 0 5px;font-weight:bold">Total Biaya Sewa + PPN 12%</p>'
             . '<p style="' . $baris . 'margin:0 0 7px;font-weight:bold">'
             . $h($nf($tot) . ' + ' . $nf($ppn) . ' = Rp. ' . $nf($grand) . ',-') . '</p>';
+        // Jaminan area — hanya tercetak bila memang ada. Yang sudah disetor
+        // dicantumkan sebagai keterangan (hijau) dan tidak ditagih ulang, sama
+        // seperti di SKP; yang belum disetor menambah angka yang harus dibayar.
+        $dep   = (float) ($amt['deposit'] ?? 0);
+        $depOk = !empty($amt['deposit_paid']);
+        if ($dep > 0) {
+            $o .= '<p style="' . $baris . 'margin:0 0 5px' . ($depOk ? ';color:#166534' : '') . '">'
+                . 'Jaminan Area (Security Deposit) : <strong>Rp. ' . $h($nf($dep)) . ',-</strong>'
+                . ($depOk ? ' <strong>(Sudah Dibayarkan)</strong>' : '') . '</p>'
+                . '<p style="' . $baris . 'margin:0 0 7px;font-weight:bold">Total Yang Harus Dibayarkan : Rp. '
+                . $h($nf($grand + ($depOk ? 0.0 : $dep))) . ',-</p>';
+        }
         if (trim((string) ($det['terbilang'] ?? '')) !== '') {
             $o .= '<p style="' . $baris . 'margin:0 0 9px;font-style:italic;font-weight:bold">(terbilang : ' . $h($det['terbilang']) . ')</p>';
         }
@@ -1041,9 +1053,28 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
             var ppn = angka(ppnEl);
             isiAuto(grandEl, fmt(tot + ppn));
             var grand = angka(grandEl);
+            // Jaminan area: yang SUDAH disetor tetap tercetak sebagai keterangan
+            // tapi tidak ditagih lagi, jadi hanya yang belum disetor menambah
+            // angka yang harus dibayar. Kosong/0 = tidak ada jaminan sama sekali.
+            var depEl = document.querySelector('.skp-dep-val'),
+                depCb = document.getElementById('skp_dep_paid'),
+                depBantu = document.getElementById('skp_dep_help');
+            var dep = depEl ? (parseInt(depEl.value, 10) || 0) : 0;
+            var depLunas = !!(depCb && depCb.checked);
+            var bayar = grand + (dep > 0 && !depLunas ? dep : 0);
+            if (depBantu) depBantu.innerHTML = dep <= 0
+                ? 'Kosongkan atau isi 0 bila tidak ada jaminan.'
+                : (depLunas
+                    ? '<span style="color:#166534">Tercetak sebagai <b>' + rupiah(dep) + ' (Sudah Dibayarkan)</b> — tidak menambah yang harus dibayar.</span>'
+                    : 'Ditagih di dokumen ini — yang harus dibayar jadi <b>' + rupiah(bayar) + '</b>.');
             var baris = document.getElementById('fu-baris');
-            if (baris) baris.textContent = tot ? fmt(tot) + ' + ' + fmt(ppn) + ' = Rp. ' + fmt(grand) + ',-' : '—';
-            isiAuto(document.getElementById('fu-terbilang'), terbilang(grand));
+            var ketDep = dep > 0
+                ? ' · Jaminan Rp. ' + fmt(dep) + ',-' + (depLunas ? ' (sudah dibayarkan)' : '')
+                  + ' · harus dibayar Rp. ' + fmt(bayar) + ',-'
+                : '';
+            if (baris) baris.textContent = tot ? fmt(tot) + ' + ' + fmt(ppn) + ' = Rp. ' + fmt(grand) + ',-' + ketDep : '—';
+            // Terbilang mengikuti angka yang benar-benar harus dibayar.
+            isiAuto(document.getElementById('fu-terbilang'), terbilang(bayar));
             // Angka yang diketik sendiri boleh berapa saja, tapi kalau
             // penjumlahannya tidak nyambung surat jadi janggal — diingatkan di
             // sini, lengkap dengan cara mengembalikannya ke hitungan otomatis.
@@ -1152,7 +1183,13 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
         });
         document.addEventListener('input', function (e) {
             var n = e.target.name;
-            if (n === 'd_ppn' || n === 'd_grand') isiRekap();
+            // deposit_amount diformat oleh skrip di skp.php yang terpasang
+            // langsung di kotaknya; pendengar ini menyala setelahnya, jadi
+            // nilai tersembunyinya sudah diperbarui saat isiRekap() membacanya.
+            if (n === 'd_ppn' || n === 'd_grand' || n === 'deposit_amount') isiRekap();
+        });
+        document.addEventListener('change', function (e) {
+            if (e.target && e.target.id === 'skp_dep_paid') isiRekap();
         });
         document.addEventListener('click', function (e) {
             if (!e.target || e.target.id !== 'fu-reset') return;
