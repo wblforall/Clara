@@ -880,6 +880,10 @@ function mobile_skp_page(PDO $pdo): void
                 -- client-nya tersimpan di dokumen itu sendiri, bukan di
                 -- transaksi/penawaran (yang memang belum terbit).
                 COALESCE(s.master_code, t.master_code, o.master_code) master_code,
+                -- Dokumen dari penawaran PAKET tidak punya satu kode unit —
+                -- kodenya ada di tiap komponen. Tanpa ini kartunya tampil tanpa
+                -- kode sama sekali di HP.
+                (SELECT COUNT(*) FROM offer_items oi1 WHERE oi1.offer_id = s.offer_id) paket_n,
                 COALESCE(s.start_date, t.start_date, o.start_date)    start_date,
                 COALESCE(s.end_date, t.end_date, o.end_date)          end_date,
                 COALESCE(s.module, t.module, o.module)                module,
@@ -983,7 +987,8 @@ function mobile_skp_page(PDO $pdo): void
                 <div class="meta">
                     <span class="mb" style="color:<?= $mc ?>;background:<?= $mbg ?>"><?= h($ml) ?></span>
                     <span><?= $fmt($s['start_date']) ?> – <?= $fmt($s['end_date']) ?></span>
-                    <span><?= h($s['master_code'] ?? '—') ?></span>
+                    <span><?php $pn = (int) ($s['paket_n'] ?? 0);
+                        echo $pn >= 2 ? 'Paket · ' . $pn . ' lokasi' : h($s['master_code'] ?: '—'); ?></span>
                 </div>
                 <div class="acts">
                     <a href="?r=skp_form&id=<?= (int) $s['id'] ?>"><?= $edit ? '✏️ Edit' : '👁 Lihat' ?></a>

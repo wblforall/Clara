@@ -303,8 +303,12 @@ function skp_list_page(PDO $pdo): void
                      OR s.master_code COLLATE utf8mb4_general_ci LIKE ?
                      OR t.master_code LIKE ? OR o.master_code LIKE ?
                      OR sc.company_name LIKE ? OR tc.company_name LIKE ? OR oc.company_name LIKE ?
-                     OR sc.brand_name LIKE ? OR tc.brand_name LIKE ? OR oc.brand_name LIKE ?)';
-        for ($i = 0; $i < 10; $i++) $params[] = "%$q%";
+                     OR sc.brand_name LIKE ? OR tc.brand_name LIKE ? OR oc.brand_name LIKE ?
+                     OR EXISTS (SELECT 1 FROM offer_items oi9 WHERE oi9.offer_id = s.offer_id AND oi9.master_code LIKE ?))';
+        // Dokumen paket tidak punya master_code sendiri — kodenya ada di tiap
+        // komponen. Tanpa baris EXISTS di atas, mencari "GF-002" tidak pernah
+        // menemukan paket yang memuat GF-002.
+        for ($i = 0; $i < 11; $i++) $params[] = "%$q%";
     }
 
     // Pembatasan per-sales: SKP miliknya, yaitu yang PIC-nya dia (di dokumen,
@@ -326,6 +330,12 @@ function skp_list_page(PDO $pdo): void
                 -- client-nya tersimpan di dokumen itu sendiri, bukan di
                 -- transaksi/penawaran (yang memang belum terbit).
                 COALESCE(s.master_code, t.master_code, o.master_code) master_code,
+                -- Dokumen dari penawaran PAKET tidak punya satu kode unit:
+                -- kodenya ada di tiap komponen. Tanpa dua kolom ini, kolom Kode
+                -- di daftar tampil kosong dan dokumennya tidak bisa dikenali.
+                (SELECT COUNT(*) FROM offer_items oi1 WHERE oi1.offer_id = s.offer_id) paket_n,
+                (SELECT GROUP_CONCAT(oi2.master_code ORDER BY oi2.sort_order, oi2.id SEPARATOR \' · \')
+                   FROM offer_items oi2 WHERE oi2.offer_id = s.offer_id) paket_kode,
                 COALESCE(s.start_date, t.start_date, o.start_date)    start_date,
                 COALESCE(s.end_date, t.end_date, o.end_date)          end_date,
                 COALESCE(s.module, t.module, o.module)                module,
@@ -480,7 +490,12 @@ function skp_list_page(PDO $pdo): void
                                 ? h($r['skp_no'])
                                 : '<span class="muted" style="font-weight:400;font-size:12px">belum terbit<br>(nomor keluar saat disetujui)</span>' ?></td>
                             <td><span class="badge" style="color:<?= $mb[1] ?>;background:<?= $mb[2] ?>"><?= h($mb[0]) ?></span></td>
-                            <td><?= h($r['master_code']) ?></td>
+                            <td><?php $pn = (int) ($r['paket_n'] ?? 0); if ($pn >= 2): ?>
+                                <span class="badge" style="color:#5b21b6;background:#ede9fe;white-space:nowrap">Paket · <?= $pn ?> lokasi</span>
+                                <?php $pk = trim((string) ($r['paket_kode'] ?? '')); if ($pk !== ''): ?>
+                                <div style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.35"><?= h($pk) ?></div>
+                                <?php endif; ?>
+                            <?php else: ?><?= h($r['master_code'] ?: '—') ?><?php endif; ?></td>
                             <td><?= h($r['company_name'] ?? '-') ?></td>
                             <td style="white-space:nowrap;font-size:11.5px"><?= $r['start_date'] ? h(date('d/m/y', strtotime($r['start_date'])) . '–' . date('d/m/y', strtotime($r['end_date']))) : '—' ?></td>
                             <td><span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span><?php

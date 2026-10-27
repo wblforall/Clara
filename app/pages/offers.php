@@ -4,6 +4,12 @@
 // kali; tiap revisi disimpan → jumlah nego. Saat DEAL → dasar Dokumen Konfirmasi
 // (SKP/SKS). Lihat [[project-offer-pipeline]].
 
+// Nama dokumen konfirmasi (SKP/SKS/FU) ditentukan di satu berkas, dan halaman
+// ini menyebutnya di tombol "Buat ... (Konfirmasi)". Router hanya memuat berkas
+// yang dipetakan ke rutenya, jadi tanpa baris ini halaman Penawaran DEAL mati
+// dengan "Call to undefined function skp_doc_short()".
+if (!function_exists('skp_doc_short')) require_once __DIR__ . '/skp_modules.php';
+
 function _offer_prop_code(string $key): string
 {
     return match ($key) { 'ewalk' => 'e-Walk', 'pentacity' => 'Pentacity', default => ucfirst($key) };
@@ -672,6 +678,39 @@ function _offer_modul_paket(array $items): string
     return (string) $calon[0];
 }
 
+/**
+ * Opsi <option> pemilih unit untuk satu baris komponen paket.
+ *
+ * Kode unit dulu diketik tangan. Salah ketik satu huruf berarti komponennya
+ * tidak ketemu di master, sehingga lantai dan luasnya kosong di surat — dan
+ * baru ketahuan saat suratnya dicetak. Sekarang dipilih dari daftar.
+ *
+ * Unit yang SUDAH tersimpan tetapi tidak ada lagi di master (dinonaktifkan atau
+ * dihapus) tetap ditampilkan sebagai opsi. Kalau dibuang, kode yang terlanjur
+ * dipakai akan hilang diam-diam begitu penawaran lama dibuka lalu disimpan ulang.
+ */
+function _offer_opsi_unit(array $daftar, string $terpilih = ''): string
+{
+    $opsi = [];
+    $ada  = false;
+    foreach ($daftar as $m) {
+        $kode = (string) $m['code'];
+        $sel  = $kode !== '' && $kode === $terpilih;
+        if ($sel) $ada = true;
+        $opsi[] = '<option value="' . h($kode) . '"'
+                . ' data-nama="' . h((string) $m['label'])
+                . '" data-luas="' . h((string) ($m['area_sqm'] ?? 0)) . '"'
+                . ($sel ? ' selected' : '') . '>'
+                . h($kode . ' — ' . $m['label']) . '</option>';
+    }
+    if ($terpilih !== '' && !$ada) {
+        $opsi[] = '<option value="' . h($terpilih) . '" selected>'
+                . h($terpilih) . ' — (tidak ada di master)</option>';
+    }
+    array_unshift($opsi, '<option value="">— pilih unit —</option>');
+    return implode('', $opsi);
+}
+
 /** Parse item paket dari POST (array sejajar item_*[]). Return list komponen ternormalisasi. */
 function _offer_parse_bundle_items(int $months): array
 {
@@ -722,7 +761,7 @@ function _offer_parse_bundle_items(int $months): array
  * komponen lokasi menurut luasnya masing-masing, supaya transaksinya tetap
  * terbit per lokasi dan occupancy tiap unit tetap benar.
  */
-function _offer_parse_area_tiers(): array
+function _offer_parse_area_tiers(bool $diam = false): array
 {
     $luas  = (array) ($_POST['tier_luas'] ?? []);
     $tarif = (array) ($_POST['tier_tarif'] ?? []);
@@ -743,7 +782,10 @@ function _offer_parse_area_tiers(): array
             'label'        => trim((string) ($label[$i] ?? '')) ?: null,
         ];
     }
-    if ($separuh && function_exists('flash')) {
+    // $diam dipakai oleh pratinjau surat: ia membaca formulir yang sama tanpa
+    // menyimpan apa pun, jadi tidak boleh meninggalkan pesan yang baru muncul
+    // di halaman berikutnya seolah-olah ada yang tersimpan.
+    if ($separuh && !$diam && function_exists('flash')) {
         flash('Baris tingkatan harga ke-' . implode(', ', $separuh) . ' diabaikan karena luas atau tarifnya belum terisi.');
     }
     return $out;
@@ -889,42 +931,88 @@ function offer_items_detail(PDO $pdo, int $offerId, int $pid): array
 {
     if ($offerId <= 0) return [];
     $st = $pdo->prepare(
-        "SELECT oi.segment, oi.master_code, oi.name_snapshot, oi.area_sqm,
-                oi.total_amount, oi.dp_amount, oi.deposit_amount,
-                COALESCE(u.location_name, g.name, CONCAT_WS(' - ', m.media_type, m.location, NULLIF(m.point, ''))) AS lokasi,
-                COALESCE(u.floor, g.location, m.location) AS lantai,
-                COALESCE(u.area_sqm, g.area_sqm)          AS luas_master
-           FROM offer_items oi
-           LEFT JOIN master_cl_units u ON u.code = oi.master_code AND u.property_id = ? AND oi.segment = 'cl'
-           LEFT JOIN master_gudang   g ON g.code = oi.master_code AND g.property_id = ? AND oi.segment = 'gudang'
-           LEFT JOIN master_media    m ON m.code = oi.master_code AND m.property_id = ? AND oi.segment = 'media'
-          WHERE oi.offer_id = ?
-          ORDER BY oi.sort_order ASC, oi.id ASC"
+        'SELECT segment, master_code, name_snapshot, area_sqm, total_amount, dp_amount, deposit_amount
+           FROM offer_items WHERE offer_id = ? ORDER BY sort_order ASC, id ASC'
     );
-    $st->execute([$pid, $pid, $pid, $offerId]);
+    $st->execute([$offerId]);
+    return offer_items_lengkapi($pdo, $st->fetchAll(PDO::FETCH_ASSOC), $pid);
+}
+
+/**
+ * Lengkapi baris komponen mentah dengan lantai, lokasi & luas dari master.
+ *
+ * Dipisah dari offer_items_detail() supaya PRATINJAU surat bisa memakai jalur
+ * yang sama persis. Komponen paket yang sedang diketik belum punya baris di
+ * offer_items, jadi pratinjau dulu menerima daftar kosong: surat contoh paket
+ * tercetak tanpa satu pun lokasi dan tanpa harganya — padahal justru itu yang
+ * mau diperiksa sebelum penawarannya disimpan dan nomornya terbit.
+ *
+ * Kode dikumpulkan per segmen lalu dicari sekali jalan, bukan satu query per
+ * komponen.
+ *
+ * @param array<int,array<string,mixed>> $rows segment, master_code, name_snapshot,
+ *        area_sqm, total_amount, dp_amount, deposit_amount
+ */
+function offer_items_lengkapi(PDO $pdo, array $rows, int $pid): array
+{
+    if (!$rows) return [];
+    $sql = [
+        'cl'     => 'SELECT code, location_name lokasi, floor lantai, area_sqm luas
+                       FROM master_cl_units WHERE property_id = ? AND code IN (%s)',
+        'gudang' => 'SELECT code, name lokasi, location lantai, area_sqm luas
+                       FROM master_gudang WHERE property_id = ? AND code IN (%s)',
+        'media'  => "SELECT code, CONCAT_WS(' - ', media_type, location, NULLIF(point, '')) lokasi,
+                            location lantai, NULL luas
+                       FROM master_media WHERE property_id = ? AND code IN (%s)",
+    ];
+    $perlu = [];
+    foreach ($rows as $r) {
+        $seg  = (string) ($r['segment'] ?? 'cl');
+        $kode = trim((string) ($r['master_code'] ?? ''));
+        if ($kode !== '' && isset($sql[$seg])) $perlu[$seg][$kode] = true;
+    }
+    $master = [];
+    foreach ($perlu as $seg => $set) {
+        $kodes = array_keys($set);
+        $st = $pdo->prepare(sprintf($sql[$seg], implode(',', array_fill(0, count($kodes), '?'))));
+        $st->execute(array_merge([$pid], $kodes));
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $m) $master[$seg][(string) $m['code']] = $m;
+    }
     $out = [];
-    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    foreach ($rows as $r) {
+        $seg  = (string) ($r['segment'] ?? 'cl');
+        $kode = trim((string) ($r['master_code'] ?? ''));
+        $m    = $master[$seg][$kode] ?? ['lokasi' => null, 'lantai' => null, 'luas' => null];
+        // Luas yang diketik di penawaran menang atas luas master: luas di surat
+        // kerap berbeda (area sirkulasi ikut dihitung) dan yang disepakati
+        // client adalah angka di surat.
+        $luas = (float) ($r['area_sqm'] ?? 0) > 0 ? (float) $r['area_sqm'] : (float) ($m['luas'] ?? 0);
+        // Nama saat penawaran dibuat lebih dipercaya daripada master: kalau
+        // unitnya kemudian berganti nama, surat yang sudah terbit tetap terbaca
+        // seperti saat ditandatangani.
+        // Nama yang isinya PERSIS kode unit bukan nama — itu yang tersimpan saat
+        // kolom Nama Tampil dibiarkan kosong. Surat lalu mencetak "LG-004" di
+        // kolom yang seharusnya berisi nama booth, padahal masternya punya.
+        $nama = trim((string) ($r['name_snapshot'] ?? ''));
+        if ($nama === '' || $nama === $kode) $nama = trim((string) ($m['lokasi'] ?? '')) ?: ($nama ?: $kode);
         $out[] = [
-            'segment' => (string) $r['segment'],
-            'kode'    => (string) $r['master_code'],
-            // Nama saat penawaran dibuat lebih dipercaya daripada master: kalau
-            // unitnya kemudian berganti nama, surat yang sudah terbit tetap
-            // terbaca seperti saat ditandatangani.
-            'nama'    => (string) ($r['name_snapshot'] ?: ($r['lokasi'] ?: $r['master_code'])),
-            'lantai'  => (string) ($r['lantai'] ?: '-'),
-            'luas'    => (float) ($r['area_sqm'] > 0 ? $r['area_sqm'] : (float) $r['luas_master']),
-            'nilai'   => (float) $r['total_amount'],
-            'dp'      => (float) $r['dp_amount'],
-            'deposit' => (float) $r['deposit_amount'],
+            'segment' => $seg,
+            'kode'    => $kode,
+            'nama'    => $nama,
+            'lantai'  => trim((string) ($m['lantai'] ?? '')) ?: '-',
+            'luas'    => $luas,
+            'nilai'   => (float) ($r['total_amount'] ?? 0),
+            'dp'      => (float) ($r['dp_amount'] ?? 0),
+            'deposit' => (float) ($r['deposit_amount'] ?? 0),
             // Nama kolom aslinya ikut dibawa supaya template cetak yang sudah
             // memakai baris offer_items mentah bisa memakai fungsi ini apa
             // adanya — satu sumber angka untuk layar maupun kertas.
-            'master_code'    => (string) $r['master_code'],
-            'name_snapshot'  => (string) $r['name_snapshot'],
-            'area_sqm'       => (float) ($r['area_sqm'] > 0 ? $r['area_sqm'] : (float) $r['luas_master']),
-            'total_amount'   => (float) $r['total_amount'],
-            'dp_amount'      => (float) $r['dp_amount'],
-            'deposit_amount' => (float) $r['deposit_amount'],
+            'master_code'    => $kode,
+            'name_snapshot'  => $nama,
+            'area_sqm'       => $luas,
+            'total_amount'   => (float) ($r['total_amount'] ?? 0),
+            'dp_amount'      => (float) ($r['dp_amount'] ?? 0),
+            'deposit_amount' => (float) ($r['deposit_amount'] ?? 0),
         ];
     }
     return $out;
@@ -1616,6 +1704,14 @@ function offer_form(PDO $pdo): void
     $editable = !$existing || (empty($offer['signed_at']) && ($offer['status'] ?? '') !== 'cancelled');
 
     $masters  = masterOptions($pdo, $module);
+    // Daftar unit per segmen untuk pemilih komponen paket. Komponen paket boleh
+    // lintas modul (booth Exhibition + titik Media dalam satu surat), jadi
+    // pilihannya tidak bisa diambil dari modul yang sedang dibuka saja.
+    $mastersSeg = [
+        'cl'     => $module === 'cl'     ? $masters : masterOptions($pdo, 'cl'),
+        'media'  => $module === 'media'  ? $masters : masterOptions($pdo, 'media'),
+        'gudang' => $module === 'gudang' ? $masters : masterOptions($pdo, 'gudang'),
+    ];
     // Jadwal harga bertahap: kontrak panjang yang harganya berubah di tahun
     // tertentu harus tercantum sejak surat penawaran — client tidak mau
     // menerima dua surat.
@@ -1721,7 +1817,7 @@ function offer_form(PDO $pdo): void
         foreach ($tplList as $tt) { if (!empty($tt['is_default'])) { $tplSel = (int) $tt['id']; break; } }
     }
 
-    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $dariKalender, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $listrikTotal, $listrikUnit, $tplBaru, $tahapHarga, $tierRows, $tplList, $tplSel, $bentrokKini, $draftPost) {
+    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $dariKalender, $module, $editable, $masters, $mastersSeg, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $listrikTotal, $listrikUnit, $tplBaru, $tahapHarga, $tierRows, $tplList, $tplSel, $bentrokKini, $draftPost) {
         $picSel = $offer['pic_name'] ?? $linkedPic;
         $disabled = $editable ? '' : 'disabled';
         ?>
@@ -1862,7 +1958,7 @@ function offer_form(PDO $pdo): void
                     <thead>
                         <tr style="text-align:left">
                             <th style="padding:4px 6px">Segmen</th>
-                            <th style="padding:4px 6px">Kode Unit/Titik</th>
+                            <th style="padding:4px 6px">Unit / Titik</th>
                             <th style="padding:4px 6px">Nama Tampil</th>
                             <th style="padding:4px 6px">Luas (m²)</th>
                             <th style="padding:4px 6px">Harga/Bulan</th>
@@ -1875,8 +1971,12 @@ function offer_form(PDO $pdo): void
                         <?php foreach ($rowsToRender as $br): ?>
                         <tr class="bundle-row">
                             <td style="padding:3px 6px"><select name="item_segment[]" <?= $editable ? '' : 'disabled' ?>><?php foreach ($segOpts as $sv => $sl): ?><option value="<?= $sv ?>" <?= (($br['segment'] ?? 'cl') === $sv) ? 'selected' : '' ?>><?= $sl ?></option><?php endforeach; ?></select></td>
-                            <td style="padding:3px 6px"><input type="text" name="item_master_code[]" placeholder="GF-002" value="<?= h($br['master_code'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></td>
-                            <td style="padding:3px 6px"><input type="text" name="item_name[]" placeholder="LED Atrium" value="<?= h($br['name'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></td>
+                            <?php $segBaris = $br['segment'] ?? 'cl'; if (!in_array($segBaris, ['cl', 'media', 'gudang'], true)) $segBaris = 'cl'; ?>
+                            <td style="padding:3px 6px"><select name="item_master_code[]" class="item-kode" style="min-width:250px" <?= $editable ? '' : 'disabled' ?>><?= _offer_opsi_unit($mastersSeg[$segBaris] ?? [], (string) ($br['master_code'] ?? '')) ?></select></td>
+                            <?php /* Nama tampil terisi sendiri dari unit yang dipilih, tetapi
+                                     tetap boleh diganti — ada booth yang di surat ditulis
+                                     dengan nama acara, bukan nama unitnya. */ ?>
+                            <td style="padding:3px 6px"><input type="text" class="item-nama" name="item_name[]" placeholder="terisi dari unit" value="<?= h($br['name'] ?? '') ?>" <?= $editable ? '' : 'disabled' ?>></td>
                             <td style="padding:3px 6px"><input type="text" inputmode="decimal" class="item-area" name="item_area[]" placeholder="0" style="width:72px" value="<?= h((string) ($br['area'] ?? '')) ?>" <?= $editable ? '' : 'disabled' ?>></td>
                             <td style="padding:3px 6px"><input type="text" inputmode="numeric" class="item-harga" name="item_monthly[]" placeholder="0" value="<?= h($rupFmt($br['monthly'] ?? '')) ?>" <?= $editable ? '' : 'disabled' ?>></td>
                             <td style="padding:3px 6px"><input type="text" inputmode="numeric" name="item_dp[]" placeholder="0" value="<?= h($rupFmt($br['dp'] ?? '')) ?>" <?= $editable ? '' : 'disabled' ?>></td>
@@ -2486,24 +2586,68 @@ function offer_form(PDO $pdo): void
                     this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
                 });
             }
+            // Daftar unit per segmen — dipakai untuk mengisi ulang dropdown unit
+            // begitu segmen barisnya diganti.
+            var UNIT_SEG = <?= json_encode($mastersSeg, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+            function bundleEsc(v) {
+                return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+                });
+            }
+            function isiOpsiUnit(sel, seg, pilih) {
+                var daftar = UNIT_SEG[seg] || [], html = '<option value="">— pilih unit —</option>', ada = false;
+                daftar.forEach(function (m) {
+                    if (m.code === pilih) ada = true;
+                    html += '<option value="' + bundleEsc(m.code) + '" data-nama="' + bundleEsc(m.label)
+                          + '" data-luas="' + bundleEsc(m.area_sqm || 0) + '"'
+                          + (m.code === pilih ? ' selected' : '') + '>'
+                          + bundleEsc(m.code + ' — ' + m.label) + '</option>';
+                });
+                // Unit tersimpan yang sudah tidak ada di master tetap dipertahankan,
+                // supaya kode lama tidak hilang diam-diam saat barisnya disentuh.
+                if (pilih && !ada) html += '<option value="' + bundleEsc(pilih) + '" selected>' + bundleEsc(pilih) + ' — (tidak ada di master)</option>';
+                sel.innerHTML = html;
+            }
             function wireRow(tr) {
                 tr.querySelectorAll('input[name="item_monthly[]"],input[name="item_dp[]"],input[name="item_deposit[]"]').forEach(bundleFmt);
-                // Luas komponen diambil dari Master begitu kode unitnya diketik,
-                // supaya pembagian nilai paket memakai angka resmi, bukan ketikan.
-                var kode = tr.querySelector('input[name="item_master_code[]"]');
+                // Nama tampil & luas diisi dari Master begitu unitnya dipilih, supaya
+                // pembagian nilai paket memakai angka resmi dan surat tidak pernah
+                // terbit dengan kolom lokasi kosong. Keduanya tetap boleh diketik
+                // sendiri: yang sudah disentuh tangan tidak ditimpa lagi.
+                var seg  = tr.querySelector('select[name="item_segment[]"]');
+                var kode = tr.querySelector('select[name="item_master_code[]"]');
+                var nama = tr.querySelector('.item-nama');
                 var luas = tr.querySelector('.item-area');
-                if (kode && luas) kode.addEventListener('change', function () {
-                    var m = (window.claraByCode || {})[this.value.trim()];
-                    if (m && m.area_sqm && !luas.value) {
-                        luas.value = String(m.area_sqm).replace('.', ',').replace(/,00$/, '');
-                        if (window.claraHitungTier) window.claraHitungTier();
+                if (nama) nama.addEventListener('input', function () { this.dataset.auto = ''; });
+                if (luas) luas.addEventListener('input', function () { this.dataset.auto = ''; });
+                if (kode) kode.addEventListener('change', function () {
+                    var op = this.options[this.selectedIndex];
+                    if (!op || !this.value) return;
+                    if (nama && (!nama.value.trim() || nama.dataset.auto === '1')) {
+                        nama.value = op.dataset.nama || ''; nama.dataset.auto = '1';
                     }
+                    if (luas && (!luas.value.trim() || luas.dataset.auto === '1')) {
+                        var a = parseFloat(op.dataset.luas || '0') || 0;
+                        // Koma, bukan titik: PHP membaca titik sebagai pemisah ribuan,
+                        // jadi "12.5" akan tersimpan 125 m².
+                        luas.value = a > 0 ? String(op.dataset.luas).replace('.', ',').replace(/,00$/, '') : '';
+                        luas.dataset.auto = '1';
+                    }
+                    if (window.claraHitungTier) window.claraHitungTier();
+                });
+                if (seg && kode) seg.addEventListener('change', function () {
+                    isiOpsiUnit(kode, this.value, '');
+                    if (nama && nama.dataset.auto === '1') { nama.value = ''; nama.dataset.auto = ''; }
+                    if (luas && luas.dataset.auto === '1') { luas.value = ''; luas.dataset.auto = ''; }
                 });
                 var del = tr.querySelector('.bundle-del');
                 if (del) del.addEventListener('click', function () {
                     var body = document.getElementById('bundle-body');
                     if (body && body.querySelectorAll('.bundle-row').length > 1) tr.remove();
-                    else { tr.querySelectorAll('input').forEach(function (i) { i.value = ''; }); }
+                    else {
+                        tr.querySelectorAll('input').forEach(function (i) { i.value = ''; i.dataset.auto = ''; });
+                        if (kode) kode.value = '';
+                    }
                 });
             }
             document.querySelectorAll('#bundle-body .bundle-row').forEach(wireRow);
@@ -2512,8 +2656,12 @@ function offer_form(PDO $pdo): void
                 var body = document.getElementById('bundle-body');
                 var rows = body.querySelectorAll('.bundle-row');
                 var clone = rows[rows.length - 1].cloneNode(true);
-                clone.querySelectorAll('input').forEach(function (i) { i.value = ''; });
+                clone.querySelectorAll('input').forEach(function (i) { i.value = ''; i.dataset.auto = ''; });
                 var sel = clone.querySelector('select[name="item_segment[]"]'); if (sel) sel.selectedIndex = 0;
+                // Baris kloningan membawa opsi milik segmen baris sebelumnya —
+                // dibangun ulang supaya pilihannya cocok dengan segmen barunya.
+                var kd = clone.querySelector('select[name="item_master_code[]"]');
+                if (kd) isiOpsiUnit(kd, sel ? sel.value : 'cl', '');
                 body.appendChild(clone); wireRow(clone);
             });
             // Mematikan centang hanya menyembunyikan editornya, isiannya tetap
@@ -2522,8 +2670,8 @@ function offer_form(PDO $pdo): void
             function komponenTerisi() {
                 var n = 0;
                 document.querySelectorAll('#bundle-body .bundle-row').forEach(function (tr) {
-                    var k = tr.querySelector('input[name="item_master_code[]"]');
-                    var m = tr.querySelector('input[name="item_name[]"]');
+                    var k = tr.querySelector('[name="item_master_code[]"]');
+                    var m = tr.querySelector('[name="item_name[]"]');
                     if ((k && k.value.trim()) || (m && m.value.trim())) n++;
                 });
                 return n;
@@ -2535,7 +2683,8 @@ function offer_form(PDO $pdo): void
                         if (!confirm('Hapus ' + n + ' komponen paket dari penawaran ini?\n\nKalau Batal, penawaran tetap berupa Paket.')) {
                             bundleChk.checked = true; applyBundleMode(); return;
                         }
-                        document.querySelectorAll('#bundle-body .bundle-row input').forEach(function (i) { i.value = ''; });
+                        document.querySelectorAll('#bundle-body .bundle-row input').forEach(function (i) { i.value = ''; i.dataset.auto = ''; });
+                        document.querySelectorAll('#bundle-body select[name="item_master_code[]"]').forEach(function (sl) { sl.value = ''; });
                     }
                 }
                 applyBundleMode();
@@ -2619,7 +2768,6 @@ function offer_form(PDO $pdo): void
             // ── Picker unit (searchable, sama seperti input transaksi) ──
             var masters = <?= json_encode(array_values($masters), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
             var byCode = Object.fromEntries(masters.map(function (m) { return [m.code, m]; }));
-            window.claraByCode = byCode;   // dipakai baris komponen paket utk mengisi luas
             function parseSizeM2(size) {
                 var m = String(size || '').replace(/[mM²]/g, '').match(/(\d+\.?\d*)\s*[×xX]\s*(\d+\.?\d*)/);
                 return m ? parseFloat(m[1]) * parseFloat(m[2]) : 0;

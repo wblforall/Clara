@@ -115,14 +115,76 @@ function offer_preview(PDO $pdo): void
         if ($nego > 0) $o['unit_rate'] = $nego;
     }
 
-    $prop   = current_property();
+    $prop = current_property();
+    // Template yang DIPILIH sales di formulir ikut terbawa. Tanpa ini pratinjau
+    // selalu memakai template bawaan, sehingga fasilitas, cara bayar, dan tarif
+    // PPN di surat contoh bisa berbeda dari surat yang nanti benar-benar terbit.
+    $o['template_id'] = (int) post('template_id', 0);
     $letter = offer_letter($pdo, $o);
-    // Komponen paket, jadwal harga bertahap, dan tarif bertingkat semuanya
-    // tersimpan sebagai baris anak milik penawaran — penawaran yang belum
-    // disimpan belum punya satu pun, jadi kosong apa adanya.
-    $items      = [];
+
+    // ── Paket gabungan ──────────────────────────────────────────────────────
+    //
+    // Komponen paket tersimpan sebagai baris anak milik penawaran, dan
+    // penawaran yang belum disimpan belum punya satu pun. Dulu daftarnya
+    // dibiarkan kosong apa adanya — akibatnya surat contoh paket terbit tanpa
+    // satu pun lokasi dan tanpa harganya, tepat dua hal yang mau diperiksa
+    // sebelum penawarannya disimpan dan nomornya terbit.
+    //
+    // Sekarang komponennya dirakit dari isian yang sedang diketik, dengan
+    // aturan yang sama persis dengan offer_save().
+    $bulanP  = _offer_months($o['start_date'], $o['end_date']);
+    $hariP   = _offer_days($o['start_date'], $o['end_date']);
+    $komponen = _offer_parse_bundle_items($bulanP);
+    // Patokannya ADA TIDAKNYA komponen, bukan penanda centangnya — sama seperti
+    // saat menyimpan, supaya yang dilihat di layar tidak berbeda dari yang
+    // tersimpan.
+    $paket     = count($komponen) >= 2;
+    $tierHarga = ($paket && post('pakai_tier') === '1') ? _offer_parse_area_tiers(true) : [];
+    $tierTotal = offer_tier_total($tierHarga, $hariP);
+    if ($paket) {
+        if ($tierHarga && $tierTotal > 0) {
+            // Nilai paket dihitung dari luas × tarif × hari, lalu dibagi ke tiap
+            // komponen menurut luasnya — persis seperti saat disimpan.
+            $komponen = _offer_bagi_paket($komponen, $tierTotal, $bulanP);
+            $luasTier = array_sum(array_column($tierHarga, 'area_sqm'));
+            $o['area_sqm']     = $luasTier;
+            $o['unit_rate']    = ($luasTier > 0 && $hariP > 0) ? round($tierTotal / $luasTier / $hariP, 2) : 0;
+            $o['pricing_type'] = 'daily_area';
+        }
+        $o['module']           = _offer_modul_paket($komponen);
+        $o['is_bundle']        = 1;
+        $o['master_code']      = null;
+        $o['monthly_amount']   = array_sum(array_column($komponen, 'monthly_amount'));
+        $o['total_calculated'] = array_sum(array_column($komponen, 'total_amount'));
+        $o['override_amount']  = $o['total_calculated'];
+        $o['dp_amount']        = array_sum(array_column($komponen, 'dp_amount'));
+        $o['deposit_amount']   = array_sum(array_column($komponen, 'deposit_amount'));
+        $o['dp_months']        = 0;
+        $o['deposit_months']   = 0;
+        $o['perihal']          = 'Surat Penawaran Paket';
+        // Isi suratnya tetap milik template yang dipilih; yang khas paket hanya
+        // perihalnya dan tiadanya aturan DP per jenis booth.
+        $letter['perihal']     = 'Surat Penawaran Paket';
+        $letter['dp_required'] = 0;
+        $letter['unit_type']   = '';
+        $letter['bundle']      = true;
+    }
+    // Lantai, nama lokasi, dan luas master dilengkapi lewat jalur yang sama
+    // dengan surat aslinya, jadi tabelnya tidak mungkin berbeda isi.
+    $items = offer_items_lengkapi($pdo, $komponen, $pid);
+
+    // Jadwal harga bertahap juga tercetak di surat, jadi pratinjaunya membacanya
+    // dari formulir yang sedang dibuka — bukan dari baris tersimpan yang memang
+    // belum ada.
     $tahapHarga = [];
-    $tierHarga  = [];
+    foreach ((array) ($_POST['tahap_mulai'] ?? []) as $i => $mulai) {
+        $mulai = trim((string) $mulai);
+        $nilai = (float) parse_rupiah((string) ($_POST['tahap_nilai'][$i] ?? '0'));
+        if ($mulai === '' || $nilai <= 0) continue;
+        $tahapHarga[] = ['from' => $mulai, 'amount' => $nilai, 'label' => trim((string) ($_POST['tahap_label'][$i] ?? ''))];
+    }
+    usort($tahapHarga, fn($a, $b) => strcmp($a['from'], $b['from']));
+
     $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
