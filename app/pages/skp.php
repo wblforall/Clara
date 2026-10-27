@@ -79,7 +79,8 @@ function _skp_source_from_offer(PDO $pdo, int $offerId, int $pid): ?array
     $o = $stmt->fetch();
     if (!$o) return null;
     $o['renewal_status'] = null;
-    $o['doc_type'] = $o['module'] === 'cl' ? 'skp' : 'sks';
+    // Lewat skp_doc_type() supaya Media menjadi 'fu', bukan ikut jatuh ke 'sks'.
+    $o['doc_type'] = skp_doc_type((string) $o['module']);
     // Biaya listrik yang dicentang di penawaran ikut terbawa: nilainya masuk ke
     // total yang nanti jadi nilai transaksi & alokasi bulanan, dan rinciannya
     // tetap ditampilkan terpisah di SKP.
@@ -274,8 +275,18 @@ function skp_list_page(PDO $pdo): void
         // s.module (utf8mb4_bin) beda collation dengan t/o.module (utf8_general_ci),
         // jadi jangan di-COALESCE lalu dibandingkan — MySQL menolaknya
         // ("illegal mix of collations") dan daftarnya jadi kosong.
-        $where[] = '(s.module = ? OR (s.module IS NULL AND COALESCE(t.module, o.module) = ?))';
-        $params[] = $module; $params[] = $module;
+        //
+        // Komponen penawaran ikut diperiksa (offer_items.segment). Dokumen dari
+        // penawaran PAKET belum punya transaksi selama menunggu paraf, jadi
+        // saringannya jatuh ke offers.module — dan dulu kolom itu berisi
+        // 'bundle', nilai yang tidak cocok dengan modul mana pun. Dokumennya
+        // lenyap dari daftar persis di tahap ia paling perlu terlihat.
+        // Memeriksa komponennya membuat dokumen tetap muncul walau kolom
+        // modulnya pernah terisi keliru, dan membuat paket campuran (mis.
+        // Exhibition + Media) muncul di kedua saringan — memang isinya dua.
+        $where[] = '(s.module = ? OR (s.module IS NULL AND (COALESCE(t.module, o.module) = ?
+                     OR EXISTS (SELECT 1 FROM offer_items oi WHERE oi.offer_id = s.offer_id AND oi.segment = ?))))';
+        $params[] = $module; $params[] = $module; $params[] = $module;
     }
     // Pencarian bebas: nomor dokumen, kode unit, atau nama client. Daftar
     // dokumen dipakai juga sebagai RIWAYAT — tanpa pencarian, mencari satu

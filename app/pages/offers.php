@@ -647,6 +647,31 @@ function offer_listrik_bulan(array $o): int
 // Paket = penawaran dengan >=2 komponen (offer_items). Periode SAMA (level offer).
 // Lihat [[project-bundling-package]].
 
+/**
+ * Modul sebuah penawaran PAKET, disimpulkan dari komponennya.
+ *
+ * Paket boleh bercampur (mis. satu booth Exhibition + satu titik Media). Yang
+ * dipakai adalah segmen dengan komponen terbanyak; bila seri, yang nilainya
+ * paling besar. Modul inilah yang menentukan jenis dokumen (SKP / SKS / FU)
+ * dan di bawah saringan modul mana dokumennya muncul.
+ */
+function _offer_modul_paket(array $items): string
+{
+    $jml = []; $nilai = [];
+    foreach ($items as $it) {
+        $seg = in_array($it['segment'] ?? '', ['cl', 'media', 'gudang'], true) ? $it['segment'] : 'cl';
+        $jml[$seg]   = ($jml[$seg] ?? 0) + 1;
+        $nilai[$seg] = ($nilai[$seg] ?? 0) + (float) ($it['total_amount'] ?? $it['monthly_amount'] ?? 0);
+    }
+    if (!$jml) return 'cl';
+    arsort($nilai);
+    $puncak = max($jml);
+    $calon  = array_keys($jml, $puncak, true);
+    if (count($calon) === 1) return (string) $calon[0];
+    foreach (array_keys($nilai) as $seg) if (in_array($seg, $calon, true)) return (string) $seg;
+    return (string) $calon[0];
+}
+
 /** Parse item paket dari POST (array sejajar item_*[]). Return list komponen ternormalisasi. */
 function _offer_parse_bundle_items(int $months): array
 {
@@ -1230,7 +1255,7 @@ function offer_view(PDO $pdo): void
             <?php if ($offer['offer_no']): ?><a class="btn light" href="?r=offer_print&id=<?= (int)$offer['id'] ?>" target="_blank">🖨 PDF</a><?php endif; ?>
             <a class="btn light" href="?r=offer_form&id=<?= (int)$offer['id'] ?>"><?= $editable ? '✎ Edit' : '👁 Lihat Detail' ?></a>
             <?php if ($offer['status'] === 'deal' && can('manage_skp')): ?>
-            <a class="btn" style="background:#0369a1;margin-left:auto" href="?r=skp_form&offer_id=<?= (int)$offer['id'] ?>">→ Buat <?= $offer['module'] === 'cl' ? 'SKP' : 'SKS' ?> (Konfirmasi)</a>
+            <a class="btn" style="background:#0369a1;margin-left:auto" href="?r=skp_form&offer_id=<?= (int)$offer['id'] ?>">→ Buat <?= h(skp_doc_short(skp_doc_type((string) $offer['module']))) ?> (Konfirmasi)</a>
             <?php endif; ?>
         </div>
 
@@ -3579,7 +3604,14 @@ function offer_save(PDO $pdo): void
                     . ' m². Nilai paket tetap memakai tingkatan harga, dan dibagi ke lokasi menurut luas masing-masing.');
             }
         }
-        $data['module']           = 'bundle';
+        // Modulnya diambil dari komponen, BUKAN ditandai 'bundle'.
+        //
+        // Dulu baris ini menulis 'bundle' — nilai yang tidak dikenal sebagai
+        // modul di mana pun. Akibatnya dokumen dari penawaran paket hilang dari
+        // daftar SKP begitu disaring per modul, tepat selama ia menunggu paraf
+        // (saringannya jatuh ke offers.module karena transaksinya memang belum
+        // lahir). Penanda paketnya sudah ada sendiri di kolom is_bundle.
+        $data['module']           = _offer_modul_paket($bundleItems);
         $data['is_bundle']        = 1;
         $data['master_code']      = null;
         $data['monthly_amount']   = array_sum(array_column($bundleItems, 'monthly_amount'));

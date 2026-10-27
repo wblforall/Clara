@@ -856,8 +856,13 @@ function mobile_skp_page(PDO $pdo): void
         // s.module (utf8mb4_bin) beda collation dengan t/o.module (utf8_general_ci),
         // jadi jangan di-COALESCE lalu dibandingkan — MySQL menolaknya
         // ("illegal mix of collations") dan daftarnya jadi kosong.
-        $where[] = '(s.module = ? OR (s.module IS NULL AND COALESCE(t.module, o.module) = ?))';
-        $params[] = $module; $params[] = $module;
+        // Komponen penawaran ikut diperiksa — sama dengan daftar SKP versi
+        // layar lebar. Dokumen dari penawaran PAKET belum punya transaksi
+        // selama menunggu paraf, jadi saringannya jatuh ke offers.module dan
+        // dokumennya bisa lenyap dari daftar justru di tahap itu.
+        $where[] = '(s.module = ? OR (s.module IS NULL AND (COALESCE(t.module, o.module) = ?
+                     OR EXISTS (SELECT 1 FROM offer_items oi WHERE oi.offer_id = s.offer_id AND oi.segment = ?))))';
+        $params[] = $module; $params[] = $module; $params[] = $module;
     }
     // Pembatasan per-sales: SKP miliknya (PIC dokumen / penawaran / transaksi)
     // atau yang ia buat (#14) — sama dengan daftar SKP versi desktop. Saat PIC
