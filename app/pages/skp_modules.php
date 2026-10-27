@@ -151,8 +151,10 @@ function skp_detail_defaults(array $tpl, string $docType, array $src, array $amt
     }
 
     if ($docType === 'fu') {
-        $mk = fn(array $names, bool $withLokasi) => array_map(
-            fn($n) => ['nama' => (string) $n, 'checked' => 0, 'lokasi' => '', 'biaya' => '', 'satuan' => ''] + ($withLokasi ? [] : []),
+        // 'ket' hanya dipakai item bernama "Lainnya" — namanya sendiri belum
+        // menyebut apa pun, jadi isinya ditulis sendiri oleh pengisi formulir.
+        $mk = fn(array $names) => array_map(
+            fn($n) => ['nama' => (string) $n, 'checked' => 0, 'ket' => '', 'lokasi' => '', 'biaya' => '', 'satuan' => ''],
             $names
         );
         return [
@@ -160,9 +162,9 @@ function skp_detail_defaults(array $tpl, string $docType, array $src, array $amt
             'tanggal_pemakaian' => trim((string) ($src['start_date'] ?? '')) !== ''
                 ? skp_tgl((string) $src['start_date']) . ' – ' . skp_tgl((string) $src['end_date'])
                 : '',
-            'utilities'   => $mk($tpl['extra']['utilities']   ?? [], false),
-            'media_promo' => $mk($tpl['extra']['media_promo'] ?? [], true),
-            'parkir'      => $mk($tpl['extra']['parkir']      ?? [], false),
+            'utilities'   => $mk($tpl['extra']['utilities']   ?? []),
+            'media_promo' => $mk($tpl['extra']['media_promo'] ?? []),
+            'parkir'      => $mk($tpl['extra']['parkir']      ?? []),
             'plat_nomor'  => '',
             'ppn'         => '',
             'grand'       => '',
@@ -213,6 +215,8 @@ function skp_detail_from_post(string $docType): array
                 $out[] = [
                     'nama'    => $nama,
                     'checked' => !empty($r['checked']) ? 1 : 0,
+                    // Isian bebas pada baris "Lainnya".
+                    'ket'     => trim((string) ($r['ket'] ?? '')),
                     'lokasi'  => trim((string) ($r['lokasi'] ?? '')),
                     // Angka murni supaya bisa dijumlahkan & dicetak "Rp. 400.000".
                     'biaya'   => parse_rupiah((string) ($r['biaya'] ?? '0')),
@@ -238,6 +242,36 @@ function skp_detail_from_post(string $docType): array
     }
 
     return [];
+}
+
+/**
+ * Samakan daftar item Form Utilities dengan daftar di Template Dokumen.
+ *
+ * Isi dokumen disimpan sebagai salinan (detail_json) supaya dokumen yang sudah
+ * terbit tidak ikut berubah ketika templatenya diubah. Untuk dokumen yang MASIH
+ * draft salinan itu justru menyesatkan: item yang baru ditambahkan lewat
+ * Template Penawaran → Media tidak pernah muncul, dan satu-satunya cara
+ * memunculkannya adalah membuang dokumennya lalu membuat yang baru.
+ *
+ * Maka item template yang belum ada di dokumen ditambahkan di bawah daftarnya.
+ * Yang sudah ada tidak disentuh sama sekali — centang, biaya, dan urutannya
+ * tetap seperti yang diketik.
+ */
+function skp_fu_sinkron_tpl(array $det, array $tpl): array
+{
+    foreach (['utilities', 'media_promo', 'parkir'] as $k) {
+        $ada = array_map(
+            fn($it) => mb_strtolower(trim((string) ($it['nama'] ?? ''))),
+            (array) ($det[$k] ?? [])
+        );
+        foreach ((array) ($tpl['extra'][$k] ?? []) as $n) {
+            $nama = trim((string) $n);
+            if ($nama === '' || in_array(mb_strtolower($nama), $ada, true)) continue;
+            $det[$k][] = ['nama' => $nama, 'checked' => 0, 'ket' => '', 'lokasi' => '', 'biaya' => '', 'satuan' => ''];
+            $ada[] = mb_strtolower($nama);
+        }
+    }
+    return $det;
 }
 
 // ─── Blok formulir (dipanggil dari skp_form) ─────────────────────────────────
@@ -361,13 +395,24 @@ function skp_fu_group(string $key, array $items, bool $withLokasi, bool $editabl
             <th style="width:120px">Satuan</th>
         </tr></thead>
         <tbody>
-        <?php foreach ($items as $i => $it): $on = !empty($it['checked']); ?>
+        <?php foreach ($items as $i => $it):
+            $on = !empty($it['checked']);
+            // "Lainnya" tidak menyebut apa pun — barisnya diberi kotak isian
+            // supaya yang dicentang itu jelas barangnya, bukan cuma biayanya.
+            $bebas = strcasecmp(trim((string) $it['nama']), 'Lainnya') === 0; ?>
             <tr class="fu-row" style="background:<?= $on ? '#f0fdf4' : 'transparent' ?>">
                 <td style="text-align:center">
                     <input type="hidden" name="<?= $key ?>[<?= $i ?>][nama]" value="<?= h($it['nama']) ?>">
                     <input type="checkbox" class="fu-cek" name="<?= $key ?>[<?= $i ?>][checked]" value="1" <?= $on ? 'checked' : '' ?> <?= $dis ?>>
                 </td>
-                <td style="font-weight:600"><?= h($it['nama']) ?></td>
+                <td style="font-weight:600"><?= h($it['nama']) ?>
+                    <?php if ($bebas): ?>
+                        <input name="<?= $key ?>[<?= $i ?>][ket]" value="<?= h($it['ket'] ?? '') ?>" placeholder="tulis sendiri itemnya"
+                               style="width:100%;margin-top:4px;font-weight:400;font-size:11.5px" <?= $dis ?>>
+                    <?php else: ?>
+                        <input type="hidden" name="<?= $key ?>[<?= $i ?>][ket]" value="<?= h($it['ket'] ?? '') ?>">
+                    <?php endif; ?>
+                </td>
                 <?php if ($withLokasi): ?>
                 <td><input name="<?= $key ?>[<?= $i ?>][lokasi]" value="<?= h($it['lokasi'] ?? '') ?>" placeholder="mis. Lobby Utama Lt. 1" style="width:100%" <?= $dis ?>></td>
                 <?php endif; ?>
@@ -489,8 +534,12 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
                 $tanda = !empty($it['checked'])
                     ? '<span style="color:#0D9488">■</span>'
                     : '<span style="color:#9ca3af">□</span>';
-                $ket   = $withLokasi && trim((string) ($it['lokasi'] ?? '')) !== ''
-                    ? ' <span class="muted">— Lokasi: ' . $h($it['lokasi']) . '</span>' : '';
+                // Baris "Lainnya" dicetak beserta isian bebasnya, selain lokasinya.
+                $ket = trim((string) ($it['ket'] ?? '')) !== ''
+                    ? ' <span class="muted">— ' . $h($it['ket']) . '</span>' : '';
+                if ($withLokasi && trim((string) ($it['lokasi'] ?? '')) !== '') {
+                    $ket .= ' <span class="muted">— Lokasi: ' . $h($it['lokasi']) . '</span>';
+                }
                 $b   = $it['biaya'] ?? '';
                 $sat = trim((string) ($it['satuan'] ?? ''));
                 $x .= '<tr><td class="lbl">' . $tanda . ' ' . $h($it['nama']) . $ket . '</td>'

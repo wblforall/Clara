@@ -75,7 +75,7 @@ $mediaNotes = [
     'Pembayaran ditransfer ke PT. WULANDARI BANGUN LAKSANA — BRI (Bank Rakyat Indonesia), Nomor Rekening 2078-01-999999-56-3. (Bukti Transfer Pembayaran Dilampirkan)',
 ];
 $mediaExtra = [
-    'utilities'   => ['Listrik', 'Sound & Lighting', 'LED Screen', 'Stage', 'Kebersihan', 'Air'],
+    'utilities'   => ['Listrik', 'Sound & Lighting', 'LED Screen', 'Stage', 'Kebersihan', 'Air', 'Lainnya'],
     'media_promo' => ['T Banner', 'Hanging Banner', 'Sticker Lift', 'Wrapping Coloum', 'Neon Box', 'Wall Sign', 'LED', 'TVC', 'Lainnya'],
     'parkir'      => ['Mobil', 'Motor'],
 ];

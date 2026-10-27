@@ -855,6 +855,11 @@ function skp_form(PDO $pdo): void
     $detail = ($skp && !empty($skp['detail_json']))
         ? (json_decode((string) $skp['detail_json'], true) ?: [])
         : skp_detail_defaults($tplDoc, $docType, $src, $amt);
+    // Selama dokumennya masih bisa diedit, daftar centangnya ikut templatenya —
+    // item yang baru ditambahkan di Template Penawaran → Media langsung muncul
+    // di draft yang sudah terlanjur dibuat. Dokumen terkunci tetap memakai
+    // salinannya sendiri supaya yang tercetak tidak pernah berubah belakangan.
+    if ($docType === 'fu' && $editable) $detail = skp_fu_sinkron_tpl($detail, $tplDoc);
     // ─── Pratinjau surat (?pratinjau=1) ──────────────────────────────────────
     //
     // Aturan aplikasi: surat tidak boleh keluar sebelum seluruh persetujuan
