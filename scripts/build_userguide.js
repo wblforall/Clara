@@ -17,7 +17,7 @@ const { PDFDocument } = require('pdf-lib');
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const ROOT = path.resolve(__dirname, '..') + '/';
 const SHOTS = __dirname + '/userguide_assets/';
-const OUTDIR = (process.env.HOME || '/Users/affanridha') + '/Documents/Handout Program/clara/';
+const OUTDIR = process.env.CLARA_UG_OUT || ((process.env.HOME || '') + '/Documents/Handout Program/clara/');
 const LOGO = fs.existsSync(ROOT + 'public/assets/clara-logo.png')
   ? 'data:image/png;base64,' + fs.readFileSync(ROOT + 'public/assets/clara-logo.png').toString('base64') : '';
 
@@ -25,6 +25,7 @@ const META = {
   Sales:      { label: 'Tim Sales (CL)', sub: 'Panduan operasional harian — Penawaran, SKP,<br>Permintaan Kontrak, dan pemantauan kinerja.' },
   Manager:    { label: 'Manajer CL',     sub: 'Panduan persetujuan & pengawasan — approve SKP,<br>kontrak Legal, laporan tim, dan ringkasan eksekutif.' },
   Superadmin: { label: 'Superadmin',     sub: 'Panduan administrasi sistem — pengguna & hak akses,<br>audit, master data, dan konfigurasi.' },
+  Tagihan:    { label: 'Tagihan & Pembayaran', sub: 'Panduan menu baru — mengisi invoice, mencatat<br>pembayaran, dan membaca status lunas.' },
 };
 
 // ── helper gambar ────────────────────────────────────────────────────────────

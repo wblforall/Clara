@@ -285,9 +285,9 @@ function payment_form(PDO $pdo): void
                 <label>Jumlah tagihan <span class="muted" style="font-weight:400">(kosong = nilai transaksi <?= money($trx['final_amount']) ?>)</span></label>
                 <input type="text" name="invoice_amount" id="inv-amt" inputmode="numeric" value="<?= $trx['invoice_amount'] === null ? '' : h((string) (int) round((float) $trx['invoice_amount'])) ?>" placeholder="Rp"<?= $kunci ?>>
                 <div style="display:flex;gap:6px;margin:6px 0 12px;flex-wrap:wrap">
-                    <button type="button" class="btn light" onclick="document.getElementById('inv-amt').value=<?= (int) round((float) $trx['final_amount'] * 1.11) ?>">Nilai + PPN 11%</button>
+                    <?php if ($bisaIsi): ?><button type="button" class="btn light" onclick="document.getElementById('inv-amt').value=<?= (int) round((float) $trx['final_amount'] * 1.11) ?>">Nilai + PPN 11%</button>
                     <button type="button" class="btn light" onclick="document.getElementById('inv-amt').value=<?= (int) round((float) $trx['final_amount']) ?>">Sama dengan nilai transaksi</button>
-                </div>
+                <?php endif; ?></div>
                 <?php if ($bisaIsi): ?><button type="submit">Simpan invoice</button><?php endif; ?>
             </form>
 

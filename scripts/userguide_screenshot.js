@@ -5,7 +5,8 @@ const fs = require('fs');
 const puppeteer = require('puppeteer-core');
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const BASE = 'http://localhost/clara/public/';
+const BASE = process.env.CLARA_BASE || 'http://localhost/clara/public/';
+const DOMAIN = new URL(BASE).hostname;
 const OUT = __dirname + '/userguide_assets/';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -74,7 +75,7 @@ async function login(p) {
   }
   // Mobile: viewport 1 layar (BUKAN fullPage) → tampil berdampingan dgn desktop (ssPair).
   const pm = await b.newPage();
-  await pm.setCookie(...cookies, { name: 'clara_view', value: 'mobile', domain: 'localhost', path: '/' });
+  await pm.setCookie(...cookies, { name: 'clara_view', value: 'mobile', domain: DOMAIN, path: '/' });
   for (const s of mob) {
     await pm.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true });
     await pm.goto(BASE + '?r=' + s.u, { waitUntil: 'networkidle2' }); await sleep(600);
