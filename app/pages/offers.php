@@ -679,36 +679,24 @@ function _offer_modul_paket(array $items): string
 }
 
 /**
- * Opsi <option> pemilih unit untuk satu baris komponen paket.
+ * Label unit yang tampil di kotak pencarian satu baris komponen paket.
  *
  * Kode unit dulu diketik tangan. Salah ketik satu huruf berarti komponennya
  * tidak ketemu di master, sehingga lantai dan luasnya kosong di surat — dan
- * baru ketahuan saat suratnya dicetak. Sekarang dipilih dari daftar.
+ * baru ketahuan saat suratnya dicetak. Sekarang dicari lalu dipilih, persis
+ * seperti kotak Unit / Lokasi di Objek Sewa.
  *
  * Unit yang SUDAH tersimpan tetapi tidak ada lagi di master (dinonaktifkan atau
- * dihapus) tetap ditampilkan sebagai opsi. Kalau dibuang, kode yang terlanjur
+ * dihapus) tetap ditampilkan apa adanya. Kalau dikosongkan, kode yang terlanjur
  * dipakai akan hilang diam-diam begitu penawaran lama dibuka lalu disimpan ulang.
  */
-function _offer_opsi_unit(array $daftar, string $terpilih = ''): string
+function _offer_label_unit(array $daftar, string $kode): string
 {
-    $opsi = [];
-    $ada  = false;
+    if ($kode === '') return '';
     foreach ($daftar as $m) {
-        $kode = (string) $m['code'];
-        $sel  = $kode !== '' && $kode === $terpilih;
-        if ($sel) $ada = true;
-        $opsi[] = '<option value="' . h($kode) . '"'
-                . ' data-nama="' . h((string) $m['label'])
-                . '" data-luas="' . h((string) ($m['area_sqm'] ?? 0)) . '"'
-                . ($sel ? ' selected' : '') . '>'
-                . h($kode . ' — ' . $m['label']) . '</option>';
+        if ((string) $m['code'] === $kode) return $kode . ' — ' . (string) $m['label'];
     }
-    if ($terpilih !== '' && !$ada) {
-        $opsi[] = '<option value="' . h($terpilih) . '" selected>'
-                . h($terpilih) . ' — (tidak ada di master)</option>';
-    }
-    array_unshift($opsi, '<option value="">— pilih unit —</option>');
-    return implode('', $opsi);
+    return $kode . ' — (tidak ada di master)';
 }
 
 /** Parse item paket dari POST (array sejajar item_*[]). Return list komponen ternormalisasi. */
@@ -1972,7 +1960,11 @@ function offer_form(PDO $pdo): void
                         <tr class="bundle-row">
                             <td style="padding:3px 6px"><select name="item_segment[]" <?= $editable ? '' : 'disabled' ?>><?php foreach ($segOpts as $sv => $sl): ?><option value="<?= $sv ?>" <?= (($br['segment'] ?? 'cl') === $sv) ? 'selected' : '' ?>><?= $sl ?></option><?php endforeach; ?></select></td>
                             <?php $segBaris = $br['segment'] ?? 'cl'; if (!in_array($segBaris, ['cl', 'media', 'gudang'], true)) $segBaris = 'cl'; ?>
-                            <td style="padding:3px 6px"><select name="item_master_code[]" class="item-kode" style="min-width:250px" <?= $editable ? '' : 'disabled' ?>><?= _offer_opsi_unit($mastersSeg[$segBaris] ?? [], (string) ($br['master_code'] ?? '')) ?></select></td>
+                            <td style="padding:3px 6px">
+                                <input type="text" class="item-cari" autocomplete="off" placeholder="Ketik nama unit..." style="min-width:250px"
+                                       value="<?= h(_offer_label_unit($mastersSeg[$segBaris] ?? [], (string) ($br['master_code'] ?? ''))) ?>" <?= $editable ? '' : 'disabled' ?>>
+                                <input type="hidden" name="item_master_code[]" class="item-kode" value="<?= h($br['master_code'] ?? '') ?>">
+                            </td>
                             <?php /* Nama tampil terisi sendiri dari unit yang dipilih, tetapi
                                      tetap boleh diganti — ada booth yang di surat ditulis
                                      dengan nama acara, bukan nama unitnya. */ ?>
@@ -2586,57 +2578,109 @@ function offer_form(PDO $pdo): void
                     this.value = raw ? parseInt(raw, 10).toLocaleString('id-ID') : '';
                 });
             }
-            // Daftar unit per segmen — dipakai untuk mengisi ulang dropdown unit
-            // begitu segmen barisnya diganti.
+            // ── Picker unit per baris komponen paket ─────────────────────────
+            // Pola yang sama dengan kotak Unit / Lokasi di Objek Sewa: ketik untuk
+            // menyaring, klik untuk memilih. Satu kotak dipakai bersama semua baris
+            // — dipindahkan ke bawah kotak yang sedang dibuka, bukan dibuat N kali.
             var UNIT_SEG = <?= json_encode($mastersSeg, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
-            function bundleEsc(v) {
-                return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
-                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-                });
+            var bundleDD = document.createElement('div');
+            bundleDD.style.cssText = 'display:none;position:fixed;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:9000;max-height:260px;overflow-y:auto';
+            document.body.appendChild(bundleDD);
+            var bundleSrc = null;
+            function bundleDDPos() {
+                if (!bundleSrc) return;
+                var r = bundleSrc.getBoundingClientRect();
+                bundleDD.style.top = (r.bottom + 2) + 'px';
+                bundleDD.style.left = r.left + 'px';
+                bundleDD.style.width = Math.max(r.width, 260) + 'px';
             }
-            function isiOpsiUnit(sel, seg, pilih) {
-                var daftar = UNIT_SEG[seg] || [], html = '<option value="">— pilih unit —</option>', ada = false;
-                daftar.forEach(function (m) {
-                    if (m.code === pilih) ada = true;
-                    html += '<option value="' + bundleEsc(m.code) + '" data-nama="' + bundleEsc(m.label)
-                          + '" data-luas="' + bundleEsc(m.area_sqm || 0) + '"'
-                          + (m.code === pilih ? ' selected' : '') + '>'
-                          + bundleEsc(m.code + ' — ' + m.label) + '</option>';
+            function bundleDDTutup() { bundleDD.style.display = 'none'; bundleSrc = null; }
+            window.addEventListener('scroll', function () { if (bundleDD.style.display !== 'none') bundleDDPos(); }, true);
+
+            function bundlePilih(tr, m) {
+                var src  = tr.querySelector('.item-cari');
+                var hid  = tr.querySelector('.item-kode');
+                var nama = tr.querySelector('.item-nama');
+                var luas = tr.querySelector('.item-area');
+                if (src) { src.value = m.code + ' — ' + m.label; src.style.outline = ''; }
+                if (hid) hid.value = m.code;
+                // Nama tampil & luas ikut terisi, tetapi yang sudah diketik sendiri
+                // tidak ditimpa — ada booth yang di surat ditulis dengan nama acara.
+                if (nama && (!nama.value.trim() || nama.dataset.auto === '1')) {
+                    nama.value = m.label || ''; nama.dataset.auto = '1';
+                }
+                if (luas && (!luas.value.trim() || luas.dataset.auto === '1')) {
+                    var a = parseFloat(m.area_sqm || 0) || 0;
+                    // Koma, bukan titik: PHP membaca titik sebagai pemisah ribuan,
+                    // jadi "12.5" akan tersimpan 125 m².
+                    luas.value = a > 0 ? String(m.area_sqm).replace('.', ',').replace(/,00$/, '') : '';
+                    luas.dataset.auto = '1';
+                }
+                if (window.claraHitungTier) window.claraHitungTier();
+            }
+
+            function bundleDDBuka(tr, src) {
+                bundleSrc = src; bundleDDPos();
+                var segEl  = tr.querySelector('select[name="item_segment[]"]');
+                var daftar = UNIT_SEG[segEl ? segEl.value : 'cl'] || [];
+                var hid    = tr.querySelector('.item-kode');
+                var q      = (src.value || '').toLowerCase().trim();
+                // Kotak yang sudah berisi pilihan menampilkan "KODE — Nama". Kalau
+                // teks itu ikut dipakai menyaring, membuka ulang kotaknya selalu
+                // berakhir "Tidak ditemukan" — jadi dianggap kosong.
+                if (hid && hid.value && q === (hid.value + ' — ' + bundleNamaKode(daftar, hid.value)).toLowerCase()) q = '';
+                var list = q ? daftar.filter(function (m) {
+                    return m.label.toLowerCase().indexOf(q) >= 0 || m.code.toLowerCase().indexOf(q) >= 0;
+                }) : daftar;
+                bundleDD.innerHTML = '';
+                list.slice(0, 80).forEach(function (m) {
+                    var d = document.createElement('div');
+                    d.style.cssText = 'padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:8px';
+                    d.innerHTML = '<span style="font-weight:600">' + esc(m.label) + '</span><span style="color:var(--muted);font-size:11px;flex-shrink:0">' + esc(m.code) + '</span>';
+                    d.addEventListener('mouseover', function () { this.style.background = '#f0fdf4'; });
+                    d.addEventListener('mouseout', function () { this.style.background = ''; });
+                    d.addEventListener('mousedown', function (e) { e.preventDefault(); bundlePilih(tr, m); bundleDDTutup(); });
+                    bundleDD.appendChild(d);
                 });
-                // Unit tersimpan yang sudah tidak ada di master tetap dipertahankan,
-                // supaya kode lama tidak hilang diam-diam saat barisnya disentuh.
-                if (pilih && !ada) html += '<option value="' + bundleEsc(pilih) + '" selected>' + bundleEsc(pilih) + ' — (tidak ada di master)</option>';
-                sel.innerHTML = html;
+                if (!list.length) bundleDD.innerHTML = '<div style="padding:10px 14px;font-size:13px;color:var(--muted)">Tidak ditemukan</div>';
+                bundleDD.style.display = '';
+            }
+            function bundleNamaKode(daftar, kode) {
+                for (var i = 0; i < daftar.length; i++) if (daftar[i].code === kode) return daftar[i].label;
+                return '(tidak ada di master)';
             }
             function wireRow(tr) {
                 tr.querySelectorAll('input[name="item_monthly[]"],input[name="item_dp[]"],input[name="item_deposit[]"]').forEach(bundleFmt);
-                // Nama tampil & luas diisi dari Master begitu unitnya dipilih, supaya
-                // pembagian nilai paket memakai angka resmi dan surat tidak pernah
-                // terbit dengan kolom lokasi kosong. Keduanya tetap boleh diketik
-                // sendiri: yang sudah disentuh tangan tidak ditimpa lagi.
                 var seg  = tr.querySelector('select[name="item_segment[]"]');
-                var kode = tr.querySelector('select[name="item_master_code[]"]');
+                var cari = tr.querySelector('.item-cari');
+                var hid  = tr.querySelector('.item-kode');
                 var nama = tr.querySelector('.item-nama');
                 var luas = tr.querySelector('.item-area');
+                // Begitu nama tampil atau luas diketik sendiri, keduanya tidak
+                // ditimpa lagi oleh unit yang dipilih berikutnya.
                 if (nama) nama.addEventListener('input', function () { this.dataset.auto = ''; });
                 if (luas) luas.addEventListener('input', function () { this.dataset.auto = ''; });
-                if (kode) kode.addEventListener('change', function () {
-                    var op = this.options[this.selectedIndex];
-                    if (!op || !this.value) return;
-                    if (nama && (!nama.value.trim() || nama.dataset.auto === '1')) {
-                        nama.value = op.dataset.nama || ''; nama.dataset.auto = '1';
-                    }
-                    if (luas && (!luas.value.trim() || luas.dataset.auto === '1')) {
-                        var a = parseFloat(op.dataset.luas || '0') || 0;
-                        // Koma, bukan titik: PHP membaca titik sebagai pemisah ribuan,
-                        // jadi "12.5" akan tersimpan 125 m².
-                        luas.value = a > 0 ? String(op.dataset.luas).replace('.', ',').replace(/,00$/, '') : '';
-                        luas.dataset.auto = '1';
-                    }
-                    if (window.claraHitungTier) window.claraHitungTier();
-                });
-                if (seg && kode) seg.addEventListener('change', function () {
-                    isiOpsiUnit(kode, this.value, '');
+                if (cari) {
+                    // Mengetik ulang membatalkan pilihan sebelumnya: kode baru sah
+                    // hanya setelah satu baris di daftar benar-benar diklik.
+                    cari.addEventListener('input', function () { if (hid) hid.value = ''; bundleDDBuka(tr, this); });
+                    cari.addEventListener('focus', function () { bundleDDBuka(tr, this); });
+                    // 'click' juga, bukan hanya 'focus': sesudah satu unit dipilih
+                    // kotaknya masih memegang fokus, jadi mengkliknya lagi untuk
+                    // berganti unit tidak akan memunculkan daftarnya.
+                    cari.addEventListener('click', function () { bundleDDBuka(tr, this); });
+                    // Hanya tutup bila daftarnya memang masih milik kotak ini.
+                    // Pindah langsung dari kotak satu ke kotak lain membuat timer
+                    // kotak lama menutup daftar kotak baru yang baru saja terbuka.
+                    cari.addEventListener('blur', function () {
+                        var aku = this;
+                        setTimeout(function () { if (bundleSrc === aku) bundleDDTutup(); }, 200);
+                    });
+                }
+                if (seg) seg.addEventListener('change', function () {
+                    // Unit milik segmen lama tidak berlaku lagi di segmen baru.
+                    if (cari) cari.value = '';
+                    if (hid) hid.value = '';
                     if (nama && nama.dataset.auto === '1') { nama.value = ''; nama.dataset.auto = ''; }
                     if (luas && luas.dataset.auto === '1') { luas.value = ''; luas.dataset.auto = ''; }
                 });
@@ -2644,10 +2688,7 @@ function offer_form(PDO $pdo): void
                 if (del) del.addEventListener('click', function () {
                     var body = document.getElementById('bundle-body');
                     if (body && body.querySelectorAll('.bundle-row').length > 1) tr.remove();
-                    else {
-                        tr.querySelectorAll('input').forEach(function (i) { i.value = ''; i.dataset.auto = ''; });
-                        if (kode) kode.value = '';
-                    }
+                    else tr.querySelectorAll('input').forEach(function (i) { i.value = ''; i.dataset.auto = ''; });
                 });
             }
             document.querySelectorAll('#bundle-body .bundle-row').forEach(wireRow);
@@ -2658,10 +2699,6 @@ function offer_form(PDO $pdo): void
                 var clone = rows[rows.length - 1].cloneNode(true);
                 clone.querySelectorAll('input').forEach(function (i) { i.value = ''; i.dataset.auto = ''; });
                 var sel = clone.querySelector('select[name="item_segment[]"]'); if (sel) sel.selectedIndex = 0;
-                // Baris kloningan membawa opsi milik segmen baris sebelumnya —
-                // dibangun ulang supaya pilihannya cocok dengan segmen barunya.
-                var kd = clone.querySelector('select[name="item_master_code[]"]');
-                if (kd) isiOpsiUnit(kd, sel ? sel.value : 'cl', '');
                 body.appendChild(clone); wireRow(clone);
             });
             // Mematikan centang hanya menyembunyikan editornya, isiannya tetap
@@ -2684,7 +2721,6 @@ function offer_form(PDO $pdo): void
                             bundleChk.checked = true; applyBundleMode(); return;
                         }
                         document.querySelectorAll('#bundle-body .bundle-row input').forEach(function (i) { i.value = ''; i.dataset.auto = ''; });
-                        document.querySelectorAll('#bundle-body select[name="item_master_code[]"]').forEach(function (sl) { sl.value = ''; });
                     }
                 }
                 applyBundleMode();
