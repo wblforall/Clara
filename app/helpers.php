@@ -628,7 +628,8 @@ function permission_for_route(string $route): string
         // deletion_request_restore(), satu tempat, tanpa dua aturan yang bisa
         // berbeda. Rute tanpa daftar jatuh ke default di bawah.
         'transaction_cancel', 'price_step_save', 'pic_split_save' => 'approve_skp',
-        'transaction_history' => 'view_transactions',
+        'transaction_history', 'calendar' => 'view_transactions',
+        'payments', 'payments_csv', 'payment_form', 'payment_invoice_save', 'payment_add', 'payment_delete' => 'manage_payments',
         'master' => 'view_master',
         'master_form', 'master_save', 'generate_periods' => 'manage_master',
         'import_media', 'import_template' => 'import_master',

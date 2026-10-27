@@ -1554,6 +1554,29 @@ function offer_form(PDO $pdo): void
         }
     }
 
+    // Dari Kalender Pameran: klik tanggal kosong membawa unit & tanggalnya ke
+    // penawaran BARU. Hanya isian awal — tidak menyimpan apa pun, dan hanya
+    // dipercaya bila unitnya benar-benar ada di master properti ini.
+    $dariKalender = '';
+    if (!$id && !$isRenew && ($mcal = trim((string) getv('master_code', ''))) !== '' && getv('module', 'cl') === 'cl') {
+        $cu = $pdo->prepare("SELECT code FROM master_cl_units WHERE code = ? AND property_id = ? AND status = 'active'");
+        $cu->execute([$mcal, $pid]);
+        if ($cu->fetchColumn()) {
+            $tg = fn(string $k) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) getv($k, '')) && strtotime((string) getv($k)) !== false ? (string) getv($k) : '';
+            $linkPic = $pdo->prepare("SELECT name FROM master_pic WHERE user_id = ? AND status = 'active' AND property_id = ? LIMIT 1");
+            $linkPic->execute([(int) ($_SESSION['user']['id'] ?? 0), $pid]);
+            $offer = [
+                'id' => 0, 'status' => 'draft', 'offer_no' => null, 'revision_count' => 0,
+                'module' => 'cl', 'client_id' => null, 'contact_id' => null,
+                'pic_name' => (string) ($linkPic->fetchColumn() ?: ''), 'referrer_name' => '',
+                'master_code' => $mcal, 'area_sqm' => '', 'slots' => '', 'pricing_type' => '', 'unit_rate' => '',
+                'keterangan' => '', 'start_date' => $tg('start_date'), 'end_date' => $tg('end_date'),
+                'billing_method' => '', 'cycle_recognition' => 'cycle_start', 'recurring_flag' => 0,
+            ];
+            $dariKalender = $mcal;
+        }
+    }
+
     $existing = $id > 0;   // true hanya untuk penawaran yang sudah tersimpan (bukan prefill renewal)
     $module  = $offer['module'] ?? getv('module', 'cl');
     if (!in_array($module, ['cl', 'media', 'gudang'], true)) $module = 'cl';
@@ -1673,7 +1696,7 @@ function offer_form(PDO $pdo): void
         foreach ($tplList as $tt) { if (!empty($tt['is_default'])) { $tplSel = (int) $tt['id']; break; } }
     }
 
-    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $listrikTotal, $listrikUnit, $tplBaru, $tahapHarga, $tierRows, $tplList, $tplSel, $bentrokKini, $draftPost) {
+    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $dariKalender, $module, $editable, $masters, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $listrikTotal, $listrikUnit, $tplBaru, $tahapHarga, $tierRows, $tplList, $tplSel, $bentrokKini, $draftPost) {
         $picSel = $offer['pic_name'] ?? $linkedPic;
         $disabled = $editable ? '' : 'disabled';
         ?>
@@ -2684,6 +2707,7 @@ function offer_form(PDO $pdo): void
                     .catch(function () {});
             }
             (function () { var mc = (document.getElementById('master_code') || {}).value; if (mc) applyTemplateRule(mc); })();
+            <?php if ($dariKalender !== ''): ?>fillMaster(<?= json_encode($dariKalender) ?>);<?php endif; ?>
             (function () {
                 var src = document.getElementById('masterSearch'), hid = document.getElementById('master_code'), dd = document.getElementById('masterDrop');
                 if (!src || !hid || !dd) return;

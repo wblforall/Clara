@@ -10,6 +10,7 @@ require_once __DIR__ . '/../app/Database.php';
 require_once __DIR__ . '/../app/AiNarasi.php';
 require_once __DIR__ . '/../app/ViewAs.php';
 require_once __DIR__ . '/../app/AllocationService.php';
+require_once __DIR__ . '/../app/Pembayaran.php';
 require_once __DIR__ . '/../app/DashboardService.php';
 require_once __DIR__ . '/../app/pages/bootstrap.php';
 
@@ -396,6 +397,13 @@ $pageFiles = [
     'transaction_history'         => 'transactions.php',
     'transaction_overlap_check'   => 'transactions.php',
     'transaction_overlaps'        => 'transactions.php',
+    'calendar'                    => 'calendar.php',
+    'payments'                    => 'payments.php',
+    'payments_csv'                => 'payments.php',
+    'payment_form'                => 'payments.php',
+    'payment_invoice_save'        => 'payments.php',
+    'payment_add'                 => 'payments.php',
+    'payment_delete'              => 'payments.php',
     'import_media'                => 'import.php',
     'import_template'             => 'import.php',
     'export_summary'              => 'print_export.php',
@@ -584,6 +592,13 @@ match ($route) {
     'transaction_history'         => transaction_history_page($pdo),
     'transaction_overlap_check'   => transaction_overlap_check($pdo),
     'transaction_overlaps'        => transaction_overlaps_page($pdo),
+    'calendar'                    => calendar_page($pdo),
+    'payments'                    => payments_page($pdo),
+    'payments_csv'                => payments_csv($pdo),
+    'payment_form'                => payment_form($pdo),
+    'payment_invoice_save'        => payment_invoice_save($pdo),
+    'payment_add'                 => payment_add($pdo),
+    'payment_delete'              => payment_delete($pdo),
     'import_media'                => import_media($pdo),
     'import_template'             => import_template($pdo),
     'export_summary'              => export_summary($pdo),

@@ -338,6 +338,7 @@ function roles_page(PDO $pdo): void
         'manage_users'        => 'Kelola Users',
         'manage_deleted'      => 'Hapus Transaksi',
         'request_delete'      => 'Ajukan Hapus Data',
+        'manage_payments'     => 'Isi Invoice & Pembayaran',
         'approve_delete'      => 'Putuskan Pengajuan Hapus',
     ];
     $editableRoles = ['supervisor', 'sales', 'finance', 'administrasi', 'viewer'];
@@ -405,7 +406,7 @@ function roles_save(PDO $pdo): void
         'view_master', 'manage_master', 'import_master',
         'export_reports', 'view_pic_report', 'view_commission_sim',
         'view_renewals', 'manage_renewals', 'manage_offers', 'manage_skp', 'approve_skp', 'view_logs', 'manage_users', 'manage_deleted',
-        'request_delete', 'approve_delete',
+        'request_delete', 'approve_delete', 'manage_payments',
     ];
 
     $submitted = $_POST['perms'] ?? [];

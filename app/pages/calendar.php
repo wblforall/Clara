@@ -1,0 +1,336 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * Kalender Pameran: unit di baris, tanggal 1–31 di kolom, nama merek di selot
+ * yang terisi. Pengganti sheet "KALENDER PAMERAN" di Excel Casual Leasing —
+ * dengan data yang sama dengan transaksi, jadi tidak ada lagi dua catatan.
+ *
+ * Hanya membaca. Satu-satunya "tulis" adalah tautan: klik tanggal kosong →
+ * Surat Penawaran baru dengan unit & tanggal sudah terisi (alur offer-first);
+ * klik selot terisi → rincian, lalu tautan ke transaksi / perpanjangan /
+ * invoice.
+ */
+
+function _cal_urutan_lantai(string $lantai): int
+{
+    static $u = ['LG' => 1, 'GF' => 2, 'UG' => 3, 'FF' => 4, 'SF' => 5, 'P3' => 6, 'P4' => 7, 'P5' => 8];
+    $k = strtoupper(trim(explode(' ', $lantai)[0]));
+    return $u[$k] ?? 9;
+}
+
+/** Urutan alami kode: GF-2 sebelum GF-10. */
+function _cal_cmp_kode(string $a, string $b): int
+{
+    return strnatcasecmp($a, $b);
+}
+
+function calendar_page(PDO $pdo): void
+{
+    $pid    = current_property_id();
+    $modul  = in_array(getv('module', 'cl'), ['cl', 'media', 'gudang'], true) ? (string) getv('module', 'cl') : 'cl';
+    $bulan  = periode_bulan('month');
+    $awal   = new DateTimeImmutable($bulan . '-01');
+    $hariN  = (int) $awal->format('t');
+    $akhir  = $awal->modify('last day of this month');
+    $lantaiF = trim((string) getv('floor', ''));
+    $picF   = trim((string) getv('pic', ''));
+    $hariIni = date('Y-m-d');
+    $scope  = current_sales_scope($pdo, $pid);
+
+    // ── Unit (baris) ────────────────────────────────────────────────────────
+    $unit = [];   // kode => [kode, kelompok, label, info]
+    if ($modul === 'cl') {
+        $st = $pdo->prepare("SELECT code, floor, location_name, unit_type, area_sqm FROM master_cl_units WHERE property_id = ? AND status = 'active'");
+        $st->execute([$pid]);
+        foreach ($st->fetchAll() as $u) {
+            $unit[$u['code']] = ['kode' => $u['code'], 'grup' => (string) $u['floor'], 'label' => (string) $u['location_name'],
+                                 'info' => trim(($u['unit_type'] ?? '') . ' · ' . rtrim(rtrim(number_format((float) $u['area_sqm'], 2, ',', ''), '0'), ',') . ' m²', ' ·')];
+        }
+    } elseif ($modul === 'media') {
+        $st = $pdo->prepare("SELECT code, media_type, location, point, size FROM master_media WHERE property_id = ? AND status = 'active'");
+        $st->execute([$pid]);
+        foreach ($st->fetchAll() as $u) {
+            $unit[$u['code']] = ['kode' => $u['code'], 'grup' => mb_convert_case((string) $u['media_type'], MB_CASE_TITLE), 'label' => trim($u['location'] . ' ' . ($u['point'] ?? '')),
+                                 'info' => (string) ($u['size'] ?? '')];
+        }
+    } else {
+        $st = $pdo->prepare("SELECT code, location, name, area_sqm FROM master_gudang WHERE property_id = ? AND status = 'active'");
+        $st->execute([$pid]);
+        foreach ($st->fetchAll() as $u) {
+            $unit[$u['code']] = ['kode' => $u['code'], 'grup' => (string) $u['location'], 'label' => (string) $u['name'],
+                                 'info' => rtrim(rtrim(number_format((float) $u['area_sqm'], 2, ',', ''), '0'), ',') . ' m²'];
+        }
+    }
+
+    // ── Transaksi bulan ini (aturan tampil sama dengan daftar transaksi) ─────
+    [$where, $params] = transaksi_tampil_kondisi($pdo, 't');
+    $where[] = 't.property_id = :pid AND t.module = :modul AND t.start_date <= :akhir AND t.end_date >= :awal';
+    $params += [':pid' => $pid, ':modul' => $modul, ':akhir' => $akhir->format('Y-m-d'), ':awal' => $awal->format('Y-m-d')];
+    if ($picF !== '') { $where[] = 't.pic_name = :pic'; $params[':pic'] = $picF; }
+    $st = $pdo->prepare("SELECT t.id, t.master_code, t.start_date, t.end_date, t.final_amount, t.pic_name, t.created_by, t.invoice_no, t.content_note,
+                                c.company_name, c.brand_name, (" . recurring_match_sql('t') . ") AS recurring, " . pembayaran_select_sql('t') . "
+                         FROM transactions t LEFT JOIN master_clients c ON c.id = t.client_id
+                         WHERE " . implode(' AND ', $where) . " ORDER BY t.start_date, t.end_date, t.id");
+    $st->execute($params);
+    $trxPer = [];
+    foreach ($st->fetchAll() as $t) $trxPer[$t['master_code']][] = $t;
+
+    // Kode transaksi yang tak ada di master tetap ditampilkan, di kelompok sendiri.
+    foreach ($trxPer as $kode => $_) {
+        if (!isset($unit[$kode])) $unit[$kode] = ['kode' => $kode, 'grup' => 'Tidak ada di master', 'label' => '(kode belum terdaftar di Master)', 'info' => ''];
+    }
+    if ($lantaiF !== '') $unit = array_filter($unit, fn($u) => $u['grup'] === $lantaiF);
+    $grupDaftar = [];
+    foreach ($unit as $u) $grupDaftar[$u['grup']] = true;
+    uasort($unit, function ($a, $b) {
+        $g = [$a['grup'] === 'Tidak ada di master' ? 99 : _cal_urutan_lantai($a['grup']), $a['grup']] <=> [$b['grup'] === 'Tidak ada di master' ? 99 : _cal_urutan_lantai($b['grup']), $b['grup']];
+        return $g !== 0 ? $g : _cal_cmp_kode($a['kode'], $b['kode']);
+    });
+    $semuaGrup = array_keys($grupDaftar);
+    usort($semuaGrup, fn($a, $b) => [_cal_urutan_lantai($a), $a] <=> [_cal_urutan_lantai($b), $b]);
+
+    // ── Susun selot per unit: jalur (lane) supaya yang bersamaan tidak saling menimpa
+    $bisaBayar = can('manage_payments');
+    $baris = []; $terisiHari = 0; $kapasitas = 0; $unitTerisiHariIni = 0;
+    foreach ($unit as $kode => $u) {
+        $lanes = [];   // tiap jalur: daftar selot
+        $hariPakai = array_fill(1, $hariN, false);
+        foreach ($trxPer[$kode] ?? [] as $t) {
+            $a = max($t['start_date'], $awal->format('Y-m-d'));
+            $b = min($t['end_date'], $akhir->format('Y-m-d'));
+            $da = (int) substr($a, 8, 2); $db = (int) substr($b, 8, 2);
+            $milik = !$scope || ($scope['pic'] !== '' && (string) $t['pic_name'] === $scope['pic']) || (string) $t['created_by'] === $scope['uname'];
+            $brand = trim((string) ($t['brand_name'] ?: $t['company_name'] ?: '-'));
+            $selot = ['id' => (int) $t['id'], 'da' => $da, 'db' => $db, 'brand' => $brand, 'pt' => (string) $t['company_name'],
+                      'mulai' => $t['start_date'], 'selesai' => $t['end_date'], 'rec' => (int) $t['recurring'], 'milik' => $milik,
+                      'potongKiri' => $t['start_date'] < $awal->format('Y-m-d'), 'potongKanan' => $t['end_date'] > $akhir->format('Y-m-d')];
+            if ($milik) {
+                $selot += ['pic' => (string) $t['pic_name'], 'nilai' => (float) $t['final_amount'], 'inv' => (string) $t['invoice_no']];
+                if ($bisaBayar) $selot += ['bayar' => (string) $t['bayar_status'], 'lewat' => (int) $t['bayar_lewat'], 'sisa' => (float) $t['tagihan'] - (float) $t['terbayar']];
+            }
+            for ($d = $da; $d <= $db; $d++) $hariPakai[$d] = true;
+            $taruh = false;
+            foreach ($lanes as $i => $lane) {
+                if (end($lane)['db'] < $da) { $lanes[$i][] = $selot; $taruh = true; break; }
+            }
+            if (!$taruh) $lanes[] = [$selot];
+        }
+        $terisi = count(array_filter($hariPakai));
+        $terisiHari += $terisi; $kapasitas += $hariN;
+        if ($bulan === date('Y-m') && $hariPakai[(int) date('j')]) $unitTerisiHariIni++;
+        $baris[$kode] = $u + ['lanes' => $lanes ?: [[]], 'terisi' => $terisi, 'jumlahSelot' => array_sum(array_map('count', $lanes))];
+    }
+    $persen = $kapasitas ? round($terisiHari / $kapasitas * 100) : 0;
+
+    $picList = $pdo->prepare("SELECT name FROM master_pic WHERE status='active' AND property_id = ? ORDER BY name");
+    $picList->execute([$pid]);
+    $picList = $picList->fetchAll(PDO::FETCH_COLUMN);
+    $bulanSebelum = $awal->modify('-1 month')->format('Y-m');
+    $bulanSesudah = $awal->modify('+1 month')->format('Y-m');
+    $hari3 = ['Mg', 'Sn', 'Sl', 'Rb', 'Km', 'Jm', 'Sb'];
+    $bisaOffer = can('manage_offers');
+    $modLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
+    $qsBase = fn(array $ubah) => '?' . http_build_query(array_filter(array_merge(['r' => 'calendar', 'month' => $bulan, 'module' => $modul, 'floor' => $lantaiF, 'pic' => $picF], $ubah), fn($v) => $v !== ''));
+    $stBayar = pembayaran_status_daftar();
+
+    layout('Kalender Pameran', function () use ($baris, $bulan, $awal, $hariN, $modul, $lantaiF, $picF, $hariIni, $persen, $terisiHari, $kapasitas, $unitTerisiHariIni, $picList,
+                                                $bulanSebelum, $bulanSesudah, $hari3, $bisaOffer, $modLabel, $qsBase, $semuaGrup, $bisaBayar, $stBayar, $pid) {
+        $nilaiHariIni = $bulan === date('Y-m');
+        ?>
+        <style>
+            .cal-wrap{overflow:auto;max-height:72vh;border:1px solid var(--line);border-radius:12px;background:#fff}
+            table.cal{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:11px}
+            table.cal th,table.cal td{padding:0;border-right:1px solid #EEF1F5;border-bottom:1px solid #EEF1F5;height:24px;text-align:center}
+            table.cal thead th{position:sticky;top:0;z-index:3;background:#F8FAFC;font-weight:700;color:#475467;height:34px;line-height:1.15}
+            table.cal thead th small{display:block;font-weight:500;color:#98A2B3;font-size:9px}
+            table.cal .hd-we{background:#FFF7ED}
+            table.cal .hd-now{background:#CCFBF1;color:#0F766E}
+            table.cal th.u{position:sticky;left:0;z-index:2;background:#fff;text-align:left;min-width:168px;max-width:168px;padding:2px 8px;border-right:2px solid #E4E9F0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+            table.cal thead th.u{z-index:4;background:#F8FAFC}
+            table.cal th.u small{display:block;font-weight:400;color:#98A2B3;font-size:10px;overflow:hidden;text-overflow:ellipsis}
+            table.cal tr.grp th{position:sticky;left:0;background:#0F2A3F;color:#fff;text-align:left;padding:4px 10px;font-size:11px;letter-spacing:.04em;height:22px}
+            table.cal tr.lane2 th.u{color:#98A2B3;font-weight:400}
+            table.cal td.e{min-width:30px;width:30px;cursor:pointer}
+            table.cal td.e.we{background:#FFFAF3}
+            table.cal td.e.now{background:#F0FDFA}
+            table.cal td.e:hover{background:#CCFBF1}
+            table.cal td.e.pilih{background:#5EEAD4}
+            table.cal td.s{padding:0 4px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer;font-weight:600;max-width:0;border-radius:4px;border:2px solid #fff;position:relative}
+            table.cal td.s.r{background:#DBEAFE;color:#1E40AF}
+            table.cal td.s.x{background:#FDE68A;color:#78350F}
+            table.cal td.s.o{background:#E5E7EB;color:#374151;font-style:italic}
+            table.cal td.s.dim{opacity:.18}
+            table.cal td.s.hit{outline:2px solid #DB2777}
+            table.cal td.s .pay{position:absolute;right:2px;top:2px;width:7px;height:7px;border-radius:50%}
+            table.cal td.s.kiri{border-top-left-radius:0;border-bottom-left-radius:0}
+            table.cal td.s.kanan{border-top-right-radius:0;border-bottom-right-radius:0}
+            .cal-pop{position:fixed;z-index:50;background:#fff;border:1px solid #CBD5E1;border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,.18);padding:14px 16px;width:300px;font-size:13px;display:none}
+            .cal-pop h4{margin:0 0 4px;font-size:15px}
+            .cal-pop .k{color:var(--muted);font-size:11px}
+            .cal-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#0F2A3F;color:#fff;padding:10px 16px;border-radius:99px;display:none;gap:12px;align-items:center;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.25);font-size:13px}
+            @media (max-width:760px){
+                .cal-filter{display:grid!important;grid-template-columns:1fr 1fr;gap:8px!important}
+                .cal-filter>*{width:auto!important;min-width:0}
+                .cal-filter>div:first-of-type,.cal-filter>button{grid-column:1/-1}
+                .cal-filter select,.cal-filter input{width:100%!important}
+                .cal-wrap{max-height:68vh}
+                table.cal th.u{min-width:74px;max-width:74px;padding:2px 5px;font-size:11px}
+                table.cal th.u small{display:none}
+                table.cal td.e{min-width:28px;width:28px}
+            }
+            .cal-leg{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#475467;margin:10px 0}
+            .cal-leg i{display:inline-block;width:14px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+        </style>
+
+        <form method="get" class="toolbar cal-filter" style="gap:10px">
+            <input type="hidden" name="r" value="calendar">
+            <div style="display:flex;gap:6px;align-items:flex-end">
+                <a class="btn light" href="<?= h($qsBase(['month' => $bulanSebelum])) ?>">←</a>
+                <div><label class="muted">Bulan</label><input type="month" name="month" value="<?= h($bulan) ?>" style="width:160px"></div>
+                <a class="btn light" href="<?= h($qsBase(['month' => $bulanSesudah])) ?>">→</a>
+                <?php if (!$nilaiHariIni): ?><a class="btn light" href="<?= h($qsBase(['month' => date('Y-m')])) ?>">Bulan ini</a><?php endif; ?>
+            </div>
+            <div><label class="muted">Modul</label>
+                <select name="module" onchange="this.form.floor.value='';this.form.submit()">
+                    <?php foreach ($modLabel as $k => $v): ?><option value="<?= h($k) ?>" <?= $modul === $k ? 'selected' : '' ?>><?= h($v) ?></option><?php endforeach; ?></select></div>
+            <div><label class="muted"><?= $modul === 'cl' ? 'Lantai' : ($modul === 'media' ? 'Jenis' : 'Lokasi') ?></label>
+                <select name="floor" onchange="this.form.submit()"><option value="">Semua</option>
+                    <?php foreach ($semuaGrup as $g): ?><option <?= $lantaiF === $g ? 'selected' : '' ?>><?= h($g) ?></option><?php endforeach; ?></select></div>
+            <div><label class="muted">PIC</label>
+                <select name="pic" onchange="this.form.submit()"><option value="">Semua</option>
+                    <?php foreach ($picList as $p): ?><option <?= $picF === $p ? 'selected' : '' ?>><?= h($p) ?></option><?php endforeach; ?></select></div>
+            <div><label class="muted">Cari merek</label><input type="text" id="cal-cari" placeholder="mis. Matahari" style="width:170px" autocomplete="off"></div>
+            <button type="submit">Tampilkan</button>
+        </form>
+
+        <div style="display:flex;gap:14px;flex-wrap:wrap;margin:4px 0 10px">
+            <div class="card" style="padding:8px 14px"><span class="muted">Keterisian <?= h(period_label($bulan)) ?></span> <b style="font-size:18px;margin-left:6px"><?= (int) $persen ?>%</b>
+                <span class="muted" style="margin-left:6px"><?= (int) $terisiHari ?> dari <?= (int) $kapasitas ?> hari-unit</span></div>
+            <?php if ($nilaiHariIni): ?><div class="card" style="padding:8px 14px"><span class="muted">Terisi hari ini</span> <b style="font-size:18px;margin-left:6px"><?= (int) $unitTerisiHariIni ?></b>
+                <span class="muted">dari <?= count($baris) ?> unit</span></div><?php endif; ?>
+        </div>
+
+        <div class="cal-wrap no-mobile-cards" id="cal-wrap"><table class="cal" data-no-mc="1">
+            <thead><tr><th class="u">Unit</th>
+                <?php for ($d = 1; $d <= $hariN; $d++):
+                    $tgl = $awal->setDate((int) $awal->format('Y'), (int) $awal->format('m'), $d);
+                    $w = (int) $tgl->format('w'); $kls = $tgl->format('Y-m-d') === $hariIni ? 'hd-now' : (($w === 0 || $w === 6) ? 'hd-we' : ''); ?>
+                    <th class="<?= $kls ?>"><?= $d ?><small><?= h($hari3[$w]) ?></small></th>
+                <?php endfor; ?></tr></thead>
+            <tbody>
+            <?php $grupSekarang = null;
+            foreach ($baris as $kode => $u):
+                if ($u['grup'] !== $grupSekarang): $grupSekarang = $u['grup']; ?>
+                    <tr class="grp"><th colspan="<?= $hariN + 1 ?>"><?= h($grupSekarang) ?></th></tr>
+                <?php endif;
+                foreach ($u['lanes'] as $li => $lane):
+                    $peta = [];   // hari => selot yang dimulai di hari itu
+                    foreach ($lane as $s) $peta[$s['da']] = $s; ?>
+                    <tr class="<?= $li > 0 ? 'lane2' : '' ?>" data-unit="<?= h($kode) ?>">
+                        <th class="u" title="<?= h($kode . ' — ' . $u['label'] . ($u['info'] !== '' ? ' (' . $u['info'] . ')' : '')) ?>">
+                            <?php if ($li === 0): ?><?= h($kode) ?><small><?= h($u['label']) ?><?= $u['info'] !== '' ? ' · ' . h($u['info']) : '' ?></small>
+                            <?php else: ?>↳<?php endif; ?></th>
+                        <?php for ($d = 1; $d <= $hariN; ):
+                            if (isset($peta[$d])): $s = $peta[$d]; $span = $s['db'] - $s['da'] + 1;
+                                $kls = $s['rec'] ? 'r' : 'x';
+                                $data = ['id' => $s['id'], 'b' => $s['brand'], 'pt' => $s['pt'], 'm' => $s['mulai'], 's' => $s['selesai'], 'u' => $kode, 'rec' => $s['rec'], 'own' => $s['milik'] ? 1 : 0]
+                                      + (isset($s['pic']) ? ['pic' => $s['pic'], 'nilai' => $s['nilai'], 'inv' => $s['inv']] : [])
+                                      + (isset($s['bayar']) ? ['bayar' => $s['bayar'], 'lewat' => $s['lewat'], 'sisa' => $s['sisa']] : []); ?>
+                                <td class="s <?= $kls ?> <?= $s['potongKiri'] ? 'kiri' : '' ?> <?= $s['potongKanan'] ? 'kanan' : '' ?>" colspan="<?= $span ?>"
+                                    data-b="<?= h(mb_strtolower($s['brand'] . ' ' . $s['pt'])) ?>" data-j="<?= h(json_encode($data, JSON_UNESCAPED_UNICODE)) ?>"
+                                    title="<?= h($s['brand'] . ' — ' . $s['mulai'] . ' s/d ' . $s['selesai']) ?>"><?= h($s['brand']) ?>
+                                    <?php if (isset($s['bayar'])): ?><span class="pay" style="background:<?= h($stBayar[$s['bayar']][1] ?? '#64748B') ?>"></span><?php endif; ?></td>
+                                <?php $d += $span;
+                            else:
+                                $tglD = $awal->setDate((int) $awal->format('Y'), (int) $awal->format('m'), $d);
+                                $w = (int) $tglD->format('w'); ?>
+                                <td class="e <?= ($w === 0 || $w === 6) ? 'we' : '' ?> <?= $tglD->format('Y-m-d') === $hariIni ? 'now' : '' ?>" data-d="<?= $d ?>"></td>
+                                <?php $d++;
+                            endif;
+                        endfor; ?>
+                    </tr>
+                <?php endforeach;
+            endforeach; ?>
+            <?php if (!$baris): ?><tr><td colspan="<?= $hariN + 1 ?>" style="padding:24px;color:var(--muted)">Tidak ada unit untuk saringan ini.</td></tr><?php endif; ?>
+            </tbody>
+        </table></div>
+
+        <div class="cal-leg">
+            <span><i style="background:#DBEAFE"></i>Recurring</span><span><i style="background:#FDE68A"></i>Exhibition / pameran</span>
+            <?php if ($bisaBayar): ?><span>Titik di pojok:
+                <?php foreach (['lunas', 'sebagian', 'belum_bayar', 'belum_invoice'] as $k): ?><span style="margin-left:8px"><i style="background:<?= h($stBayar[$k][1]) ?>;width:8px;height:8px;border-radius:50%"></i><?= h($stBayar[$k][0]) ?></span><?php endforeach; ?></span><?php endif; ?>
+            <?php if ($bisaOffer): ?><span class="muted">Klik tanggal kosong untuk mulai, klik tanggal lain di unit yang sama untuk akhir → buat Surat Penawaran.</span><?php endif; ?>
+        </div>
+
+        <div class="cal-pop" id="cal-pop"></div>
+        <div class="cal-bar" id="cal-bar"><span id="cal-bar-t"></span>
+            <a class="btn" id="cal-bar-go" href="#">Buat Surat Penawaran</a><button type="button" class="btn light" id="cal-bar-x">Batal</button></div>
+
+        <script>
+        (function(){
+            var BISA_OFFER = <?= $bisaOffer ? 'true' : 'false' ?>, BULAN = <?= json_encode($bulan) ?>, MODUL = <?= json_encode($modul) ?>;
+            var ST = <?= json_encode(array_map(fn($d) => $d[0], $stBayar), JSON_UNESCAPED_UNICODE) ?>;
+            var wrap = document.getElementById('cal-wrap'), pop = document.getElementById('cal-pop'), bar = document.getElementById('cal-bar');
+            var uang = function(n){ return 'Rp ' + Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
+            var esc = function(s){ var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; };
+            var mulai = null;
+            function tutup(){ pop.style.display = 'none'; }
+            function reset(){ mulai = null; bar.style.display = 'none'; wrap.querySelectorAll('td.pilih').forEach(function(x){ x.classList.remove('pilih'); }); }
+            function tgl(d){ return BULAN + '-' + ('0' + d).slice(-2); }
+            function buatBar(unit, a, b){
+                var jml = b - a + 1;
+                document.getElementById('cal-bar-t').textContent = unit + ' · ' + tgl(a).slice(8) + (b !== a ? '–' + tgl(b).slice(8) : '') + ' ' + BULAN + ' (' + jml + ' hari)';
+                var url = '?r=offer_form&module=' + encodeURIComponent(MODUL) + '&master_code=' + encodeURIComponent(unit) + '&start_date=' + tgl(a) + '&end_date=' + tgl(b);
+                document.getElementById('cal-bar-go').href = url; bar.style.display = 'flex';
+            }
+            wrap.addEventListener('click', function(ev){
+                var s = ev.target.closest('td.s'), e = ev.target.closest('td.e');
+                if (s) {
+                    reset(); var j = JSON.parse(s.getAttribute('data-j')), h = '<h4>' + esc(j.b) + '</h4><div class="k">' + esc(j.pt) + '</div><hr style="border:0;border-top:1px solid #EEF1F5;margin:8px 0">'
+                        + '<div><span class="k">Unit</span> ' + esc(j.u) + '</div><div><span class="k">Periode</span> ' + esc(j.m) + ' s/d ' + esc(j.s) + '</div>';
+                    if (j.own) {
+                        h += '<div><span class="k">PIC</span> ' + esc(j.pic) + '</div><div><span class="k">Nilai</span> ' + uang(j.nilai) + '</div>';
+                        if (j.inv) h += '<div><span class="k">Invoice</span> ' + esc(j.inv) + '</div>';
+                        if (j.bayar) h += '<div><span class="k">Pembayaran</span> <b>' + esc(ST[j.bayar] || j.bayar) + '</b>' + (j.lewat ? ' <b style="color:#DC2626">· lewat tempo</b>' : '') + (j.sisa > 0.5 ? ' · sisa ' + uang(j.sisa) : '') + '</div>';
+                    }
+                    h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">';
+                    <?php if ($bisaBayar): ?>if (j.own) h += '<a class="btn light" href="?r=payment_form&id=' + j.id + '&back=' + encodeURIComponent(location.search.slice(1)) + '">Invoice &amp; bayar</a>';<?php endif; ?>
+                    <?php if (can('view_transactions')): ?>if (j.own) h += '<a class="btn light" href="?r=allocation_detail&id=' + j.id + '">Rincian</a>';<?php endif; ?>
+                    <?php if ($bisaOffer): ?>h += '<a class="btn light" href="?r=offer_form&renew_from=' + j.id + '">Perpanjang</a>';<?php endif; ?>
+                    h += '<button type="button" class="btn light" onclick="document.getElementById(\'cal-pop\').style.display=\'none\'">Tutup</button></div>';
+                    pop.innerHTML = h; pop.style.display = 'block';
+                    var r = s.getBoundingClientRect(), w = 300, x = Math.min(window.innerWidth - w - 12, Math.max(12, r.left)), y = r.bottom + 6;
+                    if (y + pop.offsetHeight > window.innerHeight - 12) y = Math.max(12, r.top - pop.offsetHeight - 6);
+                    pop.style.left = x + 'px'; pop.style.top = y + 'px';
+                    ev.stopPropagation(); return;
+                }
+                tutup();
+                if (e && BISA_OFFER) {
+                    var unit = e.parentNode.getAttribute('data-unit'), d = parseInt(e.getAttribute('data-d'), 10);
+                    if (mulai && mulai.unit === unit) {
+                        var a = Math.min(mulai.d, d), b = Math.max(mulai.d, d);
+                        wrap.querySelectorAll('tr[data-unit="' + unit + '"] td.e').forEach(function(x){ var n = parseInt(x.getAttribute('data-d'), 10); if (n >= a && n <= b) x.classList.add('pilih'); });
+                        buatBar(unit, a, b);
+                    } else {
+                        reset(); mulai = {unit: unit, d: d}; e.classList.add('pilih'); buatBar(unit, d, d);
+                    }
+                }
+            });
+            document.addEventListener('click', function(ev){ if (!ev.target.closest('#cal-pop') && !ev.target.closest('td.s')) tutup(); });
+            document.getElementById('cal-bar-x').addEventListener('click', reset);
+            document.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') { tutup(); reset(); } });
+            document.getElementById('cal-cari').addEventListener('input', function(){
+                var q = this.value.trim().toLowerCase();
+                wrap.querySelectorAll('td.s').forEach(function(x){
+                    var cocok = q !== '' && x.getAttribute('data-b').indexOf(q) !== -1;
+                    x.classList.toggle('hit', cocok); x.classList.toggle('dim', q !== '' && !cocok);
+                });
+            });
+            var now = wrap.querySelector('thead .hd-now');
+            if (now) wrap.scrollLeft = Math.max(0, now.offsetLeft - 220);
+        })();
+        </script>
+        <?php
+    });
+}
