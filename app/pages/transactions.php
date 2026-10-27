@@ -1228,7 +1228,7 @@ function transaction_save(PDO $pdo): void
                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,\'draft\',\'Perpanjangan\',?)'
             )->execute([
                 current_property_id(), $docType, $trx['module'] ?? 'cl',
-                $trx['client_id'] ?: null, $trx['contact_id'] ?? null, $trx['master_code'] ?? null,
+                $clientId ?: null, $contactId ?: null, $trx['master_code'] ?? null,
                 $trx['start_date'] ?? null, $trx['end_date'] ?? null,
                 (float) ($trx['unit_rate'] ?? 0), (float) ($trx['final_amount'] ?? 0),
                 $trx['pic_name'] ?? null, $id, clara_pelaku(),
