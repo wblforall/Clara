@@ -28,7 +28,15 @@ require_once $root . '/app/helpers.php';
 require_once $root . '/app/pdf.php';
 
 $opt = array_merge(['pic' => '', 'prop' => '2', 'banding' => '', 'bulan' => '', 'keluar' => '', 'gambar' => ''],
-    getopt('', ['pic:', 'prop:', 'banding:', 'bulan:', 'keluar:', 'gambar:']));
+    getopt('', ['pic:', 'prop:', 'banding:', 'bulan:', 'keluar:', 'gambar:', 'ringkas']));
+
+// --ringkas: hanya TAMBAH / PERBAIKI / HAPUS dan satu tabel langkah.
+//
+// Dokumen lengkap memuat banyak penjelasan yang berguna saat seseorang pertama
+// kali menyandingkan datanya. Begitu sebabnya sudah diketahui, penjelasan itu
+// justru membuat yang harus dikerjakan sulit ditemukan — orang menerima lima
+// halaman untuk tiga baris pekerjaan, lalu tidak jadi mengerjakannya.
+$ringkas = array_key_exists('ringkas', $opt);
 if ($opt['pic'] === '' || $opt['banding'] === '') {
     fwrite(STDERR, "Pakai: php scripts/build_perbaikan_pic.php --pic=\"Nama\" --banding=berkas.json [--prop=2] [--bulan=2026-10,2026-11]\n");
     exit(2);
@@ -335,7 +343,7 @@ ob_start(); ?>
     ol, ul { margin: 4px 0 8px 17px; padding: 0; } li { margin-bottom: 3px; }
 </style>
 
-<h1>Daftar Perbaikan Data</h1>
+<h1><?= $ringkas ? 'Yang Perlu Dikerjakan' : 'Daftar Perbaikan Data' ?></h1>
 <div class="sub"><b><?= $h($pic) ?></b> &middot; <?= $h($namaProperti) ?> &middot; dibuat <?= date('d/m/Y H:i') ?><br>
     Kolom CLARA dibaca langsung dari database saat dicetak.
     Pembanding: <?= $h($ss['sumber'] ?? 'spreadsheet') ?>.</div>
@@ -358,9 +366,11 @@ ob_start(); ?>
         <td class="n"><?= ($totCL - $totSS > 0 ? '+' : '&minus;') . number_format(abs($totCL - $totSS), 0, ',', '.') ?></td>
         <td></td></tr>
 </table>
+<?php if (!$ringkas): ?>
 <p class="muted" style="margin-top:-3px">Selisih <b>minus</b> berarti CLARA lebih kecil &mdash;
 hampir selalu karena ada yang belum diinput. Spreadsheet dipakai sebagai patokan;
 seluruh langkah di dokumen ini dikerjakan di CLARA.</p>
+<?php endif; ?>
 
 <?php foreach ($fokus as $bln):
     $qRinci->execute([$pid, $pic, $bln]);
@@ -381,7 +391,11 @@ seluruh langkah di dokumen ini dikerjakan di CLARA.</p>
     $jmlLebih  = array_sum(array_map(fn($r) => (float) $r['amount'], $lebih));
     if ($nKurang > 0) $adaKurang = true;
 ?>
-<h2>2. Rincian <?= $h($bln) ?> &mdash; apa yang harus dikerjakan</h2>
+<h2><?= $ringkas ? '' : '2. ' ?>Rincian <?= $h($bln) ?> &mdash; apa yang harus dikerjakan</h2>
+<?php if ($ringkas): ?>
+<p><b><?= count($cocok) + count($manual) + count($ragu) ?> dari <?= count($ssRows) ?> baris spreadsheet
+sudah ada di CLARA.</b> Yang di bawah ini saja yang perlu dikerjakan.</p>
+<?php else: ?>
 <p><b><?= count($cocok) ?> baris sudah cocok</b> (nilai dan namanya sama).
    <?php if ($manual): ?><b><?= count($manual) ?> baris sudah ada di CLARA dengan nilai berbeda</b>.
    <?php endif; ?>
@@ -391,14 +405,23 @@ seluruh langkah di dokumen ini dikerjakan di CLARA.</p>
    <b><?= count($lebih) ?> baris ada di CLARA saja</b> (<?= $rp($jmlLebih) ?>).
    <?php if ($nTertahan): ?><b><?= $nTertahan ?> baris ditahan</b> (<?= $rp($jmlTertahan) ?>)
    &mdash; kelihatan hilang, tetapi sudah diperiksa dan tidak boleh diinput.<?php endif; ?></p>
+<?php endif; ?>
 
-<?php if ($manual): ?>
-<h3>Sudah ada di CLARA &mdash; hanya nilainya yang berbeda</h3>
+<?php
+    // Dalam mode ringkas hanya yang nilainya BENAR-BENAR beda yang ditampilkan:
+    // pasangan yang jumlahnya sudah sama tidak menyisakan pekerjaan apa pun.
+    $manualTampil = $ringkas
+        ? array_values(array_filter($manual, fn($m) =>
+            round(array_sum(array_map(fn($c) => (float) $c['amount'], $m[1])) - (float) $m[0]['nilai']) != 0))
+        : $manual;
+?>
+<?php if ($manualTampil): ?>
+<h3><?= $ringkas ? 'PERBAIKI &mdash; sudah ada di CLARA, nilainya berbeda' : 'Sudah ada di CLARA &mdash; hanya nilainya yang berbeda' ?></h3>
 <p class="muted" style="margin-top:-3px">Baris-baris ini <b>tidak perlu diinput ulang</b>. Yang perlu
 diputuskan cuma angka mana yang benar, lalu kedua sumbernya disamakan.</p>
 <table>
     <tr><th>Di spreadsheet</th><th class="n">Nilai sheet</th><th>Di CLARA</th><th class="n">Nilai CLARA</th><th class="n">Selisih</th></tr>
-    <?php foreach ($manual as [$sRow, $cRows]):
+    <?php foreach ($manualTampil as [$sRow, $cRows]):
         $jmlCl = array_sum(array_map(fn($c) => (float) $c['amount'], $cRows));
         $beda  = $jmlCl - (float) $sRow['nilai']; ?>
     <tr>
@@ -415,7 +438,7 @@ diputuskan cuma angka mana yang benar, lalu kedua sumbernya disamakan.</p>
 </table>
 <?php endif; ?>
 
-<?php if ($ragu): ?>
+<?php if ($ragu && !$ringkas): ?>
 <h3>Perlu dipastikan &mdash; nilainya sama, namanya berbeda</h3>
 <p class="muted" style="margin-top:-3px">Spreadsheet kadang menulis lokasinya, CLARA menulis nama
 penyewanya. Kalau dua kolom di bawah ini orang yang sama, tidak ada yang perlu dikerjakan.
@@ -435,7 +458,7 @@ Kalau ternyata berbeda, berarti yang kiri belum diinput dan yang kanan perlu dip
 <?php endif; ?>
 
 <?php if ($kurang): ?>
-<h3 class="merah">A. Harus DIINPUT &mdash; ada di spreadsheet, belum ada di CLARA</h3>
+<h3 class="merah"><?= $ringkas ? 'TAMBAH' : 'A. Harus DIINPUT' ?> &mdash; ada di spreadsheet, belum ada di CLARA</h3>
 <table>
     <tr><th>Keterangan di spreadsheet</th><th class="n">Nilai</th></tr>
     <?php foreach ($kurang as $k):
@@ -474,7 +497,7 @@ Kalau ternyata berbeda, berarti yang kiri belum diinput dan yang kanan perlu dip
     };
     $adaYangPerluDiperiksa = false;
 ?>
-<h3>B. PERIKSA &mdash; ada di CLARA, tidak ada di daftar spreadsheet</h3>
+<h3><?= $ringkas ? 'HAPUS / PERIKSA' : 'B. PERIKSA' ?> &mdash; ada di CLARA, tidak ada di daftar spreadsheet</h3>
 <table>
     <tr><th>Penyewa</th><th>Unit</th><th>Periode</th><th class="n">Nilai</th><th class="n">Trx</th></tr>
     <?php foreach ($lebih as $c):
@@ -496,6 +519,7 @@ Kalau ternyata berbeda, berarti yang kiri belum diinput dan yang kanan perlu dip
     </tr>
     <?php endforeach; ?>
 </table>
+<?php if (!$ringkas): ?>
 <div class="box warn">
     <p style="margin:0">Baris bertanda <b>muncul di spreadsheet <?= $h($blnDepan) ?></b> <b>bukan kesalahan</b>:
     masa sewanya menyeberang, CLARA membukukan seluruh nilainya di bulan mulai sedangkan spreadsheet
@@ -506,9 +530,10 @@ Kalau ternyata berbeda, berarti yang kiri belum diinput dan yang kanan perlu dip
     kontraknya tidak ada.<?php endif; ?></p>
 </div>
 <?php endif; ?>
+<?php endif; ?>
 <?php endforeach; ?>
 
-<?php if ($menyimpang): ?>
+<?php if ($menyimpang && !$ringkas): ?>
 <h2>Nilai yang menyimpang dari siklus sebelumnya</h2>
 <p>Penyewa berikut nilainya hampir selalu sama tiap siklus, tetapi ada satu siklus yang jauh
 berbeda. Yang paling sering: <b>tarif ikut terketik di kolom nilai</b>. Periksa dan betulkan
@@ -610,14 +635,14 @@ foreach ($fokus as $bln) {
             : '<span class="merah">' . $rp($hasil - $sasaran) . '</span>' ?></td></tr>
 </table>
 
-<?php foreach ($aksi as $a): ?>
+<?php foreach ($aksi as $a): if (trim((string) ($a['cara'] ?? '')) === '') continue; ?>
 <div class="box warn">
     <p style="margin:0"><span class="tebal"><?= $h($a['judul_cara'] ?? 'Cara menggesernya.') ?></span>
     <?= $tb($a['cara'] ?? '') ?></p>
 </div>
 <?php endforeach; ?>
 
-<?php $tut = $ss['tutorial'][$bln] ?? []; if ($tut): ?>
+<?php $tut = $ringkas ? [] : ($ss['tutorial'][$bln] ?? []); if ($tut): ?>
 <h2>Cara mengerjakannya &mdash; langkah demi langkah</h2>
 <p class="muted" style="margin-top:-3px">Urutannya boleh bebas. Yang penting ketiganya selesai;
 setelah itu <?= $h($bln) ?> akan sama persis dengan spreadsheet.</p>
@@ -644,7 +669,7 @@ setelah itu <?= $h($bln) ?> akan sama persis dengan spreadsheet.</p>
 <?php endforeach; ?>
 <?php endif; ?>
 
-<?php foreach (($ss['catatan_khusus'][$bln] ?? []) as $c): ?>
+<?php foreach ($ringkas ? [] : ($ss['catatan_khusus'][$bln] ?? []) as $c): ?>
 <h3><?= $tb($c['judul'] ?? 'Catatan') ?></h3>
 <?php if (!empty($c['isi'])): ?><p style="margin:0 0 6px"><?= $tb($c['isi']) ?></p><?php endif; ?>
 <?php if (!empty($c['poin'])): ?>
@@ -680,6 +705,7 @@ menu <b>SKP Pameran &rarr; + Buat Dokumen</b>. Urutan untuk Exhibition baru:</p>
 <?php endforeach; ?>
 <?php endif; ?>
 
+<?php if (!$ringkas): ?>
 <h2>Urutan mengerjakannya</h2>
 <?php if (!$adaKurang): ?>
 <p>Tidak ada satu pun baris spreadsheet yang belum terhitung di CLARA &mdash; <b>tidak ada yang perlu
@@ -720,10 +746,11 @@ saat memang ada baris yang hilang.</p>
             CLARA memang tidak akan menampilkannya &mdash; dan itu yang benar.</li>
     </ul>
 </div>
+<?php endif; ?>
 <?php
 $html = (string) ob_get_clean();
 $mpdf = clara_letterhead_mpdf();
-$mpdf->SetTitle('Daftar Perbaikan Data — ' . $pic);
+$mpdf->SetTitle(($ringkas ? 'Yang Perlu Dikerjakan' : 'Daftar Perbaikan Data') . ' — ' . $pic);
 $mpdf->WriteHTML($html);
 @mkdir(dirname($opt['keluar']), 0777, true);
 $mpdf->Output($opt['keluar'], \Mpdf\Output\Destination::FILE);
