@@ -89,6 +89,19 @@ function _pay_query(PDO $pdo, bool $semuaBaris): array
     $ringkas->execute($bind);
     $sum = array_map(fn($v) => (float) $v, $chip->fetch() + $ringkas->fetch());
 
+    // Berapa yang SEHARUSNYA ditransfer client — sewa + PPN + listrik +
+    // deposit. Inilah angka yang dicocokkan tim: kalau semuanya sudah dibayar,
+    // "Sudah dibayar" mestinya sama dengan angka ini, bukan dengan Tagihan.
+    // Kolom Tagihan sendiri tidak memuat listrik & deposit, dan itulah sebab
+    // pembayaran kerap terlihat lebih besar daripada tagihannya.
+    //
+    // Dihitung atas SELURUH baris tersaring (bukan hanya sehalaman), dengan
+    // kolom seperlunya saja supaya tidak memberatkan.
+    $semua = $pdo->prepare("SELECT x.id, x.skp_id, x.module, x.master_code, x.start_date, x.end_date, x.tagihan $luar");
+    $semua->execute($bind);
+    $sum['penuh'] = 0.0;
+    foreach (pembayaran_lengkapi_komponen($pdo, $semua->fetchAll()) as $b) $sum['penuh'] += (float) $b['k_perkiraan'];
+
     $halaman = max(1, (int) getv('page', 1));
     $per     = 200;
     $batas   = $semuaBaris ? '' : ' LIMIT ' . $per . ' OFFSET ' . (($halaman - 1) * $per);
@@ -145,12 +158,29 @@ function payments_page(PDO $pdo): void
             <a class="btn light" href="<?= h($qs(['r' => 'payments_csv'])) ?>">Unduh CSV</a>
         </form>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px">
-            <?php foreach ([['Tagihan', money($sum['tagihan']), 'var(--primary)'], ['Sudah dibayar', money($sum['terbayar']), '#047857'],
-                            ['Belum dibayar', money($sisa), $sisa > 0 ? '#B91C1C' : '#047857'], ['Lewat jatuh tempo', (int) $sum['n_lewat'] . ' transaksi', (int) $sum['n_lewat'] ? '#B91C1C' : 'var(--muted)']] as [$lbl, $val, $clr]): ?>
-                <div class="card" style="padding:12px 14px;border-top:3px solid <?= $clr ?>">
+        <?php
+        // Kartu "Seharusnya ditransfer" adalah jawaban atas pertanyaan yang
+        // selama ini menggantung: kenapa yang dibayar lebih besar daripada
+        // tagihan. Karena yang ditransfer sudah termasuk PPN, listrik, dan
+        // deposit — dan terhadap angka itulah pembayaran dicocokkan.
+        $kurangPenuh = (float) $sum['penuh'] - (float) $sum['terbayar'];
+        $kartu = [
+            ['Tagihan', money($sum['tagihan']), 'var(--primary)',
+             'Nilai sewa, atau jumlah invoice bila diisi sendiri. Belum termasuk PPN, listrik, dan deposit.'],
+            ['Seharusnya ditransfer', money($sum['penuh']), '#0F766E',
+             'Sewa + PPN + listrik + security deposit. Kalau semuanya sudah dibayar, "Sudah dibayar" akan sama dengan angka ini.'],
+            ['Sudah dibayar', money($sum['terbayar']), '#047857', 'Seluruh pembayaran yang tercatat masuk.'],
+            ['Belum dibayar', money($kurangPenuh), $kurangPenuh > 0.5 ? '#B91C1C' : '#047857',
+             'Seharusnya ditransfer dikurangi yang sudah masuk.'],
+            ['Lewat jatuh tempo', (int) $sum['n_lewat'] . ' transaksi', (int) $sum['n_lewat'] ? '#B91C1C' : 'var(--muted)',
+             'Invoice yang tanggal jatuh temponya sudah lewat dan belum lunas.'],
+        ];
+        ?>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:12px;margin-bottom:14px">
+            <?php foreach ($kartu as [$lbl, $val, $clr, $arti]): ?>
+                <div class="card" style="padding:12px 14px;border-top:3px solid <?= $clr ?>" title="<?= h($arti) ?>">
                     <div class="muted" style="font-size:12px"><?= h($lbl) ?></div>
-                    <div style="font-size:20px;font-weight:800;color:<?= $clr ?>"><?= h($val) ?></div>
+                    <div style="font-size:19px;font-weight:800;color:<?= $clr ?>"><?= h($val) ?></div>
                 </div>
             <?php endforeach; ?>
         </div>

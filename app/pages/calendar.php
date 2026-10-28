@@ -147,7 +147,7 @@ function calendar_page(PDO $pdo): void
         // Ringkasan per unit untuk kolom di tepi kanan — bentuk yang sudah
         // biasa mereka baca di spreadsheet (Recurring / Exhibition di kanan
         // kalender, pada baris yang sama).
-        $uRec = 0.0; $uExh = 0.0; $uPros = 0.0; $uPic = [];
+        $uRec = 0.0; $uExh = 0.0; $uPros = 0.0; $uPic = []; $uPicPros = [];
         foreach ($trxPer[$kode] ?? [] as $t) {
             $a = max($t['start_date'], $awal->format('Y-m-d'));
             $b = min($t['end_date'], $akhir->format('Y-m-d'));
@@ -198,6 +198,9 @@ function calendar_page(PDO $pdo): void
                 'warna' => $warnaPic[(string) $pr['pic_name']] ?? '#FDE68A', 'inv' => '',
             ]];
             $uPros += (float) $pr['est_amount'];
+            // Kalau calonnya jadi, uangnya masuk ke kolom PIC ini juga — jadi
+            // angkanya ikut ditampilkan di sana, bertanda kuning.
+            $uPicPros[(string) $pr['pic_name']] = ($uPicPros[(string) $pr['pic_name']] ?? 0) + (float) $pr['est_amount'];
         }
 
         $terisi = count(array_filter($hariPakai));
@@ -205,13 +208,13 @@ function calendar_page(PDO $pdo): void
         if ($bulan === date('Y-m') && $hariPakai[(int) date('j')]) $unitTerisiHariIni++;
         $baris[$kode] = $u + ['lanes' => $lanes ?: [[]], 'terisi' => $terisi, 'jumlahSelot' => array_sum(array_map('count', $lanes)),
                               'rpRec' => $uRec, 'rpExh' => $uExh, 'rpPros' => $uPros,
-                              'rpFc' => $forecast[$kode] ?? 0.0, 'rpPic' => $uPic];
+                              'rpFc' => $forecast[$kode] ?? 0.0, 'rpPic' => $uPic, 'rpPicPros' => $uPicPros];
     }
 
     // ── Jumlah per lantai & jumlah seluruhnya ───────────────────────────────
     // Lembar tim menutup tiap blok lantai dengan baris "TOTAL LOWER GROUND".
     // Tanpa itu, angka per unit tidak pernah menjadi kesimpulan.
-    $kosong  = ['fc' => 0.0, 'rec' => 0.0, 'exh' => 0.0, 'act' => 0.0, 'pros' => 0.0, 'pic' => []];
+    $kosong  = ['fc' => 0.0, 'rec' => 0.0, 'exh' => 0.0, 'act' => 0.0, 'pros' => 0.0, 'pic' => [], 'picPros' => []];
     $tambah = function (array $t, array $u): array {
         $t['fc']   += (float) $u['rpFc'];
         $t['rec']  += (float) $u['rpRec'];
@@ -219,6 +222,7 @@ function calendar_page(PDO $pdo): void
         $t['act']  += (float) $u['rpRec'] + (float) $u['rpExh'];
         $t['pros'] += (float) $u['rpPros'];
         foreach ($u['rpPic'] as $nm => $v) $t['pic'][$nm] = ($t['pic'][$nm] ?? 0) + (float) $v;
+        foreach ($u['rpPicPros'] as $nm => $v) $t['picPros'][$nm] = ($t['picPros'][$nm] ?? 0) + (float) $v;
         return $t;
     };
     $totGrup = []; $totAll = $kosong;
@@ -364,9 +368,16 @@ function calendar_page(PDO $pdo): void
                ACTUAL, lalu satu kolom tiap PIC. Sengaja TIDAK menempel di tepi
                (sticky) — supaya geserannya terasa seperti Excel dan tidak
                memakan lebar layar terus-menerus. */
-            table.cal th.rk,table.cal td.rk{text-align:right;padding:2px 7px;min-width:68px;max-width:68px;
-                font-variant-numeric:tabular-nums;white-space:nowrap;font-size:10px}
-            table.cal th.rk{font-size:9px;line-height:1.15;letter-spacing:.01em;white-space:normal;word-break:break-word;padding:3px 5px}
+            /* Lebar kolomnya mengikuti isi — tidak dipatok, tidak dipotong, dan
+               judulnya tidak dipaksa membungkus. Angka uang ditulis penuh
+               (Rp 7.500.000), bukan dibulatkan, karena angka inilah yang
+               dicocokkan tim dengan berkas mereka. */
+            table.cal th.rk,table.cal td.rk{text-align:right;padding:2px 10px;white-space:nowrap;
+                font-variant-numeric:tabular-nums;font-size:10.5px}
+            table.cal th.rk{font-size:9.5px;letter-spacing:.03em;padding:4px 10px}
+            table.cal td.rk.pros-ada{background:#FFFBEB}
+            table.cal td.rk .pros-rp{display:block;color:#B45309;font-weight:700;font-size:10px;margin-top:1px}
+            table.cal tr.tot td.rk.pros-ada{background:#FEF3C7}
             table.cal .rk-awal{border-left:2px solid #E4E9F0}
             table.cal td.rk.nol{color:#CBD5E1}
             table.cal tr.tot{background:#F1F5F9;font-weight:800}
@@ -376,7 +387,9 @@ function calendar_page(PDO $pdo): void
             table.cal tr.tot-all th.u{background:#0F2A3F;color:#fff}
             table.cal tr.tot-all td.rk{color:#fff}
             /* ── Nilai di dalam kotak ─────────────────────────────────── */
-            table.cal td.s .rp{float:right;margin-left:6px;font-weight:700;opacity:.72;font-size:10px;
+            table.cal td.s .s-isi{display:flex;align-items:center;gap:8px;width:100%}
+            table.cal td.s .s-nama{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+            table.cal td.s .rp{flex:0 0 auto;font-weight:700;opacity:.72;font-size:10px;
                 text-transform:none;font-style:normal;letter-spacing:0}
             table.cal td.s.rec{box-shadow:inset 4px 0 0 #1D4ED8}
             table.cal td.s.pros{background:repeating-linear-gradient(45deg,#FEF9C3,#FEF9C3 5px,#FEF08A 5px,#FEF08A 10px)!important;
@@ -521,7 +534,7 @@ function calendar_page(PDO $pdo): void
                     <?php if ($picOn) foreach ($picKolom as $nm): ?>
                         <th class="rk" title="Nilai yang masuk lewat <?= h($nm) ?>"><?= h(mb_strtoupper($nm)) ?></th>
                     <?php endforeach; ?>
-                    <th class="rk rk-awal" title="Calon yang belum pasti — tidak masuk pencapaian resmi">PROS<br>PEK</th>
+                    <th class="rk rk-awal" title="Calon yang belum pasti — tidak masuk pencapaian resmi">PROSPEK</th>
                 <?php endif; ?>
             </tr></thead>
             <tbody>
@@ -529,18 +542,24 @@ function calendar_page(PDO $pdo): void
             /* Lembar tim menutup tiap blok lantai dengan baris "TOTAL LOWER
                GROUND", lalu angka itulah yang dibaca, bukan deretan unitnya.
                Baris total di bawah ini mengikuti bentuk yang sama. */
-            $barisTotal = function (string $label, array $t, string $kelas) use ($hariN, $bolehLihatPic, $picOn, $picKolom, $rpKecil) {
-                $rp = fn($v) => (float) $v > 0
-                    ? '<span title="' . h(money((float) $v)) . '">' . h($rpKecil((float) $v)) . '</span>' : '-';
+            $barisTotal = function (string $label, array $t, string $kelas) use ($hariN, $bolehLihatPic, $picOn, $picKolom) {
+                $sel = function ($v, float $pros = 0.0, string $kelas = '') {
+                    $v = (float) $v;
+                    echo '<td class="rk ' . $kelas . ($pros > 0 ? ' pros-ada' : '') . '">'
+                       . ($v > 0 ? h(money($v)) : '-')
+                       . ($pros > 0 ? '<span class="pros-rp">+ ' . h(money($pros)) . '</span>' : '')
+                       . '</td>';
+                };
                 echo '<tr class="' . $kelas . '"><th class="u">' . h($label) . '</th>'
                    . '<td colspan="' . $hariN . '"></td>';
                 if ($bolehLihatPic) {
-                    echo '<td class="rk rk-awal">' . $rp($t['fc']) . '</td>'
-                       . '<td class="rk">' . $rp($t['rec']) . '</td>'
-                       . '<td class="rk">' . $rp($t['exh']) . '</td>'
-                       . '<td class="rk">' . $rp($t['act']) . '</td>';
-                    if ($picOn) foreach ($picKolom as $nm) echo '<td class="rk">' . $rp($t['pic'][$nm] ?? 0) . '</td>';
-                    echo '<td class="rk rk-awal">' . $rp($t['pros']) . '</td>';
+                    $pros = (float) ($t['pros'] ?? 0);
+                    $sel($t['fc'] ?? 0, 0.0, 'rk-awal');
+                    $sel($t['rec'] ?? 0);
+                    $sel($t['exh'] ?? 0, $pros);
+                    $sel($t['act'] ?? 0, $pros);
+                    if ($picOn) foreach ($picKolom as $nm) $sel($t['pic'][$nm] ?? 0, (float) ($t['picPros'][$nm] ?? 0));
+                    $sel($pros, 0.0, 'rk-awal' . ($pros > 0 ? ' pros-ada' : ''));
                 }
                 echo '</tr>';
             };
@@ -568,7 +587,12 @@ function calendar_page(PDO $pdo): void
                             if (isset($peta[$d])): $s = $peta[$d]; $span = $s['db'] - $s['da'] + 1;
                                 $pros = !empty($s['pros']);
                                 $kls  = ($pros ? 'pros' : '') . ($s['rec'] ? ' rec' : '');
-                                $angka = isset($s['bulanRp']) ? $rpKecil((float) $s['bulanRp']) : '';
+                                // Angka di dalam kotak ditulis penuh juga. Kotaknya hanya
+                                // selebar beberapa hari, jadi ia baru ditulis kalau masih
+                                // tersisa ruang untuk nama mereknya; selebihnya angkanya
+                                // tetap terbaca di blok rekap sebelah kanan.
+                                $angka = (isset($s['bulanRp']) && (float) $s['bulanRp'] > 0) ? money((float) $s['bulanRp']) : '';
+                                $muatAngka = $angka !== '' && ($span * 19) >= (mb_strlen($angka) * 6 + 52);
                                 $data = ['id' => $s['id'], 'b' => $s['brand'], 'pt' => $s['pt'], 'm' => $s['mulai'], 's' => $s['selesai'], 'u' => $kode,
                                          'rec' => $s['rec'], 'own' => $s['milik'] ? 1 : 0, 'pros' => $pros ? 1 : 0,
                                          'picAll' => (string) ($s['picSemua'] ?? $s['pic'] ?? ''), 'yakin' => (string) ($s['yakin'] ?? '')]
@@ -580,7 +604,8 @@ function calendar_page(PDO $pdo): void
                                     data-b="<?= h(mb_strtolower($s['brand'] . ' ' . $s['pt'])) ?>" data-j="<?= h(json_encode($data, JSON_UNESCAPED_UNICODE)) ?>"
                                     title="<?= h(($pros ? 'PROSPEK (belum pasti) — ' : '') . $s['brand'] . ' — ' . $s['mulai'] . ' s/d ' . $s['selesai']
                                                 . (($s['picSemua'] ?? '') !== '' ? ' — PIC ' . $s['picSemua'] : '')) ?>">
-                                    <?php if ($angka !== '' && $span >= 2): ?><span class="rp"><?= h($angka) ?></span><?php endif; ?><?= h($s['brand']) ?>
+                                    <span class="s-isi"><span class="s-nama"><?= h($s['brand']) ?></span><?php
+                                        if ($muatAngka): ?><span class="rp"><?= h($angka) ?></span><?php endif; ?></span>
                                     <?php if (isset($s['bayar'])): ?><span class="pay" style="background:<?= h($stBayar[$s['bayar']][1] ?? '#64748B') ?>"></span><?php endif; ?></td>
                                 <?php $d += $span;
                             else:
@@ -593,21 +618,28 @@ function calendar_page(PDO $pdo): void
                         <?php if ($bolehLihatPic):
                             // Hanya di jalur pertama; jalur berikutnya masih unit yang
                             // sama, jadi angkanya tidak diulang.
-                            // Angkanya diringkas supaya muat di kolom sesempit ini;
-                            // nilai utuhnya tetap terbaca saat kursor berhenti di situ.
-                            $sel = function (float $v, string $kelas = '', string $gaya = '') use ($li, $rpKecil) {
+                            /* Angka ditulis penuh. $pros = nilai calon yang BELUM pasti:
+                               kalau jadi, uangnya masuk ke kolom ini juga, jadi ia
+                               ditampilkan di bawah angka resminya dengan warna kuning
+                               — tanda yang sama dengan kotak kuning di kalender. */
+                            $sel = function (float $v, float $pros = 0.0, string $kelas = '') use ($li) {
                                 if ($li !== 0) { echo '<td class="rk ' . $kelas . '"></td>'; return; }
-                                echo '<td class="rk ' . $kelas . ($v > 0 ? '' : ' nol') . '"'
-                                   . ($gaya !== '' ? ' style="' . $gaya . '"' : '')
-                                   . ($v > 0 ? ' title="' . h(money($v)) . '"' : '') . '>'
-                                   . ($v > 0 ? h($rpKecil($v)) : '-') . '</td>';
-                            }; ?>
-                            <?php $sel((float) $u['rpFc'], 'rk-awal'); ?>
+                                $kls = 'rk ' . $kelas . ($v > 0 ? '' : ' nol') . ($pros > 0 ? ' pros-ada' : '');
+                                echo '<td class="' . trim($kls) . '"'
+                                   . ($pros > 0 ? ' title="Calon yang belum pasti: ' . h(money($pros)) . '"' : '') . '>'
+                                   . ($v > 0 ? h(money($v)) : '-')
+                                   . ($pros > 0 ? '<span class="pros-rp">+ ' . h(money($pros)) . '</span>' : '')
+                                   . '</td>';
+                            };
+                            $prosUnit = (float) $u['rpPros']; ?>
+                            <?php $sel((float) $u['rpFc'], 0.0, 'rk-awal'); ?>
                             <?php $sel((float) $u['rpRec']); ?>
-                            <?php $sel((float) $u['rpExh']); ?>
-                            <?php $sel((float) $u['rpRec'] + (float) $u['rpExh']); ?>
-                            <?php if ($picOn) foreach ($picKolom as $nm) $sel((float) ($u['rpPic'][$nm] ?? 0)); ?>
-                            <?php $sel((float) $u['rpPros'], 'rk-awal', 'color:#B45309'); ?>
+                            <?php /* Prospek dianggap sewa sekali jalan — kalau jadi, ia masuk
+                                     ke Exhibition dan ikut menambah Actual. */ ?>
+                            <?php $sel((float) $u['rpExh'], $prosUnit); ?>
+                            <?php $sel((float) $u['rpRec'] + (float) $u['rpExh'], $prosUnit); ?>
+                            <?php if ($picOn) foreach ($picKolom as $nm) $sel((float) ($u['rpPic'][$nm] ?? 0), (float) ($u['rpPicPros'][$nm] ?? 0)); ?>
+                            <?php $sel($prosUnit, 0.0, 'rk-awal' . ($prosUnit > 0 ? ' pros-ada' : '')); ?>
                         <?php endif; ?>
                     </tr>
                 <?php endforeach; ?>

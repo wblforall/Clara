@@ -225,82 +225,165 @@ function prospect_form(PDO $pdo): void
     $pics = $pdo->prepare("SELECT name FROM master_pic WHERE status='active' AND property_id = ? ORDER BY name");
     $pics->execute([$pid]);
     $pics = $pics->fetchAll(PDO::FETCH_COLUMN);
+    $warna = prospek_warna_pic($pdo, $pid);
 
-    layout($id ? 'Ubah Prospek' : 'Tambah Prospek', function () use ($row, $unit, $pics, $id) {
+    layout($id ? 'Ubah Prospek' : 'Tambah Prospek', function () use ($row, $unit, $pics, $id, $warna) {
         $yakin = _prospek_yakin();
         ?>
-        <div class="toolbar"><a class="btn light" href="?r=prospects">← Daftar Prospek</a></div>
-        <form method="post" action="?r=prospect_save" class="panel" style="padding:18px 22px;max-width:760px">
+        <style>
+            /* Satu bahasa rupa dengan halaman Tagihan & Pembayaran: kotak putih,
+               garis tipis, tanpa ikon dan tanpa gradasi. */
+            .pr-top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+            .pr-judul{font-size:21px;font-weight:800;color:#0F2A3F;line-height:1.2}
+            .pr-sub{color:var(--muted);font-size:13px;margin-top:3px}
+            .pr-catat{background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:13px 18px;margin-bottom:14px;font-size:13px;line-height:1.55}
+            .pr-kolom{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:14px;align-items:start}
+            .pr-kartu{background:#fff;border:1px solid var(--line);border-radius:12px}
+            .pr-kartu h3{margin:0;padding:14px 20px;font-size:14px;font-weight:700;color:#1F2937;border-bottom:1px solid var(--line)}
+            .pr-isi{padding:18px 20px}
+            .pr-isi label{display:block;font-size:12px;font-weight:600;color:#475467;margin:14px 0 5px}
+            .pr-isi label:first-child{margin-top:0}
+            .pr-isi input,.pr-isi select,.pr-isi textarea{width:100%}
+            .pr-dua{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+            .pr-bantu{font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.45}
+            .pr-wajib{color:#dc2626}
+            .pr-pilih{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+            .pr-pilih label{display:flex;align-items:center;gap:7px;margin:0;padding:8px 13px;border:1px solid var(--line);
+                border-radius:9px;cursor:pointer;font-size:12.5px;font-weight:600;color:#475467;background:#fff}
+            .pr-pilih input{width:auto;margin:0}
+            .pr-pilih label:has(input:checked){border-color:#0D9488;background:#F0FDFA;color:#0F766E}
+            .pr-aksi{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:18px;
+                border-top:1px solid var(--line);padding-top:16px}
+            .pr-lihat{background:#F8FAFC;border:1px solid var(--line);border-radius:10px;padding:12px 16px;font-size:12.5px;line-height:1.6}
+            .pr-lihat b{color:#0F2A3F}
+            .pr-kotak{display:inline-block;padding:2px 10px;border-radius:5px;font-weight:700;font-size:11.5px;font-style:italic;
+                background:repeating-linear-gradient(45deg,#FEF9C3,#FEF9C3 5px,#FEF08A 5px,#FEF08A 10px);
+                color:#854D0E;border:1px dashed #EAB308}
+        </style>
+
+        <?php /* Judul halamannya sudah dicetak layout(); di sini cukup keterangannya
+                 supaya tidak ada dua judul yang sama bertumpuk. */ ?>
+        <div class="pr-top">
+            <div class="pr-sub" style="margin-top:0">
+                <?= $id ? 'Mengubah calon yang sudah dicatat.' : 'Calon yang belum pasti &mdash; belum ada surat penawaran, belum tentu jadi.' ?>
+            </div>
+            <a class="btn light" href="?r=prospects">Kembali ke daftar</a>
+        </div>
+
+        <div class="pr-catat">
+            Angka di sini <b>tidak</b> ikut ke pencapaian resmi, income, maupun laporan manajemen.
+            Ia hanya ditampilkan terpisah &mdash; di Kalender sebagai kotak kuning, dan di panel atas sebagai
+            &ldquo;kalau semua ini jadi, target bulan ini tercapai atau belum&rdquo;.
+            Isi seadanya saja: yang wajib hanya nama calon penyewa, perkiraan tanggal, dan perkiraan nilainya.
+        </div>
+
+        <form method="post" action="?r=prospect_save" id="pr-form">
             <input type="hidden" name="_csrf" value="<?= h(csrf_token()) ?>">
             <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
-            <p class="muted" style="margin:0 0 14px">Isi seadanya saja — ini calon, bukan kontrak. Yang wajib hanya
-                nama calon penyewa, perkiraan tanggal, dan perkiraan nilainya.</p>
 
-            <div class="form-grid">
-                <div class="wide">
-                    <label>Calon penyewa <span style="color:#dc2626">*</span></label>
-                    <input name="client_name" value="<?= h($row['client_name']) ?>" maxlength="190" required placeholder="mis. PT Sumber Rejeki / Kopi Kenangan">
-                    <div class="help">Boleh ditulis apa adanya — belum perlu terdaftar di Master Client.</div>
+            <div class="pr-kolom">
+                <div class="pr-kartu">
+                    <h3>Calon penyewa</h3>
+                    <div class="pr-isi">
+                        <label>Nama calon penyewa <span class="pr-wajib">*</span></label>
+                        <input name="client_name" id="pr-nama" value="<?= h($row['client_name']) ?>" maxlength="190" required
+                               placeholder="mis. PT Sumber Rejeki / Kopi Kenangan" autocomplete="off">
+                        <div class="pr-bantu">Boleh ditulis apa adanya &mdash; belum perlu terdaftar di Master Client.</div>
+
+                        <label>Perkiraan nilai <span class="pr-wajib">*</span></label>
+                        <input name="est_amount" id="pr-rp" inputmode="numeric" required placeholder="Rp"
+                               value="<?= $row['est_amount'] !== '' ? h(number_format((float) $row['est_amount'], 0, ',', '.')) : '' ?>">
+                        <div class="pr-bantu">Angka kasar pun tidak apa-apa &mdash; gunanya untuk menakar sisa target bulan ini.</div>
+
+                        <label>PIC yang menangani</label>
+                        <select name="pic_name" id="pr-pic">
+                            <option value="">&mdash; belum ditentukan &mdash;</option>
+                            <?php foreach ($pics as $p): ?><option <?= $row['pic_name'] === $p ? 'selected' : '' ?>><?= h($p) ?></option><?php endforeach; ?>
+                        </select>
+                        <div class="pr-bantu">Dipakai untuk menjumlahkan prospek per orang di panel Kalender.</div>
+
+                        <label>Seberapa yakin</label>
+                        <div class="pr-pilih">
+                            <?php foreach ($yakin as $k => $y): ?>
+                                <label title="<?= h($y[1]) ?>">
+                                    <input type="radio" name="confidence" value="<?= h($k) ?>" <?= $row['confidence'] === $k ? 'checked' : '' ?>>
+                                    <?= h($y[0]) ?>
+                                </label>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="pr-bantu" id="pr-yakin-arti"></div>
+                    </div>
                 </div>
-                <div>
-                    <label>Modul</label>
-                    <select name="module" id="pr-mod">
-                        <?php foreach (['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'] as $k => $v): ?>
-                            <option value="<?= h($k) ?>" <?= $row['module'] === $k ? 'selected' : '' ?>><?= h($v) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+
+                <div class="pr-kartu">
+                    <h3>Tempat &amp; waktu</h3>
+                    <div class="pr-isi">
+                        <div class="pr-dua">
+                            <div>
+                                <label>Modul</label>
+                                <select name="module" id="pr-mod">
+                                    <?php foreach (['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'] as $k => $v): ?>
+                                        <option value="<?= h($k) ?>" <?= $row['module'] === $k ? 'selected' : '' ?>><?= h($v) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div>
+                                <label>Unit / titik</label>
+                                <select name="master_code" id="pr-unit"></select>
+                            </div>
+                        </div>
+                        <div class="pr-bantu">Kalau sudah ada incarannya, pilih di sini &mdash; kotak kuningnya akan muncul tepat di baris unit itu.
+                            Boleh dikosongkan; nilainya tetap ikut dijumlahkan.</div>
+
+                        <div class="pr-dua">
+                            <div><label>Perkiraan mulai <span class="pr-wajib">*</span></label>
+                                <input type="date" name="start_date" id="pr-mulai" value="<?= h($row['start_date']) ?>" required></div>
+                            <div><label>Perkiraan selesai <span class="pr-wajib">*</span></label>
+                                <input type="date" name="end_date" id="pr-selesai" value="<?= h($row['end_date']) ?>" required></div>
+                        </div>
+                        <div class="pr-bantu" id="pr-lama"></div>
+
+                        <label>Catatan</label>
+                        <input name="note" value="<?= h((string) $row['note']) ?>" maxlength="255" placeholder="mis. menunggu keputusan pusat">
+
+                        <?php if ($id): ?>
+                        <label>Status</label>
+                        <select name="status">
+                            <option value="open" <?= $row['status'] === 'open' ? 'selected' : '' ?>>Masih berjalan &mdash; ikut dihitung sebagai prospek</option>
+                            <option value="deal" <?= $row['status'] === 'deal' ? 'selected' : '' ?>>Sudah jadi penawaran &mdash; berhenti dihitung</option>
+                            <option value="batal" <?= $row['status'] === 'batal' ? 'selected' : '' ?>>Tidak jadi &mdash; berhenti dihitung</option>
+                        </select>
+                        <?php endif; ?>
+                    </div>
                 </div>
-                <div>
-                    <label>Unit / titik <span class="muted" style="font-weight:400">(boleh kosong)</span></label>
-                    <select name="master_code" id="pr-unit"></select>
-                    <div class="help">Kalau sudah ada incarannya, pilih di sini supaya muncul di Kalender.</div>
-                </div>
-                <div><label>Perkiraan mulai <span style="color:#dc2626">*</span></label><input type="date" name="start_date" value="<?= h($row['start_date']) ?>" required></div>
-                <div><label>Perkiraan selesai <span style="color:#dc2626">*</span></label><input type="date" name="end_date" value="<?= h($row['end_date']) ?>" required></div>
-                <div>
-                    <label>Perkiraan nilai <span style="color:#dc2626">*</span></label>
-                    <input name="est_amount" id="pr-rp" inputmode="numeric" value="<?= $row['est_amount'] !== '' ? h(number_format((float) $row['est_amount'], 0, ',', '.')) : '' ?>" required placeholder="Rp">
-                    <div class="help">Angka kasar pun tidak apa-apa — gunanya untuk menakar sisa target.</div>
-                </div>
-                <div>
-                    <label>PIC</label>
-                    <select name="pic_name"><option value="">—</option>
-                        <?php foreach ($pics as $p): ?><option <?= $row['pic_name'] === $p ? 'selected' : '' ?>><?= h($p) ?></option><?php endforeach; ?></select>
-                </div>
-                <div>
-                    <label>Seberapa yakin</label>
-                    <select name="confidence">
-                        <?php foreach ($yakin as $k => $y): ?><option value="<?= h($k) ?>" <?= $row['confidence'] === $k ? 'selected' : '' ?>><?= h($y[0]) ?> — <?= h($y[1]) ?></option><?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="wide"><label>Catatan</label><input name="note" value="<?= h((string) $row['note']) ?>" maxlength="255" placeholder="mis. menunggu keputusan pusat"></div>
-                <?php if ($id): ?>
-                <div class="wide">
-                    <label>Status</label>
-                    <select name="status">
-                        <option value="open" <?= $row['status'] === 'open' ? 'selected' : '' ?>>Masih berjalan — ikut dihitung sebagai prospek</option>
-                        <option value="deal" <?= $row['status'] === 'deal' ? 'selected' : '' ?>>Sudah jadi penawaran — berhenti dihitung</option>
-                        <option value="batal" <?= $row['status'] === 'batal' ? 'selected' : '' ?>>Tidak jadi — berhenti dihitung</option>
-                    </select>
-                </div>
-                <?php endif; ?>
             </div>
 
-            <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
-                <button type="submit">Simpan</button>
+            <?php /* Pratinjau kecil: memperlihatkan seperti apa isian ini nanti
+                     terlihat di Kalender, supaya yang mengisi tidak perlu menebak. */ ?>
+            <div class="pr-lihat" style="margin-top:14px">
+                <div style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#98A2B3;margin-bottom:7px">Nanti terlihat seperti ini di Kalender</div>
+                <span class="pr-kotak" id="pr-contoh">Nama calon penyewa</span>
+                <span id="pr-ket" style="margin-left:10px;color:var(--muted)"></span>
+            </div>
+
+            <div class="pr-aksi">
+                <button type="submit">Simpan prospek</button>
                 <a class="btn secondary" href="?r=prospects">Batal</a>
                 <?php if ($id): ?>
-                    <button type="submit" formaction="?r=prospect_delete" class="btn light" style="color:#B91C1C;margin-left:auto"
-                            onclick="return confirm('Hapus prospek ini?')">Hapus</button>
+                    <button type="submit" formaction="?r=prospect_delete" formnovalidate class="btn light"
+                            style="color:#B91C1C;margin-left:auto" onclick="return confirm('Hapus prospek ini?')">Hapus prospek</button>
                 <?php endif; ?>
             </div>
         </form>
 
         <script>
         (function () {
-            var UNIT = <?= json_encode($unit, JSON_UNESCAPED_UNICODE) ?>, TERPILIH = <?= json_encode((string) $row['master_code']) ?>;
+            var UNIT = <?= json_encode($unit, JSON_UNESCAPED_UNICODE) ?>,
+                TERPILIH = <?= json_encode((string) $row['master_code']) ?>,
+                ARTI = <?= json_encode(array_map(fn($y) => $y[1], _prospek_yakin()), JSON_UNESCAPED_UNICODE) ?>,
+                WARNA = <?= json_encode($warna, JSON_UNESCAPED_UNICODE) ?>;
             var mod = document.getElementById('pr-mod'), unit = document.getElementById('pr-unit');
-            function isi() {
+            function isiUnit() {
                 var d = UNIT[mod.value] || [];
                 unit.innerHTML = '<option value="">— belum ditentukan —</option>';
                 d.forEach(function (u) {
@@ -310,13 +393,43 @@ function prospect_form(PDO $pdo): void
                     unit.appendChild(o);
                 });
             }
-            mod.addEventListener('change', isi); isi();
+            mod.addEventListener('change', function () { TERPILIH = ''; isiUnit(); lihat(); });
+            isiUnit();
+
             // Ribuan diberi titik sambil diketik — sama seperti kotak rupiah lain.
             var rp = document.getElementById('pr-rp');
             rp.addEventListener('input', function () {
                 var a = this.value.replace(/\D/g, '');
                 this.value = a ? parseInt(a, 10).toLocaleString('id-ID') : '';
+                lihat();
             });
+
+            function lamaHari() {
+                var a = document.getElementById('pr-mulai').value, b = document.getElementById('pr-selesai').value;
+                if (!a || !b) return 0;
+                var n = Math.round((new Date(b) - new Date(a)) / 86400000) + 1;
+                return n > 0 ? n : 0;
+            }
+            function lihat() {
+                var nama = (document.getElementById('pr-nama').value || '').trim() || 'Nama calon penyewa';
+                var angka = parseInt((rp.value || '').replace(/\D/g, ''), 10) || 0;
+                var kotak = document.getElementById('pr-contoh');
+                kotak.textContent = nama + (angka ? '   Rp ' + angka.toLocaleString('id-ID') : '');
+                var pic = document.getElementById('pr-pic').value;
+                var n = lamaHari();
+                document.getElementById('pr-lama').textContent = n ? 'Lamanya ' + n + ' hari.' : '';
+                var u = unit.value ? unit.options[unit.selectedIndex].textContent : 'unit yang belum ditentukan';
+                document.getElementById('pr-ket').textContent = 'di ' + u + (pic ? ' · ' + pic : '') + (n ? ' · ' + n + ' hari' : '');
+                var ck = document.querySelector('input[name=confidence]:checked');
+                document.getElementById('pr-yakin-arti').textContent = ck ? ARTI[ck.value] || '' : '';
+            }
+            ['pr-nama', 'pr-mulai', 'pr-selesai', 'pr-pic'].forEach(function (id) {
+                var el = document.getElementById(id);
+                el.addEventListener('input', lihat); el.addEventListener('change', lihat);
+            });
+            unit.addEventListener('change', lihat);
+            document.querySelectorAll('input[name=confidence]').forEach(function (el) { el.addEventListener('change', lihat); });
+            lihat();
         })();
         </script>
         <?php
