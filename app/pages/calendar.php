@@ -381,7 +381,7 @@ function calendar_page(PDO $pdo): void
         <style>
             .cal-wrap{overflow:auto;max-height:72vh;border:1px solid var(--line);border-radius:12px;background:#fff}
             table.cal{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:11px}
-            table.cal th,table.cal td{padding:0;border-right:1px solid #EEF1F5;border-bottom:1px solid #EEF1F5;height:24px;text-align:center}
+            table.cal th,table.cal td{padding:0;border-right:1px solid #EEF1F5;border-bottom:1px solid #EEF1F5;height:27px;text-align:center}
             table.cal thead th{position:sticky;top:0;z-index:3;background:#F8FAFC;font-weight:700;color:#475467;height:34px;line-height:1.15}
             table.cal thead th small{display:block;font-weight:500;color:#98A2B3;font-size:9px}
             table.cal .hd-we{background:#FFF7ED}
@@ -408,8 +408,13 @@ function calendar_page(PDO $pdo): void
             table.cal td.e.now{background:#F0FDFA}
             table.cal td.e:hover{background:#CCFBF1}
             table.cal td.e.pilih{background:#5EEAD4}
-            table.cal td.s{padding:0 3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer;font-weight:600;
-                font-size:10px;letter-spacing:0;max-width:0;border-radius:4px;border:2px solid #fff;position:relative}
+            /* Kotaknya dibuat hampir memenuhi selnya, dengan garis pemisah setipis
+               mungkin — di spreadsheet warnanya menyambung, dan garis putih tebal
+               membuat warna yang sama terbaca lebih pucat di layar.
+               overflow:visible supaya nama merek bisa meluber ke hari kosong di
+               sebelahnya, persis perilaku teks di sel spreadsheet. */
+            table.cal td.s{padding:0 3px;overflow:visible;white-space:nowrap;cursor:pointer;font-weight:600;
+                font-size:10px;letter-spacing:0;max-width:0;border-radius:2px;border:1px solid #fff;position:relative}
             table.cal td.s.r{background:#DBEAFE;color:#1E40AF}
             table.cal td.s.x{background:#FDE68A;color:#78350F}
             table.cal td.s.o{background:#E5E7EB;color:#374151;font-style:italic}
@@ -490,8 +495,12 @@ function calendar_page(PDO $pdo): void
             table.cal tr.tot-all th.u{background:#0F2A3F;color:#fff}
             table.cal tr.tot-all td.rk{color:#fff}
             /* ── Nilai di dalam kotak ─────────────────────────────────── */
-            table.cal td.s .s-isi{display:flex;align-items:center;gap:8px;width:100%}
+            table.cal td.s .s-isi{display:flex;align-items:center;gap:8px;width:100%;overflow:hidden}
             table.cal td.s .s-nama{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+            /* Nama yang tidak muat meluber ke kanan selama harinya masih kosong. */
+            table.cal td.s .s-isi.luber{position:absolute;left:4px;top:0;bottom:0;z-index:4;
+                justify-content:flex-start;overflow:hidden;pointer-events:none}
+            table.cal td.s .s-isi.luber .s-nama{flex:0 1 auto;text-align:left}
             table.cal td.s .rp{flex:0 0 auto;font-weight:700;opacity:.72;font-size:10px;
                 text-transform:none;font-style:normal;letter-spacing:0}
             table.cal td.s.rec{box-shadow:inset 4px 0 0 #1D4ED8}
@@ -713,7 +722,8 @@ function calendar_page(PDO $pdo): void
                 endif;
                 foreach ($u['lanes'] as $li => $lane):
                     $peta = [];   // hari => selot yang dimulai di hari itu
-                    foreach ($lane as $s) $peta[$s['da']] = $s; ?>
+                    foreach ($lane as $s) $peta[$s['da']] = $s;
+                    $mulaiLane = array_keys($peta); sort($mulaiLane); ?>
                     <tr class="<?= $li > 0 ? 'lane2' : '' ?>" data-unit="<?= h($kode) ?>">
                         <?php /* Sel ini ada di SETIAP baris, tapi tulisannya hanya di baris
                                  pertama lantai dan garis bawahnya dihapus — jadi terlihat
@@ -740,10 +750,20 @@ function calendar_page(PDO $pdo): void
                                 // selebar beberapa hari, jadi ia baru ditulis kalau masih
                                 // tersisa ruang untuk nama mereknya; selebihnya angkanya
                                 // tetap terbaca di blok rekap sebelah kanan.
+                                // Sampai hari ke berapa nama merek boleh meluber: sampai
+                                // selot berikutnya di jalur yang sama, atau akhir bulan.
+                                $berikut = null;
+                                foreach ($mulaiLane as $kMulai) { if ($kMulai > $s['da']) { $berikut = $kMulai; break; } }
+                                $ruang = (($berikut ?? ($hariN + 1)) - $s['da']) * 30;
+                                $butuhNama = mb_strlen((string) $s['brand']) * 6.3 + 16;
+                                $luber = $butuhNama > ($span * 30 - 10) && $ruang > ($span * 30);
+                                $lebarIsi = $luber ? (int) min(ceil($butuhNama), $ruang - 8) : 0;
                                 $angka = (isset($s['bulanRp']) && (float) $s['bulanRp'] > 0) ? money((float) $s['bulanRp']) : '';
-                                // Nama merek didahulukan: angka baru ikut ditulis kalau
-                                // setelah menyisakan ruang untuk 10 huruf nama, masih cukup.
-                                $muatAngka = $angka !== '' && ($span * 30) >= (mb_strlen($angka) * 5.6 + 10 * 6.2 + 22);
+                                // Nama merek selalu menang: angka baru ikut ditulis kalau
+                                // nama LENGKAP dan angkanya sama-sama muat tanpa meluber.
+                                // Kalau tidak, seluruh lebar diserahkan ke namanya.
+                                $muatAngka = $angka !== '' && !$luber
+                                           && ($span * 30) >= ($butuhNama + mb_strlen($angka) * 5.6 + 14);
                                 $data = ['id' => $s['id'], 'b' => $s['brand'], 'pt' => $s['pt'], 'm' => $s['mulai'], 's' => $s['selesai'], 'u' => $kode,
                                          'rec' => $s['rec'], 'own' => $s['milik'] ? 1 : 0, 'pros' => $pros ? 1 : 0,
                                          'picAll' => (string) ($s['picSemua'] ?? $s['pic'] ?? ''), 'yakin' => (string) ($s['yakin'] ?? ''),
@@ -756,7 +776,7 @@ function calendar_page(PDO $pdo): void
                                     data-b="<?= h(mb_strtolower($s['brand'] . ' ' . $s['pt'])) ?>" data-j="<?= h(json_encode($data, JSON_UNESCAPED_UNICODE)) ?>"
                                     title="<?= h(($pros ? 'PROSPEK (belum pasti) — ' : '') . $s['brand'] . ' — ' . $s['mulai'] . ' s/d ' . $s['selesai']
                                                 . (($s['picSemua'] ?? '') !== '' ? ' — PIC ' . $s['picSemua'] : '')) ?>">
-                                    <span class="s-isi"><span class="s-nama"><?= h($s['brand']) ?></span><?php
+                                    <span class="s-isi<?= $luber ? ' luber' : '' ?>"<?= $luber ? ' style="width:' . (int) $lebarIsi . 'px"' : '' ?>><span class="s-nama"><?= h($s['brand']) ?></span><?php
                                         if ($muatAngka): ?><span class="rp"><?= h($angka) ?></span><?php endif; ?></span>
                                     <?php if (isset($s['bayar'])): ?><span class="pay" style="background:<?= h($stBayar[$s['bayar']][1] ?? '#64748B') ?>"></span><?php endif; ?></td>
                                 <?php $d += $span;

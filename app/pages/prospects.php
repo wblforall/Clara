@@ -288,7 +288,7 @@ function prospect_form(PDO $pdo): void
             Angka di sini <b>tidak</b> ikut ke pencapaian resmi, income, maupun laporan manajemen.
             Ia hanya ditampilkan terpisah &mdash; di Kalender sebagai kotak kuning, dan di panel atas sebagai
             &ldquo;kalau semua ini jadi, target bulan ini tercapai atau belum&rdquo;.
-            Isi seadanya saja: yang wajib hanya nama calon penyewa, perkiraan tanggal, dan perkiraan nilainya.
+            Isi seadanya saja: yang wajib hanya nama calon penyewa dan perkiraan tanggalnya — nilainya boleh menyusul.
         </div>
 
         <form method="post" action="?r=prospect_save" id="pr-form">
@@ -308,15 +308,16 @@ function prospect_form(PDO $pdo): void
                         <div class="pr-bantu">Client lama akan muncul sebagai saran begitu diketik. Calon baru tinggal diketik apa adanya
                             &mdash; belum perlu terdaftar di Master Client.</div>
 
-                        <label>Perkiraan nilai <span class="pr-wajib">*</span></label>
-                        <?php /* Awalan "Rp" menempel di kotaknya, supaya yang mengisi tidak
-                                 perlu menebak apakah angkanya rupiah atau bukan. */ ?>
+                        <label>Perkiraan nilai</label>
+                        <?php /* Awalan "Rp" menempel di kotaknya. TIDAK wajib: unit kerap
+                                 dipesan dulu, harganya menyusul. */ ?>
                         <div class="rp-box">
                             <span>Rp</span>
-                            <input name="est_amount" id="pr-rp" inputmode="numeric" required placeholder="0"
-                                   value="<?= $row['est_amount'] !== '' ? h(number_format((float) $row['est_amount'], 0, ',', '.')) : '' ?>">
+                            <input name="est_amount" id="pr-rp" inputmode="numeric" placeholder="boleh dikosongkan"
+                                   value="<?= ($row['est_amount'] !== '' && (float) $row['est_amount'] > 0) ? h(number_format((float) $row['est_amount'], 0, ',', '.')) : '' ?>">
                         </div>
-                        <div class="pr-bantu">Angka kasar pun tidak apa-apa &mdash; gunanya untuk menakar sisa target bulan ini.</div>
+                        <div class="pr-bantu">Boleh dikosongkan kalau baru memesan tempat dan harganya belum dibicarakan.
+                            Angka kasar pun tidak apa-apa &mdash; gunanya untuk menakar sisa target bulan ini.</div>
 
                         <label>PIC yang menangani</label>
                         <select name="pic_name" id="pr-pic">
