@@ -2171,7 +2171,7 @@ function offer_form(PDO $pdo): void
                         <option value="anchor_cycle" <?= $bm === 'anchor_cycle' ? 'selected' : '' ?>>Sekaligus (anchor) — diakui 1 bulan</option>
                         <option value="spread" <?= $bm === 'spread' ? 'selected' : '' ?>>Spread per Bulan (recurring)</option>
                     </select>
-                    <div class="help" id="billing_help">Otomatis: multi-bulan/lintas bulan → Spread (recurring); selainnya → Sekaligus.</div>
+                    <div class="help" id="billing_help">Otomatis: kontrak <b>lebih dari 1 bulan</b> &rarr; Spread (recurring). Satu periode &mdash; termasuk yang melewati batas bulan, mis. 28 Okt&ndash;1 Nov &mdash; &rarr; Sekaligus, diakui utuh di bulan mulai.</div>
                 </div>
                 <div id="cycle_wrap">
                     <label>Pengakuan per Siklus</label>
@@ -3411,9 +3411,9 @@ function offer_form(PDO $pdo): void
             function effectiveBilling() {
                 var bm = (document.getElementById('billing_method') || {}).value;
                 if (bm === 'spread' || bm === 'anchor_cycle') return bm;
-                var s = (document.getElementById('start_date') || {}).value, e = (document.getElementById('end_date') || {}).value;
-                var cross = s && e && s.substring(0, 7) !== e.substring(0, 7);
-                return (monthsFromDates() > 1 || cross) ? 'spread' : 'anchor_cycle';
+                // Aturan ini harus sama dengan yang dipakai saat menyimpan
+                // (lihat $billing di offer_save): hanya multi-bulan yang Spread.
+                return monthsFromDates() > 1 ? 'spread' : 'anchor_cycle';
             }
             function syncRecognition() {
                 var cw = document.getElementById('cycle_wrap');
@@ -3623,10 +3623,16 @@ function offer_save(PDO $pdo): void
     // sekali, dan itu memang yang diinginkan untuk kontrak yang disepakati
     // setahun sekaligus.
     $monthly  = round(parse_rupiah((string) post('monthly_amount', '0')));
-    // Recurring/pengakuan ditentukan sales; default spread bila multi-bulan/lintas bulan.
-    $crossMonth = $start && $end && substr($start, 0, 7) !== substr($end, 0, 7);
+    // Recurring/pengakuan ditentukan sales; "Otomatis" hanya memilih Spread
+    // untuk kontrak yang memang berjalan lebih dari satu bulan.
+    //
+    // Sebelumnya acara yang cuma MELEWATI batas bulan ikut dipecah — pameran
+    // 28 Okt–1 Nov jadi separuh di Oktober dan separuh di November. Di berkas
+    // tim satu acara dicatat utuh di bulan ia dimulai, jadi incomenya terlihat
+    // kurang tanpa ada yang salah input (Okt 2026: 4 baris, Rp 76,4 juta).
+    // Kontrak multi-bulan tetap dipecah — di sanalah Spread memang benar.
     $billing  = post('billing_method') === 'anchor_cycle' ? 'anchor_cycle'
-              : (post('billing_method') === 'spread' ? 'spread' : (($months > 1 || $crossMonth) ? 'spread' : 'anchor_cycle'));
+              : (post('billing_method') === 'spread' ? 'spread' : ($months > 1 ? 'spread' : 'anchor_cycle'));
 
     // Template surat per jenis booth (unit_type) → aturan DP + snapshot isi surat.
     // #6 — unit_type CL hanya relevan utk modul 'cl' (Exhibition). Media/Gudang

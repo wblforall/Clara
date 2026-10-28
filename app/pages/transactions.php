@@ -2781,6 +2781,7 @@ function transaction_overlaps_page(PDO $pdo): void
     $pid          = current_property_id();
     $moduleFilter = getv('module', '');
     $periodFilter = periode_bulan('period', '');  // YYYY-MM
+    $picFilter    = trim((string) getv('pic', ''));
     $moduleLabel  = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
 
     $params = [$pid];
@@ -2788,6 +2789,14 @@ function transaction_overlaps_page(PDO $pdo): void
     if ($moduleFilter) {
         $extraWhere .= ' AND t1.module = ?';
         $params[] = $moduleFilter;
+    }
+    // Satu PIC biasanya hanya mencari barisnya sendiri. Tanpa saringan ini
+    // Oktober 2026 memberi 99 pasang — Main Atrium memang berisi banyak tenant
+    // sekaligus — dan dua baris yang benar-benar dobel tenggelam di antaranya.
+    if ($picFilter !== '') {
+        $extraWhere .= ' AND (t1.pic_name = ? OR t2.pic_name = ?)';
+        $params[] = $picFilter;
+        $params[] = $picFilter;
     }
     if ($periodFilter) {
         // overlap window [GREATEST(start1,start2), LEAST(end1,end2)] harus menyentuh bulan yang dipilih
@@ -2822,7 +2831,46 @@ function transaction_overlaps_page(PDO $pdo): void
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
 
-    layout('Cek Overlap Transaksi', function () use ($rows, $moduleFilter, $periodFilter, $moduleLabel) {
+    // ── Kembar persis ────────────────────────────────────────────────────────
+    // Unit sama, client sama, tanggal mulai DAN selesai sama, nilai sama. Unit
+    // yang dibagi per slot tidak pernah berbentuk begitu: slot yang berbeda
+    // dijual ke client yang berbeda. Jadi bentuk ini hampir selalu satu
+    // kesepakatan yang terinput dua kali — dan incomenya ikut dihitung dua
+    // kali. Okt 2026: Toshiko di 16/GF ISLAND Rp 50 juta dan Fitril Akbar di
+    // 05/LG Fashion Booth Rp 7,5 juta, keduanya dobel.
+    $kembarSql = "SELECT t1.id id1, t1.module, t1.master_code,
+                         t1.start_date start1, t1.end_date end1,
+                         COALESCE(c1.brand_name, c1.company_name, '-') client1,
+                         COALESCE(t1.pic_name, '-') pic1,
+                         COALESCE(t1.final_amount, t1.total_calculated) nilai,
+                         t2.id id2, COALESCE(t2.pic_name, '-') pic2,
+                         (SELECT s.skp_no FROM skp_documents s
+                           WHERE s.transaction_id = t1.id AND s.deleted_at IS NULL
+                           ORDER BY s.id DESC LIMIT 1) skp1,
+                         (SELECT s.skp_no FROM skp_documents s
+                           WHERE s.transaction_id = t2.id AND s.deleted_at IS NULL
+                           ORDER BY s.id DESC LIMIT 1) skp2
+                    FROM transactions t1
+                    JOIN transactions t2 ON t2.master_code = t1.master_code
+                        AND t2.property_id = t1.property_id
+                        AND t2.id > t1.id
+                        AND t2.start_date = t1.start_date
+                        AND t2.end_date   = t1.end_date
+                        AND t1.client_id IS NOT NULL AND t2.client_id = t1.client_id
+                        AND ABS(COALESCE(t2.final_amount, t2.total_calculated)
+                              - COALESCE(t1.final_amount, t1.total_calculated)) < 1
+                    LEFT JOIN master_clients c1 ON c1.id = t1.client_id
+                   WHERE " . transaksi_sah_sql('t1') . "
+                     AND " . transaksi_sah_sql('t2') . "
+                     AND t1.property_id = ?
+                     $extraWhere
+                   ORDER BY nilai DESC, t1.master_code
+                   LIMIT 200";
+    $kembarSt = $pdo->prepare($kembarSql);
+    $kembarSt->execute($params);
+    $kembar = $kembarSt->fetchAll();
+
+    layout('Cek Overlap Transaksi', function () use ($rows, $kembar, $moduleFilter, $periodFilter, $picFilter, $moduleLabel) {
         ?>
         <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:14px">
             <a class="btn secondary" href="?r=transactions">← Kembali</a>
@@ -2841,14 +2889,69 @@ function transaction_overlaps_page(PDO $pdo): void
                         <?php endforeach; ?>
                     </select>
                 </div>
+                <div>
+                    <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">PIC</label>
+                    <input type="text" name="pic" value="<?= h($picFilter) ?>" placeholder="mis. Zulfikar" style="width:150px">
+                </div>
                 <div style="align-self:flex-end;display:flex;gap:6px">
                     <button type="submit">Cari</button>
-                    <?php if ($moduleFilter || $periodFilter): ?>
+                    <?php if ($moduleFilter || $periodFilter || $picFilter !== ''): ?>
                         <a class="btn secondary" href="?r=transaction_overlaps">Reset</a>
                     <?php endif; ?>
                 </div>
             </form>
         </div>
+
+        <?php if ($kembar): ?>
+            <?php $totalKembar = array_sum(array_map(fn($k) => (float) $k['nilai'], $kembar)); ?>
+            <div class="panel" style="border-color:#DC2626;margin-bottom:16px">
+                <div style="background:#FEE2E2;margin:-16px -16px 14px;padding:12px 16px;border-radius:8px 8px 0 0">
+                    <div style="font-weight:700;color:#991B1B;font-size:14px">
+                        <?= count($kembar) ?> pasang baris KEMBAR PERSIS &mdash; income terhitung dua kali
+                        <?= $periodFilter ? ' di ' . h(period_label($periodFilter)) : '' ?>
+                    </div>
+                    <div style="font-size:12.5px;color:#7F1D1D;margin-top:4px">
+                        Unit, client, tanggal, dan nilainya sama persis. Unit yang dibagi per slot tidak pernah
+                        begini &mdash; slot berbeda dijual ke client berbeda. Kelebihan hitungnya
+                        <strong>Rp <?= number_format($totalKembar, 0, ',', '.') ?></strong>.
+                        Pastikan dulu mana SKP yang benar-benar dipegang client, lalu ajukan
+                        <a href="?r=deletion_request" style="color:#991B1B;font-weight:700">Pengajuan Hapus Data</a>
+                        untuk yang satunya &mdash; jangan diubah nilainya jadi nol.
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table style="font-size:12px">
+                        <thead>
+                            <tr>
+                                <th>Kode Unit</th><th>Client</th><th>Periode</th>
+                                <th style="text-align:right">Nilai (per baris)</th>
+                                <th>Baris pertama</th><th>Baris kedua</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($kembar as $k): ?>
+                            <tr>
+                                <td style="font-weight:600"><?= h($k['master_code']) ?></td>
+                                <td><?= h($k['client1']) ?></td>
+                                <td style="white-space:nowrap"><?= h($k['start1']) ?><br><?= h($k['end1']) ?></td>
+                                <td style="text-align:right;font-weight:700;white-space:nowrap">Rp <?= number_format((float) $k['nilai'], 0, ',', '.') ?></td>
+                                <td>
+                                    <a href="?r=allocation_detail&id=<?= (int) $k['id1'] ?>">#<?= (int) $k['id1'] ?></a>
+                                    <?= $k['skp1'] ? ' · ' . h($k['skp1']) : '' ?><br>
+                                    <span style="color:var(--muted)"><?= h($k['pic1']) ?></span>
+                                </td>
+                                <td>
+                                    <a href="?r=allocation_detail&id=<?= (int) $k['id2'] ?>">#<?= (int) $k['id2'] ?></a>
+                                    <?= $k['skp2'] ? ' · ' . h($k['skp2']) : '' ?><br>
+                                    <span style="color:var(--muted)"><?= h($k['pic2']) ?></span>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        <?php endif; ?>
 
         <?php if (empty($rows)): ?>
             <div class="panel" style="text-align:center;padding:40px;color:var(--muted)">
@@ -2864,7 +2967,8 @@ function transaction_overlaps_page(PDO $pdo): void
             <div style="margin-bottom:12px;padding:10px 14px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;font-size:13px;color:#92400e">
                 Ditemukan <strong><?= count($rows) ?></strong> pasang transaksi dengan tanggal yang overlap
                 <?= $periodFilter ? 'di bulan <strong>' . h(period_label($periodFilter)) . '</strong>' : '' ?>.
-                Ini bisa wajar jika unit memang bisa dibagi per slot/luasan — periksa apakah memang disengaja.
+                Ini bisa wajar jika unit memang bisa dibagi per slot/luasan — mis. Main Atrium yang berisi
+                beberapa tenant sekaligus. Yang perlu ditindak ada di blok merah di atas.
             </div>
             <div class="table-wrap">
                 <table style="font-size:12px">

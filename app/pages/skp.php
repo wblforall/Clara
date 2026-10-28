@@ -3028,13 +3028,14 @@ function _skp_create_transaction(PDO $pdo, array $skp, array $src, int $pid, ?ar
     $slots      = $item ? (float) $item['slots']           : (float) ($src['slots'] ?? 1);
     $pricing    = $item ? ($item['pricing_type'] ?: $src['pricing_type']) : $src['pricing_type'];
     $noteAdd    = $item ? trim((string) ($item['name_snapshot'] ?? '')) : '';
-    $crossMonth = substr($start, 0, 7) !== substr($end, 0, 7);
     // Pengakuan ditentukan di penawaran (billing_method). Bila tak ada (legacy),
-    // jatuh ke tebakan: multi-bulan/lintas bulan → spread.
+    // jatuh ke tebakan: HANYA kontrak multi-bulan yang dipecah. Sekadar
+    // melewati batas bulan bukan alasan — satu acara dicatat utuh di bulan ia
+    // dimulai, sama seperti di berkas tim. Tebakan lama memecahnya dua.
     $bm = $src['billing_method'] ?? '';
     $spread = in_array($bm, ['spread', 'anchor_cycle'], true)
         ? $bm === 'spread'
-        : ($months > 1 || $crossMonth);
+        : ($months > 1);
     $cycleRec = ($src['cycle_recognition'] ?? '') === 'cycle_end' ? 'cycle_end' : 'cycle_start';
 
     $trx = [
@@ -3458,6 +3459,14 @@ function skp_approve(PDO $pdo): void
                 $cekAlok = $pdo->prepare('SELECT COUNT(*) FROM transaction_allocations WHERE transaction_id = ?');
                 $cekAlok->execute([$tid]);
                 if ((int) $cekAlok->fetchColumn() === 0 || (int) ($skp['revisi_ke'] ?? 0) > 0) {
+                    // recognition_period tidak disimpan sebagai kolom, jadi baris
+                    // yang dibaca ulang dari DB kehilangan aturannya. Tanpa baris
+                    // ini alokasi jatuh ke pembagian per hari kalender dan nilai
+                    // bulan berjalan menyusut — Gudang Sour Sally Okt 2026 tinggal
+                    // Rp 696.774 dari Rp 1.200.000 setelah SKP-nya direvisi.
+                    if (($trxLama['billing_method'] ?? '') !== 'spread') {
+                        $trxLama['recognition_period'] = $trxLama['period_key'];
+                    }
                     AllocationService::saveAllocations($pdo, $tid, $trxLama);
                     $trxMsg = ' Alokasi bulanan transaksi #' . $tid . ' dihitung ulang.';
                 }

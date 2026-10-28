@@ -190,10 +190,37 @@ function _mirip(string $a, string $b): int
  * dan daftar perbaikan lalu menyuruh orang menginput sesuatu yang sudah ada,
  * sambil mendiamkan yang benar-benar hilang.
  */
-function sandingkan(array $ssRows, array $clRows): array
+function sandingkan(array $ssRows, array $clRows, array $pasangan = []): array
 {
     $sisaCl = $clRows; $sisaSs = $ssRows;
-    $pasti = $ragu = [];
+    $pasti = $ragu = $manual = [];
+
+    // Tahap 0 — pasangan yang sudah DIPASTIKAN orang, disebut di berkas banding.
+    //
+    // Pencocokan otomatis bekerja lewat NILAI, jadi satu baris spreadsheet yang
+    // nilainya berbeda sedikit dari CLARA — mis. selisih biaya listrik
+    // Rp 150.000 — akan dilaporkan "belum ada di CLARA" padahal ada. Dokumen
+    // lalu menyuruh orang menginput sesuatu yang sudah ada, dan datanya jadi
+    // dobel. Begitu juga satu baris spreadsheet yang di CLARA terpecah beberapa
+    // baris (satu event atrium = beberapa merek), karena itu 'trx' boleh berisi
+    // beberapa nomor sekaligus.
+    foreach ($pasangan as $pp) {
+        $ketP = mb_strtolower(trim((string) ($pp['ket'] ?? '')));
+        $idP  = array_map('intval', (array) ($pp['trx'] ?? []));
+        if ($ketP === '' || !$idP) continue;
+        $jS = null;
+        foreach ($sisaSs as $j => $sRow) {
+            if (mb_strtolower(trim((string) $sRow['ket'])) === $ketP) { $jS = $j; break; }
+        }
+        if ($jS === null) continue;
+        $cocokCl = [];
+        foreach ($sisaCl as $i => $cRow) {
+            if (in_array((int) $cRow['trx'], $idP, true)) { $cocokCl[] = $cRow; unset($sisaCl[$i]); }
+        }
+        if (!$cocokCl) continue;
+        $manual[] = [$sisaSs[$jS], $cocokCl];
+        unset($sisaSs[$jS]);
+    }
 
     // Tahap 1 — nilai sama DAN nama masih mirip. Ini pasangan yang yakin.
     foreach ($sisaSs as $j => $s) {
@@ -221,7 +248,7 @@ function sandingkan(array $ssRows, array $clRows): array
             break;
         }
     }
-    return [$pasti, $ragu, array_values($sisaSs), array_values($sisaCl)];
+    return [$pasti, $ragu, array_values($sisaSs), array_values($sisaCl), $manual];
 }
 
 // Mode teks: jawabannya langsung di terminal, tanpa PDF dan tanpa unduh.
@@ -245,7 +272,7 @@ if (array_key_exists('teks', getopt('', ['teks']))) {
                                 AND a.amount > 0 AND t.deleted_at IS NULL
                               ORDER BY a.amount DESC");
         $qR->execute([$pid, $pic, $bln]);
-        [$ck, $rg, $kr, $lb] = sandingkan($ss['rincian'][$bln] ?? [], $qR->fetchAll());
+        [$ck, $rg, $kr, $lb, $mn] = sandingkan($ss['rincian'][$bln] ?? [], $qR->fetchAll(), $ss['pasangan'][$bln] ?? []);
 
         echo "\n" . str_repeat('=', 78) . "\n";
         printf("  %s  CLARA Rp %s   SPREADSHEET Rp %s   SELISIH Rp %s\n",
@@ -280,6 +307,12 @@ if (array_key_exists('teks', getopt('', ['teks']))) {
     }
     exit(0);
 }
+
+// Apakah ada baris yang benar-benar perlu diinput? Bila tidak ada — selisihnya
+// murni karena baris dobel atau harga yang beda — empat langkah pertama di
+// "Urutan mengerjakannya" tidak berlaku, dan menyuruh orang "mulai dari daftar
+// A" yang kosong membuat seluruh dokumen terbaca seperti salah cetak.
+$adaKurang = false;
 
 ob_start(); ?>
 <style>
@@ -333,7 +366,7 @@ seluruh langkah di dokumen ini dikerjakan di CLARA.</p>
     $qRinci->execute([$pid, $pic, $bln]);
     $clRows = $qRinci->fetchAll();
     $ssRows = $ss['rincian'][$bln] ?? [];
-    [$cocok, $ragu, $kurang, $lebih] = sandingkan($ssRows, $clRows);
+    [$cocok, $ragu, $kurang, $lebih, $manual] = sandingkan($ssRows, $clRows, $ss['pasangan'][$bln] ?? []);
     // Baris yang DITAHAN: ada di spreadsheet, tetapi sudah diperiksa dan
     // ternyata belum boleh diinput — biasanya karena dealnya sebenarnya milik
     // PIC lain dan sudah ada di CLARA. Dihitung di sini supaya angka ringkasan
@@ -346,15 +379,41 @@ seluruh langkah di dokumen ini dikerjakan di CLARA.</p>
         else                                                      { $jmlKurang   += (float) $k['nilai']; $nKurang++; }
     }
     $jmlLebih  = array_sum(array_map(fn($r) => (float) $r['amount'], $lebih));
+    if ($nKurang > 0) $adaKurang = true;
 ?>
 <h2>2. Rincian <?= $h($bln) ?> &mdash; apa yang harus dikerjakan</h2>
 <p><b><?= count($cocok) ?> baris sudah cocok</b> (nilai dan namanya sama).
+   <?php if ($manual): ?><b><?= count($manual) ?> baris sudah ada di CLARA dengan nilai berbeda</b>.
+   <?php endif; ?>
    <?php if ($ragu): ?><b><?= count($ragu) ?> baris perlu dipastikan</b> (nilainya sama, namanya beda).
    <?php endif; ?>
    <b class="merah"><?= $nKurang ?> baris belum ada di CLARA</b> (<?= $rp($jmlKurang) ?>),
    <b><?= count($lebih) ?> baris ada di CLARA saja</b> (<?= $rp($jmlLebih) ?>).
    <?php if ($nTertahan): ?><b><?= $nTertahan ?> baris ditahan</b> (<?= $rp($jmlTertahan) ?>)
    &mdash; kelihatan hilang, tetapi sudah diperiksa dan tidak boleh diinput.<?php endif; ?></p>
+
+<?php if ($manual): ?>
+<h3>Sudah ada di CLARA &mdash; hanya nilainya yang berbeda</h3>
+<p class="muted" style="margin-top:-3px">Baris-baris ini <b>tidak perlu diinput ulang</b>. Yang perlu
+diputuskan cuma angka mana yang benar, lalu kedua sumbernya disamakan.</p>
+<table>
+    <tr><th>Di spreadsheet</th><th class="n">Nilai sheet</th><th>Di CLARA</th><th class="n">Nilai CLARA</th><th class="n">Selisih</th></tr>
+    <?php foreach ($manual as [$sRow, $cRows]):
+        $jmlCl = array_sum(array_map(fn($c) => (float) $c['amount'], $cRows));
+        $beda  = $jmlCl - (float) $sRow['nilai']; ?>
+    <tr>
+        <td><?= $h($sRow['ket']) ?></td>
+        <td class="n"><?= $rp($sRow['nilai']) ?></td>
+        <td><?php foreach ($cRows as $iC => $cRow): ?><?= $iC ? '<br>' : '' ?><?= $h($cRow['nama']) ?>
+            <span class="muted"><?= $h($cRow['master_code']) ?> &middot; #<?= (int) $cRow['trx'] ?></span><?php endforeach; ?></td>
+        <td class="n"><?= $rp($jmlCl) ?><?= count($cRows) > 1 ? '<br><span class="muted">' . count($cRows) . ' baris</span>' : '' ?></td>
+        <td class="n"><?= round($beda) == 0
+            ? '<span class="hijau">sama</span>'
+            : '<span class="merah">' . ($beda > 0 ? '+' : '&minus;') . number_format(abs($beda), 0, ',', '.') . '</span>' ?></td>
+    </tr>
+    <?php endforeach; ?>
+</table>
+<?php endif; ?>
 
 <?php if ($ragu): ?>
 <h3>Perlu dipastikan &mdash; nilainya sama, namanya berbeda</h3>
@@ -486,7 +545,7 @@ foreach ($fokus as $bln) {
     $ssTarget   = (float) ($ss['bulan'][$bln] ?? 0);
 
     $qRinci->execute([$pid, $pic, $bln]);
-    [$ck, $rg, $kr, $lb] = sandingkan($ss['rincian'][$bln] ?? [], $qRinci->fetchAll());
+    [$ck, $rg, $kr, $lb, $mn] = sandingkan($ss['rincian'][$bln] ?? [], $qRinci->fetchAll(), $ss['pasangan'][$bln] ?? []);
     // Baris RAGU — nilainya sama dengan sebuah transaksi di CLARA, tetapi
     // namanya tidak mirip — TIDAK dihitung sebagai "harus diinput".
     //
@@ -622,6 +681,12 @@ menu <b>SKP Pameran &rarr; + Buat Dokumen</b>. Urutan untuk Exhibition baru:</p>
 <?php endif; ?>
 
 <h2>Urutan mengerjakannya</h2>
+<?php if (!$adaKurang): ?>
+<p>Tidak ada satu pun baris spreadsheet yang belum terhitung di CLARA &mdash; <b>tidak ada yang perlu
+diinput ulang</b>. Yang perlu dikerjakan hanya yang disebut di bagian
+<b>&ldquo;Cara mengerjakannya&rdquo;</b> di atas. Empat butir pertama di bawah ini dipakai lain kali,
+saat memang ada baris yang hilang.</p>
+<?php endif; ?>
 <ol>
     <li><b>Mulai dari daftar A.</b> Itu yang membuat angka Anda kecil. Kalau barisnya perpanjangan
         kontrak yang sudah ada: buka <b>Renewal Kontrak</b> lalu tekan <b>+ Perpanjang</b>, atau tekan

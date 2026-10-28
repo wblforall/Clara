@@ -14,10 +14,23 @@
  * lalu alokasinya dibangun ulang. Nilai kontraknya TIDAK diubah sedikit pun,
  * dan tidak ada baris baru yang dibuat — jadi tidak mungkin jadi dobel.
  *
+ * MODE ACARA PENDEK (--acara-pendek) khusus memperbaiki satu pola yang dulu
+ * dipasang sendiri oleh sistem: acara SATU periode yang kebetulan melewati
+ * batas bulan — mis. 28 Okt–1 Nov — dipecah separuh-separuh ke dua bulan,
+ * padahal di berkas tim satu acara dicatat utuh di bulan ia dimulai. Mode ini
+ * memindahkan tiap baris ke BULAN MULAINYA SENDIRI, jadi tidak perlu --pindah.
+ *
+ * Hanya baris dengan tanda yang jelas yang disentuh: metode Recurring, lama
+ * sewa <= 40 hari, dan bukan kontrak multi-bulan. Kontrak yang memang berjalan
+ * beberapa bulan (mis. Sangray 12 bulan) TIDAK ikut — justru itu bedanya
+ * dengan --pic, yang akan menumpuk seluruh nilai setahun ke satu bulan.
+ *
  * Pakai:
  *   php scripts/alih_pengakuan.php --trx=2125,2144,2141
  *   php scripts/alih_pengakuan.php --trx=2125,2144,2141 --pindah=2026-10
  *   php scripts/alih_pengakuan.php --pic="Shinta" --prop=2 --bulan=2026-10
+ *   php scripts/alih_pengakuan.php --acara-pendek --prop=1 --bulan=2026-10
+ *   php scripts/alih_pengakuan.php --acara-pendek --prop=1 --bulan=2026-10 --terapkan
  */
 
 ini_set('display_errors', '1');
@@ -30,7 +43,14 @@ require_once $root . '/app/helpers.php';
 require_once $root . '/app/AllocationService.php';
 
 $opt = array_merge(['trx' => '', 'pic' => '', 'prop' => '', 'bulan' => '', 'pindah' => ''],
-    getopt('', ['trx:', 'pic:', 'prop:', 'bulan:', 'pindah:']));
+    getopt('', ['trx:', 'pic:', 'prop:', 'bulan:', 'pindah:', 'acara-pendek', 'terapkan']));
+
+$acaraPendek = array_key_exists('acara-pendek', $opt);
+$terapkan    = array_key_exists('terapkan', $opt);
+if ($acaraPendek && (string) $opt['pindah'] !== '') {
+    fwrite(STDERR, "--acara-pendek memindahkan tiap baris ke bulan mulainya sendiri; jangan pakai --pindah.\n");
+    exit(2);
+}
 
 $pindah = (string) $opt['pindah'];
 if ($pindah !== '' && !preg_match('/^\d{4}-\d{2}$/', $pindah)) {
@@ -56,8 +76,15 @@ if ($opt['trx'] !== '') {
         $syarat[] = "DATE_FORMAT(t.start_date, '%Y-%m') = ?";
         $args[]   = $opt['bulan'];
     }
-    if ($opt['pic'] === '' && $opt['bulan'] === '') {
-        fwrite(STDERR, "Sebutkan --trx, atau --pic dan/atau --bulan.\n");
+    if ($acaraPendek) {
+        // Tanda pola yang keliru, bukan tebakan: Recurring + satu siklus +
+        // lama sewa <= 40 hari + mulai dan selesai di bulan yang berbeda.
+        $syarat[] = "t.billing_method = 'spread'";
+        $syarat[] = 'COALESCE(t.contract_months, 1) <= 1';
+        $syarat[] = 'DATEDIFF(t.end_date, t.start_date) + 1 <= 40';
+        $syarat[] = "DATE_FORMAT(t.start_date, '%Y-%m') <> DATE_FORMAT(t.end_date, '%Y-%m')";
+    } elseif ($opt['pic'] === '' && $opt['bulan'] === '') {
+        fwrite(STDERR, "Sebutkan --trx, --acara-pendek, atau --pic dan/atau --bulan.\n");
         exit(2);
     }
 }
@@ -104,7 +131,14 @@ foreach ($rows as $r) {
 }
 printf("  Jumlah nilai kontrak yang diperiksa: Rp %s\n", $rp($totalNilai));
 
-if ($pindah === '') {
+if ($acaraPendek && !$terapkan) {
+    echo "\n  Semua baris di atas akan dipindahkan ke BULAN MULAINYA masing-masing.\n";
+    echo "  Nilai kontraknya tidak diubah dan tidak ada baris baru — tidak akan jadi dobel.\n";
+    echo "  Untuk benar-benar menerapkan, ulangi perintahnya dengan tambahan --terapkan\n\n";
+    exit(0);
+}
+
+if ($pindah === '' && !$acaraPendek) {
     echo "\n  Untuk memindahkan seluruhnya ke satu bulan:\n";
     echo "    php scripts/alih_pengakuan.php --trx=" . implode(',', array_column($rows, 'id')) . " --pindah=YYYY-MM\n";
     echo "  Nilai kontraknya tidak diubah dan tidak ada baris baru — tidak akan jadi dobel.\n\n";
@@ -115,6 +149,22 @@ echo "\n  Memindahkan...\n";
 $ok = 0; $gagal = 0;
 foreach ($rows as $r) {
     try {
+        // Mode acara pendek: tujuannya bulan mulai baris ini, bukan satu bulan
+        // untuk semua. Dipasang di sini supaya penjaga di bawah tetap berlaku.
+        if ($acaraPendek) $pindah = substr((string) $r['start_date'], 0, 7);
+        // PENJAGA: transaksi yang BELUM punya alokasi sama sekali dilewati.
+        //
+        // Kosongnya bukan kelalaian — kesepakatan yang belum diteken client
+        // sengaja tidak masuk income sampai tanda tangannya ada (lihat
+        // ttd_wajib_untuk di skp.php). Memanggil saveAllocations di sini akan
+        // MEMBUAT income yang tadinya tidak ada, bukan memindahkannya.
+        $cekKosong = $pdo->prepare('SELECT COUNT(*) FROM transaction_allocations WHERE transaction_id = ?');
+        $cekKosong->execute([(int) $r['id']]);
+        if ((int) $cekKosong->fetchColumn() === 0) {
+            printf("    #%-6s %-26s DILEWATI: belum punya alokasi (menunggu tanda tangan client).\n",
+                $r['id'], mb_substr((string) $r['nama'], 0, 26));
+            continue;
+        }
         // PENJAGA: bulan tujuan harus benar-benar disentuh masa sewanya.
         //
         // Pengakuan bekerja dengan memilih salah satu bulan yang SUDAH punya
@@ -128,7 +178,7 @@ foreach ($rows as $r) {
         // kontrak satu siklus; untuk kontrak yang berjalan beberapa bulan,
         // bulan itu jadi kelebihan sebesar porsi bulan-bulan lainnya. Yang
         // dibutuhkan biasanya membetulkan TANGGAL, bukan menumpuk.
-        if ($awalBln !== $akhirBln) {
+        if ($awalBln !== $akhirBln && !$acaraPendek) {
             $nBln = ((int) substr($akhirBln, 0, 4) - (int) substr($awalBln, 0, 4)) * 12
                   + ((int) substr($akhirBln, 5, 2) - (int) substr($awalBln, 5, 2)) + 1;
             printf("    #%-6s %-26s PERHATIAN: masa sewanya %d bulan (%s s/d %s).\n",
