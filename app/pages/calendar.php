@@ -577,8 +577,12 @@ function calendar_page(PDO $pdo): void
                     if ($tP <= 0 && $cP <= 0 && $pP <= 0) continue;   // yang benar-benar kosong tidak perlu baris
                     $persenP = $tP > 0 ? round($cP / $tP * 100) : 0; ?>
                     <tr<?= $picF === $nm ? ' style="background:#F0FDFA"' : '' ?>>
-                        <td><span class="dot" style="background:<?= h((string) ($pt['color'] ?: '#CBD5E1')) ?>"></span>
-                            <a href="<?= h($qsBase(['pic' => $picF === $nm ? '' : $nm])) ?>" style="color:inherit"><?= h($nm) ?></a></td>
+                        <?php /* Nama PIC membuka rincian apa saja yang ia jual bulan ini;
+                                 lingkaran warnanya tetap untuk menyaring kalender. */ ?>
+                        <td><a href="<?= h($qsBase(['pic' => $picF === $nm ? '' : $nm])) ?>" title="Saring kalender ke <?= h($nm) ?>"><span class="dot" style="background:<?= h((string) ($pt['color'] ?: '#CBD5E1')) ?>"></span></a>
+                            <a href="?r=calendar_detail&month=<?= h($bulan) ?>&pic=<?= h(urlencode($nm)) ?>"
+                               title="Lihat apa saja yang dijual <?= h($nm) ?> bulan ini"
+                               style="color:#0F766E;font-weight:600;border-bottom:1px dotted #99C7C2"><?= h($nm) ?></a></td>
                         <td style="text-align:right"><?= $tP > 0 ? h($rp($tP)) : '<span class="muted">' . '—' . '</span>' ?></td>
                         <td style="text-align:right;font-weight:700"><?= h($rp($cP)) ?></td>
                         <td><?php if ($tP > 0): ?><div class="mini"><i style="width:<?= min(100, (int) $persenP) ?>%;background:<?= $persenP >= 100 ? '#10B981' : ($persenP >= 70 ? '#F59E0B' : '#EF4444') ?>"></i></div>
@@ -639,7 +643,8 @@ function calendar_page(PDO $pdo): void
             /* Lembar tim menutup tiap blok lantai dengan baris "TOTAL LOWER
                GROUND", lalu angka itulah yang dibaca, bukan deretan unitnya.
                Baris total di bawah ini mengikuti bentuk yang sama. */
-            $barisTotal = function (string $label, array $t, string $kelas) use ($hariN, $bolehLihatPic, $picOn, $picKolom) {
+            $barisTotal = function (string $label, array $t, string $kelas, string $lantaiIni = '')
+                           use ($hariN, $bolehLihatPic, $picOn, $picKolom, $bulan, $modul) {
                 $sel = function ($v, float $pros = 0.0, string $kelas = '') {
                     $v = (float) $v;
                     echo '<td class="rk ' . $kelas . ($pros > 0 ? ' pros-ada' : '') . '">'
@@ -647,7 +652,13 @@ function calendar_page(PDO $pdo): void
                        . ($pros > 0 ? '<span class="pros-rp">+ ' . h(money($pros)) . '</span>' : '')
                        . '</td>';
                 };
-                echo '<tr class="' . $kelas . '"><th class="u" colspan="2">' . h($label) . '</th>'
+                // Judul baris total mengantar ke rincian isinya — pertanyaan
+                // berikutnya setelah melihat angka selalu "dari mana?".
+                $tuju = '?r=calendar_detail&month=' . urlencode($bulan) . '&module=' . urlencode($modul)
+                      . ($lantaiIni !== '' ? '&floor=' . urlencode($lantaiIni) : '');
+                echo '<tr class="' . $kelas . '"><th class="u" colspan="2">'
+                   . '<a href="' . h($tuju) . '" style="color:inherit;border-bottom:1px dotted currentColor"'
+                   . ' title="Lihat rincian penjualannya">' . h($label) . '</a></th>'
                    . '<td colspan="' . $hariN . '"></td>';
                 if ($bolehLihatPic) {
                     $pros = (float) ($t['pros'] ?? 0);
@@ -761,7 +772,7 @@ function calendar_page(PDO $pdo): void
                 <?php /* Blok lantai ini habis? tutup dengan jumlahnya. */
                 $kodeLanjut = $kodeUrut[$iBaris + 1] ?? null;
                 if ($kodeLanjut === null || $baris[$kodeLanjut]['grup'] !== $grupSekarang) {
-                    $barisTotal('Total ' . $grupSekarang, $totGrup[$grupSekarang] ?? [], 'tot');
+                    $barisTotal('Total ' . $grupSekarang, $totGrup[$grupSekarang] ?? [], 'tot', $grupSekarang);
                 } ?>
             <?php endforeach; ?>
             <?php if (count($baris) > 0) $barisTotal('Total seluruhnya', $totAll, 'tot tot-all'); ?>
@@ -999,4 +1010,216 @@ function calendar_forecast_save(PDO $pdo): void
         ->execute([$pid, $per, $seg, $slot, (string) $kode, $nilai]);
     audit($pdo, 'update', 'period_potentials', $per . '/' . $kode, ['potential_value' => $nilai], [], 'calendar');
     echo json_encode(['ok' => true, 'nilai' => $nilai]);
+}
+
+/**
+ * Rincian "apa saja yang dijual" — dibuka dari nama PIC atau baris total di
+ * Kalender.
+ *
+ * Panel di Kalender hanya menjawab BERAPA. Pertanyaan berikutnya selalu sama:
+ * dari mana angkanya? Halaman ini menjawabnya dalam satu daftar — unit, siapa
+ * penyewanya, berapa lama, berapa nilainya, dan sudah dibayar atau belum —
+ * tanpa perlu mengklik satu per satu di kalender.
+ *
+ * Nilainya dihitung dengan sumber yang sama dengan panel (transaction_allocations),
+ * jadi jumlah di bawah daftar ini pasti sama dengan angka yang diklik.
+ */
+function calendar_detail(PDO $pdo): void
+{
+    require_permission('view_pic_report');
+    $pid    = current_property_id();
+    $bulan  = periode_bulan('month');
+    $modul  = in_array(getv('module', ''), ['cl', 'media', 'gudang'], true) ? (string) getv('module') : '';
+    $picF   = trim((string) getv('pic', ''));
+    $lantai = trim((string) getv('floor', ''));
+    $awal   = $bulan . '-01';
+    $akhir  = date('Y-m-t', strtotime($awal));
+
+    require_once __DIR__ . '/prospects.php';
+    $warnaPic = prospek_warna_pic($pdo, $pid);
+    $modLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
+
+    // Nama & lantai unit per modul, supaya baris bisa menyebut namanya.
+    $unit = [];
+    foreach ([
+        'cl'     => "SELECT code, location_name nm, floor lt, sort_order so FROM master_cl_units WHERE property_id = ?",
+        'media'  => "SELECT code, CONCAT_WS(' ', media_type, location, NULLIF(point,'')) nm, media_type lt, sort_order so FROM master_media WHERE property_id = ?",
+        'gudang' => "SELECT code, name nm, location lt, sort_order so FROM master_gudang WHERE property_id = ?",
+    ] as $m => $sql) {
+        if ($modul !== '' && $modul !== $m) continue;
+        $st = $pdo->prepare($sql);
+        $st->execute([$pid]);
+        foreach ($st->fetchAll() as $u) $unit[$m . '|' . $u['code']] = ['nm' => (string) $u['nm'], 'lt' => (string) $u['lt'], 'so' => (int) $u['so']];
+    }
+
+    [$where, $params] = transaksi_tampil_kondisi($pdo, 't');
+    $where[] = 't.property_id = :pid AND t.start_date <= :akhir AND t.end_date >= :awal';
+    $params += [':pid' => $pid, ':akhir' => $akhir, ':awal' => $awal];
+    if ($modul !== '') { $where[] = 't.module = :modul'; $params[':modul'] = $modul; }
+    if ($picF !== '')  { $where[] = 't.pic_name = :pic';  $params[':pic']  = $picF; }
+
+    $bisaBayar = can('view_payments') || can('manage_payments');
+    $st = $pdo->prepare(
+        "SELECT t.id, t.module, t.master_code, t.start_date, t.end_date, t.final_amount, t.area_sqm,
+                t.pic_name, t.invoice_no, t.contract_no, (" . recurring_match_sql('t') . ") AS recurring,
+                c.company_name, c.brand_name, " . pembayaran_select_sql('t') . ",
+                COALESCE((SELECT SUM(a.amount) FROM transaction_allocations a
+                           WHERE a.transaction_id = t.id AND a.period_key = :bln), 0) AS nilai_bulan
+           FROM transactions t LEFT JOIN master_clients c ON c.id = t.client_id
+          WHERE " . implode(' AND ', $where) . "
+          ORDER BY t.master_code, t.start_date"
+    );
+    $st->execute($params + [':bln' => $bulan]);
+
+    $baris = []; $jumBulan = 0.0; $jumKontrak = 0.0; $nRec = 0;
+    foreach ($st->fetchAll() as $t) {
+        $u = $unit[$t['module'] . '|' . $t['master_code']] ?? ['nm' => '', 'lt' => '', 'so' => 9999];
+        if ($lantai !== '' && $u['lt'] !== $lantai) continue;
+        $t['unit_nama'] = $u['nm'] !== '' ? $u['nm'] : (string) $t['master_code'];
+        $t['lantai']    = $u['lt'];
+        $t['urut']      = $u['so'];
+        $baris[] = $t;
+        $jumBulan   += (float) $t['nilai_bulan'];
+        $jumKontrak += (float) $t['final_amount'];
+        if ((int) $t['recurring']) $nRec++;
+    }
+    usort($baris, fn($a, $b) => [_cal_urutan_lantai($a['lantai']), $a['urut'], $a['master_code'], $a['start_date']]
+                            <=> [_cal_urutan_lantai($b['lantai']), $b['urut'], $b['master_code'], $b['start_date']]);
+
+    // Prospek dengan saringan yang sama — ditampilkan terpisah, tidak dijumlah
+    // bersama yang sudah pasti.
+    $pros = prospek_bulan($pdo, $pid, $bulan, $modul);
+    if ($picF !== '') $pros = array_values(array_filter($pros, fn($p) => (string) $p['pic_name'] === $picF));
+    if ($lantai !== '') {
+        // Prospek ikut disaring ke lantai yang sama; tanpa ini, rincian satu
+        // lantai menampilkan calon dari lantai lain dan jumlahnya menyesatkan.
+        $pros = array_values(array_filter($pros, function ($p) use ($unit, $lantai) {
+            $u = $unit[$p['module'] . '|' . (string) $p['master_code']] ?? null;
+            return $u !== null && $u['lt'] === $lantai;
+        }));
+    }
+    $jumPros = array_sum(array_map(fn($p) => (float) $p['est_amount'], $pros));
+
+    $judul = $picF !== '' ? 'Yang dijual ' . $picF
+           : ($lantai !== '' ? 'Lantai ' . $lantai : 'Seluruh penjualan');
+    $kembali = '?' . http_build_query(array_filter(['r' => 'calendar', 'month' => $bulan, 'module' => $modul, 'floor' => $lantai], fn($v) => $v !== ''));
+
+    layout($judul . ' — ' . period_label($bulan), function () use ($baris, $pros, $jumBulan, $jumKontrak, $jumPros, $nRec,
+                                                                 $bulan, $picF, $lantai, $modul, $modLabel, $warnaPic, $kembali, $bisaBayar) {
+        $stBayar = pembayaran_status_daftar();
+        $tgl = function (?string $d): string {
+            if (!$d || !strtotime($d)) return '-';
+            $b = [1=>'Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+            return (int) date('j', strtotime($d)) . ' ' . $b[(int) date('n', strtotime($d))];
+        };
+        ?>
+        <style>
+            .cd-top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+            .cd-kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1px;background:var(--line);
+                border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:14px}
+            .cd-kpi>div{background:#fff;padding:13px 16px}
+            .cd-kpi .l{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#98A2B3}
+            .cd-kpi .v{font-size:19px;font-weight:800;margin-top:2px;color:#0F2A3F;font-variant-numeric:tabular-nums}
+            table.cd{width:100%;border-collapse:collapse;font-size:12.5px;background:#fff}
+            table.cd th{background:#0F2A3F;color:#fff;text-align:left;padding:7px 10px;font-size:10.5px;letter-spacing:.03em;white-space:nowrap}
+            table.cd td{border-bottom:1px solid #EEF1F5;padding:7px 10px;vertical-align:top}
+            table.cd td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+            table.cd tr.lt td{background:#F1F5F9;font-weight:800;font-size:11px;letter-spacing:.04em;color:#0F2A3F;padding:5px 10px}
+            table.cd tfoot td{background:#0F2A3F;color:#fff;font-weight:800;padding:8px 10px}
+            .cd-dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+            .cd-jenis{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:4px}
+        </style>
+
+        <div class="cd-top">
+            <div>
+                <div style="font-size:21px;font-weight:800;color:#0F2A3F;line-height:1.2">
+                    <?php if ($picF !== ''): ?><span class="cd-dot" style="width:14px;height:14px;background:<?= h($warnaPic[$picF] ?? '#CBD5E1') ?>"></span><?php endif; ?>
+                    <?= h($picF !== '' ? $picF : ($lantai !== '' ? 'Lantai ' . $lantai : 'Seluruh penjualan')) ?>
+                </div>
+                <div class="muted" style="font-size:13px;margin-top:3px"><?= h(period_label($bulan)) ?>
+                    <?= $modul !== '' ? ' · ' . h($modLabel[$modul]) : ' · seluruh modul' ?></div>
+            </div>
+            <a class="btn light" href="<?= h($kembali) ?>">← Kembali ke Kalender</a>
+        </div>
+
+        <div class="cd-kpi">
+            <div><div class="l">Jumlah transaksi</div><div class="v"><?= count($baris) ?></div>
+                <div class="muted" style="font-size:11.5px"><?= (int) $nRec ?> recurring · <?= count($baris) - (int) $nRec ?> sekali jalan</div></div>
+            <div><div class="l">Masuk bulan ini</div><div class="v" style="color:#047857"><?= money($jumBulan) ?></div>
+                <div class="muted" style="font-size:11.5px">angka yang sama dengan panel Kalender</div></div>
+            <div><div class="l">Nilai seluruh kontrak</div><div class="v"><?= money($jumKontrak) ?></div>
+                <div class="muted" style="font-size:11.5px">termasuk bagian di bulan lain</div></div>
+            <?php if ($pros): ?>
+            <div style="background:#FFFBEB"><div class="l">Prospek (belum pasti)</div>
+                <div class="v" style="color:#B45309"><?= money($jumPros) ?></div>
+                <div class="muted" style="font-size:11.5px"><?= count($pros) ?> calon</div></div>
+            <?php endif; ?>
+        </div>
+
+        <div class="table-wrap"><table class="cd">
+            <thead><tr>
+                <th>Unit</th><th>Penyewa</th><th>Periode</th><th>Jenis</th>
+                <?php if ($picF === ''): ?><th>PIC</th><?php endif; ?>
+                <th style="text-align:right">Nilai kontrak</th><th style="text-align:right">Masuk bulan ini</th>
+                <th>No. Kontrak</th><th>Invoice</th><?php if ($bisaBayar): ?><th>Bayar</th><?php endif; ?>
+            </tr></thead>
+            <tbody>
+            <?php if (!$baris): ?>
+                <tr><td colspan="10" style="text-align:center;color:var(--muted);padding:26px">Tidak ada transaksi untuk saringan ini.</td></tr>
+            <?php endif; ?>
+            <?php $ltSekarang = null; foreach ($baris as $b):
+                if ($b['lantai'] !== $ltSekarang): $ltSekarang = $b['lantai']; ?>
+                    <tr class="lt"><td colspan="10"><?= h($ltSekarang !== '' ? $ltSekarang : 'Tidak ada di master') ?></td></tr>
+                <?php endif; ?>
+                <tr>
+                    <td><b><?= h($b['unit_nama']) ?></b><br><span class="muted" style="font-size:11px"><?= h($b['master_code']) ?>
+                        <?= (float) $b['area_sqm'] > 0 ? ' · ' . h(rtrim(rtrim(number_format((float) $b['area_sqm'], 2, ',', ''), '0'), ',')) . ' m²' : '' ?></span></td>
+                    <td><b><?= h($b['brand_name'] ?: $b['company_name'] ?: '-') ?></b>
+                        <?= $b['brand_name'] && $b['company_name'] ? '<br><span class="muted" style="font-size:11px">' . h($b['company_name']) . '</span>' : '' ?></td>
+                    <td style="white-space:nowrap"><?= h($tgl($b['start_date'])) ?> – <?= h($tgl($b['end_date'])) ?>
+                        <br><span class="muted" style="font-size:11px"><?= (int) ((strtotime((string) $b['end_date']) - strtotime((string) $b['start_date'])) / 86400 + 1) ?> hari</span></td>
+                    <td><span class="cd-jenis" style="<?= (int) $b['recurring'] ? 'background:#DBEAFE;color:#1E40AF' : 'background:#FEF3C7;color:#92400E' ?>">
+                        <?= (int) $b['recurring'] ? 'Recurring' : 'Sekali jalan' ?></span>
+                        <br><span class="muted" style="font-size:11px"><?= h($modLabel[$b['module']] ?? $b['module']) ?></span></td>
+                    <?php if ($picF === ''): ?>
+                    <td style="white-space:nowrap"><span class="cd-dot" style="background:<?= h($warnaPic[(string) $b['pic_name']] ?? '#CBD5E1') ?>"></span><?= h($b['pic_name'] ?: '-') ?></td>
+                    <?php endif; ?>
+                    <td class="r"><?= money($b['final_amount']) ?></td>
+                    <td class="r"><b><?= (float) $b['nilai_bulan'] > 0 ? money($b['nilai_bulan']) : '<span class="muted">—</span>' ?></b></td>
+                    <td style="white-space:nowrap"><?= $b['contract_no'] ? h($b['contract_no']) : '<span class="muted">—</span>' ?></td>
+                    <td style="white-space:nowrap"><?= $b['invoice_no'] ? h($b['invoice_no']) : '<span class="muted">—</span>' ?></td>
+                    <?php if ($bisaBayar): ?><td><?= pembayaran_badge((string) $b['bayar_status'], (bool) $b['bayar_lewat']) ?></td><?php endif; ?>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+            <?php if ($baris): ?>
+            <tfoot><tr>
+                <td colspan="<?= $picF === '' ? 5 : 4 ?>">Jumlah <?= count($baris) ?> transaksi</td>
+                <td class="r"><?= money($jumKontrak) ?></td><td class="r"><?= money($jumBulan) ?></td>
+                <td colspan="<?= $bisaBayar ? 3 : 2 ?>"></td>
+            </tr></tfoot>
+            <?php endif; ?>
+        </table></div>
+
+        <?php if ($pros): ?>
+        <h3 style="margin:20px 0 6px;font-size:14px">Prospek — belum pasti, belum masuk pencapaian</h3>
+        <div class="table-wrap"><table class="cd">
+            <thead><tr><th>Unit</th><th>Calon penyewa</th><th>Perkiraan periode</th><th>Keyakinan</th>
+                <?php if ($picF === ''): ?><th>PIC</th><?php endif; ?><th style="text-align:right">Perkiraan nilai</th></tr></thead>
+            <tbody>
+            <?php $yk = _prospek_yakin(); foreach ($pros as $p): $y = $yk[$p['confidence']] ?? $yk['sedang']; ?>
+                <tr style="background:#FFFBEB">
+                    <td><?= $p['master_code'] ? h($p['master_code']) : '<span class="muted">belum ditentukan</span>' ?></td>
+                    <td><b><?= h($p['client_name']) ?></b><?= $p['note'] ? '<br><span class="muted" style="font-size:11px">' . h($p['note']) . '</span>' : '' ?></td>
+                    <td style="white-space:nowrap"><?= h($tgl($p['start_date'])) ?> – <?= h($tgl($p['end_date'])) ?></td>
+                    <td><span class="cd-jenis" style="color:<?= $y[2] ?>;background:<?= $y[3] ?>"><?= h($y[0]) ?></span></td>
+                    <?php if ($picF === ''): ?><td><?= h($p['pic_name'] ?: '-') ?></td><?php endif; ?>
+                    <td class="r" style="color:#B45309;font-weight:700"><?= money($p['est_amount']) ?></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table></div>
+        <?php endif; ?>
+        <?php
+    });
 }

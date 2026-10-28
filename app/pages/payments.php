@@ -54,9 +54,12 @@ function _pay_query(PDO $pdo, bool $semuaBaris): array
     [$sf, $sp] = current_sales_scope_sql($pdo, $pid, 't.pic_name', 't.created_by');
     $dalam = "SELECT t.id, t.skp_id, t.property_id, t.module, t.master_code, t.start_date, t.end_date, t.final_amount,
                      t.pic_name, t.created_by, t.invoice_no, t.invoice_date, t.invoice_due, t.invoice_amount,
-                     t.contract_no, t.contract_date,
-                     c.company_name, c.brand_name, " . pembayaran_select_sql('t') . "
-              FROM transactions t LEFT JOIN master_clients c ON c.id = t.client_id
+                     t.contract_no, t.contract_date, t.area_sqm, t.unit_rate, t.pricing_type, t.content_note,
+                     c.company_name, c.brand_name, c.business_type, ct.name AS cp_name,
+                     " . pembayaran_select_sql('t') . "
+              FROM transactions t
+                   LEFT JOIN master_clients c ON c.id = t.client_id
+                   LEFT JOIN master_client_contacts ct ON ct.id = t.contact_id
               WHERE " . implode(' AND ', $where) . $sf;
     // Campuran :nama dan ? tidak boleh dalam satu pernyataan — ubah ? milik
     // pembatas sales menjadi parameter bernama.
@@ -155,7 +158,11 @@ function payments_page(PDO $pdo): void
             <input type="hidden" name="sort" value="<?= h($f['sort']) ?>"><input type="hidden" name="dir" value="<?= h($f['dir']) ?>">
             <button type="submit">Terapkan</button>
             <a class="btn light" href="?r=payments&period=semua">Semua periode</a>
-            <a class="btn light" href="<?= h($qs(['r' => 'payments_csv'])) ?>">Unduh CSV</a>
+            <?php /* Unduhan utama bergaya berkas Income Marketing tim: kolomnya
+                     sama, lebarnya sudah diatur, angkanya sudah berformat rupiah.
+                     CSV tetap disediakan untuk yang mau datanya mentah. */ ?>
+            <a class="btn" href="<?= h($qs(['r' => 'payments_xlsx'])) ?>">Unduh Excel</a>
+            <a class="btn light" href="<?= h($qs(['r' => 'payments_csv'])) ?>">CSV mentah</a>
         </form>
 
         <?php
@@ -328,6 +335,127 @@ function _pay_kembali(int $id): never
     $b = _pay_back();
     header('Location: ?r=payment_form&id=' . $id . ($b !== '' ? '&back=' . urlencode($b) : ''));
     exit;
+}
+
+/**
+ * Unduhan Excel bergaya berkas Income Marketing tim.
+ *
+ * Susunan kolomnya mengikuti berkas yang mereka pakai selama ini
+ * (NO, KON, PENANGGUNG JAWAB, PERUSAHAAN, NAMA STAND, LOK, HARGA, PERIODE,
+ * LUAS, JANGKA WAKTU, NILAI SEWA, PPN, SUB TTL, PEMBAYARAN, TANGGAL
+ * PEMBAYARAN, PIC, PERIODE BULAN, NO INV, KETERANGAN), ditambah tiga kolom
+ * yang hanya dipunyai CLARA: biaya listrik, deposit, dan total yang
+ * sebenarnya ditagihkan — itulah yang menjelaskan kenapa pembayaran kerap
+ * lebih besar daripada nilai sewanya.
+ *
+ * Unit disebut dengan NAMA, bukan kode, karena begitulah tim menyebutnya.
+ */
+function payments_xlsx(PDO $pdo): void
+{
+    require_permission('view_payments');
+    require_once dirname(__DIR__) . '/Xlsx.php';
+
+    $d   = _pay_query($pdo, true);
+    $f   = $d['f'];
+    $bln = [1=>'JANUARI','FEBRUARI','MARET','APRIL','MEI','JUNI','JULI','AGUSTUS','SEPTEMBER','OKTOBER','NOVEMBER','DESEMBER'];
+    $blnPendek = [1=>'JAN','FEB','MAR','APR','MEI','JUN','JUL','AGU','SEP','OKT','NOV','DES'];
+    $tglPanjang = function (?string $t) use ($bln): string {
+        if (!$t || !strtotime($t)) return '';
+        return (int) date('j', strtotime($t)) . ' ' . mb_convert_case($bln[(int) date('n', strtotime($t))], MB_CASE_TITLE)
+             . ' ' . date('Y', strtotime($t));
+    };
+
+    // Tanggal & keterangan pembayaran per transaksi — satu kueri untuk semua baris.
+    $bayar = [];
+    if ($d['rows']) {
+        $id = array_map(fn($r) => (int) $r['id'], $d['rows']);
+        $st = $pdo->prepare('SELECT transaction_id, paid_at, note FROM transaction_payments
+                              WHERE deleted_at IS NULL AND transaction_id IN ('
+                            . implode(',', array_fill(0, count($id), '?')) . ') ORDER BY paid_at, id');
+        $st->execute($id);
+        foreach ($st->fetchAll() as $b) {
+            $bayar[(int) $b['transaction_id']]['tgl'][] = date('d/m/y', strtotime((string) $b['paid_at']));
+            foreach (preg_split('/\s*\·\s*/', (string) ($b['note'] ?? '')) as $k) {
+                $k = trim($k);
+                if ($k !== '') $bayar[(int) $b['transaction_id']]['ket'][$k] = true;
+            }
+        }
+    }
+
+    $judulBulan = ($f['period'] === '' || $f['period'] === 'semua')
+        ? 'SEMUA PERIODE'
+        : 'BULAN ' . $bln[(int) substr($f['period'], 5, 2)] . ' ' . substr($f['period'], 0, 4);
+    $prop = current_property();
+
+    $x = (new Xlsx('Income Marketing'))
+        ->judul('LAPORAN INCOME MARKETING ' . $judulBulan . ' — ' . mb_strtoupper((string) ($prop['name'] ?? '')))
+        ->kolom('NO', 5, 'tengah')
+        ->kolom('KON', 14)
+        ->kolom('PENANGGUNG JAWAB', 24)
+        ->kolom('PERUSAHAAN', 28)
+        ->kolom('NAMA STAND', 30)
+        ->kolom('LOK', 30)
+        ->kolom('HARGA /M²/HARI', 15, 'rupiah')
+        ->kolom('PERIODE', 30)
+        ->kolom('LUAS', 9, 'tengah')
+        ->kolom('JANGKA WAKTU', 12, 'tengah')
+        ->kolom('NILAI SEWA', 15, 'rupiah')
+        ->kolom('PPN', 13, 'rupiah')
+        ->kolom('SUB TTL', 15, 'rupiah')
+        ->kolom('BIAYA LISTRIK', 14, 'rupiah')
+        ->kolom('DEPOSIT', 14, 'rupiah')
+        ->kolom('TOTAL DITAGIHKAN', 17, 'rupiah')
+        ->kolom('PEMBAYARAN', 15, 'rupiah')
+        ->kolom('TANGGAL PEMBAYARAN', 20)
+        ->kolom('PIC', 14)
+        ->kolom('PERIODE BULAN', 16)
+        ->kolom('NO INV', 26)
+        ->kolom('KETERANGAN', 24);
+
+    $no = 0;
+    foreach ($d['rows'] as $r) {
+        $no++;
+        $hari = (strtotime((string) $r['end_date']) - strtotime((string) $r['start_date'])) / 86400 + 1;   // dipakai juga oleh kolom harga
+        $hari = $hari > 0 ? (int) round($hari) : 0;
+        $b1 = (int) substr((string) $r['start_date'], 5, 2);
+        $b2 = (int) substr((string) $r['end_date'], 5, 2);
+        $periodeBulan = $b1 === $b2
+            ? $bln[$b1] . ' ' . substr((string) $r['start_date'], 0, 4)
+            : 'KON ' . $blnPendek[$b1] . '-' . $blnPendek[$b2];
+        $ket = array_keys($bayar[(int) $r['id']]['ket'] ?? []);
+        if (!$ket) $ket = [pembayaran_status_daftar()[$r['bayar_status']][0] ?? ''];
+
+        $x->baris([
+            $no,
+            (string) $r['contract_no'],
+            (string) $r['cp_name'],
+            (string) $r['company_name'],
+            // "NAMA STAND" di berkas mereka berbunyi "Jenis usaha (Merek)".
+            trim(trim((string) $r['business_type']) . ' (' . trim((string) $r['brand_name']) . ')', ' ()') ?: (string) $r['brand_name'],
+            trim(((string) ($r['unit_name'] ?? '')) !== '' ? (string) $r['unit_name'] : (string) $r['master_code']),
+            // Kolom ini di berkas mereka berisi harga per m² per hari, dihitung
+            // dari nilai sewanya — bukan tarif yang diketik di transaksi, karena
+            // satuan tarif berbeda-beda menurut jenis harganya.
+            ((float) $r['area_sqm'] > 0 && $hari > 0) ? round((float) $r['k_sewa'] / (float) $r['area_sqm'] / $hari) : '',
+            $tglPanjang((string) $r['start_date']) . ' s/d ' . $tglPanjang((string) $r['end_date']),
+            (float) $r['area_sqm'] > 0 ? rtrim(rtrim(number_format((float) $r['area_sqm'], 2, ',', ''), '0'), ',') . ' m²' : '',
+            $hari ? $hari . ' Hari' : '',
+            (float) $r['k_sewa'],
+            (float) $r['k_ppn'],
+            (float) $r['k_sewa'] + (float) $r['k_ppn'],
+            (float) $r['k_listrik'] ?: '',
+            (float) $r['k_deposit'] ?: '',
+            (float) $r['k_perkiraan'],
+            (float) $r['terbayar'] ?: '',
+            implode(' + ', $bayar[(int) $r['id']]['tgl'] ?? []),
+            (string) $r['pic_name'],
+            $periodeBulan,
+            (string) $r['invoice_no'],
+            implode(' · ', array_filter($ket)),
+        ]);
+    }
+
+    $x->unduh('Income-Marketing-' . ($f['period'] === 'semua' || $f['period'] === '' ? 'semua' : $f['period']) . '.xlsx');
 }
 
 function payment_form(PDO $pdo): void

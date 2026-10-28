@@ -630,6 +630,9 @@ function permission_for_route(string $route): string
         'transaction_cancel', 'price_step_save', 'pic_split_save' => 'approve_skp',
         'transaction_history', 'calendar' => 'view_transactions',
         'calendar_forecast_save' => 'manage_master',
+        // Rincian "apa saja yang dijual" — gerbangnya sama dengan Laporan PIC,
+        // yang memang sudah memperlihatkan angka tiap PIC kepada sales.
+        'calendar_detail' => 'view_pic_report',
         // Prospek boleh DILIHAT siapa pun yang boleh membuka kalender — gunanya
         // memang untuk membandingkan posisi bersama; yang MENGISI dibatasi.
         'prospects' => 'view_transactions',
@@ -637,7 +640,7 @@ function permission_for_route(string $route): string
         // Membuka & mengunduh cukup izin lihat; yang MENGUBAH angka tetap
         // menuntut manage_payments. Pemegang manage_payments diberi
         // view_payments juga (migrasi 082), jadi tidak ada yang terkunci.
-        'payments', 'payments_csv', 'payment_form' => 'view_payments',
+        'payments', 'payments_csv', 'payments_xlsx', 'payment_form' => 'view_payments',
         'payment_invoice_save', 'payment_add', 'payment_delete' => 'manage_payments',
         'master' => 'view_master',
         'master_form', 'master_save', 'generate_periods' => 'manage_master',
