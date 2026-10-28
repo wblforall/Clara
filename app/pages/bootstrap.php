@@ -151,6 +151,7 @@ function layout(string $title, callable $body, array $opts = []): void
         ['', 'master&type=gudang', 'Master Gudang', 'view_master'],
         ['', 'master&type=pic', 'Master PIC', 'view_master'],
         ['', 'master&type=target', 'Target', 'view_master'],
+        ['', 'master&type=holiday', 'Hari Libur', 'view_master'],
         ['', 'clients', 'Master Client', 'view_master'],
         ['', 'master_referrer', 'Master Referrer', 'view_master'],
         ['Analisa', 'calendar', 'Kalender Pameran', 'view_transactions'],

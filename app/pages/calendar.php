@@ -94,6 +94,19 @@ function calendar_page(PDO $pdo): void
     $nilaiBulan = [];
     foreach ($alok->fetchAll() as $a) $nilaiBulan[(int) $a['transaction_id']] = (float) $a['nilai'];
 
+    // ── Hari libur bulan ini ────────────────────────────────────────────────
+    // Lembar tim menuliskannya di blok "KET : HARI LIBUR" tiap bulan, karena
+    // tanggal merah justru hari paling laku untuk pameran — dan unit yang
+    // kosong di tanggal merah artinya lain daripada kosong di hari biasa.
+    $libur = [];
+    if ($pdo->query("SHOW TABLES LIKE 'holidays'")->fetchColumn()) {
+        $lb = $pdo->prepare("SELECT holiday_date, name FROM holidays
+                              WHERE property_id = ? AND status = 'active'
+                                AND holiday_date BETWEEN ? AND ? ORDER BY holiday_date");
+        $lb->execute([$pid, $awal->format('Y-m-d'), $akhir->format('Y-m-d')]);
+        foreach ($lb->fetchAll() as $l) $libur[(int) substr((string) $l['holiday_date'], 8, 2)] = (string) $l['name'];
+    }
+
     // ── Forecast per unit ───────────────────────────────────────────────────
     // Di lembar tim, kolom FORECAST berisi potensi sebulan tiap unit — 7,5 juta
     // untuk satu fashion booth, 70 juta untuk satu island GF. Angka itu sudah
@@ -102,14 +115,19 @@ function calendar_page(PDO $pdo): void
     // supaya jumlah Forecast di sini sama dengan proyeksi di Dashboard.
     $tabelMaster = ['cl' => 'master_cl_units', 'media' => 'master_media', 'gudang' => 'master_gudang'][$modul];
     $segmen      = ['cl' => 'exhibition', 'media' => 'media', 'gudang' => 'gudang'][$modul];
-    $fc = $pdo->prepare("SELECT m.code, COALESCE(pp.potential_value, m.projection_monthly) fc
+    $fc = $pdo->prepare("SELECT m.id, m.code, COALESCE(pp.potential_value, m.projection_monthly) fc,
+                                 pp.potential_value AS khusus
                            FROM $tabelMaster m
                            LEFT JOIN period_potentials pp ON pp.slot_id = m.id AND pp.segment = ?
                                 AND pp.period_key = ? AND pp.property_id = ?
                           WHERE m.property_id = ? AND m.status = 'active'");
     $fc->execute([$segmen, $bulan, $pid, $pid]);
-    $forecast = [];
-    foreach ($fc->fetchAll() as $r) $forecast[(string) $r['code']] = (float) $r['fc'];
+    $forecast = []; $forecastId = []; $forecastKhusus = [];
+    foreach ($fc->fetchAll() as $r) {
+        $forecast[(string) $r['code']]       = (float) $r['fc'];
+        $forecastId[(string) $r['code']]     = (int) $r['id'];
+        $forecastKhusus[(string) $r['code']] = $r['khusus'] !== null;
+    }
 
     // ── Prospek (calon yang belum pasti) ────────────────────────────────────
     $prospek = prospek_bulan($pdo, $pid, $bulan, $modul);
@@ -208,7 +226,8 @@ function calendar_page(PDO $pdo): void
         if ($bulan === date('Y-m') && $hariPakai[(int) date('j')]) $unitTerisiHariIni++;
         $baris[$kode] = $u + ['lanes' => $lanes ?: [[]], 'terisi' => $terisi, 'jumlahSelot' => array_sum(array_map('count', $lanes)),
                               'rpRec' => $uRec, 'rpExh' => $uExh, 'rpPros' => $uPros,
-                              'rpFc' => $forecast[$kode] ?? 0.0, 'rpPic' => $uPic, 'rpPicPros' => $uPicPros];
+                              'rpFc' => $forecast[$kode] ?? 0.0, 'rpPic' => $uPic, 'rpPicPros' => $uPicPros,
+                              'fcId' => $forecastId[$kode] ?? 0, 'fcKhusus' => !empty($forecastKhusus[$kode])];
     }
 
     // ── Jumlah per lantai & jumlah seluruhnya ───────────────────────────────
@@ -225,6 +244,11 @@ function calendar_page(PDO $pdo): void
         foreach ($u['rpPicPros'] as $nm => $v) $t['picPros'][$nm] = ($t['picPros'][$nm] ?? 0) + (float) $v;
         return $t;
     };
+    // Berapa baris yang dipakai tiap lantai — dipakai sebagai rowspan kolom
+    // lantai di kiri, meniru sel gabungan "GROUND FLOOR" di lembar mereka.
+    $barisGrup = [];
+    foreach ($baris as $u) $barisGrup[$u['grup']] = ($barisGrup[$u['grup']] ?? 0) + max(1, count($u['lanes']));
+
     $totGrup = []; $totAll = $kosong;
     foreach ($baris as $u) {
         $g = $u['grup'];
@@ -302,10 +326,26 @@ function calendar_page(PDO $pdo): void
     // (sales sudah punya izin ini di halaman Laporan/Performa PIC).
     $bolehLihatPic = can('view_pic_report');
     $bisaProspek   = can('manage_prospects');
+    // Forecast boleh dibetulkan langsung di kalender, seperti mengetik di sel
+    // spreadsheet. Angka dasarnya datang dari Master (Proyeksi Bulanan);
+    // yang diketik di sini hanya berlaku untuk bulan yang sedang dibuka.
+    $bisaUbahFc = can('manage_master');
+
+    // Proyeksi: potensi penuh seluruh unit bulan ini, memakai rumus yang sama
+    // dengan Dashboard (get_projection). Di lembar tim angkanya berdiri di
+    // samping target, sebagai pembanding "seandainya semua unit terisi".
+    $proyeksiTim = array_sum(get_projection($pdo, $bulan, $pid));
+
+    // "Eks WBL": pencapaian tanpa menghitung pemasukan WBL Unit — unit yang
+    // dikelola sendiri, bukan hasil jualan PIC. Lembar tim memisahkannya
+    // karena yang dinilai adalah kerja timnya.
+    $capWbl = 0.0;
+    foreach ($capPic as $nm => $v) if (stripos((string) $nm, 'WBL') !== false) $capWbl += (float) $v;
+    $capEksWbl = $capaianTim - $capWbl;
 
     layout('Kalender Pameran', function () use ($baris, $bulan, $awal, $hariN, $modul, $lantaiF, $picF, $hariIni, $persen, $terisiHari, $kapasitas, $unitTerisiHariIni, $picList,
                                                 $bulanSebelum, $bulanSesudah, $hari3, $bisaOffer, $modLabel, $qsBase, $semuaGrup, $bisaBayar, $stBayar, $pid,
-                                                $warnaPic, $targetTim, $capaianTim, $capPic, $capModul, $picTarget, $prosTim, $prosPic, $bolehLihatPic, $bisaProspek, $prosLepas, $rpKecil,
+                                                $warnaPic, $targetTim, $capaianTim, $capPic, $capModul, $picTarget, $prosTim, $prosPic, $bolehLihatPic, $bisaProspek, $prosLepas, $rpKecil, $proyeksiTim, $capWbl, $capEksWbl, $libur, $bisaUbahFc, $segmen,
                                                 $totGrup, $totAll, $picKolom, $picOn) {
         $nilaiHariIni = $bulan === date('Y-m');
         ?>
@@ -316,19 +356,31 @@ function calendar_page(PDO $pdo): void
             table.cal thead th{position:sticky;top:0;z-index:3;background:#F8FAFC;font-weight:700;color:#475467;height:34px;line-height:1.15}
             table.cal thead th small{display:block;font-weight:500;color:#98A2B3;font-size:9px}
             table.cal .hd-we{background:#FFF7ED}
+            table.cal .hd-libur{background:#FEE2E2;color:#B91C1C}
+            table.cal td.e.libur{background:#FEF2F2}
             table.cal .hd-now{background:#CCFBF1;color:#0F766E}
-            table.cal th.u{position:sticky;left:0;z-index:2;background:#fff;text-align:left;min-width:186px;max-width:186px;padding:2px 8px;border-right:2px solid #E4E9F0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+            /* Kolom lantai: satu sel memanjang ke bawah, seperti sel gabungan
+               "GROUND FLOOR" di lembar mereka. Tulisannya ditegakkan supaya
+               tidak memakan lebar yang dibutuhkan nama unit. */
+            table.cal th.lt{position:sticky;left:0;z-index:3;background:#DCE9F5;color:#0F2A3F;
+                width:28px;min-width:28px;max-width:28px;padding:0;border-right:1px solid #BBD0E6;
+                font-size:10px;font-weight:800;letter-spacing:.06em;text-align:center}
+            table.cal th.lt{border-bottom:0}
+            table.cal th.lt.lt-awal{border-top:1px solid #BBD0E6}
+            table.cal th.lt span{writing-mode:vertical-rl;transform:rotate(180deg);display:inline-block;white-space:nowrap;padding:10px 0}
+            table.cal thead th.lt{z-index:6;background:#F8FAFC}
+            table.cal th.u{position:sticky;left:28px;z-index:2;background:#fff;text-align:left;min-width:232px;max-width:232px;padding:2px 10px;border-right:2px solid #E4E9F0;font-weight:600;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+            table.cal tr.tot th.u,table.cal tr.tot-all th.u{left:0}
             table.cal thead th.u{z-index:4;background:#F8FAFC}
             table.cal th.u small{display:block;font-weight:400;color:#98A2B3;font-size:10px;overflow:hidden;text-overflow:ellipsis}
-            table.cal tr.grp th,table.cal tr.grp td{background:#0F2A3F;color:#fff;text-align:left;padding:4px 10px;font-size:11px;letter-spacing:.04em;height:22px;border-color:#0F2A3F}
-            table.cal tr.grp th.u{position:sticky;left:0;z-index:2;font-weight:700;border-right-color:#0F2A3F}
             table.cal tr.lane2 th.u{color:#98A2B3;font-weight:400}
-            table.cal td.e{min-width:19px;width:19px;cursor:pointer}
+            table.cal td.e{min-width:22px;width:22px;cursor:pointer}
             table.cal td.e.we{background:#FFFAF3}
             table.cal td.e.now{background:#F0FDFA}
             table.cal td.e:hover{background:#CCFBF1}
             table.cal td.e.pilih{background:#5EEAD4}
-            table.cal td.s{padding:0 4px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer;font-weight:600;max-width:0;border-radius:4px;border:2px solid #fff;position:relative}
+            table.cal td.s{padding:0 3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer;font-weight:600;
+                font-size:10px;letter-spacing:0;max-width:0;border-radius:4px;border:2px solid #fff;position:relative}
             table.cal td.s.r{background:#DBEAFE;color:#1E40AF}
             table.cal td.s.x{background:#FDE68A;color:#78350F}
             table.cal td.s.o{background:#E5E7EB;color:#374151;font-style:italic}
@@ -376,6 +428,13 @@ function calendar_page(PDO $pdo): void
                 font-variant-numeric:tabular-nums;font-size:10.5px}
             table.cal th.rk{font-size:9.5px;letter-spacing:.03em;padding:4px 10px}
             table.cal td.rk.pros-ada{background:#FFFBEB}
+            /* Sel Forecast bisa diketik langsung, seperti sel spreadsheet. */
+            table.cal td.fc-sel{padding:0}
+            table.cal td.fc-sel input.fc-in{width:100%;border:0;background:transparent;text-align:right;
+                padding:3px 10px;font:inherit;font-size:10.5px;font-variant-numeric:tabular-nums;color:inherit;border-radius:0}
+            table.cal td.fc-sel input.fc-in:focus{outline:2px solid #0D9488;outline-offset:-2px;background:#F0FDFA}
+            table.cal td.fc-sel.fc-khusus{background:#F0FDFA}
+            table.cal td.fc-sel.simpan{background:#DCFCE7}
             table.cal td.rk .pros-rp{display:block;color:#B45309;font-weight:700;font-size:10px;margin-top:1px}
             table.cal tr.tot td.rk.pros-ada{background:#FEF3C7}
             table.cal .rk-awal{border-left:2px solid #E4E9F0}
@@ -449,6 +508,9 @@ function calendar_page(PDO $pdo): void
                     <div class="muted" style="font-size:11px"><?= (int) $pst ?>% dari target</div></div>
                 <div><div class="muted"><?= $kurang > 0 ? 'Masih kurang' : 'Lebih dari target' ?></div>
                     <b style="color:<?= $kurang > 0 ? '#B91C1C' : '#047857' ?>"><?= h($rp(abs($kurang))) ?></b></div>
+                <div><div class="muted">Proyeksi <span title="Potensi penuh seluruh unit bulan ini, seandainya semuanya terisi">(potensi penuh)</span></div>
+                    <b style="color:#475569"><?= h($rp($proyeksiTim)) ?></b>
+                    <div class="muted" style="font-size:11px"><?= $proyeksiTim > 0 ? (int) round($capaianTim / $proyeksiTim * 100) : 0 ?>% terpakai</div></div>
                 <div style="background:#FFFBEB;border-radius:8px;padding:6px 10px;margin:-6px -4px">
                     <div class="muted">Prospek <span title="Calon yang belum pasti — belum ada surat penawaran">(belum pasti)</span></div>
                     <b style="color:#B45309"><?= h($rp($prosTim)) ?></b>
@@ -468,12 +530,19 @@ function calendar_page(PDO $pdo): void
                 Exhibition <b><?= h($rp($capModul['cl'])) ?></b> &middot;
                 Media <b><?= h($rp($capModul['media'])) ?></b> &middot;
                 Gudang <b><?= h($rp($capModul['gudang'])) ?></b>
+                <?php if ($capWbl > 0): $kurangEks = $targetTim - $capEksWbl; ?>
+                    <br>Tanpa WBL Unit: <b><?= h($rp($capEksWbl)) ?></b>
+                    <span style="color:<?= $kurangEks > 0 ? '#B91C1C' : '#047857' ?>">(<?= $kurangEks > 0 ? 'kurang' : 'lebih' ?> <?= h($rp(abs($kurangEks))) ?>)</span>
+                    <span title="Pemasukan dari unit yang dikelola sendiri, bukan hasil jualan PIC">&mdash; WBL Unit <?= h($rp($capWbl)) ?></span>
+                <?php endif; ?>
             </div>
 
             <?php if ($bolehLihatPic): ?>
             <table class="cal-pic">
                 <thead><tr><th>PIC</th><th style="text-align:right">Target</th><th style="text-align:right">Sudah masuk</th>
-                    <th style="width:110px">Capaian</th><th style="text-align:right">Prospek</th></tr></thead>
+                    <th style="width:110px">Capaian</th>
+                    <th style="text-align:right" title="Sudah masuk dikurangi target — angka inilah yang dipakai tim, bukan persennya">Selisih</th>
+                    <th style="text-align:right">Prospek</th></tr></thead>
                 <tbody>
                 <?php
                 $dipakai = [];
@@ -492,6 +561,9 @@ function calendar_page(PDO $pdo): void
                         <td style="text-align:right;font-weight:700"><?= h($rp($cP)) ?></td>
                         <td><?php if ($tP > 0): ?><div class="mini"><i style="width:<?= min(100, (int) $persenP) ?>%;background:<?= $persenP >= 100 ? '#10B981' : ($persenP >= 70 ? '#F59E0B' : '#EF4444') ?>"></i></div>
                             <span style="font-size:11px"><?= (int) $persenP ?>%</span><?php else: ?><span class="muted">—</span><?php endif; ?></td>
+                        <?php $selisihP = $cP - $tP; ?>
+                        <td style="text-align:right;font-weight:700;color:<?= $tP <= 0 ? 'var(--muted)' : ($selisihP >= 0 ? '#047857' : '#B91C1C') ?>">
+                            <?= $tP > 0 ? ($selisihP >= 0 ? '+' : '−') . ' ' . h($rp(abs($selisihP))) : '—' ?></td>
                         <td style="text-align:right;color:#B45309"><?= $pP > 0 ? h($rp($pP)) : '<span class="muted">—</span>' ?></td>
                     </tr>
                 <?php endforeach; ?>
@@ -499,7 +571,8 @@ function calendar_page(PDO $pdo): void
                     <tr><td><span class="dot" style="background:#CBD5E1"></span><?= h($nm) ?> <span class="muted" style="font-size:11px">(tidak ada di Master PIC)</span></td>
                         <td style="text-align:right"><span class="muted">—</span></td>
                         <td style="text-align:right;font-weight:700"><?= h($rp($cP)) ?></td>
-                        <td><span class="muted">—</span></td><td style="text-align:right"><span class="muted">—</span></td></tr>
+                        <td><span class="muted">—</span></td><td style="text-align:right"><span class="muted">—</span></td>
+                        <td style="text-align:right"><span class="muted">—</span></td></tr>
                 <?php endforeach; ?>
                 </tbody>
             </table>
@@ -520,11 +593,13 @@ function calendar_page(PDO $pdo): void
             <?php /* Kolom ringkasan menempel di tepi kanan, pada baris yang sama
                      dengan unitnya — bentuk yang sudah biasa dibaca tim di
                      spreadsheet: jadwal di kiri, angkanya di kanan. */ ?>
-            <thead><tr><th class="u">Unit</th>
+            <thead><tr><th class="lt"></th><th class="u">Unit</th>
                 <?php for ($d = 1; $d <= $hariN; $d++):
                     $tgl = $awal->setDate((int) $awal->format('Y'), (int) $awal->format('m'), $d);
-                    $w = (int) $tgl->format('w'); $kls = $tgl->format('Y-m-d') === $hariIni ? 'hd-now' : (($w === 0 || $w === 6) ? 'hd-we' : ''); ?>
-                    <th class="<?= $kls ?>"><?= $d ?><small><?= h($hari3[$w]) ?></small></th>
+                    $w = (int) $tgl->format('w');
+                    $isLibur = isset($libur[$d]);
+                    $kls = $tgl->format('Y-m-d') === $hariIni ? 'hd-now' : ($isLibur ? 'hd-libur' : (($w === 0 || $w === 6) ? 'hd-we' : '')); ?>
+                    <th class="<?= $kls ?>"<?= $isLibur ? ' title="' . h($libur[$d]) . '"' : '' ?>><?= $d ?><small><?= h($hari3[$w]) ?></small></th>
                 <?php endfor; ?>
                 <?php if ($bolehLihatPic): ?>
                     <th class="rk rk-awal" title="Potensi sebulan unit ini (Proyeksi Bulanan di Master, bisa ditimpa per bulan)">FORECAST</th>
@@ -550,7 +625,7 @@ function calendar_page(PDO $pdo): void
                        . ($pros > 0 ? '<span class="pros-rp">+ ' . h(money($pros)) . '</span>' : '')
                        . '</td>';
                 };
-                echo '<tr class="' . $kelas . '"><th class="u">' . h($label) . '</th>'
+                echo '<tr class="' . $kelas . '"><th class="u" colspan="2">' . h($label) . '</th>'
                    . '<td colspan="' . $hariN . '"></td>';
                 if ($bolehLihatPic) {
                     $pros = (float) ($t['pros'] ?? 0);
@@ -567,21 +642,28 @@ function calendar_page(PDO $pdo): void
             $grupSekarang = null;
             foreach ($kodeUrut as $iBaris => $kode): $u = $baris[$kode];
                 if ($u['grup'] !== $grupSekarang): $grupSekarang = $u['grup']; ?>
-                    <?php /* Judulnya ditaruh di sel kolom unit supaya ikut membeku saat
-                             tabel digeser ke kanan — sel ber-colspan selebar tabel
-                             justru hilang dari pandangan begitu digeser. */ ?>
-                    <tr class="grp"><th class="u"><?= h($grupSekarang) ?></th>
-                        <td colspan="<?= $hariN + ($bolehLihatPic ? 5 + ($picOn ? count($picKolom) : 0) : 0) ?>"></td></tr>
-                <?php endif;
+                    <?php /* Nama lantainya ditaruh di kolom paling kiri sebagai satu sel
+                             memanjang ke bawah — persis sel gabungan "GROUND FLOOR"
+                             di lembar mereka, dan ikut membeku saat digeser. */
+                    $grupBaru = true;
+                endif;
                 foreach ($u['lanes'] as $li => $lane):
                     $peta = [];   // hari => selot yang dimulai di hari itu
                     foreach ($lane as $s) $peta[$s['da']] = $s; ?>
                     <tr class="<?= $li > 0 ? 'lane2' : '' ?>" data-unit="<?= h($kode) ?>">
-                        <?php /* Tim menyebut unitnya dengan NAMA, bukan kode — di lembar
-                                 mereka kolom pertama memang berisi nama. Kodenya tetap
-                                 tertulis kecil di bawahnya. */ ?>
+                        <?php /* Sel ini ada di SETIAP baris, tapi tulisannya hanya di baris
+                                 pertama lantai dan garis bawahnya dihapus — jadi terlihat
+                                 sebagai satu sel memanjang, seperti di lembar mereka.
+                                 (rowspan tidak dipakai: ia tidak bisa dibekukan di kiri
+                                 oleh peramban, dan barisnya jadi melenceng.) */
+                        $awalGrup = !empty($grupBaru); $grupBaru = false; ?>
+                        <th class="lt<?= $awalGrup ? ' lt-awal' : '' ?>" title="<?= h($grupSekarang) ?>"><?php
+                            if ($awalGrup): ?><span><?= h($grupSekarang) ?></span><?php endif; ?></th>
+                        <?php /* Cukup namanya saja — di lembar mereka kolom ini memang
+                                 hanya berisi nama unit. Kode dan luasnya tetap terbaca
+                                 saat kursor berhenti di atasnya. */ ?>
                         <th class="u" title="<?= h(($u['label'] !== '' ? $u['label'] . ' ' : '') . '(' . $kode . ')' . ($u['info'] !== '' ? ' ' . $u['info'] : '')) ?>">
-                            <?php if ($li === 0): ?><?= h($u['label'] !== '' ? $u['label'] : $kode) ?><small><?= h($kode) ?><?= $u['info'] !== '' ? ' · ' . h($u['info']) : '' ?></small>
+                            <?php if ($li === 0): ?><?= h($u['label'] !== '' ? $u['label'] : $kode) ?>
                             <?php else: ?>↳<?php endif; ?></th>
                         <?php for ($d = 1; $d <= $hariN; ):
                             if (isset($peta[$d])): $s = $peta[$d]; $span = $s['db'] - $s['da'] + 1;
@@ -592,7 +674,7 @@ function calendar_page(PDO $pdo): void
                                 // tersisa ruang untuk nama mereknya; selebihnya angkanya
                                 // tetap terbaca di blok rekap sebelah kanan.
                                 $angka = (isset($s['bulanRp']) && (float) $s['bulanRp'] > 0) ? money((float) $s['bulanRp']) : '';
-                                $muatAngka = $angka !== '' && ($span * 19) >= (mb_strlen($angka) * 6 + 52);
+                                $muatAngka = $angka !== '' && ($span * 22) >= (mb_strlen($angka) * 5.6 + 46);
                                 $data = ['id' => $s['id'], 'b' => $s['brand'], 'pt' => $s['pt'], 'm' => $s['mulai'], 's' => $s['selesai'], 'u' => $kode,
                                          'rec' => $s['rec'], 'own' => $s['milik'] ? 1 : 0, 'pros' => $pros ? 1 : 0,
                                          'picAll' => (string) ($s['picSemua'] ?? $s['pic'] ?? ''), 'yakin' => (string) ($s['yakin'] ?? '')]
@@ -611,7 +693,7 @@ function calendar_page(PDO $pdo): void
                             else:
                                 $tglD = $awal->setDate((int) $awal->format('Y'), (int) $awal->format('m'), $d);
                                 $w = (int) $tglD->format('w'); ?>
-                                <td class="e <?= ($w === 0 || $w === 6) ? 'we' : '' ?> <?= $tglD->format('Y-m-d') === $hariIni ? 'now' : '' ?>" data-d="<?= $d ?>"></td>
+                                <td class="e <?= isset($libur[$d]) ? 'libur' : (($w === 0 || $w === 6) ? 'we' : '') ?> <?= $tglD->format('Y-m-d') === $hariIni ? 'now' : '' ?>" data-d="<?= $d ?>"></td>
                                 <?php $d++;
                             endif;
                         endfor; ?>
@@ -632,7 +714,16 @@ function calendar_page(PDO $pdo): void
                                    . '</td>';
                             };
                             $prosUnit = (float) $u['rpPros']; ?>
-                            <?php $sel((float) $u['rpFc'], 0.0, 'rk-awal'); ?>
+                            <?php if ($li !== 0): ?><td class="rk rk-awal"></td>
+                            <?php elseif ($bisaUbahFc && (int) $u['fcId'] > 0): ?>
+                                <?php /* Diketik di sini = forecast bulan ini untuk unit ini.
+                                         Bulan lain tidak ikut berubah. */ ?>
+                                <td class="rk rk-awal fc-sel<?= !empty($u['fcKhusus']) ? ' fc-khusus' : '' ?>">
+                                    <input class="fc-in" inputmode="numeric" data-slot="<?= (int) $u['fcId'] ?>" data-kode="<?= h($kode) ?>"
+                                           value="<?= (float) $u['rpFc'] > 0 ? h(number_format((float) $u['rpFc'], 0, ',', '.')) : '' ?>"
+                                           title="Forecast <?= h(period_label($bulan)) ?> untuk unit ini — ketik lalu tekan Enter">
+                                </td>
+                            <?php else: $sel((float) $u['rpFc'], 0.0, 'rk-awal'); endif; ?>
                             <?php $sel((float) $u['rpRec']); ?>
                             <?php /* Prospek dianggap sewa sekali jalan — kalau jadi, ia masuk
                                      ke Exhibition dan ikut menambah Actual. */ ?>
@@ -650,9 +741,37 @@ function calendar_page(PDO $pdo): void
                 } ?>
             <?php endforeach; ?>
             <?php if (count($baris) > 0) $barisTotal('Total seluruhnya', $totAll, 'tot tot-all'); ?>
-            <?php if (!$baris): ?><tr><td colspan="<?= $hariN + 1 + ($bolehLihatPic ? 5 + ($picOn ? count($picKolom) : 0) : 0) ?>" style="padding:24px;color:var(--muted)">Tidak ada unit untuk saringan ini.</td></tr><?php endif; ?>
+            <?php if (!$baris): ?><tr><td colspan="<?= $hariN + 2 + ($bolehLihatPic ? 5 + ($picOn ? count($picKolom) : 0) : 0) ?>" style="padding:24px;color:var(--muted)">Tidak ada unit untuk saringan ini.</td></tr><?php endif; ?>
             </tbody>
         </table></div>
+
+        <?php if ($bisaUbahFc): ?>
+        <p class="muted" style="font-size:12px;margin:8px 0 0">
+            Kolom <b>Forecast</b> bisa langsung diketik di selnya lalu tekan Enter &mdash; berlaku untuk
+            <b><?= h(period_label($bulan)) ?></b> saja. Angka dasarnya diambil dari <b>Proyeksi Bulanan</b> di Master,
+            jadi kalau yang salah berlaku sepanjang tahun, perbaiki di
+            <a href="?r=master&type=<?= h($modul === 'cl' ? 'cl' : $modul) ?>">Master <?= h($modLabel[$modul]) ?></a>.
+        </p>
+        <?php endif; ?>
+
+        <?php if ($libur): ?>
+        <?php /* Blok keterangan hari libur, meniru "KET : HARI LIBUR" di lembar
+                 mereka. Diisi lewat Master Data -> Hari Libur. */ ?>
+        <div class="panel" style="padding:10px 16px;margin-top:10px;background:#FEF2F2;border:1px solid #FECACA">
+            <b style="color:#B91C1C;font-size:12.5px">Hari libur <?= h(period_label($bulan)) ?>:</b>
+            <?php foreach ($libur as $tgl => $nm): ?>
+                <span style="font-size:12.5px;margin-left:10px"><b><?= (int) $tgl ?></b> <?= h($nm) ?></span>
+            <?php endforeach; ?>
+            <?php if (can('manage_master')): ?>
+                <a class="btn light" style="font-size:11px;padding:2px 9px;margin-left:10px" href="?r=master&type=holiday">Atur</a>
+            <?php endif; ?>
+        </div>
+        <?php elseif (can('manage_master')): ?>
+        <div class="panel" style="padding:10px 16px;margin-top:10px">
+            <span class="muted" style="font-size:12.5px">Belum ada hari libur tercatat untuk bulan ini.</span>
+            <a class="btn light" style="font-size:11px;padding:2px 9px;margin-left:8px" href="?r=master&type=holiday">Atur Hari Libur</a>
+        </div>
+        <?php endif; ?>
 
         <div class="cal-leg">
             <?php /* Warna = PIC, persis seperti di spreadsheet. Jenis transaksinya
@@ -689,6 +808,7 @@ function calendar_page(PDO $pdo): void
         <script>
         (function(){
             var BISA_OFFER = <?= $bisaOffer ? 'true' : 'false' ?>, BULAN = <?= json_encode($bulan) ?>, MODUL = <?= json_encode($modul) ?>;
+            var SEGMEN = <?= json_encode($segmen) ?>, CSRF = <?= json_encode(csrf_token()) ?>;
             var ST = <?= json_encode(array_map(fn($d) => $d[0], $stBayar), JSON_UNESCAPED_UNICODE) ?>;
             var wrap = document.getElementById('cal-wrap'), pop = document.getElementById('cal-pop'), bar = document.getElementById('cal-bar');
             var uang = function(n){ return 'Rp ' + Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
@@ -770,10 +890,89 @@ function calendar_page(PDO $pdo): void
                     x.classList.toggle('hit', cocok); x.classList.toggle('dim', q !== '' && !cocok);
                 });
             });
+            // ── Forecast diketik langsung di selnya ──────────────────────────
+            // Disimpan ke potensi bulan yang sedang dibuka saja; angka dasarnya
+            // di Master tidak disentuh, jadi bulan lain tidak ikut berubah.
+            wrap.addEventListener('keydown', function (ev) {
+                if (ev.target.classList && ev.target.classList.contains('fc-in') && ev.key === 'Enter') { ev.preventDefault(); ev.target.blur(); }
+            });
+            wrap.addEventListener('input', function (ev) {
+                var el = ev.target;
+                if (!el.classList || !el.classList.contains('fc-in')) return;
+                var a = el.value.replace(/\D/g, '');
+                el.value = a ? parseInt(a, 10).toLocaleString('id-ID') : '';
+            });
+            wrap.addEventListener('focusout', function (ev) {
+                var el = ev.target;
+                if (!el.classList || !el.classList.contains('fc-in')) return;
+                var nilai = el.value.replace(/\D/g, '');
+                if (el.dataset.awal === undefined) el.dataset.awal = '';
+                if (nilai === el.dataset.tersimpan) return;
+                var fd = new FormData();
+                fd.append('_csrf', CSRF); fd.append('period', BULAN); fd.append('segment', SEGMEN);
+                fd.append('slot_id', el.dataset.slot); fd.append('value', nilai);
+                fetch('?r=calendar_forecast_save', { method: 'POST', body: fd })
+                    .then(function (r) { return r.json(); })
+                    .then(function (j) {
+                        if (!j || !j.ok) { alert('Forecast gagal disimpan.' + (j && j.pesan ? ' ' + j.pesan : '')); return; }
+                        el.dataset.tersimpan = nilai;
+                        var td = el.closest('td');
+                        td.classList.add('simpan'); td.classList.toggle('fc-khusus', nilai !== '');
+                        setTimeout(function () { td.classList.remove('simpan'); }, 900);
+                    })
+                    .catch(function () { alert('Forecast gagal disimpan — periksa sambungan.'); });
+            });
+
             var now = wrap.querySelector('thead .hd-now');
             if (now) wrap.scrollLeft = Math.max(0, now.offsetLeft - 220);
         })();
         </script>
         <?php
     });
+}
+
+/**
+ * Simpan Forecast satu unit untuk satu bulan (dipanggil dari Kalender).
+ *
+ * Yang ditulis adalah potensi per periode — angka dasar di Master tidak
+ * disentuh, sehingga bulan lain tidak ikut berubah. Nilai kosong berarti
+ * "kembalikan ke angka Master", jadi barisnya dihapus, bukan diisi nol.
+ */
+function calendar_forecast_save(PDO $pdo): void
+{
+    require_permission('manage_master');
+    verify_csrf();
+    header('Content-Type: application/json; charset=utf-8');
+    $pid  = current_property_id();
+    $per  = (string) post('period', '');
+    $seg  = (string) post('segment', '');
+    $slot = (int) post('slot_id', 0);
+    $nilaiMentah = trim((string) post('value', ''));
+
+    if (!preg_match('/^\d{4}-\d{2}$/', $per) || !in_array($seg, ['exhibition', 'media', 'gudang'], true) || $slot <= 0) {
+        echo json_encode(['ok' => false, 'pesan' => 'Isian tidak dikenali.']);
+        return;
+    }
+    // Unit harus benar-benar milik properti yang sedang dibuka.
+    $tabel = ['exhibition' => 'master_cl_units', 'media' => 'master_media', 'gudang' => 'master_gudang'][$seg];
+    $cek = $pdo->prepare("SELECT code FROM $tabel WHERE id = ? AND property_id = ?");
+    $cek->execute([$slot, $pid]);
+    $kode = $cek->fetchColumn();
+    if ($kode === false) { echo json_encode(['ok' => false, 'pesan' => 'Unit tidak ditemukan.']); return; }
+
+    if ($nilaiMentah === '') {
+        $pdo->prepare('DELETE FROM period_potentials WHERE property_id=? AND period_key=? AND segment=? AND slot_id=?')
+            ->execute([$pid, $per, $seg, $slot]);
+        audit($pdo, 'delete', 'period_potentials', $per . '/' . $kode, [], [], 'calendar');
+        echo json_encode(['ok' => true, 'kosong' => true]);
+        return;
+    }
+    $nilai = parse_rupiah($nilaiMentah);
+    if ($nilai < 0) { echo json_encode(['ok' => false, 'pesan' => 'Angka tidak boleh negatif.']); return; }
+    $pdo->prepare('INSERT INTO period_potentials (property_id, period_key, segment, slot_id, slot_code, potential_value, updated_at)
+                   VALUES (?,?,?,?,?,?,NOW())
+                   ON DUPLICATE KEY UPDATE potential_value = VALUES(potential_value), slot_code = VALUES(slot_code), updated_at = NOW()')
+        ->execute([$pid, $per, $seg, $slot, (string) $kode, $nilai]);
+    audit($pdo, 'update', 'period_potentials', $per . '/' . $kode, ['potential_value' => $nilai], [], 'calendar');
+    echo json_encode(['ok' => true, 'nilai' => $nilai]);
 }

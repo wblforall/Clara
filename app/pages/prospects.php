@@ -226,8 +226,12 @@ function prospect_form(PDO $pdo): void
     $pics->execute([$pid]);
     $pics = $pics->fetchAll(PDO::FETCH_COLUMN);
     $warna = prospek_warna_pic($pdo, $pid);
+    // Calon yang sudah pernah jadi client cukup dipilih dari daftar; yang baru
+    // tetap boleh diketik bebas — pada tahap ini memang belum tentu terdaftar.
+    $clients = $pdo->query("SELECT company_name, brand_name FROM master_clients
+                             WHERE status = 'active' ORDER BY company_name")->fetchAll();
 
-    layout($id ? 'Ubah Prospek' : 'Tambah Prospek', function () use ($row, $unit, $pics, $id, $warna) {
+    layout($id ? 'Ubah Prospek' : 'Tambah Prospek', function () use ($row, $unit, $pics, $id, $warna, $clients) {
         $yakin = _prospek_yakin();
         ?>
         <style>
@@ -246,6 +250,16 @@ function prospect_form(PDO $pdo): void
             .pr-isi input,.pr-isi select,.pr-isi textarea{width:100%}
             .pr-dua{display:grid;grid-template-columns:1fr 1fr;gap:12px}
             .pr-bantu{font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.45}
+            .rp-box{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#fff}
+            .rp-box>span{display:flex;align-items:center;padding:0 12px;background:#F1F5F9;color:#475569;
+                font-weight:700;font-size:12.5px;border-right:1px solid var(--line)}
+            .rp-box input{border:0!important;border-radius:0!important;flex:1;min-width:0;box-shadow:none!important}
+            .pr-saran{position:absolute;left:0;right:0;top:100%;z-index:30;background:#fff;border:1px solid var(--line);
+                border-radius:9px;box-shadow:0 10px 24px rgba(15,23,42,.12);max-height:230px;overflow:auto;display:none;margin-top:3px}
+            .pr-saran div{padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #F5F7FA}
+            .pr-saran div:last-child{border-bottom:0}
+            .pr-saran div:hover,.pr-saran div.pilih{background:#F0FDFA}
+            .pr-saran small{display:block;color:var(--muted);font-size:11px}
             .pr-wajib{color:#dc2626}
             .pr-pilih{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
             .pr-pilih label{display:flex;align-items:center;gap:7px;margin:0;padding:8px 13px;border:1px solid var(--line);
@@ -286,13 +300,22 @@ function prospect_form(PDO $pdo): void
                     <h3>Calon penyewa</h3>
                     <div class="pr-isi">
                         <label>Nama calon penyewa <span class="pr-wajib">*</span></label>
-                        <input name="client_name" id="pr-nama" value="<?= h($row['client_name']) ?>" maxlength="190" required
-                               placeholder="mis. PT Sumber Rejeki / Kopi Kenangan" autocomplete="off">
-                        <div class="pr-bantu">Boleh ditulis apa adanya &mdash; belum perlu terdaftar di Master Client.</div>
+                        <div style="position:relative">
+                            <input name="client_name" id="pr-nama" value="<?= h($row['client_name']) ?>" maxlength="190" required
+                                   placeholder="Ketik namanya, atau pilih dari client yang sudah ada" autocomplete="off">
+                            <div id="pr-saran" class="pr-saran"></div>
+                        </div>
+                        <div class="pr-bantu">Client lama akan muncul sebagai saran begitu diketik. Calon baru tinggal diketik apa adanya
+                            &mdash; belum perlu terdaftar di Master Client.</div>
 
                         <label>Perkiraan nilai <span class="pr-wajib">*</span></label>
-                        <input name="est_amount" id="pr-rp" inputmode="numeric" required placeholder="Rp"
-                               value="<?= $row['est_amount'] !== '' ? h(number_format((float) $row['est_amount'], 0, ',', '.')) : '' ?>">
+                        <?php /* Awalan "Rp" menempel di kotaknya, supaya yang mengisi tidak
+                                 perlu menebak apakah angkanya rupiah atau bukan. */ ?>
+                        <div class="rp-box">
+                            <span>Rp</span>
+                            <input name="est_amount" id="pr-rp" inputmode="numeric" required placeholder="0"
+                                   value="<?= $row['est_amount'] !== '' ? h(number_format((float) $row['est_amount'], 0, ',', '.')) : '' ?>">
+                        </div>
                         <div class="pr-bantu">Angka kasar pun tidak apa-apa &mdash; gunanya untuk menakar sisa target bulan ini.</div>
 
                         <label>PIC yang menangani</label>
@@ -381,7 +404,8 @@ function prospect_form(PDO $pdo): void
             var UNIT = <?= json_encode($unit, JSON_UNESCAPED_UNICODE) ?>,
                 TERPILIH = <?= json_encode((string) $row['master_code']) ?>,
                 ARTI = <?= json_encode(array_map(fn($y) => $y[1], _prospek_yakin()), JSON_UNESCAPED_UNICODE) ?>,
-                WARNA = <?= json_encode($warna, JSON_UNESCAPED_UNICODE) ?>;
+                WARNA = <?= json_encode($warna, JSON_UNESCAPED_UNICODE) ?>,
+                CLIENTS = <?= json_encode(array_map(fn($c) => [$c['company_name'], (string) ($c['brand_name'] ?? '')], $clients), JSON_UNESCAPED_UNICODE) ?>;
             var mod = document.getElementById('pr-mod'), unit = document.getElementById('pr-unit');
             function isiUnit() {
                 var d = UNIT[mod.value] || [];
@@ -423,6 +447,32 @@ function prospect_form(PDO $pdo): void
                 var ck = document.querySelector('input[name=confidence]:checked');
                 document.getElementById('pr-yakin-arti').textContent = ck ? ARTI[ck.value] || '' : '';
             }
+            // Saran nama dari Master Client — mengetik tetap bebas, saran hanya
+            // membantu supaya nama client lama tidak ditulis dua macam.
+            var nm = document.getElementById('pr-nama'), saran = document.getElementById('pr-saran');
+            function tutupSaran() { saran.style.display = 'none'; }
+            function bukaSaran() {
+                var q = (nm.value || '').trim().toLowerCase();
+                if (q.length < 2) return tutupSaran();
+                var cocok = CLIENTS.filter(function (c) {
+                    return c[0].toLowerCase().indexOf(q) !== -1 || (c[1] && c[1].toLowerCase().indexOf(q) !== -1);
+                }).slice(0, 8);
+                if (!cocok.length) return tutupSaran();
+                saran.innerHTML = '';
+                cocok.forEach(function (c) {
+                    var d = document.createElement('div');
+                    d.textContent = c[0];
+                    if (c[1]) { var sm = document.createElement('small'); sm.textContent = c[1]; d.appendChild(sm); }
+                    d.addEventListener('mousedown', function (e) { e.preventDefault(); nm.value = c[0]; tutupSaran(); lihat(); });
+                    saran.appendChild(d);
+                });
+                saran.style.display = 'block';
+            }
+            nm.addEventListener('input', bukaSaran);
+            nm.addEventListener('focus', bukaSaran);
+            nm.addEventListener('blur', function () { setTimeout(tutupSaran, 150); });
+            document.addEventListener('keydown', function (e) { if (e.key === 'Escape') tutupSaran(); });
+
             ['pr-nama', 'pr-mulai', 'pr-selesai', 'pr-pic'].forEach(function (id) {
                 var el = document.getElementById(id);
                 el.addEventListener('input', lihat); el.addEventListener('change', lihat);

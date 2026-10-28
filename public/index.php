@@ -163,6 +163,20 @@ $masterConfig = [
         ],
         'search'        => ['name', 'role_name', 'email', 'phone'],
     ],
+    'holiday' => [
+        'title'         => 'Hari Libur',
+        'table'         => 'holidays',
+        'key'           => 'holiday_date',
+        'order'         => 'holiday_date DESC',
+        'columns'       => ['holiday_date', 'name', 'status'],
+        'column_labels' => ['holiday_date' => 'Tanggal', 'name' => 'Keterangan'],
+        'fields'        => [
+            // Ditandai di Kalender Pameran, dan didaftar di bawahnya seperti
+            // blok "KET : HARI LIBUR" di lembar kerja tim.
+            'holiday_date' => 'Tanggal', 'name' => 'Keterangan', 'status' => 'Status',
+        ],
+        'search'        => ['name'],
+    ],
     'target' => [
         'title'   => 'Target Bulanan',
         'table'   => 'targets_monthly',
@@ -447,6 +461,7 @@ $pageFiles = [
     'skp_revision_decide'         => 'skp.php',
     'skp_print'                   => 'skp.php',
     'skp_sign_upload'             => 'skp.php',
+    'calendar_forecast_save'      => 'calendar.php',
     'prospects'                   => 'prospects.php',
     'prospect_form'               => 'prospects.php',
     'prospect_save'               => 'prospects.php',
@@ -539,6 +554,7 @@ match ($route) {
     'skp_revision_decide'         => skp_revision_decide($pdo),
     'skp_print'                   => skp_print($pdo),
     'skp_sign_upload'             => skp_sign_upload($pdo),
+    'calendar_forecast_save'      => calendar_forecast_save($pdo),
     'prospects'                   => prospects_page($pdo),
     'prospect_form'               => prospect_form($pdo),
     'prospect_save'               => prospect_save($pdo),

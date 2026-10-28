@@ -518,6 +518,11 @@ function master_form(PDO $pdo, array $masterConfig): void
                                 <?php endif; ?>
                             </select>
                             <div class="help">Pilih dari daftar baku. Nilai lama yang tak baku ditandai "(lama — perbaiki)" agar diseragamkan.</div>
+                            <?php elseif (str_ends_with($name, '_date')): ?>
+                                <?php /* Kolom bertanggal diisi lewat pemilih tanggal, bukan
+                                         diketik bebas — salah format membuat barisnya tidak
+                                         pernah cocok dengan kalender. */ ?>
+                                <input type="date" name="<?= h($name) ?>" value="<?= field($row, $name) ?>">
                             <?php else: ?>
                             <input name="<?= h($name) ?>" value="<?= field($row, $name) ?>">
                             <?php endif; ?>

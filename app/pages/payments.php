@@ -395,6 +395,11 @@ function payment_form(PDO $pdo): void
             .pf-isi input,.pf-isi select{width:100%}
             .pf-dua{display:grid;grid-template-columns:1fr 1fr;gap:10px}
             .pf-bantu{font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.45}
+            /* Awalan "Rp" menempel di kotaknya — tidak perlu menebak satuannya. */
+            .rp-box{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#fff}
+            .rp-box>span{display:flex;align-items:center;padding:0 12px;background:#F1F5F9;color:#475569;
+                font-weight:700;font-size:12.5px;border-right:1px solid var(--line)}
+            .rp-box input{border:0!important;border-radius:0!important;flex:1;min-width:0;box-shadow:none!important}
             .pf-cepat{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
             .pf-cepat button{font-size:11.5px;padding:4px 11px}
             .pf-rinci{width:100%;font-size:13px;border-collapse:collapse}
@@ -485,9 +490,10 @@ function payment_form(PDO $pdo): void
                     </div>
 
                     <label>Jumlah tagihan</label>
-                    <input type="text" name="invoice_amount" id="inv-amt" inputmode="numeric"
-                           value="<?= $trx['invoice_amount'] === null ? '' : h(number_format((float) $trx['invoice_amount'], 0, ',', '.')) ?>"
-                           placeholder="<?= h(number_format((float) $trx['final_amount'], 0, ',', '.')) ?>"<?= $kunci ?>>
+                    <div class="rp-box"><span>Rp</span>
+                        <input type="text" name="invoice_amount" id="inv-amt" inputmode="numeric"
+                               value="<?= $trx['invoice_amount'] === null ? '' : h(number_format((float) $trx['invoice_amount'], 0, ',', '.')) ?>"
+                               placeholder="<?= h(number_format((float) $trx['final_amount'], 0, ',', '.')) ?>"<?= $kunci ?>></div>
                     <div class="pf-bantu">Dikosongkan berarti memakai nilai transaksi, <?= money($trx['final_amount']) ?>.</div>
                     <?php if ($bisaIsi): ?>
                     <div class="pf-cepat">
@@ -565,8 +571,10 @@ function payment_form(PDO $pdo): void
                             <input type="hidden" name="back" value="<?= h($back) ?>">
                             <div class="pf-dua">
                                 <div><label>Tanggal bayar</label><input type="date" name="paid_at" value="<?= h(date('Y-m-d')) ?>" required></div>
-                                <div><label>Jumlah dibayar</label><input type="text" name="amount" id="pay-amt" inputmode="numeric"
-                                        value="<?= $sisa > 0.5 ? h(number_format($sisa, 0, ',', '.')) : '' ?>" placeholder="Rp" required></div>
+                                <div><label>Jumlah dibayar</label>
+                                    <div class="rp-box"><span>Rp</span>
+                                        <input type="text" name="amount" id="pay-amt" inputmode="numeric"
+                                               value="<?= $sisa > 0.5 ? h(number_format($sisa, 0, ',', '.')) : '' ?>" placeholder="0" required></div></div>
                             </div>
                             <label>Cara bayar</label>
                             <select name="method"><option>Transfer</option><option>Tunai</option><option>Giro</option><option>Lainnya</option></select>
