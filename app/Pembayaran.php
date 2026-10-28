@@ -48,23 +48,42 @@ function pembayaran_select_sql(string $t = 't'): string
 }
 
 /**
- * Nomor kontrak yang diterbitkan Legal untuk sebuah transaksi.
+ * Nama unit untuk sekumpulan baris transaksi.
  *
- * Rantainya: transaksi — dokumen SKP — permintaan kontrak. Satu penawaran
- * paket melahirkan beberapa transaksi dari SKP yang sama, dan memang satu
- * nomor kontrak berlaku untuk semuanya.
+ * Tim menyebut unitnya dengan NAMA ("1/FASHION BOOTH LG"), bukan dengan kode
+ * ("LG-003") — di berkas mereka memang nama itulah yang tertulis di kolom
+ * pertama. Kode tetap ditampilkan kecil di bawahnya supaya yang sudah hafal
+ * kode tidak kehilangan pegangan.
  *
- * Ditulis sebagai sub-select (bukan diambil belakangan di PHP) karena kolom
- * ini harus bisa dicari dan diurutkan bersama kolom lain di satu kueri.
+ * Satu kueri per modul untuk seluruh baris di layar, bukan satu per baris.
  */
-function pembayaran_kontrak_sql(string $t = 't'): string
+function pembayaran_nama_unit(PDO $pdo, array $rows, int $pid): array
 {
-    return "(SELECT cr9.contract_no FROM contract_requests cr9
-               JOIN skp_documents sd9 ON sd9.id = cr9.skp_id
-              WHERE sd9.property_id = $t.property_id
-                AND (sd9.transaction_id = $t.id OR sd9.id = $t.skp_id)
-                AND cr9.contract_no IS NOT NULL AND cr9.contract_no <> ''
-              ORDER BY cr9.id DESC LIMIT 1)";
+    if (!$rows) return $rows;
+    $perModul = [];
+    foreach ($rows as $r) {
+        $m = (string) ($r['module'] ?? 'cl');
+        $k = trim((string) ($r['master_code'] ?? ''));
+        if ($k !== '') $perModul[$m][$k] = true;
+    }
+    $sql = [
+        'cl'     => "SELECT code, location_name nm FROM master_cl_units WHERE property_id = ? AND code IN (%s)",
+        'media'  => "SELECT code, CONCAT_WS(' ', media_type, location, NULLIF(point,'')) nm FROM master_media WHERE property_id = ? AND code IN (%s)",
+        'gudang' => "SELECT code, name nm FROM master_gudang WHERE property_id = ? AND code IN (%s)",
+    ];
+    $nama = [];
+    foreach ($perModul as $m => $kode) {
+        if (!isset($sql[$m])) continue;
+        $k = array_keys($kode);
+        $st = $pdo->prepare(sprintf($sql[$m], implode(',', array_fill(0, count($k), '?'))));
+        $st->execute(array_merge([$pid], $k));
+        foreach ($st->fetchAll() as $u) $nama[$m . '|' . $u['code']] = trim((string) $u['nm']);
+    }
+    foreach ($rows as $i => $r) {
+        $kunci = ($r['module'] ?? 'cl') . '|' . ($r['master_code'] ?? '');
+        $rows[$i]['unit_name'] = $nama[$kunci] ?? '';
+    }
+    return $rows;
 }
 
 /**

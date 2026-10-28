@@ -759,6 +759,20 @@ function contract_legal_approve(PDO $pdo): void
         $pdo->prepare("UPDATE contract_requests SET contract_no=?, contract_date=? WHERE id=?")
             ->execute([substr($noKontrak, 0, 80), $tglCetak, (int) $cr['id']]);
     }
+
+    // Nomornya turun ke transaksi milik SKP ini. Satu penawaran paket melahirkan
+    // beberapa transaksi dari SKP yang sama, dan satu nomor kontrak memang
+    // berlaku untuk semuanya. Yang sudah diketik admin TIDAK ditimpa — kalau
+    // berbeda, itu perlu dilihat orang, bukan diperbaiki diam-diam.
+    if ($noKontrak !== '') {
+        $pdo->prepare("UPDATE transactions t
+                         JOIN skp_documents sd ON (sd.transaction_id = t.id OR sd.id = t.skp_id)
+                         JOIN contract_requests cr ON cr.skp_id = sd.id
+                          SET t.contract_no = ?, t.contract_date = ?
+                        WHERE cr.id = ? AND t.deleted_at IS NULL
+                          AND (t.contract_no IS NULL OR t.contract_no = '')")
+            ->execute([substr($noKontrak, 0, 80), $tglCetak, (int) $cr['id']]);
+    }
     // Kembali ke halaman legal (kini menampilkan status disetujui).
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
