@@ -129,12 +129,20 @@ function contract_request_list(PDO $pdo): void
             <p style="margin:0 0 10px;color:var(--muted);font-size:13px">Dibuat dari halaman <strong>SKP</strong> yang sudah ditandatangani customer (tombol "Ajukan Kontrak ke Legal"). Cetak PDF lalu kirim ke Departemen Legal beserta SKP &amp; Surat Penawaran.</p>
             <div class="table-wrap">
                 <table class="mobile-cards" style="font-size:12.5px">
-                    <thead><tr><th>No. Formulir</th><th>SKP</th><th>Jenis Kontrak</th><th>Status</th><th>Dibuat</th><th></th></tr></thead>
+                    <thead><tr><th>No. Formulir</th><th>No. Kontrak</th><th>SKP</th><th>Jenis Kontrak</th><th>Status</th><th>Dibuat</th><th></th></tr></thead>
                     <tbody>
-                    <?php if (!$rows): ?><tr class="mc-full"><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">Belum ada permintaan kontrak.</td></tr><?php endif; ?>
+                    <?php if (!$rows): ?><tr class="mc-full"><td colspan="7" style="text-align:center;color:var(--muted);padding:24px">Belum ada permintaan kontrak.</td></tr><?php endif; ?>
                     <?php foreach ($rows as $r): $b = $badge[$r['status']] ?? $badge['draft']; ?>
                         <tr>
                             <td data-label="No. Formulir" style="white-space:nowrap;font-weight:600"><?= h($r['req_no'] ?? '—') ?></td>
+                            <?php /* Nomor dari Legal: inilah dasar invoice, jadi ditaruh
+                                     sebelah nomor formulir seperti di berkas Income Marketing. */ ?>
+                            <td data-label="No. Kontrak" style="white-space:nowrap">
+                                <?php if (!empty($r['contract_no'])): ?><b><?= h($r['contract_no']) ?></b>
+                                    <?php if (!empty($r['contract_date'])): ?><br><span class="muted" style="font-size:11px"><?= h(date('d/m/Y', strtotime((string) $r['contract_date']))) ?></span><?php endif; ?>
+                                <?php elseif ($r['status'] === 'approved'): ?><span style="color:#B45309;font-size:11.5px">menunggu nomor</span>
+                                <?php else: ?><span class="muted">—</span><?php endif; ?>
+                            </td>
                             <td data-label="SKP" style="white-space:nowrap"><?= h($r['skp_no'] ?? '—') ?></td>
                             <td data-label="Jenis Kontrak"><?= h($types[$r['contract_type']] ?? 'Sewa Menyewa') ?></td>
                             <td data-label="Status"><span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span></td>
@@ -215,6 +223,12 @@ function contract_request_form(PDO $pdo): void
             <?php if (!empty($cr['legal_by'])): ?> oleh <strong><?= h($cr['legal_by']) ?></strong><?php endif; ?>
             <?php if (!empty($cr['legal_approved_at'])): ?> pada <?= h(date('d/m/Y H:i', strtotime($cr['legal_approved_at']))) ?><?php endif; ?>.
             <?php if (!empty($cr['legal_note'])): ?><div style="margin-top:6px;font-size:13px">Catatan Legal: “<?= h($cr['legal_note']) ?>”</div><?php endif; ?>
+            <?php if (!empty($cr['contract_no'])): ?>
+                <div style="margin-top:8px;font-size:15px">No. Kontrak: <strong><?= h($cr['contract_no']) ?></strong>
+                <?php if (!empty($cr['contract_date'])): ?> <span class="muted">(cetak <?= h(date('d/m/Y', strtotime((string) $cr['contract_date']))) ?>)</span><?php endif; ?></div>
+            <?php else: ?>
+                <div style="margin-top:8px;font-size:13px;color:#92400e">Nomor kontrak belum diisi Legal — nomor inilah yang dipakai menerbitkan invoice.</div>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
 
@@ -659,14 +673,39 @@ function contract_legal_page(PDO $pdo): void
                     <?php if (!empty($cr['legal_by'])): ?> oleh <strong><?= $h($cr['legal_by']) ?></strong><?php endif; ?>
                     <?php if (!empty($cr['legal_approved_at'])): ?> pada <?= $h(date('d/m/Y H:i', strtotime($cr['legal_approved_at']))) ?><?php endif; ?>.
                     <?php if (!empty($cr['legal_note'])): ?><div style="margin-top:6px">Catatan: <?= $h($cr['legal_note']) ?></div><?php endif; ?>
+                    <?php if (!empty($cr['contract_no'])): ?>
+                        <div style="margin-top:8px;font-size:15px">No. Kontrak: <strong><?= $h($cr['contract_no']) ?></strong>
+                        <?php if (!empty($cr['contract_date'])): ?> <span style="color:#475569">(cetak <?= $h(date('d/m/Y', strtotime((string) $cr['contract_date']))) ?>)</span><?php endif; ?></div>
+                    <?php endif; ?>
                 </div>
+                <?php /* Nomor terbit setelah kontraknya dicetak — kerap beberapa saat
+                         sesudah persetujuan. Jadi isiannya tetap tersedia di sini,
+                         dan boleh dibetulkan bila salah ketik. */ ?>
+                <form method="post" action="?r=contract_legal_approve" style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:14px 16px;margin-top:12px">
+                    <input type="hidden" name="_csrf" value="<?= $h(csrf_token()) ?>">
+                    <input type="hidden" name="token" value="<?= $h($cr['share_token']) ?>">
+                    <p style="margin:0 0 8px;color:#374151"><?= empty($cr['contract_no'])
+                        ? 'Sudah dicetak kontraknya? Tulis nomornya di sini — nomor itu langsung terbaca tim Casual Leasing di menu Tagihan &amp; Pembayaran, sehingga tidak perlu lagi meminta rekap.'
+                        : 'Membetulkan nomor kontrak:' ?></p>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+                        <div style="flex:2;min-width:240px"><label style="font-size:12px;font-weight:700;display:block">No. Kontrak</label>
+                            <input name="contract_no" value="<?= $h($cr['contract_no'] ?? '') ?>" placeholder="mis. 00430/KS/e-Walk/BSB-BPP/IV/2026" style="width:100%;padding:8px" required></div>
+                        <div style="min-width:150px"><label style="font-size:12px;font-weight:700;display:block">Tanggal Cetak</label>
+                            <input type="date" name="contract_date" value="<?= $h($cr['contract_date'] ?? date('Y-m-d')) ?>" style="width:100%;padding:8px"></div>
+                        <button type="submit" style="background:#6d28d9;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-weight:700;cursor:pointer">Simpan Nomor</button>
+                    </div>
+                </form>
             <?php else: ?>
                 <form method="post" action="?r=contract_legal_approve" style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:14px 16px" onsubmit="return confirm('Setujui permintaan kontrak ini? Pemohon akan melihat status disetujui.')">
                     <input type="hidden" name="_csrf" value="<?= $h(csrf_token()) ?>">
                     <input type="hidden" name="token" value="<?= $h($cr['share_token']) ?>">
                     <p style="margin:0 0 8px;color:#374151">Setelah dokumen ditinjau, klik tombol di bawah untuk menyetujui. Persetujuan tercatat atas nama akun Legal yang sedang login. Pemohon (sales) akan melihat status <strong>Disetujui Legal</strong>.</p>
                     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-                        <div style="flex:1;min-width:220px"><label style="font-size:12px;font-weight:700;display:block">Catatan (opsional)</label><input name="legal_note" placeholder="mis. lanjut buat draft kontrak" style="width:100%;padding:8px"></div>
+                        <div style="flex:2;min-width:240px"><label style="font-size:12px;font-weight:700;display:block">No. Kontrak <span style="color:#6b7280;font-weight:400">(boleh menyusul)</span></label>
+                            <input name="contract_no" placeholder="mis. 00430/KS/e-Walk/BSB-BPP/IV/2026" style="width:100%;padding:8px"></div>
+                        <div style="min-width:150px"><label style="font-size:12px;font-weight:700;display:block">Tanggal Cetak</label>
+                            <input type="date" name="contract_date" style="width:100%;padding:8px"></div>
+                        <div style="flex:1;min-width:200px"><label style="font-size:12px;font-weight:700;display:block">Catatan (opsional)</label><input name="legal_note" placeholder="mis. lanjut buat draft kontrak" style="width:100%;padding:8px"></div>
                         <button type="submit" style="background:#6d28d9;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-weight:700;cursor:pointer">✓ Setujui Permintaan</button>
                     </div>
                 </form>
@@ -697,16 +736,28 @@ function contract_legal_approve(PDO $pdo): void
     require_permission('approve_skp');
     verify_csrf();
     $token = (string) post('token', '');
-    $st = $pdo->prepare('SELECT id, status FROM contract_requests WHERE share_token = ? LIMIT 1');
+    $st = $pdo->prepare('SELECT id, status, contract_no FROM contract_requests WHERE share_token = ? LIMIT 1');
     $st->execute([$token]);
     $cr = $token !== '' ? $st->fetch() : false;
     if (!$cr) { http_response_code(404); exit('Tautan tidak valid.'); }
+    // Nomor kontrak boleh menyusul: kontraknya kerap baru dicetak beberapa saat
+    // sesudah disetujui. Jadi rute ini melayani dua hal — menyetujui, dan
+    // mengisi/membetulkan nomornya pada permintaan yang sudah disetujui.
+    $noKontrak = trim((string) post('contract_no'));
+    $tglCetak  = trim((string) post('contract_date'));
+    $tglCetak  = ($tglCetak !== '' && strtotime($tglCetak)) ? date('Y-m-d', strtotime($tglCetak)) : null;
+
     if ($cr['status'] === 'sent') {
         // Identitas penyetuju dari sesi login (bukan input bebas).
         $by   = clara_pelaku('Departemen Legal');
         $note = trim((string) post('legal_note')) ?: null;
-        $pdo->prepare("UPDATE contract_requests SET status='approved', legal_by=?, legal_note=?, legal_approved_at=CURRENT_TIMESTAMP WHERE id=?")
-            ->execute([substr($by, 0, 120), $note ? substr($note, 0, 500) : null, (int) $cr['id']]);
+        $pdo->prepare("UPDATE contract_requests SET status='approved', legal_by=?, legal_note=?, legal_approved_at=CURRENT_TIMESTAMP,
+                              contract_no=?, contract_date=? WHERE id=?")
+            ->execute([substr($by, 0, 120), $note ? substr($note, 0, 500) : null,
+                       $noKontrak !== '' ? substr($noKontrak, 0, 80) : null, $noKontrak !== '' ? $tglCetak : null, (int) $cr['id']]);
+    } elseif ($cr['status'] === 'approved' && $noKontrak !== '') {
+        $pdo->prepare("UPDATE contract_requests SET contract_no=?, contract_date=? WHERE id=?")
+            ->execute([substr($noKontrak, 0, 80), $tglCetak, (int) $cr['id']]);
     }
     // Kembali ke halaman legal (kini menampilkan status disetujui).
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';

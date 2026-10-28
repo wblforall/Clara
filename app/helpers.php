@@ -629,6 +629,10 @@ function permission_for_route(string $route): string
         // berbeda. Rute tanpa daftar jatuh ke default di bawah.
         'transaction_cancel', 'price_step_save', 'pic_split_save' => 'approve_skp',
         'transaction_history', 'calendar' => 'view_transactions',
+        // Prospek boleh DILIHAT siapa pun yang boleh membuka kalender — gunanya
+        // memang untuk membandingkan posisi bersama; yang MENGISI dibatasi.
+        'prospects' => 'view_transactions',
+        'prospect_form', 'prospect_save', 'prospect_delete' => 'manage_prospects',
         // Membuka & mengunduh cukup izin lihat; yang MENGUBAH angka tetap
         // menuntut manage_payments. Pemegang manage_payments diberi
         // view_payments juga (migrasi 082), jadi tidak ada yang terkunci.

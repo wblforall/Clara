@@ -47,6 +47,86 @@ function pembayaran_select_sql(string $t = 't'): string
             ($t.invoice_due IS NOT NULL AND $t.invoice_due < CURDATE() AND $bayar < $tagihan - 0.5) AS bayar_lewat";
 }
 
+/**
+ * Nomor kontrak yang diterbitkan Legal untuk sebuah transaksi.
+ *
+ * Rantainya: transaksi — dokumen SKP — permintaan kontrak. Satu penawaran
+ * paket melahirkan beberapa transaksi dari SKP yang sama, dan memang satu
+ * nomor kontrak berlaku untuk semuanya.
+ *
+ * Ditulis sebagai sub-select (bukan diambil belakangan di PHP) karena kolom
+ * ini harus bisa dicari dan diurutkan bersama kolom lain di satu kueri.
+ */
+function pembayaran_kontrak_sql(string $t = 't'): string
+{
+    return "(SELECT cr9.contract_no FROM contract_requests cr9
+               JOIN skp_documents sd9 ON sd9.id = cr9.skp_id
+              WHERE sd9.property_id = $t.property_id
+                AND (sd9.transaction_id = $t.id OR sd9.id = $t.skp_id)
+                AND cr9.contract_no IS NOT NULL AND cr9.contract_no <> ''
+              ORDER BY cr9.id DESC LIMIT 1)";
+}
+
+/**
+ * Lengkapi baris tagihan dengan komponen yang TIDAK termasuk nilai transaksi:
+ * biaya listrik dan security deposit.
+ *
+ * Inilah sebab pembayaran kerap terlihat lebih besar daripada tagihannya. Dari
+ * 693 baris berbayar di berkas tim (Des 2025—Sep 2026), 361 dibayar lebih
+ * besar, dan 175 di antaranya selisihnya tepat Rp 166.500 — listrik Rp 150.000
+ * plus PPN. Listriknya tercetak di surat penawaran dan dokumen konfirmasi,
+ * tetapi tidak pernah masuk nilai transaksi, jadi tidak ikut terhitung di
+ * kolom Tagihan. Client membayarnya sekalian, maka bayarannya tampak berlebih.
+ *
+ * Yang dihitung di sini tidak mengubah angka Tagihan — status lunas/sebagian
+ * tetap memakai rumus yang sama seperti sebelumnya. Ia hanya memperlihatkan
+ * komponennya, supaya selisih yang wajar tidak perlu ditelusuri ulang tiap
+ * bulan.
+ *
+ * Satu kueri untuk seluruh baris di layar, bukan satu kueri per baris.
+ */
+function pembayaran_lengkapi_komponen(PDO $pdo, array $rows): array
+{
+    if (!$rows) return $rows;
+    require_once __DIR__ . '/pages/skp.php';   // skp_listrik() — rumusnya satu, di sana
+
+    $idTrx = array_values(array_unique(array_map(fn($r) => (int) $r['id'], $rows)));
+    $idSkp = array_values(array_filter(array_unique(array_map(fn($r) => (int) ($r['skp_id'] ?? 0), $rows))));
+    $tanda = fn(array $a) => implode(',', array_fill(0, count($a), '?'));
+
+    $sql = "SELECT id, transaction_id, electricity_flag, electricity_amount, electricity_monthly,
+                   electricity_units, deposit_amount, deposit_paid, ppn_flag
+              FROM skp_documents
+             WHERE deleted_at IS NULL AND (transaction_id IN (" . $tanda($idTrx) . ")";
+    $arg = $idTrx;
+    if ($idSkp) { $sql .= " OR id IN (" . $tanda($idSkp) . ")"; $arg = array_merge($arg, $idSkp); }
+    $sql .= ") ORDER BY id";
+    $st = $pdo->prepare($sql);
+    $st->execute($arg);
+
+    $perTrx = []; $perId = [];
+    foreach ($st->fetchAll() as $d) {
+        $perId[(int) $d['id']] = $d;
+        if ((int) $d['transaction_id'] > 0) $perTrx[(int) $d['transaction_id']] = $d;   // terbaru menang
+    }
+
+    foreach ($rows as $i => $r) {
+        $d = $perTrx[(int) $r['id']] ?? $perId[(int) ($r['skp_id'] ?? 0)] ?? null;
+        $listrik = $d ? skp_listrik($d, (string) $r['start_date'], (string) $r['end_date']) : 0.0;
+        // Deposit yang sudah disetor di kontrak sebelumnya tidak ditagih ulang.
+        $deposit = ($d && empty($d['deposit_paid'])) ? (float) $d['deposit_amount'] : 0.0;
+        $sewa    = (float) $r['tagihan'];
+        $kenaPpn = !$d || !empty($d['ppn_flag']);
+        // PPN sesuai PMK 131/2024: nilai x 11/12 x 12%.
+        $ppn     = $kenaPpn ? round(($sewa + $listrik) * 11 / 12 * 0.12) : 0.0;
+        $rows[$i] += [
+            'k_sewa' => $sewa, 'k_ppn' => $ppn, 'k_listrik' => $listrik, 'k_deposit' => $deposit,
+            'k_perkiraan' => $sewa + $ppn + $listrik + $deposit,
+        ];
+    }
+    return $rows;
+}
+
 /** Lencana HTML untuk satu status; $lewat menambahkan tanda "lewat tempo". */
 function pembayaran_badge(string $status, bool $lewat = false): string
 {

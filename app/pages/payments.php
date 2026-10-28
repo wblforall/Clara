@@ -38,29 +38,48 @@ function _pay_query(PDO $pdo, bool $semuaBaris): array
     }
     if ($modul !== '') { $where[] = 't.module = :modul'; $params[':modul'] = $modul; }
     if ($pic !== '')   { $where[] = 't.pic_name = :pic'; $params[':pic'] = $pic; }
-    if ($cari !== '') {
-        $where[] = '(c.company_name LIKE :q1 OR c.brand_name LIKE :q2 OR t.master_code LIKE :q3 OR t.invoice_no LIKE :q4)';
-        foreach (['q1', 'q2', 'q3', 'q4'] as $k) $params[":$k"] = "%$cari%";
-    }
+    // Urutan daftar. Tim mencari berdasarkan NAMA PENYEWA — menelusuri daftar
+    // sampai ketemu, seperti membuka buku — jadi abjad nama yang jadi bawaan,
+    // bukan tanggal mulai seperti sebelumnya.
+    $urutKolom = [
+        'penyewa'  => 'x.company_name', 'unit' => 'x.master_code', 'kontrak' => 'x.contract_no',
+        'mulai'    => 'x.start_date',   'pic'  => 'x.pic_name',    'tagihan' => 'x.tagihan',
+        'terbayar' => 'x.terbayar',     'sisa' => '(x.tagihan - x.terbayar)',
+        'invoice'  => 'x.invoice_no',   'status' => 'x.bayar_status',
+    ];
+    $urut = (string) getv('sort', 'penyewa');
+    if (!isset($urutKolom[$urut])) $urut = 'penyewa';
+    $arah = strtolower((string) getv('dir', '')) === 'desc' ? 'DESC' : 'ASC';
+
     [$sf, $sp] = current_sales_scope_sql($pdo, $pid, 't.pic_name', 't.created_by');
-    $dalam = "SELECT t.id, t.property_id, t.module, t.master_code, t.start_date, t.end_date, t.final_amount,
+    $dalam = "SELECT t.id, t.skp_id, t.property_id, t.module, t.master_code, t.start_date, t.end_date, t.final_amount,
                      t.pic_name, t.created_by, t.invoice_no, t.invoice_date, t.invoice_due, t.invoice_amount,
-                     c.company_name, c.brand_name, " . pembayaran_select_sql('t') . "
+                     c.company_name, c.brand_name, " . pembayaran_kontrak_sql('t') . " AS contract_no, "
+                     . pembayaran_select_sql('t') . "
               FROM transactions t LEFT JOIN master_clients c ON c.id = t.client_id
               WHERE " . implode(' AND ', $where) . $sf;
     // Campuran :nama dan ? tidak boleh dalam satu pernyataan — ubah ? milik
     // pembatas sales menjadi parameter bernama.
     $n = 0;
     $dalam = preg_replace_callback('/\?/', function () use (&$n) { return ':sc' . $n++; }, $dalam);
-    $luar  = "FROM ($dalam) x" . ($status === 'lewat' ? ' WHERE x.bayar_lewat = 1'
-                                  : ($status !== '' ? ' WHERE x.bayar_status = :status' : ''));
+    // Pencarian dikerjakan di lapisan luar karena nomor kontrak baru ada di
+    // sana — ia hasil sub-select, bukan kolom tabel.
+    $cariSql = '';
+    if ($cari !== '') {
+        $cariSql = '(x.company_name LIKE :q1 OR x.brand_name LIKE :q2 OR x.master_code LIKE :q3
+                     OR x.invoice_no LIKE :q4 OR x.contract_no LIKE :q5)';
+        foreach (['q1', 'q2', 'q3', 'q4', 'q5'] as $k) $params[":$k"] = "%$cari%";
+    }
+    $syaratStatus = $status === 'lewat' ? 'x.bayar_lewat = 1' : ($status !== '' ? 'x.bayar_status = :status' : '');
+    $gabung = fn(array $a) => ($a = array_filter($a)) ? ' WHERE ' . implode(' AND ', $a) : '';
+    $luar  = "FROM ($dalam) x" . $gabung([$cariSql, $syaratStatus]);
     $bind = $params;
     foreach ($sp as $i => $v) $bind[':sc' . $i] = $v;
     if ($status !== '' && $status !== 'lewat') $bind[':status'] = $status;
 
     // Hitungan di lencana saringan memakai SEMUA baris (tanpa saringan status),
     // kalau tidak lencana lain jadi 0 begitu satu status dipilih.
-    $dasar   = "FROM ($dalam) x";
+    $dasar   = "FROM ($dalam) x" . $gabung([$cariSql]);
     $bindDasar = $bind; unset($bindDasar[':status']);
     $chip = $pdo->prepare("SELECT COUNT(*) n_all, SUM(bayar_status='belum_invoice') n_belum_inv, SUM(bayar_status='belum_bayar') n_belum,
                                   SUM(bayar_status='sebagian') n_sebagian, SUM(bayar_status='lunas') n_lunas,
@@ -73,11 +92,18 @@ function _pay_query(PDO $pdo, bool $semuaBaris): array
     $halaman = max(1, (int) getv('page', 1));
     $per     = 200;
     $batas   = $semuaBaris ? '' : ' LIMIT ' . $per . ' OFFSET ' . (($halaman - 1) * $per);
-    $st = $pdo->prepare("SELECT x.* $luar ORDER BY x.start_date DESC, x.id DESC" . $batas);
+    // Yang kosong selalu di belakang — daftar yang diawali deretan strip
+    // membuat orang mengira datanya hilang.
+    $kolom = $urutKolom[$urut];
+    $kosongAkhir = in_array($urut, ['kontrak', 'invoice', 'penyewa', 'pic'], true)
+        ? "($kolom IS NULL OR $kolom = '') ASC, " : '';
+    $st = $pdo->prepare("SELECT x.* $luar ORDER BY $kosongAkhir$kolom $arah, x.start_date DESC, x.id DESC" . $batas);
     $st->execute($bind);
+    $rows = pembayaran_lengkapi_komponen($pdo, $st->fetchAll());
     return [
-        'rows' => $st->fetchAll(), 'sum' => $sum, 'halaman' => $halaman, 'per' => $per,
-        'f' => ['period' => $periode, 'mode' => $mode, 'module' => $modul, 'pic' => $pic, 'status' => $status, 'q' => $cari],
+        'rows' => $rows, 'sum' => $sum, 'halaman' => $halaman, 'per' => $per,
+        'f' => ['period' => $periode, 'mode' => $mode, 'module' => $modul, 'pic' => $pic, 'status' => $status,
+                'q' => $cari, 'sort' => $urut, 'dir' => strtolower($arah)],
     ];
 }
 
@@ -112,7 +138,8 @@ function payments_page(PDO $pdo): void
             <div><label class="muted">PIC</label>
                 <select name="pic"><option value="">Semua</option>
                     <?php foreach ($pics as $p): ?><option <?= $f['pic'] === $p ? 'selected' : '' ?>><?= h($p) ?></option><?php endforeach; ?></select></div>
-            <div><label class="muted">Cari</label><input type="text" name="q" value="<?= h($f['q']) ?>" placeholder="Klien, unit, invoice" style="width:180px"></div>
+            <div><label class="muted">Cari</label><input type="text" name="q" value="<?= h($f['q']) ?>" placeholder="Nama, unit, no. kontrak, invoice" style="width:220px"></div>
+            <input type="hidden" name="sort" value="<?= h($f['sort']) ?>"><input type="hidden" name="dir" value="<?= h($f['dir']) ?>">
             <button type="submit">Terapkan</button>
             <a class="btn light" href="?r=payments&period=semua">Semua periode</a>
             <a class="btn light" href="<?= h($qs(['r' => 'payments_csv'])) ?>">Unduh CSV</a>
@@ -139,21 +166,57 @@ function payments_page(PDO $pdo): void
         </div>
 
         <div class="table-wrap"><table>
-            <thead><tr><th>Unit</th><th>Penyewa</th><th>Periode sewa</th><th>PIC</th><th style="text-align:right">Tagihan</th>
-                <th style="text-align:right">Terbayar</th><th style="text-align:right">Sisa</th><th>Invoice</th><th>Status</th><th></th></tr></thead>
+            <?php
+            // Judul kolom bisa diklik untuk mengurutkan. Panah menandai kolom yang
+            // sedang dipakai, supaya jelas daftar ini sedang urut menurut apa.
+            $th = function (string $label, string $key, string $rata = 'left') use ($f, $qs) {
+                $aktif = $f['sort'] === $key;
+                $balik = ($aktif && $f['dir'] === 'asc') ? 'desc' : 'asc';
+                $panah = $aktif ? ($f['dir'] === 'asc' ? ' ▲' : ' ▼') : '';
+                echo '<th style="text-align:' . $rata . ';white-space:nowrap"><a href="'
+                   . h($qs(['sort' => $key, 'dir' => $balik, 'page' => ''])) . '" title="Urutkan menurut '
+                   . h(mb_strtolower($label)) . '" style="color:inherit;text-decoration:none;border-bottom:1px dotted #CBD5E1'
+                   . ($aktif ? ';font-weight:800;border-bottom-color:#0F766E' : '') . '">' . h($label) . $panah . '</a></th>';
+            };
+            ?>
+            <thead><tr>
+                <?php $th('Unit', 'unit'); $th('No. Kontrak', 'kontrak'); $th('Penyewa', 'penyewa'); ?>
+                <?php $th('Periode sewa', 'mulai'); $th('PIC', 'pic'); $th('Tagihan', 'tagihan', 'right'); ?>
+                <?php $th('Terbayar', 'terbayar', 'right'); $th('Sisa', 'sisa', 'right'); ?>
+                <?php $th('Invoice', 'invoice'); $th('Status', 'status'); ?>
+                <th></th></tr></thead>
             <tbody>
             <?php if (!$d['rows']): ?>
-                <tr><td colspan="10" style="text-align:center;color:var(--muted);padding:24px">Tidak ada transaksi yang sesuai saringan.</td></tr>
+                <tr><td colspan="11" style="text-align:center;color:var(--muted);padding:24px">Tidak ada transaksi yang sesuai saringan.</td></tr>
             <?php endif; ?>
             <?php foreach ($d['rows'] as $r):
-                $sisaR = (float) $r['tagihan'] - (float) $r['terbayar']; ?>
+                $sisaR = (float) $r['tagihan'] - (float) $r['terbayar'];
+                // Komponen di luar nilai transaksi: inilah sebab bayaran kerap
+                // lebih besar daripada tagihannya.
+                $tambahan = (float) $r['k_ppn'] + (float) $r['k_listrik'] + (float) $r['k_deposit'];
+                $cocokPerkiraan = $sisaR < -0.5 && abs((float) $r['terbayar'] - (float) $r['k_perkiraan']) <= 1000; ?>
                 <tr>
                     <td style="white-space:nowrap"><b><?= h($r['master_code']) ?></b><br><span class="muted" style="font-size:11px"><?= h($modLabel[$r['module']] ?? $r['module']) ?></span></td>
+                    <td style="white-space:nowrap">
+                        <?php if (!empty($r['contract_no'])): ?><b><?= h($r['contract_no']) ?></b>
+                        <?php else: ?><span class="muted" title="Nomor kontrak diisi Departemen Legal saat menyetujui Permintaan Kontrak">—</span><?php endif; ?>
+                    </td>
                     <td><?= h($r['company_name'] ?? '-') ?><?= !empty($r['brand_name']) ? '<br><span class="muted" style="font-size:11px">' . h($r['brand_name']) . '</span>' : '' ?></td>
                     <td style="white-space:nowrap"><?= h($r['start_date']) ?><br><span class="muted" style="font-size:11px">s/d <?= h($r['end_date']) ?></span></td>
                     <td><?= h($r['pic_name'] ?? '-') ?></td>
-                    <td style="text-align:right"><?= money($r['tagihan']) ?></td>
-                    <td style="text-align:right"><?= money($r['terbayar']) ?></td>
+                    <td style="text-align:right"><?= money($r['tagihan']) ?>
+                        <?php if ($tambahan > 0.5): ?>
+                            <br><span class="muted" style="font-size:11px;white-space:nowrap"
+                                  title="Sewa <?= h(money($r['k_sewa'])) ?>&#10;PPN <?= h(money($r['k_ppn'])) ?><?php
+                                    if ((float) $r['k_listrik'] > 0) echo '&#10;Listrik ' . h(money($r['k_listrik']));
+                                    if ((float) $r['k_deposit'] > 0) echo '&#10;Deposit ' . h(money($r['k_deposit']));
+                                  ?>&#10;&#10;Perkiraan yang ditransfer client: <?= h(money($r['k_perkiraan'])) ?>">
+                                +PPN<?= (float) $r['k_listrik'] > 0 ? '+listrik' : '' ?><?= (float) $r['k_deposit'] > 0 ? '+deposit' : '' ?>
+                                &rarr; <?= h(money($r['k_perkiraan'])) ?></span>
+                        <?php endif; ?></td>
+                    <td style="text-align:right"><?= money($r['terbayar']) ?>
+                        <?php if ($cocokPerkiraan): ?><br><span style="font-size:11px;color:#047857;white-space:nowrap"
+                            title="Bayarannya pas dengan sewa + PPN + listrik/deposit — bukan kelebihan bayar">sesuai rincian</span><?php endif; ?></td>
                     <td style="text-align:right;color:<?= $sisaR > 0.5 ? '#B91C1C' : 'inherit' ?>"><?= money($sisaR) ?></td>
                     <td style="white-space:nowrap"><?= $r['invoice_no'] ? h($r['invoice_no']) : '<span class="muted">-</span>' ?>
                         <?= $r['invoice_due'] ? '<br><span class="muted" style="font-size:11px">tempo ' . h($r['invoice_due']) . '</span>' : '' ?></td>
@@ -184,12 +247,16 @@ function payments_csv(PDO $pdo): void
     header('Content-Disposition: attachment; filename="tagihan-pembayaran-' . date('Ymd') . '.csv"');
     $o = fopen('php://output', 'w');
     fwrite($o, "\xEF\xBB\xBF");
-    fputcsv($o, ['Unit', 'Modul', 'Penyewa', 'Brand', 'Mulai', 'Selesai', 'PIC', 'Tagihan', 'Terbayar', 'Sisa', 'No. Invoice', 'Tgl Invoice', 'Jatuh Tempo', 'Status', 'Lewat Tempo'], ';');
+    fputcsv($o, ['Unit', 'Modul', 'No. Kontrak', 'Penyewa', 'Brand', 'Mulai', 'Selesai', 'PIC', 'Tagihan',
+                 'PPN', 'Listrik', 'Deposit', 'Perkiraan Transfer', 'Terbayar', 'Sisa',
+                 'No. Invoice', 'Tgl Invoice', 'Jatuh Tempo', 'Status', 'Lewat Tempo'], ';');
     foreach ($d['rows'] as $r) {
         // Sel yang diawali = + - @ dibaca Excel sebagai rumus; awali apostrof.
         $aman = fn($v) => ($v !== null && $v !== '' && strpos('=+-@', (string) $v[0]) !== false) ? "'" . $v : $v;
-        fputcsv($o, [$r['master_code'], $r['module'], $aman($r['company_name']), $aman($r['brand_name']), $r['start_date'], $r['end_date'], $r['pic_name'],
-            (float) $r['tagihan'], (float) $r['terbayar'], (float) $r['tagihan'] - (float) $r['terbayar'], $aman($r['invoice_no']),
+        fputcsv($o, [$r['master_code'], $r['module'], $aman($r['contract_no']), $aman($r['company_name']), $aman($r['brand_name']),
+            $r['start_date'], $r['end_date'], $r['pic_name'],
+            (float) $r['tagihan'], (float) $r['k_ppn'], (float) $r['k_listrik'], (float) $r['k_deposit'], (float) $r['k_perkiraan'],
+            (float) $r['terbayar'], (float) $r['tagihan'] - (float) $r['terbayar'], $aman($r['invoice_no']),
             $r['invoice_date'], $r['invoice_due'], $st[$r['bayar_status']][0] ?? $r['bayar_status'], $r['bayar_lewat'] ? 'Ya' : ''], ';');
     }
     fclose($o);
@@ -244,8 +311,18 @@ function payment_form(PDO $pdo): void
     $back  = _pay_back();
     $sisa  = (float) $trx['tagihan'] - (float) $trx['terbayar'];
     $modLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
+    // Komponen di luar nilai transaksi (listrik, deposit) + PPN-nya, supaya
+    // selisih bayar punya penjelasan di layar ini, bukan dicari-cari tiap bulan.
+    $trx = pembayaran_lengkapi_komponen($pdo, [$trx])[0];
+    $noKontrak = $pdo->prepare("SELECT cr.contract_no, cr.contract_date FROM contract_requests cr
+                                  JOIN skp_documents sd ON sd.id = cr.skp_id
+                                 WHERE (sd.transaction_id = ? OR sd.id = ?)
+                                   AND cr.contract_no IS NOT NULL AND cr.contract_no <> ''
+                                 ORDER BY cr.id DESC LIMIT 1");
+    $noKontrak->execute([$id, (int) ($trx['skp_id'] ?? 0)]);
+    $kontrak = $noKontrak->fetch() ?: [];
 
-    layout('Invoice & Pembayaran', function () use ($trx, $bayar, $back, $sisa, $modLabel, $id, $bisaIsi) {
+    layout('Invoice & Pembayaran', function () use ($trx, $bayar, $back, $sisa, $modLabel, $id, $bisaIsi, $kontrak) {
         ?>
         <div class="toolbar"><a class="btn light" href="?<?= $back !== '' ? h($back) : 'r=payments' ?>">← Kembali</a>
             <div><?= pembayaran_badge((string) $trx['bayar_status'], (bool) $trx['bayar_lewat']) ?></div></div>
@@ -253,6 +330,10 @@ function payment_form(PDO $pdo): void
         <div class="panel" style="padding:16px 20px;margin-bottom:14px">
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 24px">
                 <div><div class="muted">Unit</div><b><?= h($trx['master_code']) ?></b> · <?= h($modLabel[$trx['module']] ?? $trx['module']) ?></div>
+                <div><div class="muted">No. Kontrak</div>
+                    <?php if (!empty($kontrak['contract_no'])): ?><b><?= h($kontrak['contract_no']) ?></b>
+                        <?php if (!empty($kontrak['contract_date'])): ?><span class="muted"> · <?= h(date('d/m/Y', strtotime((string) $kontrak['contract_date']))) ?></span><?php endif; ?>
+                    <?php else: ?><span class="muted">belum ada — diisi Legal di Permintaan Kontrak</span><?php endif; ?></div>
                 <div><div class="muted">Penyewa</div><b><?= h($trx['company_name'] ?? '-') ?></b><?= !empty($trx['brand_name']) ? ' (' . h($trx['brand_name']) . ')' : '' ?></div>
                 <div><div class="muted">Periode sewa</div><?= h($trx['start_date']) ?> s/d <?= h($trx['end_date']) ?></div>
                 <div><div class="muted">PIC</div><?= h($trx['pic_name'] ?? '-') ?></div>
@@ -262,6 +343,30 @@ function payment_form(PDO $pdo): void
                 <div><div class="muted"><?= $sisa < -0.5 ? 'Lebih bayar' : 'Sisa' ?></div><b style="color:<?= $sisa > 0.5 ? '#B91C1C' : '#047857' ?>"><?= money(abs($sisa)) ?></b></div>
             </div>
         </div>
+
+        <?php /* Rincian tagihan: memperlihatkan apa saja yang sebenarnya ditransfer
+                 client. Nilai transaksi TIDAK memuat listrik dan deposit — keduanya
+                 tercetak di surat penawaran & dokumen konfirmasi, tapi tidak ikut
+                 ke kolom Tagihan. Di situlah "terbayar lebih besar" itu lahir. */ ?>
+        <?php if ((float) $trx['k_listrik'] > 0 || (float) $trx['k_deposit'] > 0 || (float) $trx['k_ppn'] > 0): ?>
+        <div class="panel" style="padding:14px 20px;margin-bottom:14px">
+            <h3 style="margin:0 0 8px;font-size:15px">Rincian tagihan</h3>
+            <table style="font-size:13px;width:auto;min-width:300px">
+                <tr><td style="padding:3px 18px 3px 0">Nilai sewa</td><td style="text-align:right"><?= money($trx['k_sewa']) ?></td></tr>
+                <tr><td style="padding:3px 18px 3px 0">PPN 12% <span class="muted">(nilai × 11/12 × 12%)</span></td><td style="text-align:right"><?= money($trx['k_ppn']) ?></td></tr>
+                <?php if ((float) $trx['k_listrik'] > 0): ?>
+                <tr><td style="padding:3px 18px 3px 0">Biaya listrik <span class="muted">(dari dokumen konfirmasi)</span></td><td style="text-align:right"><?= money($trx['k_listrik']) ?></td></tr>
+                <?php endif; ?>
+                <?php if ((float) $trx['k_deposit'] > 0): ?>
+                <tr><td style="padding:3px 18px 3px 0">Security deposit <span class="muted">(belum disetor)</span></td><td style="text-align:right"><?= money($trx['k_deposit']) ?></td></tr>
+                <?php endif; ?>
+                <tr style="border-top:1px solid #E2E8F0;font-weight:800"><td style="padding:6px 18px 3px 0">Perkiraan yang ditransfer client</td>
+                    <td style="text-align:right;padding-top:6px"><?= money($trx['k_perkiraan']) ?></td></tr>
+            </table>
+            <p class="muted" style="margin:8px 0 0;font-size:12px">Angka <b>Tagihan</b> di atas hanya nilai sewa (atau jumlah invoice bila diisi sendiri).
+                Listrik dan deposit tidak termasuk nilai transaksi, jadi pembayaran yang sudah mencakup keduanya akan terlihat lebih besar — itu wajar, bukan salah input.</p>
+        </div>
+        <?php endif; ?>
 
         <?php $kunci = $bisaIsi ? '' : ' disabled'; ?>
         <?php if (!$bisaIsi): ?>
@@ -287,6 +392,10 @@ function payment_form(PDO $pdo): void
                 <div style="display:flex;gap:6px;margin:6px 0 12px;flex-wrap:wrap">
                     <?php if ($bisaIsi): ?><button type="button" class="btn light" onclick="document.getElementById('inv-amt').value=<?= (int) round((float) $trx['final_amount'] * 1.11) ?>">Nilai + PPN 11%</button>
                     <button type="button" class="btn light" onclick="document.getElementById('inv-amt').value=<?= (int) round((float) $trx['final_amount']) ?>">Sama dengan nilai transaksi</button>
+                    <?php if ((float) $trx['k_perkiraan'] > (float) $trx['k_sewa'] + (float) $trx['k_ppn'] + 0.5): ?>
+                    <button type="button" class="btn light" style="background:#ECFDF5;color:#065F46;border-color:#A7F3D0"
+                            onclick="document.getElementById('inv-amt').value=<?= (int) round((float) $trx['k_perkiraan']) ?>">Pakai rincian (<?= h(money($trx['k_perkiraan'])) ?>)</button>
+                    <?php endif; ?>
                 <?php endif; ?></div>
                 <?php if ($bisaIsi): ?><button type="submit">Simpan invoice</button><?php endif; ?>
             </form>
@@ -313,7 +422,27 @@ function payment_form(PDO $pdo): void
                     <label>Cara bayar</label>
                     <select name="method"<?= $kunci ?>><option>Transfer</option><option>Tunai</option><option>Giro</option><option>Lainnya</option></select>
                     <label>No. referensi / bukti <span class="muted" style="font-weight:400">(opsional)</span></label><input type="text" name="ref_no" maxlength="80"<?= $kunci ?>>
-                    <label>Catatan <span class="muted" style="font-weight:400">(mis. DP 50%, pelunasan)</span></label><input type="text" name="note" maxlength="190"<?= $kunci ?>>
+                    <?php /* Di berkas lama tiap pembayaran diberi keterangan singkat
+                             (LUNAS, BUKPOT, ...). Keterangan itulah yang membuat selisih
+                             bayar langsung terbaca sebabnya, jadi disediakan sebagai
+                             tombol — tetap boleh diketik bebas. */ ?>
+                    <label>Keterangan <span class="muted" style="font-weight:400">(klik salah satu, atau ketik sendiri)</span></label>
+                    <input type="text" name="note" id="pay-note" maxlength="190" placeholder="mis. LUNAS, BUKPOT, DP 50%"<?= $kunci ?>>
+                    <?php if ($bisaIsi): ?>
+                    <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">
+                        <?php foreach (['LUNAS' => 'Dibayar penuh sesuai tagihan',
+                                        'BUKPOT' => 'Pajak dipotong client, yang masuk lebih kecil daripada invoice',
+                                        'TERMASUK LISTRIK' => 'Transfer sudah termasuk biaya listrik',
+                                        'TERMASUK DEPOSIT' => 'Transfer sudah termasuk security deposit',
+                                        'DP 50%' => 'Pembayaran muka',
+                                        '2 KONTRAK' => 'Satu transfer untuk dua kontrak sekaligus'] as $teks => $arti): ?>
+                            <button type="button" class="btn light" style="font-size:11px;padding:3px 9px" title="<?= h($arti) ?>"
+                                    onclick="var n=document.getElementById('pay-note');n.value=n.value.trim()?n.value.trim()+' · <?= h($teks) ?>':'<?= h($teks) ?>'"><?= h($teks) ?></button>
+                        <?php endforeach; ?>
+                        <button type="button" class="btn light" style="font-size:11px;padding:3px 9px;color:#B91C1C"
+                                onclick="document.getElementById('pay-note').value=''">Kosongkan</button>
+                    </div>
+                    <?php endif; ?>
                     <?php if ($bisaIsi): ?><div style="margin-top:12px"><button type="submit">Catat pembayaran</button></div><?php endif; ?>
                 </form>
             </div>

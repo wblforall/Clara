@@ -112,7 +112,13 @@ function master_page(PDO $pdo, array $masterConfig): void
                             <?php $isShare = $col === 'target_share'; ?>
                             <?php $isUserId = $col === 'user_id'; ?>
                             <td><?php
-                                if ($isUserId) {
+                                if ($col === 'color') {
+                                    // Warna lebih cepat dibaca sebagai kotak daripada sebagai kode heksa.
+                                    $w = trim((string) ($row[$col] ?? ''));
+                                    echo $w !== ''
+                                        ? '<span style="display:inline-block;width:34px;height:16px;border-radius:4px;border:1px solid #E2E8F0;background:' . h($w) . '" title="' . h($w) . '"></span>'
+                                        : '<span style="color:var(--muted)">—</span>';
+                                } elseif ($isUserId) {
                                     echo !empty($row['user_name']) ? '<span class="badge" style="background:#e0f2fe;color:#0369a1">' . h($row['user_name']) . '</span>' : '<span style="color:var(--muted)">—</span>';
                                 } elseif ($isShare) {
                                     echo pct((float)($row[$col] ?? 0));
@@ -419,6 +425,25 @@ function master_form(PDO $pdo, array $masterConfig): void
                                     <option value="<?= h($opt) ?>" <?= ($row[$name] ?? 'active') === $opt ? 'selected' : '' ?>><?= h($opt) ?></option>
                                 <?php endforeach; ?>
                             </select>
+                        <?php elseif ($name === 'color'): ?>
+                            <?php /* Warna lembut: yang dipakai sebagai LATAR kotak kalender,
+                                     tulisannya tetap gelap supaya terbaca. */ ?>
+                            <?php $wNow = trim((string) ($row['color'] ?? '')) ?: '#E2E8F0'; ?>
+                            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                                <input type="color" name="color" id="pic-color" value="<?= h($wNow) ?>" style="width:58px;height:38px;padding:2px">
+                                <span id="pic-color-prev" style="display:inline-block;padding:3px 14px;border-radius:5px;font-weight:700;font-size:12px;background:<?= h($wNow) ?>;color:#1F2937">Contoh kotak</span>
+                                <?php foreach (['#FBCFE8' => 'pink', '#D8DEE8' => 'abu', '#BBF7D0' => 'hijau', '#FECACA' => 'merah',
+                                                '#BFDBFE' => 'biru', '#DDD6FE' => 'ungu', '#FED7AA' => 'oranye', '#99F6E4' => 'toska'] as $wk => $wl): ?>
+                                    <button type="button" class="btn light" style="padding:3px 10px;font-size:11px;background:<?= h($wk) ?>"
+                                            onclick="document.getElementById('pic-color').value='<?= h($wk) ?>';document.getElementById('pic-color').dispatchEvent(new Event('input'))"><?= h($wl) ?></button>
+                                <?php endforeach; ?>
+                            </div>
+                            <div class="help">Dipakai mewarnai kotak milik PIC ini di Kalender Pameran. Kuning sengaja tidak dipakai — itu warna Prospek.</div>
+                            <script>
+                            document.getElementById('pic-color').addEventListener('input', function () {
+                                document.getElementById('pic-color-prev').style.background = this.value;
+                            });
+                            </script>
                         <?php elseif ($name === 'target_share'): ?>
                             <div style="display:flex;align-items:center;gap:6px">
                                 <input type="number" step="0.01" min="0" max="100" name="target_share_pct" value="<?= h((string) round((float)($row['target_share'] ?? 0) * 100, 2)) ?>">

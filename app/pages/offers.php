@@ -1677,6 +1677,10 @@ function offer_form(PDO $pdo): void
             $dariKalender = $mcal;
         }
     }
+    // Penawaran yang lahir dari sebuah prospek membawa nomornya, supaya begitu
+    // tersimpan prospeknya ditandai selesai — kalau tidak, angkanya terhitung
+    // dua kali: sekali sebagai prospek, sekali sebagai penawaran resmi.
+    $dariProspek = (int) getv('from_prospect', 0);
 
     $existing = $id > 0;   // true hanya untuk penawaran yang sudah tersimpan (bukan prefill renewal)
     $module  = $offer['module'] ?? getv('module', 'cl');
@@ -1805,7 +1809,7 @@ function offer_form(PDO $pdo): void
         foreach ($tplList as $tt) { if (!empty($tt['is_default'])) { $tplSel = (int) $tt['id']; break; } }
     }
 
-    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $dariKalender, $module, $editable, $masters, $mastersSeg, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $listrikTotal, $listrikUnit, $tplBaru, $tahapHarga, $tierRows, $tplList, $tplSel, $bentrokKini, $draftPost) {
+    layout(($existing ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' Penawaran ' . _offer_module_label($module), function () use ($pdo, $offer, $id, $existing, $isRenew, $dariKalender, $dariProspek, $module, $editable, $masters, $mastersSeg, $clients, $contacts, $pics, $referrers, $linkedPic, $v, $isBundle, $bundleRows, $listrikOn, $listrikRp, $listrikTotal, $listrikUnit, $tplBaru, $tahapHarga, $tierRows, $tplList, $tplSel, $bentrokKini, $draftPost) {
         $picSel = $offer['pic_name'] ?? $linkedPic;
         $disabled = $editable ? '' : 'disabled';
         ?>
@@ -1855,6 +1859,9 @@ function offer_form(PDO $pdo): void
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="id" value="<?= (int)($offer['id'] ?? 0) ?>">
             <input type="hidden" name="module" value="<?= h($module) ?>">
+            <?php /* Dibawa dari Prospek: begitu penawaran ini tersimpan, prospeknya
+                     ditandai selesai supaya nilainya tidak terhitung dua kali. */ ?>
+            <?php if ($dariProspek > 0): ?><input type="hidden" name="from_prospect" value="<?= (int) $dariProspek ?>"><?php endif; ?>
 
             <?php
             $cliLabel = '';
@@ -3888,6 +3895,12 @@ function offer_save(PDO $pdo): void
     $pdo->prepare('INSERT INTO offers (property_id, offer_no, status, created_by, ' . implode(', ', $cols) . ')
                    VALUES (:pid, :no, \'draft\', :uname, ' . implode(', ', $place) . ')')->execute($vals);
     $newId = (int) $pdo->lastInsertId();
+    // Prospek yang sudah jadi penawaran berhenti dihitung sebagai prospek.
+    if (($dp = (int) post('from_prospect', 0)) > 0) {
+        $pdo->prepare("UPDATE prospects SET status='deal', offer_id=?, updated_at=NOW()
+                        WHERE id=? AND property_id=? AND deleted_at IS NULL AND status='open'")
+            ->execute([$newId, $dp, $pid]);
+    }
     if ($isBundle) _offer_write_items($pdo, $newId, $bundleItems);
     _offer_write_tiers($pdo, $pid, $newId, $isBundle ? $tierRows : [], $uname);
     _offer_write_steps($pdo, $pid, $newId, $uname);
