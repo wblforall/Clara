@@ -165,7 +165,12 @@ function calendar_page(PDO $pdo): void
         // Ringkasan per unit untuk kolom di tepi kanan — bentuk yang sudah
         // biasa mereka baca di spreadsheet (Recurring / Exhibition di kanan
         // kalender, pada baris yang sama).
-        $uRec = 0.0; $uExh = 0.0; $uPros = 0.0; $uPic = []; $uPicPros = [];
+        // Angka blok kanan dikumpulkan PER JALUR, bukan per unit: satu baris di
+        // layar harus memperlihatkan isi baris itu sendiri. Kalau dijumlahkan
+        // per unit, pemesanan di baris kedua muncul sebagai tambahan di baris
+        // pertama — dan barisnya jadi tidak bisa dibaca apa adanya.
+        $kosongJalur = ['rec' => 0.0, 'exh' => 0.0, 'pros' => 0.0, 'pic' => [], 'picPros' => []];
+        $jalur = [];
         foreach ($trxPer[$kode] ?? [] as $t) {
             $a = max($t['start_date'], $awal->format('Y-m-d'));
             $b = min($t['end_date'], $akhir->format('Y-m-d'));
@@ -181,8 +186,6 @@ function calendar_page(PDO $pdo): void
             $selot['picSemua'] = (string) $t['pic_name'];
             // Nilai yang jatuh di bulan ini (prorata, sumber sama dengan laporan).
             $rpBulan = $nilaiBulan[(int) $t['id']] ?? 0.0;
-            if ((int) $t['recurring']) $uRec += $rpBulan; else $uExh += $rpBulan;
-            $uPic[(string) $t['pic_name']] = ($uPic[(string) $t['pic_name']] ?? 0) + $rpBulan;
             if ($milik) {
                 // Nilai per transaksi tetap hanya untuk pemiliknya — batas yang
                 // sama dengan popup selama ini. Yang dibagi ke semua orang adalah
@@ -192,11 +195,14 @@ function calendar_page(PDO $pdo): void
                 if ($bisaBayar) $selot += ['bayar' => (string) $t['bayar_status'], 'lewat' => (int) $t['bayar_lewat'], 'sisa' => (float) $t['tagihan'] - (float) $t['terbayar']];
             }
             for ($d = $da; $d <= $db; $d++) $hariPakai[$d] = true;
-            $taruh = false;
+            $iJalur = null;
             foreach ($lanes as $i => $lane) {
-                if (end($lane)['db'] < $da) { $lanes[$i][] = $selot; $taruh = true; break; }
+                if ($lane && end($lane)['db'] < $da) { $lanes[$i][] = $selot; $iJalur = $i; break; }
             }
-            if (!$taruh) $lanes[] = [$selot];
+            if ($iJalur === null) { $lanes[] = [$selot]; $iJalur = count($lanes) - 1; }
+            if (!isset($jalur[$iJalur])) $jalur[$iJalur] = $kosongJalur;
+            if ((int) $t['recurring']) $jalur[$iJalur]['rec'] += $rpBulan; else $jalur[$iJalur]['exh'] += $rpBulan;
+            $jalur[$iJalur]['pic'][(string) $t['pic_name']] = ($jalur[$iJalur]['pic'][(string) $t['pic_name']] ?? 0) + $rpBulan;
         }
         // ── Prospek: jalurnya sendiri supaya tidak pernah tertukar dengan yang
         //    sudah pasti. Tampil samar dan bergaris putus-putus di layar.
@@ -218,23 +224,31 @@ function calendar_page(PDO $pdo): void
             // Menumpang jalur yang sudah ada selama tanggalnya tidak bertabrakan,
             // sama seperti transaksi — kalau tidak, satu prospek saja sudah
             // menambah satu baris kosong dan barisan unitnya jadi sulit diikuti.
-            $taruhPr = false;
+            $iJalur = null;
             foreach ($lanes as $i => $lane) {
-                if ($lane && end($lane)['db'] < $da) { $lanes[$i][] = $selotPr; $taruhPr = true; break; }
+                if ($lane && end($lane)['db'] < $da) { $lanes[$i][] = $selotPr; $iJalur = $i; break; }
             }
-            if (!$taruhPr) $lanes[] = [$selotPr];
-            $uPros += (float) $pr['est_amount'];
+            if ($iJalur === null) { $lanes[] = [$selotPr]; $iJalur = count($lanes) - 1; }
+            if (!isset($jalur[$iJalur])) $jalur[$iJalur] = $kosongJalur;
+            $jalur[$iJalur]['pros'] += (float) $pr['est_amount'];
             // Kalau calonnya jadi, uangnya masuk ke kolom PIC ini juga — jadi
-            // angkanya ikut ditampilkan di sana, bertanda kuning.
-            $uPicPros[(string) $pr['pic_name']] = ($uPicPros[(string) $pr['pic_name']] ?? 0) + (float) $pr['est_amount'];
+            // angkanya ikut ditampilkan di sana, bertanda kuning, di baris ini.
+            $jalur[$iJalur]['picPros'][(string) $pr['pic_name']] = ($jalur[$iJalur]['picPros'][(string) $pr['pic_name']] ?? 0) + (float) $pr['est_amount'];
         }
 
         $terisi = count(array_filter($hariPakai));
         $terisiHari += $terisi; $kapasitas += $hariN;
         if ($bulan === date('Y-m') && $hariPakai[(int) date('j')]) $unitTerisiHariIni++;
+        $uRec = $uExh = $uPros = 0.0; $uPic = []; $uPicPros = [];
+        foreach ($jalur as $j) {
+            $uRec += $j['rec']; $uExh += $j['exh']; $uPros += $j['pros'];
+            foreach ($j['pic'] as $nm => $v) $uPic[$nm] = ($uPic[$nm] ?? 0) + $v;
+            foreach ($j['picPros'] as $nm => $v) $uPicPros[$nm] = ($uPicPros[$nm] ?? 0) + $v;
+        }
         $baris[$kode] = $u + ['lanes' => $lanes ?: [[]], 'terisi' => $terisi, 'jumlahSelot' => array_sum(array_map('count', $lanes)),
                               'rpRec' => $uRec, 'rpExh' => $uExh, 'rpPros' => $uPros,
                               'rpFc' => $forecast[$kode] ?? 0.0, 'rpPic' => $uPic, 'rpPicPros' => $uPicPros,
+                              'jalur' => $jalur, 'jalurKosong' => $kosongJalur,
                               'fcId' => $forecastId[$kode] ?? 0, 'fcKhusus' => !empty($forecastKhusus[$kode])];
     }
 
@@ -709,22 +723,21 @@ function calendar_page(PDO $pdo): void
                             endif;
                         endfor; ?>
                         <?php if ($bolehLihatPic):
-                            // Hanya di jalur pertama; jalur berikutnya masih unit yang
-                            // sama, jadi angkanya tidak diulang.
-                            /* Angka ditulis penuh. $pros = nilai calon yang BELUM pasti:
-                               kalau jadi, uangnya masuk ke kolom ini juga, jadi ia
-                               ditampilkan di bawah angka resminya dengan warna kuning
-                               — tanda yang sama dengan kotak kuning di kalender. */
-                            $sel = function (float $v, float $pros = 0.0, string $kelas = '') use ($li) {
-                                if ($li !== 0) { echo '<td class="rk ' . $kelas . '"></td>'; return; }
+                            /* Angka di blok kanan mengikuti BARIS ini, bukan unitnya.
+                               Pemesanan yang jatuh di baris kedua angkanya ikut turun
+                               ke baris kedua — tidak ditumpuk sebagai tambahan di baris
+                               pertama. Nilai utuhnya tetap terbaca di tempatnya. */
+                            $jl = $u['jalur'][$li] ?? $u['jalurKosong'];
+                            $sel = function (float $v, float $pros = 0.0, string $kelas = '') {
                                 $kls = 'rk ' . $kelas . ($v > 0 ? '' : ' nol') . ($pros > 0 ? ' pros-ada' : '');
                                 echo '<td class="' . trim($kls) . '"'
                                    . ($pros > 0 ? ' title="Calon yang belum pasti: ' . h(money($pros)) . '"' : '') . '>'
-                                   . ($v > 0 ? h(money($v)) : '-')
-                                   . ($pros > 0 ? '<span class="pros-rp">+ ' . h(money($pros)) . '</span>' : '')
+                                   . ($v > 0 ? h(money($v)) : ($pros > 0 ? '' : '-'))
+                                   . ($pros > 0 ? '<span class="pros-rp">' . ($v > 0 ? '+ ' : '') . h(money($pros)) . '</span>' : '')
                                    . '</td>';
-                            };
-                            $prosUnit = (float) $u['rpPros']; ?>
+                            }; ?>
+                            <?php /* Forecast milik UNIT, bukan baris — jadi hanya di baris
+                                     pertama; baris lanjutannya dikosongkan. */ ?>
                             <?php if ($li !== 0): ?><td class="rk rk-awal"></td>
                             <?php elseif ($bisaUbahFc && (int) $u['fcId'] > 0): ?>
                                 <?php /* Diketik di sini = forecast bulan ini untuk unit ini.
@@ -735,13 +748,13 @@ function calendar_page(PDO $pdo): void
                                            title="Forecast <?= h(period_label($bulan)) ?> untuk unit ini — ketik lalu tekan Enter">
                                 </td>
                             <?php else: $sel((float) $u['rpFc'], 0.0, 'rk-awal'); endif; ?>
-                            <?php $sel((float) $u['rpRec']); ?>
+                            <?php $sel((float) $jl['rec']); ?>
                             <?php /* Prospek dianggap sewa sekali jalan — kalau jadi, ia masuk
-                                     ke Exhibition dan ikut menambah Actual. */ ?>
-                            <?php $sel((float) $u['rpExh'], $prosUnit); ?>
-                            <?php $sel((float) $u['rpRec'] + (float) $u['rpExh'], $prosUnit); ?>
-                            <?php if ($picOn) foreach ($picKolom as $nm) $sel((float) ($u['rpPic'][$nm] ?? 0), (float) ($u['rpPicPros'][$nm] ?? 0)); ?>
-                            <?php $sel($prosUnit, 0.0, 'rk-awal' . ($prosUnit > 0 ? ' pros-ada' : '')); ?>
+                                     ke Exhibition dan ikut menambah Actual, di baris ini juga. */ ?>
+                            <?php $sel((float) $jl['exh'], (float) $jl['pros']); ?>
+                            <?php $sel((float) $jl['rec'] + (float) $jl['exh'], (float) $jl['pros']); ?>
+                            <?php if ($picOn) foreach ($picKolom as $nm) $sel((float) ($jl['pic'][$nm] ?? 0), (float) ($jl['picPros'][$nm] ?? 0)); ?>
+                            <?php $sel((float) $jl['pros'], 0.0, 'rk-awal' . ((float) $jl['pros'] > 0 ? ' pros-ada' : '')); ?>
                         <?php endif; ?>
                     </tr>
                 <?php endforeach; ?>
