@@ -205,7 +205,7 @@ function calendar_page(PDO $pdo): void
             $b = min((string) $pr['end_date'], $akhir->format('Y-m-d'));
             $da = (int) substr($a, 8, 2); $db = (int) substr($b, 8, 2);
             if ($db < $da) continue;
-            $lanes[] = [[
+            $selotPr = [
                 'pros' => true, 'id' => (int) $pr['id'], 'da' => $da, 'db' => $db,
                 'brand' => trim((string) $pr['client_name']), 'pt' => '',
                 'mulai' => (string) $pr['start_date'], 'selesai' => (string) $pr['end_date'],
@@ -214,7 +214,15 @@ function calendar_page(PDO $pdo): void
                 'pic' => (string) $pr['pic_name'], 'nilai' => (float) $pr['est_amount'],
                 'bulanRp' => (float) $pr['est_amount'], 'yakin' => (string) $pr['confidence'],
                 'warna' => $warnaPic[(string) $pr['pic_name']] ?? '#FDE68A', 'inv' => '',
-            ]];
+            ];
+            // Menumpang jalur yang sudah ada selama tanggalnya tidak bertabrakan,
+            // sama seperti transaksi — kalau tidak, satu prospek saja sudah
+            // menambah satu baris kosong dan barisan unitnya jadi sulit diikuti.
+            $taruhPr = false;
+            foreach ($lanes as $i => $lane) {
+                if ($lane && end($lane)['db'] < $da) { $lanes[$i][] = $selotPr; $taruhPr = true; break; }
+            }
+            if (!$taruhPr) $lanes[] = [$selotPr];
             $uPros += (float) $pr['est_amount'];
             // Kalau calonnya jadi, uangnya masuk ke kolom PIC ini juga — jadi
             // angkanya ikut ditampilkan di sana, bertanda kuning.
@@ -664,7 +672,10 @@ function calendar_page(PDO $pdo): void
                                  saat kursor berhenti di atasnya. */ ?>
                         <th class="u" title="<?= h(($u['label'] !== '' ? $u['label'] . ' ' : '') . '(' . $kode . ')' . ($u['info'] !== '' ? ' ' . $u['info'] : '')) ?>">
                             <?php if ($li === 0): ?><?= h($u['label'] !== '' ? $u['label'] : $kode) ?>
-                            <?php else: ?>↳<?php endif; ?></th>
+                            <?php else: /* Baris lanjutan unit yang sama: namanya diulang samar
+                                            supaya tidak terbaca sebagai milik unit di bawahnya. */ ?>
+                                <span style="color:#B6C2D2;font-weight:400">↳ <?= h($u['label'] !== '' ? $u['label'] : $kode) ?></span>
+                            <?php endif; ?></th>
                         <?php for ($d = 1; $d <= $hariN; ):
                             if (isset($peta[$d])): $s = $peta[$d]; $span = $s['db'] - $s['da'] + 1;
                                 $pros = !empty($s['pros']);
