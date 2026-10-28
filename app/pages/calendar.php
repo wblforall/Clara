@@ -191,14 +191,15 @@ function calendar_page(PDO $pdo): void
             $selot['picSemua'] = (string) $t['pic_name'];
             // Nilai yang jatuh di bulan ini (prorata, sumber sama dengan laporan).
             $rpBulan = $nilaiBulan[(int) $t['id']] ?? 0.0;
-            if ($milik) {
-                // Nilai per transaksi tetap hanya untuk pemiliknya — batas yang
-                // sama dengan popup selama ini. Yang dibagi ke semua orang adalah
-                // jumlahannya (per unit & per PIC), bukan rincian tiap client.
-                $selot['bulanRp'] = $rpBulan;
-                $selot += ['pic' => (string) $t['pic_name'], 'nilai' => (float) $t['final_amount'], 'inv' => (string) $t['invoice_no']];
-                if ($bisaBayar) $selot += ['bayar' => (string) $t['bayar_status'], 'lewat' => (int) $t['bayar_lewat'], 'sisa' => (float) $t['tagihan'] - (float) $t['terbayar']];
-            }
+            // Nilai, PIC, invoice, dan status bayar dibaca SEMUA orang yang boleh
+            // membuka kalender — begitulah lembar kerja tim selama ini, dan
+            // tanpa itu seorang PIC tidak bisa menakar posisinya terhadap rekan.
+            // $milik tetap dipakai, tapi hanya untuk menentukan tombol tindakan.
+            $selot['bulanRp'] = $rpBulan;
+            $selot += ['pic' => (string) $t['pic_name'], 'nilai' => (float) $t['final_amount'],
+                       'inv' => (string) $t['invoice_no'], 'ket' => trim((string) ($t['content_note'] ?? ''))];
+            if ($bisaBayar) $selot += ['bayar' => (string) $t['bayar_status'], 'lewat' => (int) $t['bayar_lewat'],
+                                       'sisa' => (float) $t['tagihan'] - (float) $t['terbayar']];
             for ($d = $da; $d <= $db; $d++) $hariPakai[$d] = true;
             $iJalur = null;
             foreach ($lanes as $i => $lane) {
@@ -224,6 +225,7 @@ function calendar_page(PDO $pdo): void
                 'potongKanan' => (string) $pr['end_date'] > $akhir->format('Y-m-d'),
                 'pic' => (string) $pr['pic_name'], 'nilai' => (float) $pr['est_amount'],
                 'bulanRp' => (float) $pr['est_amount'], 'yakin' => (string) $pr['confidence'],
+                'ket' => trim((string) ($pr['note'] ?? '')),
                 'warna' => $warnaPic[(string) $pr['pic_name']] ?? '#FDE68A', 'inv' => '',
             ];
             // Menumpang jalur yang sudah ada selama tanggalnya tidak bertabrakan,
@@ -401,7 +403,7 @@ function calendar_page(PDO $pdo): void
             table.cal thead th.u{z-index:4;background:#F8FAFC}
             table.cal th.u small{display:block;font-weight:400;color:#98A2B3;font-size:10px;overflow:hidden;text-overflow:ellipsis}
             table.cal tr.lane2 th.u{color:#98A2B3;font-weight:400}
-            table.cal td.e{min-width:22px;width:22px;cursor:pointer}
+            table.cal td.e{min-width:30px;width:30px;cursor:pointer}
             table.cal td.e.we{background:#FFFAF3}
             table.cal td.e.now{background:#F0FDFA}
             table.cal td.e:hover{background:#CCFBF1}
@@ -469,11 +471,11 @@ function calendar_page(PDO $pdo): void
                supaya angka tetap terbaca, lalu menebal di baris total. */
             table.cal td.rk-pic,table.cal th.rk-pic{position:relative}
             table.cal td.rk-pic::before,table.cal th.rk-pic::before{content:'';position:absolute;inset:0;
-                background:var(--wpic);opacity:.30;pointer-events:none}
-            table.cal th.rk-pic::before{opacity:.55}
+                background:var(--wpic);opacity:.20;pointer-events:none}
+            table.cal th.rk-pic::before{opacity:.45}
             table.cal td.rk-pic>*,table.cal th.rk-pic>*{position:relative}
-            table.cal tr.tot td.rk-pic::before{opacity:.60}
-            table.cal tr.tot-all td.rk-pic::before{opacity:.40}
+            table.cal tr.tot td.rk-pic::before{opacity:.42}
+            table.cal tr.tot-all td.rk-pic::before{opacity:.30}
             /* Baris total JANGAN memudar saat disentuh kursor — aturan hover
                umum mengganti latarnya, dan tulisan putihnya jadi hilang. */
             table.cal tbody tr.tot:hover td,table.cal tbody tr.tot:hover th{background:#F1F5F9}
@@ -493,8 +495,12 @@ function calendar_page(PDO $pdo): void
             table.cal td.s .rp{flex:0 0 auto;font-weight:700;opacity:.72;font-size:10px;
                 text-transform:none;font-style:normal;letter-spacing:0}
             table.cal td.s.rec{box-shadow:inset 4px 0 0 #1D4ED8}
-            table.cal td.s.pros{background:repeating-linear-gradient(45deg,#FEF9C3,#FEF9C3 5px,#FEF08A 5px,#FEF08A 10px)!important;
-                color:#854D0E;border:2px dashed #EAB308;font-style:italic}
+            /* Prospek memakai warna PIC-nya seperti pemesanan biasa — yang
+               membedakan hanya segitiga kuning di pojok kanan atas dan tulisan
+               miring. Latar kuning penuh dulu membuat kolom PIC-nya tak terbaca. */
+            table.cal td.s.pros{font-style:italic;border-style:dashed;border-color:#F3C94B;border-width:1.5px}
+            table.cal td.s.pros::after{content:'';position:absolute;right:0;top:0;width:0;height:0;
+                border-style:solid;border-width:0 11px 11px 0;border-color:transparent #EAB308 transparent transparent}
             @media (max-width:900px){table.cal th.rk,table.cal td.rk{display:none}}
             .cal-leg{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#475467;margin:10px 0}
             .cal-leg i{display:inline-block;width:14px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
@@ -735,15 +741,18 @@ function calendar_page(PDO $pdo): void
                                 // tersisa ruang untuk nama mereknya; selebihnya angkanya
                                 // tetap terbaca di blok rekap sebelah kanan.
                                 $angka = (isset($s['bulanRp']) && (float) $s['bulanRp'] > 0) ? money((float) $s['bulanRp']) : '';
-                                $muatAngka = $angka !== '' && ($span * 22) >= (mb_strlen($angka) * 5.6 + 46);
+                                // Nama merek didahulukan: angka baru ikut ditulis kalau
+                                // setelah menyisakan ruang untuk 10 huruf nama, masih cukup.
+                                $muatAngka = $angka !== '' && ($span * 30) >= (mb_strlen($angka) * 5.6 + 10 * 6.2 + 22);
                                 $data = ['id' => $s['id'], 'b' => $s['brand'], 'pt' => $s['pt'], 'm' => $s['mulai'], 's' => $s['selesai'], 'u' => $kode,
                                          'rec' => $s['rec'], 'own' => $s['milik'] ? 1 : 0, 'pros' => $pros ? 1 : 0,
-                                         'picAll' => (string) ($s['picSemua'] ?? $s['pic'] ?? ''), 'yakin' => (string) ($s['yakin'] ?? '')]
+                                         'picAll' => (string) ($s['picSemua'] ?? $s['pic'] ?? ''), 'yakin' => (string) ($s['yakin'] ?? ''),
+                                         'ket' => (string) ($s['ket'] ?? '')]
                                       + (isset($s['pic']) ? ['pic' => $s['pic'], 'nilai' => $s['nilai'], 'inv' => $s['inv']] : [])
                                       + (isset($s['bulanRp']) ? ['bln' => $s['bulanRp']] : [])
                                       + (isset($s['bayar']) ? ['bayar' => $s['bayar'], 'lewat' => $s['lewat'], 'sisa' => $s['sisa']] : []); ?>
                                 <td class="s <?= $kls ?> <?= $s['potongKiri'] ? 'kiri' : '' ?> <?= $s['potongKanan'] ? 'kanan' : '' ?>" colspan="<?= $span ?>"
-                                    style="<?= $pros ? '' : 'background:' . h((string) ($s['warna'] ?? '#E2E8F0')) ?>"
+                                    style="background:<?= h((string) ($s['warna'] ?? '#E2E8F0')) ?>"
                                     data-b="<?= h(mb_strtolower($s['brand'] . ' ' . $s['pt'])) ?>" data-j="<?= h(json_encode($data, JSON_UNESCAPED_UNICODE)) ?>"
                                     title="<?= h(($pros ? 'PROSPEK (belum pasti) — ' : '') . $s['brand'] . ' — ' . $s['mulai'] . ' s/d ' . $s['selesai']
                                                 . (($s['picSemua'] ?? '') !== '' ? ' — PIC ' . $s['picSemua'] : '')) ?>">
@@ -845,7 +854,9 @@ function calendar_page(PDO $pdo): void
             <?php endforeach; ?>
             <span><i style="background:#E2E8F0"></i>tanpa PIC</span>
             <span style="border-left:1px solid #E4E9F0;padding-left:14px"><i style="background:#F1F5F9;box-shadow:inset 4px 0 0 #1D4ED8"></i>garis biru = Recurring</span>
-            <span><i style="background:repeating-linear-gradient(45deg,#FEF9C3,#FEF9C3 4px,#FEF08A 4px,#FEF08A 8px);border:1px dashed #EAB308"></i>Prospek (belum pasti)</span>
+            <span><i style="background:#E2E8F0;border:1px dashed #EAB308;position:relative">
+                <b style="position:absolute;right:0;top:0;width:0;height:0;border-style:solid;border-width:0 6px 6px 0;border-color:transparent #EAB308 transparent transparent"></b>
+            </i>Prospek (belum pasti) — sudut kuning</span>
             <?php if ($bisaBayar): ?><span>Titik di pojok:
                 <?php foreach (['lunas', 'sebagian', 'belum_bayar', 'belum_invoice'] as $k): ?><span style="margin-left:8px"><i style="background:<?= h($stBayar[$k][1]) ?>;width:8px;height:8px;border-radius:50%"></i><?= h($stBayar[$k][0]) ?></span><?php endforeach; ?></span><?php endif; ?>
             <?php if ($bisaOffer): ?><span class="muted">Klik tanggal kosong untuk mulai, klik tanggal lain di unit yang sama untuk akhir → buat Surat Penawaran.</span><?php endif; ?>
@@ -897,14 +908,14 @@ function calendar_page(PDO $pdo): void
                     if (j.pros) {
                         h += '<div><span class="k">Perkiraan nilai</span> <b>' + uang(j.nilai) + '</b></div>'
                            + (j.yakin ? '<div><span class="k">Keyakinan</span> ' + esc(j.yakin) + '</div>' : '')
+                           + (j.ket ? '<div><span class="k">Keterangan</span> ' + esc(j.ket) + '</div>' : '')
                            + '<div class="k" style="margin-top:6px">Belum masuk pencapaian resmi. Dihitung terpisah di panel atas.</div>';
-                    } else if (j.own) {
+                    } else {
                         h += '<div><span class="k">Nilai kontrak</span> ' + uang(j.nilai) + '</div>';
                         if (j.bln !== undefined && Math.abs(j.bln - j.nilai) > 1) h += '<div><span class="k">Jatuh di bulan ini</span> <b>' + uang(j.bln) + '</b></div>';
                         if (j.inv) h += '<div><span class="k">Invoice</span> ' + esc(j.inv) + '</div>';
                         if (j.bayar) h += '<div><span class="k">Pembayaran</span> <b>' + esc(ST[j.bayar] || j.bayar) + '</b>' + (j.lewat ? ' <b style="color:#DC2626">· lewat tempo</b>' : '') + (j.sisa > 0.5 ? ' · sisa ' + uang(j.sisa) : '') + '</div>';
-                    } else {
-                        h += '<div class="k" style="margin-top:6px">Nilainya hanya bisa dilihat PIC yang menjualnya.</div>';
+                        if (j.ket) h += '<div><span class="k">Keterangan</span> ' + esc(j.ket) + '</div>';
                     }
                     h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">';
                     if (j.pros) {
@@ -921,6 +932,8 @@ function calendar_page(PDO $pdo): void
                         pop.style.left = xp + 'px'; pop.style.top = yp + 'px';
                         ev.stopPropagation(); return;
                     }
+                    <?php /* Tombol tindakan tetap mengikuti kepemilikan: membuka invoice
+                             milik orang lain memang ditolak di halamannya. */ ?>
                     <?php if ($bisaBayar): ?>if (j.own) h += '<a class="btn light" href="?r=payment_form&id=' + j.id + '&back=' + encodeURIComponent(location.search.slice(1)) + '">Invoice &amp; bayar</a>';<?php endif; ?>
                     <?php if (can('view_transactions')): ?>if (j.own) h += '<a class="btn light" href="?r=allocation_detail&id=' + j.id + '">Rincian</a>';<?php endif; ?>
                     <?php if ($bisaOffer): ?>h += '<a class="btn light" href="?r=offer_form&renew_from=' + j.id + '">Perpanjang</a>';<?php endif; ?>

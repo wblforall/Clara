@@ -25,14 +25,19 @@ if (!in_array('color', $kol, true)) {
 }
 
 // Warna lembut: latar untuk kotak kalender, tulisannya tetap gelap & terbaca.
+// Diambil dari kepala kolom PIC di lembar kerja tim, bukan ditebak.
 $tetap = [
-    'sita'      => '#FBCFE8',   // pink
-    'rosita'    => '#FBCFE8',
-    'muslimin'  => '#D8DEE8',   // abu-abu
-    'zulfikar'  => '#BBF7D0',   // hijau
-    'zul'       => '#BBF7D0',
-    'icha'      => '#FECACA',   // merah
-    'annisa'    => '#FECACA',
+    'muslimin'  => '#B7B7B7',   // abu-abu
+    'musi'      => '#B7B7B7',
+    'sita'      => '#D5A6BD',   // merah muda tua
+    'rosita'    => '#D5A6BD',
+    'zulfikar'  => '#B6D7A8',   // hijau daun
+    'zul'       => '#B6D7A8',
+    'icha'      => '#E06666',   // merah
+    'annisa'    => '#E06666',
+    'alfa'      => '#EA9999',   // Pentacity
+    'sagap'     => '#B6D7A8',
+    'evan'      => '#B4A7D6',
 ];
 $palet = ['#BFDBFE', '#DDD6FE', '#FED7AA', '#99F6E4', '#C7D2FE', '#F5D0FE', '#BAE6FD', '#D9F99D'];
 
