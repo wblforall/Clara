@@ -591,7 +591,7 @@ function transaction_form(PDO $pdo): void
                         <option value="">- Pilih Client dulu -</option>
                     </select>
                 </div>
-                <div><label>Luas m2</label><input type="number" step="0.01" name="area_sqm" id="area_sqm" value="<?= h($prefill['area_sqm'] ?? '0') ?>"></div>
+                <div><label>Luas m2</label><input type="number" step="0.01" name="area_sqm" id="area_sqm" value="<?= h(angka_input($prefill['area_sqm'] ?? 0)) ?>"></div>
                 <div><label>Tanggal Mulai</label><input type="date" name="start_date" required value="<?= h($prefill['start_date'] ?? '') ?>"></div>
                 <div><label>Tanggal Selesai</label><input type="date" name="end_date" value="<?= h($prefill['end_date'] ?? '') ?>" <?= $module === 'cl' ? 'required' : '' ?>></div>
                 <?php if ($module === 'media'): ?>
@@ -1421,7 +1421,7 @@ function transaction_edit(PDO $pdo): void
                 </div>
                 <div><label>Tanggal Mulai</label><input type="date" name="start_date" id="start_date" required value="<?= h($trx['start_date']) ?>"></div>
                 <div><label>Tanggal Selesai</label><input type="date" name="end_date" id="end_date" value="<?= h($trx['end_date']) ?>" <?= $trx['module'] === 'cl' ? 'required' : '' ?>></div>
-                <div><label>Luas m2</label><input type="number" step="0.01" name="area_sqm" id="area_sqm" value="<?= h((string) $trx['area_sqm']) ?>"></div>
+                <div><label>Luas m2</label><input type="number" step="0.01" name="area_sqm" id="area_sqm" value="<?= h(angka_input($trx['area_sqm'])) ?>"></div>
                 <?php if ($trx['module'] === 'media'):
                     $currentMaster = array_filter($masters, fn($m) => $m['code'] === $trx['master_code']);
                     $currentMaster = reset($currentMaster);
@@ -2615,19 +2615,54 @@ function allocation_detail(PDO $pdo): void
                     $isSpreadEditable = $bisaUbahBulan;
                     $csrfToken = csrf_token();
                     $kolom = $adaBagi ? 7 : 6;
-                    // Subtotal dicetak setiap kali siklusnya berganti.
+                    /*
+                     * Satu bulan = satu baris per PIC.
+                     *
+                     * Kontrak yang diakui per siklus memecah tiap bulan jadi dua
+                     * potongan — mis. 1–14 Agustus milik siklus Juli dan 15–31
+                     * Agustus milik siklus Agustus. Dicetak apa adanya, layar
+                     * memuat "Agustus 2026" DUA KALI, sering dengan nominal
+                     * sama-sama Rp 0, dan terbaca sebagai data kembar. Di
+                     * database memang begitu bentuknya (tiap potongan punya
+                     * rentang tanggalnya sendiri), tetapi yang dibaca orang
+                     * adalah bulannya.
+                     *
+                     * Potongannya disambung di sini: nominal dijumlah, hari
+                     * dijumlah, rentang tanggalnya digabung. TIDAK ada baris
+                     * alokasi yang diubah — penggabungan ini hanya untuk
+                     * tampilan, sehingga income tetap sama persis.
+                     */
+                    $perBulan = [];
+                    foreach ($allocRows as $r) {
+                        $k = $r['period_key'] . '|' . (string) ($r['pic_name'] ?? '');
+                        if (!isset($perBulan[$k])) {
+                            $perBulan[$k] = $r;
+                            $perBulan[$k]['amount']         = 0.0;
+                            $perBulan[$k]['allocated_days'] = 0;
+                            $perBulan[$k]['capacity_days']  = 0.0;
+                            $perBulan[$k]['potongan']       = 0;
+                        }
+                        $perBulan[$k]['amount']         += (float) $r['amount'];
+                        $perBulan[$k]['allocated_days'] += (int) $r['allocated_days'];
+                        $perBulan[$k]['capacity_days']  += (float) $r['capacity_days'];
+                        $perBulan[$k]['allocation_start'] = min($perBulan[$k]['allocation_start'], $r['allocation_start']);
+                        $perBulan[$k]['allocation_end']   = max($perBulan[$k]['allocation_end'], $r['allocation_end']);
+                        $perBulan[$k]['potongan']++;
+                    }
+                    $barisTampil = array_values($perBulan);
+                    // Subtotal dicetak saat satu bulan punya lebih dari satu PIC.
                     $perSiklus = [];
-                    foreach ($allocRows as $r) $perSiklus[$r['allocation_start']][] = $r;
-                    $siklusKe = 0;
-                    foreach ($allocRows as $i => $row):
-                        $barisSiklus = $perSiklus[$row['allocation_start']];
+                    foreach ($barisTampil as $b) $perSiklus[$b['period_key']][] = $b;
+                    foreach ($barisTampil as $i => $row):
+                        $barisSiklus = $perSiklus[$row['period_key']];
                         $awalSiklus  = $barisSiklus[0]['id'] === $row['id'];
                         $akhirSiklus = $barisSiklus[count($barisSiklus) - 1]['id'] === $row['id'];
-                        if ($awalSiklus) $siklusKe++;
                     ?>
                         <tr id="row-<?= (int)$row['id'] ?>">
                             <td><?= $awalSiklus ? h(period_label($row['period_key'])) : '' ?></td>
-                            <td><?= $awalSiklus ? h($row['allocation_start'] . ' s/d ' . $row['allocation_end']) : '' ?></td>
+                            <td><?= $awalSiklus ? h($row['allocation_start'] . ' s/d ' . $row['allocation_end'])
+                                    . ((int) ($row['potongan'] ?? 1) > 1
+                                        ? ' <span class="muted" style="font-size:11px">(' . (int) $row['potongan'] . ' potongan siklus)</span>' : '') : '' ?></td>
                             <?php if ($adaBagi): ?><td><?= h($row['pic_name'] ?: '—') ?></td><?php endif; ?>
                             <td><?= h((string) $row['allocated_days']) ?></td>
                             <td><?= h((string) $row['capacity_days']) ?></td>
@@ -2731,7 +2766,8 @@ function allocation_amount_override(PDO $pdo): void
     // disunting selalu terbaca sebagai bulan pengakuan transaksi, bukan bulan
     // baris yang ditekan.
     $q = $pdo->prepare(
-        'SELECT ta.id AS alok_id, ta.period_key AS alok_period, ta.amount AS alok_amount, t.*
+        'SELECT ta.id AS alok_id, ta.period_key AS alok_period, ta.amount AS alok_amount,
+                ta.pic_name AS alok_pic, t.*
            FROM transaction_allocations ta
            JOIN transactions t ON t.id = ta.transaction_id
           WHERE ta.id = ? AND ta.transaction_id = ? AND ta.property_id = ? AND t.deleted_at IS NULL'
@@ -2743,7 +2779,19 @@ function allocation_amount_override(PDO $pdo): void
         redirect_to('allocation_detail', ['id' => $trxId]);
     }
     $periode  = (string) $row['alok_period'];
-    $nilaiLama = (float) $row['alok_amount'];
+    // Nilai LAMA diambil dari SELURUH potongan bulan itu milik PIC yang sama,
+    // bukan dari satu baris saja.
+    //
+    // Layar menggabungkan potongan siklus menjadi satu baris per bulan (1–14
+    // Agustus + 15–31 Agustus tampil sebagai satu "Agustus"), sehingga angka
+    // yang dikirim dari kotak Special Price adalah nilai SEBULAN. Kalau yang
+    // dikurangkan hanya potongan pertama, bulan itu akan bertambah sendiri
+    // sebesar potongan kedua setiap kali disimpan.
+    $lamaQ = $pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM transaction_allocations
+                             WHERE transaction_id = ? AND property_id = ? AND period_key = ?
+                               AND COALESCE(pic_name,'') = ?");
+    $lamaQ->execute([$trxId, $pid, $periode, (string) ($row['alok_pic'] ?? '')]);
+    $nilaiLama = (float) $lamaQ->fetchColumn();
 
     // Dokumen bertanda tangan TIDAK lagi menghalangi: yang dikunci nilai
     // kontraknya, bukan cara nilainya dibukukan ke bulan. Penjaganya di bawah —
