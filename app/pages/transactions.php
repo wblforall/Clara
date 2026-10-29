@@ -19,10 +19,15 @@ function transactions_page(PDO $pdo): void
     // menunjuk balik lewat transactions.skp_id. Mencari lewat transaction_id
     // saja membuat komponen lain dianggap "tanpa dokumen" — ikut tampil dan
     // ikut terhitung padahal dokumennya sedang direvisi.
+    // Dokumen terakhir = id terbesar di antara (dokumen ber-transaction_id ini) dan
+    // (dokumen yang ditunjuk skp_id). transaction_id unik, jadi tiap cabang paling
+    // banyak satu baris dan keduanya memakai indeks. Bentuk lama "… OR …
+    // ORDER BY id DESC LIMIT 1" memaksa pemindaian tabel per baris: ±350 ms
+    // untuk satu bulan Kalender, hasilnya sama persis.
     $skpSub = fn(string $kol) => "(SELECT s2.$kol FROM skp_documents s2
-                     WHERE s2.property_id = t.property_id
-                       AND (s2.transaction_id = t.id OR s2.id = t.skp_id)
-                     ORDER BY s2.id DESC LIMIT 1)";
+                     WHERE s2.id = GREATEST(
+                         COALESCE((SELECT x.id FROM skp_documents x WHERE x.transaction_id = t.id AND x.property_id = t.property_id), 0),
+                         COALESCE((SELECT y.id FROM skp_documents y WHERE y.id = t.skp_id AND y.property_id = t.property_id), 0)))";
 
     $where  = ['t.module = :module', 't.deleted_at IS NULL', 't.property_id = :property_id'];
     $params = [':module' => $module, ':property_id' => current_property_id()];
