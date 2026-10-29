@@ -901,10 +901,19 @@ function transaction_form(PDO $pdo): void
                 const val  = document.getElementById('recognition_month').value;
                 const help = document.getElementById('recognition_help');
                 const cycleWrap = document.getElementById('cycle_recognition_wrap');
+                const pt   = (document.getElementById('pricing_type') || {}).value || '';
+                // "Pengakuan per Siklus" hanya punya arti bila kontraknya memang
+                // berjalan dalam SIKLUS BULANAN. Pada harga fixed/harian hanya ada
+                // satu periode, jadi pilihan itu tidak mengubah apa pun — dan dulu
+                // ia tetap tampil, membuat orang mengira sudah mengatur sesuatu
+                // padahal nilainya tetap terbagi rata ke tiap bulan.
+                const adaSiklus = (pt === 'monthly' || pt === 'monthly_area');
                 help.textContent = val === 'spread'
-                    ? 'Nilainya dibagi rata ke setiap bulan yang dicakup kontrak. Pilihan ini juga membuat kontraknya dihitung sebagai Recurring di Dashboard dan Laporan.'
+                    ? (adaSiklus
+                        ? 'Nilainya dibagi ke tiap siklus bulanan. Pilihan ini juga membuat kontraknya dihitung sebagai Recurring di Dashboard dan Laporan.'
+                        : 'Nilainya dibagi rata ke setiap bulan yang dicakup kontrak. Kalau yang diinginkan seluruh nilai jatuh di SATU bulan, pilih Bulan Awal atau Bulan Akhir — bukan ini.')
                     : 'Satu acara dicatat utuh di satu bulan. Pilih bulan mana yang dipakai.';
-                if (cycleWrap) cycleWrap.style.display = val === 'spread' ? '' : 'none';
+                if (cycleWrap) cycleWrap.style.display = (val === 'spread' && adaSiklus) ? '' : 'none';
                 peringatanPricing();
             }
             // Kontrak bulanan yang pricing-nya harian: "Spread per Bulan" membagi
@@ -1490,7 +1499,9 @@ function transaction_edit(PDO $pdo): void
                 <div id="peringatan_pricing" class="wide" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;font-size:12.5px;color:#92400e">
                     <strong>Perhatikan Pricing Type.</strong> Kontrak ini lintas bulan tapi pricing-nya harian, jadi nilainya dibagi menurut <strong>jumlah hari tiap bulan kalender</strong> &mdash; bukan satu nilai utuh per siklus bulanan. Untuk kontrak bulanan, pilih <strong>monthly</strong> lalu isi <strong>Rate</strong> dengan harga per bulan.
                 </div>
-                <div id="cycle_recognition_wrap" style="<?= $recognitionMonth === 'spread' ? '' : 'display:none' ?>">
+                <?php $adaSiklusAwal = $recognitionMonth === 'spread'
+                    && in_array($trx['pricing_type'] ?? '', ['monthly', 'monthly_area'], true); ?>
+                <div id="cycle_recognition_wrap" style="<?= $adaSiklusAwal ? '' : 'display:none' ?>">
                     <label>Pengakuan per Siklus</label>
                     <select name="cycle_recognition" id="cycle_recognition">
                         <?php $cr = $trx['cycle_recognition'] ?? 'cycle_start'; ?>
@@ -1741,10 +1752,19 @@ function transaction_edit(PDO $pdo): void
                 const val  = document.getElementById('recognition_month').value;
                 const help = document.getElementById('recognition_help');
                 const cycleWrap = document.getElementById('cycle_recognition_wrap');
+                const pt   = (document.getElementById('pricing_type') || {}).value || '';
+                // "Pengakuan per Siklus" hanya punya arti bila kontraknya memang
+                // berjalan dalam SIKLUS BULANAN. Pada harga fixed/harian hanya ada
+                // satu periode, jadi pilihan itu tidak mengubah apa pun — dan dulu
+                // ia tetap tampil, membuat orang mengira sudah mengatur sesuatu
+                // padahal nilainya tetap terbagi rata ke tiap bulan.
+                const adaSiklus = (pt === 'monthly' || pt === 'monthly_area');
                 help.textContent = val === 'spread'
-                    ? 'Nilainya dibagi rata ke setiap bulan yang dicakup kontrak. Pilihan ini juga membuat kontraknya dihitung sebagai Recurring di Dashboard dan Laporan.'
+                    ? (adaSiklus
+                        ? 'Nilainya dibagi ke tiap siklus bulanan. Pilihan ini juga membuat kontraknya dihitung sebagai Recurring di Dashboard dan Laporan.'
+                        : 'Nilainya dibagi rata ke setiap bulan yang dicakup kontrak. Kalau yang diinginkan seluruh nilai jatuh di SATU bulan, pilih Bulan Awal atau Bulan Akhir — bukan ini.')
                     : 'Satu acara dicatat utuh di satu bulan. Pilih bulan mana yang dipakai.';
-                if (cycleWrap) cycleWrap.style.display = val === 'spread' ? '' : 'none';
+                if (cycleWrap) cycleWrap.style.display = (val === 'spread' && adaSiklus) ? '' : 'none';
                 peringatanPricing();
             }
             // Kontrak bulanan yang pricing-nya harian: "Spread per Bulan" membagi
