@@ -424,6 +424,13 @@ function calendar_page(PDO $pdo): void
             table.cal td.s.kiri{border-top-left-radius:0;border-bottom-left-radius:0}
             table.cal td.s.kanan{border-top-right-radius:0;border-bottom-right-radius:0}
             .cal-pop{position:fixed;z-index:50;background:#fff;border:1px solid #CBD5E1;border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,.18);padding:14px 16px;width:300px;font-size:13px;display:none}
+            .cal-pop.muncul{animation:calPopIn .16s cubic-bezier(.2,.8,.2,1)}
+            .cal-pop.atas.muncul{animation-name:calPopInAtas}
+            .cal-pop.keluar{animation:calPopOut .12s ease forwards}
+            @keyframes calPopIn{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:none}}
+            @keyframes calPopInAtas{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
+            @keyframes calPopOut{to{opacity:0;transform:translateY(-4px) scale(.98)}}
+            @media (prefers-reduced-motion:reduce){.cal-pop.muncul,.cal-pop.keluar{animation:none}}
             .cal-pop h4{margin:0 0 4px;font-size:15px}
             .cal-pop .k{color:var(--muted);font-size:11px}
             .cal-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#0F2A3F;color:#fff;padding:10px 16px;border-radius:99px;display:none;gap:12px;align-items:center;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.25);font-size:13px}
@@ -916,7 +923,24 @@ function calendar_page(PDO $pdo): void
             var uang = function(n){ return 'Rp ' + Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
             var esc = function(s){ var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; };
             var mulai = null;
-            function tutup(){ pop.style.display = 'none'; }
+            function tutup(){
+                if (pop.style.display === 'none' || pop.classList.contains('keluar')) return;
+                pop.classList.remove('muncul'); pop.classList.add('keluar');
+                setTimeout(function(){ pop.style.display = 'none'; pop.classList.remove('keluar'); }, 120);
+            }
+            // Pop-up muncul di titik yang diklik, dijaga tetap di dalam area kalender. Dulu ia
+            // menempel ke tepi kiri sel — sel kontrak sebulan penuh yang sudah tergulir ke kiri
+            // membuat pop-up terlempar ke tepi jendela, menimpa menu samping.
+            function tampil(h, sel, ev){
+                pop.innerHTML = h; pop.classList.remove('keluar', 'muncul', 'atas'); pop.style.display = 'block';
+                var r = sel.getBoundingClientRect(), wr = wrap.getBoundingClientRect(), w = pop.offsetWidth;
+                var kiri = Math.max(12, wr.left), kanan = Math.min(window.innerWidth, wr.right) - w - 12;
+                var x = Math.min(Math.max((ev && ev.clientX ? ev.clientX : r.left) - 24, kiri), Math.max(kiri, kanan));
+                var y = r.bottom + 6;
+                if (y + pop.offsetHeight > window.innerHeight - 12) { y = Math.max(12, r.top - pop.offsetHeight - 6); pop.classList.add('atas'); }
+                pop.style.left = x + 'px'; pop.style.top = y + 'px';
+                void pop.offsetWidth; pop.classList.add('muncul');
+            }
             function reset(){ mulai = null; bar.style.display = 'none'; wrap.querySelectorAll('td.pilih').forEach(function(x){ x.classList.remove('pilih'); }); }
             function tgl(d){ return BULAN + '-' + ('0' + d).slice(-2); }
             function buatBar(unit, a, b){
@@ -953,11 +977,8 @@ function calendar_page(PDO $pdo): void
                            + '&master_code=' + encodeURIComponent(j.u) + '&start_date=' + encodeURIComponent(j.m) + '&end_date=' + encodeURIComponent(j.s)
                            + '&from_prospect=' + j.id + '">Jadi penawaran</a>';
                         <?php endif; ?>
-                        h += '<button type="button" class="btn light" onclick="document.getElementById(\'cal-pop\').style.display=\'none\'">Tutup</button></div>';
-                        pop.innerHTML = h; pop.style.display = 'block';
-                        var rp0 = s.getBoundingClientRect(), xp = Math.min(window.innerWidth - 312, Math.max(12, rp0.left)), yp = rp0.bottom + 6;
-                        if (yp + pop.offsetHeight > window.innerHeight - 12) yp = Math.max(12, rp0.top - pop.offsetHeight - 6);
-                        pop.style.left = xp + 'px'; pop.style.top = yp + 'px';
+                        h += '<button type="button" class="btn light" data-tutup-pop>Tutup</button></div>';
+                        tampil(h, s, ev);
                         ev.stopPropagation(); return;
                     }
                     <?php /* Tombol tindakan tetap mengikuti kepemilikan: membuka invoice
@@ -965,11 +986,8 @@ function calendar_page(PDO $pdo): void
                     <?php if ($bisaBayar): ?>if (j.own) h += '<a class="btn light" href="?r=payment_form&id=' + j.id + '&back=' + encodeURIComponent(location.search.slice(1)) + '">Invoice &amp; bayar</a>';<?php endif; ?>
                     <?php if (can('view_transactions')): ?>if (j.own) h += '<a class="btn light" href="?r=allocation_detail&id=' + j.id + '">Rincian</a>';<?php endif; ?>
                     <?php if ($bisaOffer): ?>h += '<a class="btn light" href="?r=offer_form&renew_from=' + j.id + '">Perpanjang</a>';<?php endif; ?>
-                    h += '<button type="button" class="btn light" onclick="document.getElementById(\'cal-pop\').style.display=\'none\'">Tutup</button></div>';
-                    pop.innerHTML = h; pop.style.display = 'block';
-                    var r = s.getBoundingClientRect(), w = 300, x = Math.min(window.innerWidth - w - 12, Math.max(12, r.left)), y = r.bottom + 6;
-                    if (y + pop.offsetHeight > window.innerHeight - 12) y = Math.max(12, r.top - pop.offsetHeight - 6);
-                    pop.style.left = x + 'px'; pop.style.top = y + 'px';
+                    h += '<button type="button" class="btn light" data-tutup-pop>Tutup</button></div>';
+                    tampil(h, s, ev);
                     ev.stopPropagation(); return;
                 }
                 tutup();
@@ -985,6 +1003,7 @@ function calendar_page(PDO $pdo): void
                 }
             });
             document.addEventListener('click', function(ev){ if (!ev.target.closest('#cal-pop') && !ev.target.closest('td.s')) tutup(); });
+            pop.addEventListener('click', function(ev){ if (ev.target.closest('[data-tutup-pop]')) tutup(); });
             document.getElementById('cal-bar-x').addEventListener('click', reset);
             document.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') { tutup(); reset(); } });
             document.getElementById('cal-cari').addEventListener('input', function(){
