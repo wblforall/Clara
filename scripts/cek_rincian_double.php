@@ -31,24 +31,22 @@ require_once $root . '/app/env.php';
 require_once $root . '/app/Database.php';
 require_once $root . '/app/helpers.php';
 
-$opt = array_merge(['sejak' => '2026-10', 'prop' => ''], getopt('', ['sejak:', 'prop:', 'rinci']));
-$rinci = array_key_exists('rinci', $opt);
-$sejak = (string) $opt['sejak'];
-if (!preg_match('/^\d{4}-\d{2}$/', $sejak)) {
-    fwrite(STDERR, "--sejak harus bentuk YYYY-MM, contoh 2026-10\n");
-    exit(2);
-}
-$batas = $sejak . '-01';
-
-$pdo = Database::connect();
-$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+/**
+ * Pindai dokumen dan pulangkan hitungannya.
+ *
+ * Dipisah sebagai fungsi supaya PDF tutorial (scripts/build_tutorial_dobel.php)
+ * membaca angka dari sumber yang SAMA. Dua salinan aturan akan pelan-pelan
+ * berbeda, dan tutorialnya lalu mengajarkan angka yang tidak pernah ada.
+ */
+function cek_rincian_pindai(PDO $pdo, string $batas, string $prop = ''): array
+{
 $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
 
 $syaratProp = '';
 $argProp    = [];
-if ((string) $opt['prop'] !== '') {
+if ($prop !== '') {
     $syaratProp = ' AND property_id = ?';
-    $argProp[]  = (int) $opt['prop'];
+    $argProp[]  = (int) $prop;
 }
 
 /** Jumlah bulan kontrak — aturan sama dengan surat penawaran. */
@@ -63,8 +61,6 @@ $bulanKontrak = function (array $o): int {
     if ((int) date('j', $te) >= (int) date('j', $ts)) $b++;
     return $b > 1 ? $b : 0;
 };
-
-$ringkas = [];
 
 // ── Surat Penawaran ────────────────────────────────────────────────────────
 $q = $pdo->prepare("SELECT id, offer_no, property_id, pricing_type, unit_rate, monthly_amount,
@@ -160,6 +156,41 @@ foreach ($q2->fetchAll() as $s) {
             $rp($a['grand_total'] ?? 0));
     }
 }
+
+    return [
+        'offer'      => ['n' => $nOffer, 'dobel' => $nOfferDobel, 'baris' => $barisHilangOffer,
+                         'daftar' => $daftarOffer],
+        'skp'        => ['n' => $nSkp, 'dobel' => $nSkpDobel, 'baris' => $barisHilangSkp,
+                         'daftar' => $daftarSkp],
+        'uang_sebelum' => $uangOfferSebelum + $uangSkpSebelum,
+        'uang_sesudah' => $uangOfferSesudah + $uangSkpSesudah,
+    ];
+}
+
+// ── Dipanggil langsung dari terminal ───────────────────────────────────────
+// Berkas ini juga di-require oleh pembangun PDF tutorial; bagian di bawah
+// hanya berjalan bila ia sendiri yang dijalankan.
+if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') !== realpath(__FILE__)) return;
+
+$opt = array_merge(['sejak' => '2026-10', 'prop' => ''], getopt('', ['sejak:', 'prop:', 'rinci']));
+$rinci = array_key_exists('rinci', $opt);
+$sejak = (string) $opt['sejak'];
+if (!preg_match('/^\d{4}-\d{2}$/', $sejak)) {
+    fwrite(STDERR, "--sejak harus bentuk YYYY-MM, contoh 2026-10\n");
+    exit(2);
+}
+
+$pdo = Database::connect();
+$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+$rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
+
+$hasil       = cek_rincian_pindai($pdo, $sejak . '-01', (string) $opt['prop']);
+$nOffer      = $hasil['offer']['n'];      $nOfferDobel      = $hasil['offer']['dobel'];
+$barisHilangOffer = $hasil['offer']['baris'];  $daftarOffer = $hasil['offer']['daftar'];
+$nSkp        = $hasil['skp']['n'];        $nSkpDobel        = $hasil['skp']['dobel'];
+$barisHilangSkp   = $hasil['skp']['baris'];    $daftarSkp   = $hasil['skp']['daftar'];
+$uangOfferSebelum = $hasil['uang_sebelum'];    $uangSkpSebelum = 0.0;
+$uangOfferSesudah = $hasil['uang_sesudah'];    $uangSkpSesudah = 0.0;
 
 $garis = str_repeat('─', 74);
 echo "\nPEMERIKSAAN BARIS KEMBAR DI SURAT — sejak $sejak"
