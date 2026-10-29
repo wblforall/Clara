@@ -3978,8 +3978,38 @@ function skp_sign_upload(PDO $pdo): void
  * ditampilkan. Seluruh angka pembayaran tetap memakai snapshot yang
  * ditandatangani, tidak ada yang dihitung ulang.
  */
+/**
+ * Jabatan PIC seperti tercatat di Master PIC.
+ *
+ * Surat dulu menulis mati "Sales Executive" untuk SIAPA PUN yang membuatnya,
+ * padahal jabatannya memang berbeda-beda (Sales, Sales Senior, Asst. Manager)
+ * dan sudah lama terisi di Master PIC → kolom Jabatan. Surat Penawaran sudah
+ * memakai kolom itu (pic_role); SKP/SKS/Form Utilities belum.
+ */
+function skp_jabatan_pic(PDO $pdo, string $nama, int $pid): string
+{
+    static $memo = [];
+    $nama = trim($nama);
+    if ($nama === '') return 'Sales Executive';
+    $kunci = $pid . '/' . mb_strtolower($nama);
+    if (array_key_exists($kunci, $memo)) return $memo[$kunci];
+    // Nama yang sama bisa punya baris non-aktif sisa lama; yang aktif menang.
+    $st = $pdo->prepare("SELECT role_name FROM master_pic
+                          WHERE name = ? AND property_id = ?
+                       ORDER BY (status = 'active') DESC, id LIMIT 1");
+    $st->execute([$nama, $pid]);
+    return $memo[$kunci] = (trim((string) $st->fetchColumn()) ?: 'Sales Executive');
+}
+
 function _skp_lengkapi_komponen(PDO $pdo, array $skp, array $d, int $pid): array
 {
+    // Jabatan penanda tangan "Dibuat Oleh" dibaca LANGSUNG dari Master PIC,
+    // bukan dari salinan beku dokumen. Dengan begitu surat lama ikut benar
+    // begitu jabatannya diperbaiki di master — tanpa menerbitkan ulang satu
+    // dokumen pun, dan tanpa menyentuh satu pun angka di dalam salinan beku.
+    // Ditaruh sebelum semua `return` di bawah supaya tidak ada jalur yang
+    // terlewat.
+    $d['sales_jabatan'] = skp_jabatan_pic($pdo, (string) ($d['sales'] ?? ''), $pid);
     if (count($d['bundle_items'] ?? []) >= 2 || empty($skp['offer_id'])) return $d;
     $kmp = _skp_komponen_paket($pdo, (int) $skp['offer_id'], $pid);
     if (count($kmp) < 2) return $d;
