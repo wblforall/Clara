@@ -464,8 +464,13 @@ function calendar_page(PDO $pdo): void
             table.cal td.rk.pros-ada{background:#FFFBEB}
             /* Sel Forecast bisa diketik langsung, seperti sel spreadsheet. */
             table.cal td.fc-sel{padding:0}
-            table.cal td.fc-sel input.fc-in{width:100%;border:0;background:transparent;text-align:right;
-                padding:3px 10px;font:inherit;font-size:10.5px;font-variant-numeric:tabular-nums;color:inherit;border-radius:0}
+            /* Wadah lentur dipasang DI DALAM sel, bukan pada <td>-nya: td yang
+               diubah jadi flex berhenti berlaku sebagai sel tabel dan seluruh
+               lebar kolomnya ikut melar. */
+            table.cal td.fc-sel .fc-wrap{display:flex;align-items:center}
+            table.cal td.fc-sel .fc-rp{padding-left:6px;font-size:10px;font-weight:700;color:#64748B;flex:none}
+            table.cal td.fc-sel input.fc-in{flex:1;min-width:0;width:100%;border:0;background:transparent;text-align:right;
+                padding:3px 8px 3px 2px;font:inherit;font-size:10.5px;font-variant-numeric:tabular-nums;color:inherit;border-radius:0}
             table.cal td.fc-sel input.fc-in:focus{outline:2px solid #0D9488;outline-offset:-2px;background:#F0FDFA}
             table.cal td.fc-sel.fc-khusus{background:#F0FDFA}
             table.cal td.fc-sel.simpan{background:#DCFCE7}
@@ -809,9 +814,12 @@ function calendar_page(PDO $pdo): void
                                 <?php /* Diketik di sini = forecast bulan ini untuk unit ini.
                                          Bulan lain tidak ikut berubah. */ ?>
                                 <td class="rk rk-awal fc-sel<?= !empty($u['fcKhusus']) ? ' fc-khusus' : '' ?>">
-                                    <input class="fc-in" inputmode="numeric" data-slot="<?= (int) $u['fcId'] ?>" data-kode="<?= h($kode) ?>"
+                                    <?php /* Sel di kiri-kanannya mencetak "Rp 1.000.000"; tanpa label ini
+                                             kotak Forecast satu-satunya angka uang di baris yang
+                                             tampil telanjang, dan terbaca sebagai jumlah, bukan rupiah. */ ?>
+                                    <div class="fc-wrap"><span class="fc-rp">Rp</span><input class="fc-in" inputmode="numeric" data-slot="<?= (int) $u['fcId'] ?>" data-kode="<?= h($kode) ?>"
                                            value="<?= (float) $u['rpFc'] > 0 ? h(number_format((float) $u['rpFc'], 0, ',', '.')) : '' ?>"
-                                           title="Forecast <?= h(period_label($bulan)) ?> untuk unit ini — ketik lalu tekan Enter">
+                                           title="Forecast <?= h(period_label($bulan)) ?> untuk unit ini — ketik lalu tekan Enter"></div>
                                 </td>
                             <?php else: $sel((float) $u['rpFc'], 0.0, 'rk-awal'); endif; ?>
                             <?php $sel((float) $jl['rec']); ?>
@@ -1252,7 +1260,7 @@ function calendar_detail(PDO $pdo): void
                 <tr>
                     <?php /* Cukup nama unitnya — kodenya tidak dipakai tim sehari-hari. */ ?>
                     <td><b><?= h($b['unit_nama']) ?></b>
-                        <?= (float) $b['area_sqm'] > 0 ? '<br><span class="muted" style="font-size:11px">' . h(rtrim(rtrim(number_format((float) $b['area_sqm'], 2, ',', ''), '0'), ',')) . ' m²</span>' : '' ?></td>
+                        <?= (float) $b['area_sqm'] > 0 ? '<br><span class="muted" style="font-size:11px">' . angka($b['area_sqm']) . ' m²</span>' : '' ?></td>
                     <td><b><?= h($b['brand_name'] ?: $b['company_name'] ?: '-') ?></b>
                         <?= $b['brand_name'] && $b['company_name'] ? '<br><span class="muted" style="font-size:11px">' . h($b['company_name']) . '</span>' : '' ?></td>
                     <td style="white-space:nowrap"><?= h($tgl($b['start_date'])) ?> – <?= h($tgl($b['end_date'])) ?>

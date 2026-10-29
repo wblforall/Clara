@@ -1112,7 +1112,7 @@ function unit_analysis_detail_page(PDO $pdo): void
                     <?php if ($m['lantai'] !== ''): ?><span><?= $module === 'gudang' ? 'Lokasi' : 'Lantai' ?>: <b><?= _ua_e($m['lantai']) ?></b></span><?php endif; ?>
                     <?php if ($m['lokasi'] !== ''): ?><span><?= $module === 'gudang' ? 'Nama' : 'Lokasi' ?>: <b><?= _ua_e($m['lokasi']) ?></b></span><?php endif; ?>
                     <?php if ($m['tipe'] !== ''): ?><span><?= $module === 'media' ? 'Jenis' : 'Tipe' ?>: <b><?= _ua_e($m['tipe']) ?></b></span><?php endif; ?>
-                    <?php if ($module !== 'media'): ?><span>Luas: <b><?= _ua_angka($m['luas'], 2) ?> m²</b></span><?php endif; ?>
+                    <?php if ($module !== 'media'): ?><span>Luas: <b><?= angka($m['luas']) ?> m²</b></span><?php endif; ?>
                     <?php if ($module === 'media' && $m['ukuran'] !== ''): ?><span>Ukuran: <b><?= _ua_e($m['ukuran']) ?></b></span><?php endif; ?>
                     <?php if ($module === 'media' && $m['slot'] !== null): ?><span>Slot master: <b><?= _ua_angka($m['slot'], $m['slot'] == floor($m['slot']) ? 0 : 1) ?></b></span><?php endif; ?>
                     <span>Tarif master: <b><?= _ua_e(money($m['tarif'])) ?></b> <?= _ua_e($m['satuan_tarif']) ?></span>

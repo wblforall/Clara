@@ -307,7 +307,7 @@ td.money { text-align: right; font-weight: 600; }
         ?>
         <tr class="subtotal">
             <td colspan="4">Subtotal <?= h($floor) ?> (<?= count($rows) ?> unit)</td>
-            <td class="r"><?= number_format($fArea,1,',','.') ?></td>
+            <td class="r"><?= angka($fArea) ?></td>
             <td class="money"><?= money($fP) ?></td>
             <td class="r"><?= $fD ?></td>
             <?php $_occ = $periodDays*count($rows)>0 ? $fD/($periodDays*count($rows)) : 0; ?><td class="r"<?= $_occ > 1 ? ' style="color:#dc2626;font-weight:700"' : '' ?>><?= pct($_occ) ?></td>
@@ -407,7 +407,7 @@ td.money { text-align: right; font-weight: 600; }
         ?>
         <tr class="subtotal">
             <td colspan="3">Subtotal <?= h($loc) ?> (<?= count($rows) ?> unit)</td>
-            <td class="r"><?= number_format($lArea,1,',','.') ?></td>
+            <td class="r"><?= angka($lArea) ?></td>
             <td class="money"><?= money($lP) ?></td>
             <td class="r"><?= $lD ?></td>
             <?php $_occ = $periodDays*count($rows)>0 ? $lD/($periodDays*count($rows)) : 0; ?><td class="r"<?= $_occ > 1 ? ' style="color:#dc2626;font-weight:700"' : '' ?>><?= pct($_occ) ?></td>
@@ -682,7 +682,7 @@ tr.grand-total td { background: #F0FDFA; font-weight: 800; color: #0F1623; borde
         </tr>
         <?php endforeach; $_occ=$periodDays*$gtCU>0?$gtCD/($periodDays*$gtCU):0; ?>
         <tr class="grand-total">
-            <td>TOTAL</td><td class="r"><?= $gtCU ?></td><td class="r"><?= number_format($gtCA,1,',','.') ?></td>
+            <td>TOTAL</td><td class="r"><?= $gtCU ?></td><td class="r"><?= angka($gtCA) ?></td>
             <td class="money"><?= money($gtCP) ?></td><td class="r"><?= (int)$gtCD ?></td>
             <td class="r"<?= $occStyle($_occ) ?>><?= pct($_occ) ?></td>
             <td class="money"><?= money($gtCAct) ?></td>
@@ -743,7 +743,7 @@ tr.grand-total td { background: #F0FDFA; font-weight: 800; color: #0F1623; borde
         </tr>
         <?php endforeach; $_occ=$periodDays*$gtGU>0?$gtGD/($periodDays*$gtGU):0; ?>
         <tr class="grand-total">
-            <td>TOTAL</td><td class="r"><?= $gtGU ?></td><td class="r"><?= number_format($gtGA,1,',','.') ?></td>
+            <td>TOTAL</td><td class="r"><?= $gtGU ?></td><td class="r"><?= angka($gtGA) ?></td>
             <td class="money"><?= money($gtGP) ?></td><td class="r"><?= (int)$gtGD ?></td>
             <td class="r"<?= $occStyle($_occ) ?>><?= pct($_occ) ?></td>
             <td class="money"><?= money($gtGAct) ?></td>

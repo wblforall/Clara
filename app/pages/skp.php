@@ -1219,7 +1219,7 @@ function skp_form(PDO $pdo): void
                          unit saja (20 m² dari empat titik) membuat yang mereview
                          mengira kontraknya jauh lebih kecil dari sebenarnya. */ ?>
                 <div><label>Luas Area (m²)<?= $komponenPaket ? ' <span class="muted" style="font-weight:400">(total ' . count($komponenPaket) . ' lokasi)</span>' : '' ?></label>
-                    <input id="spec-luas" value="<?= number_format($komponenPaket ? $luasPaket : $area, 2, ',', '.') ?>" disabled></div>
+                    <input id="spec-luas" value="<?= angka($komponenPaket ? $luasPaket : $area) ?>" disabled></div>
                 <div><label>Luas Seating Area (m²)</label><input name="seating_area" value="<?= $val('seating_area') ?>" inputmode="decimal" placeholder="opsional" <?= $editable ? '' : 'disabled' ?>></div>
                 <?php endif; ?>
                 <?php /* Mana yang boleh diubah, mana yang terkunci — dan KENAPA.
@@ -1329,14 +1329,14 @@ function skp_form(PDO $pdo): void
                                 <td><strong><?= h($k['kode']) ?></strong></td>
                                 <td><?= h($k['nama']) ?></td>
                                 <td><?= h($k['lantai']) ?></td>
-                                <td style="text-align:right"><?= number_format($k['luas'], 2, ',', '.') ?></td>
+                                <td style="text-align:right"><?= angka($k['luas']) ?></td>
                                 <td style="text-align:right;white-space:nowrap"><?= h(money($k['nilai'])) ?></td>
                             </tr>
                         <?php endforeach; ?>
                         </tbody>
                         <tfoot><tr style="background:#f1f5f9;font-weight:700">
                             <td colspan="4">TOTAL</td>
-                            <td style="text-align:right"><?= number_format($luasPaket, 2, ',', '.') ?></td>
+                            <td style="text-align:right"><?= angka($luasPaket) ?></td>
                             <td style="text-align:right;white-space:nowrap"><?= h(money(array_sum(array_column($komponenPaket, 'nilai')))) ?></td>
                         </tr></tfoot>
                     </table>

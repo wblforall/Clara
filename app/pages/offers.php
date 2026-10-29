@@ -1437,7 +1437,7 @@ function offer_view(PDO $pdo): void
             if (!empty($offer['referrer_name'])) $row('Referral', h($offer['referrer_name']));
             if (!$isBundle) {
                 $row('Unit / Lokasi', h($unitDisp));
-                $row('Luas', $offer['area_sqm'] ? number_format((float)$offer['area_sqm'], 2, ',', '.') . ' m²' : '-');
+                $row('Luas', angka_satuan($offer['area_sqm'] ?? 0));
             }
             $row('Periode', h($periode) . ($days ? ' · <strong>' . $days . ' hari</strong>' : ''));
             $row('Total Kontrak', $rp($offer['total_calculated']));
@@ -1495,7 +1495,7 @@ function offer_view(PDO $pdo): void
         ?>
         <?php if ($items): ?>
         <div class="panel" style="margin-top:12px">
-            <h3 style="margin-top:0">Komponen Paket <span style="font-weight:400;font-size:12.5px;color:var(--muted)">&mdash; <?= count($items) ?> lokasi, total <?= number_format($luasTotal, 2, ',', '.') ?> m²</span></h3>
+            <h3 style="margin-top:0">Komponen Paket <span style="font-weight:400;font-size:12.5px;color:var(--muted)">&mdash; <?= count($items) ?> lokasi, total <?= angka($luasTotal) ?> m²</span></h3>
             <div style="overflow-x:auto">
             <table class="table" style="width:100%;border-collapse:collapse;font-size:13px">
                 <thead>
@@ -1517,7 +1517,7 @@ function offer_view(PDO $pdo): void
                         <td style="padding:8px 10px"><?= h($it['nama']) ?></td>
                         <td style="padding:8px 10px"><?= h($segLbl[$it['segment']] ?? $it['segment']) ?></td>
                         <td style="padding:8px 10px"><?= h($it['lantai']) ?></td>
-                        <td style="padding:8px 10px;text-align:right"><?= number_format($it['luas'], 2, ',', '.') ?></td>
+                        <td style="padding:8px 10px;text-align:right"><?= angka($it['luas']) ?></td>
                         <td style="padding:8px 10px;text-align:right"><?= $rp($it['nilai']) ?></td>
                         <td style="padding:8px 10px;text-align:right"><?= $rp($it['dp']) ?></td>
                         <td style="padding:8px 10px;text-align:right"><?= $rp($it['deposit']) ?></td>
@@ -1527,7 +1527,7 @@ function offer_view(PDO $pdo): void
                 <tfoot>
                     <tr style="border-top:2px solid #e2e8f0;font-weight:700;background:#f8fafc">
                         <td style="padding:9px 10px" colspan="4">Total Paket</td>
-                        <td style="padding:9px 10px;text-align:right"><?= number_format($luasTotal, 2, ',', '.') ?></td>
+                        <td style="padding:9px 10px;text-align:right"><?= angka($luasTotal) ?></td>
                         <td style="padding:9px 10px;text-align:right"><?= $rp($offer['total_calculated'] ?: $offer['monthly_amount']) ?></td>
                         <td style="padding:9px 10px;text-align:right"><?= $rp($offer['dp_amount']) ?></td>
                         <td style="padding:9px 10px;text-align:right"><?= $rp($offer['deposit_amount']) ?></td>
@@ -1956,9 +1956,9 @@ function offer_form(PDO $pdo): void
                             <th style="padding:4px 6px">Unit / Titik</th>
                             <th style="padding:4px 6px">Nama Tampil</th>
                             <th style="padding:4px 6px">Luas (m²)</th>
-                            <th style="padding:4px 6px">Harga/Bulan</th>
-                            <th style="padding:4px 6px">DP</th>
-                            <th style="padding:4px 6px">Deposit</th>
+                            <th style="padding:4px 6px">Harga/Bulan (Rp)</th>
+                            <th style="padding:4px 6px">DP (Rp)</th>
+                            <th style="padding:4px 6px">Deposit (Rp)</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -2095,7 +2095,7 @@ function offer_form(PDO $pdo): void
                     <input type="hidden" name="master_code" id="master_code" value="<?= h($offer['master_code'] ?? '') ?>">
                     <?php endif; ?>
                 </div>
-                <div><label>Luas (m²)</label><input type="number" step="0.01" name="area_sqm" id="area_sqm" value="<?= $v('area_sqm') ?>" <?= $disabled ?>></div>
+                <div><label>Luas (m²)</label><input type="number" step="0.01" name="area_sqm" id="area_sqm" value="<?= h(angka_input($offer['area_sqm'] ?? '')) ?>" <?= $disabled ?>></div>
                 <?php if ($module === 'media'): ?>
                 <div id="slots_wrap" style="display:none">
                     <label>Jumlah Slot</label>
@@ -2216,7 +2216,9 @@ function offer_form(PDO $pdo): void
                     <input type="text" inputmode="numeric" id="monthly_disp" placeholder="Kosongkan bila tidak perlu"
                            value="<?= $blnNilai > 0 ? h(number_format($blnNilai, 0, ',', '.')) : '' ?>" <?= $disabled ?>>
                     <input type="hidden" name="monthly_amount" id="monthly_amount" value="<?= $blnNilai > 0 ? (int) $blnNilai : '' ?>">
-                    <div class="help"><strong>Kosong = tidak tercetak</strong> di surat mana pun.</div>
+                    <div class="help"><strong>Kosong = tidak tercetak</strong> di surat mana pun.
+                        Kontrak <strong>1 bulan</strong> tidak perlu diisi &mdash; angkanya sama dengan
+                        Harga Sewa / Periode, dan di surat keduanya otomatis dilebur jadi satu baris.</div>
                 </div>
                 <div class="wide single-price"><label>Harga Nego Final <span class="muted" style="font-weight:400">(opsional — override)</span></label><input type="text" inputmode="numeric" id="override_fmt" placeholder="Kosongkan = pakai hasil kalkulasi di atas"><input type="hidden" name="override_amount" id="override_amount" value="<?= (int)($offer['override_amount'] ?? 0) ?: '' ?>"><div class="help">Override: isi bila nilai final tidak sama dengan hasil kalkulasi.</div></div>
                 <?php /* Biaya listrik — kolom biasa seperti isian lain, bukan panel

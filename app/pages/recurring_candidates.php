@@ -422,10 +422,11 @@ function _recurring_review_page(PDO $pdo): void
                     rows += '<tr>' +
                         '<td style="padding:4px 16px 4px 0;color:#374151">' + c.label +
                             ' <span style="font-size:10px;background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:99px;font-weight:700">baru</span></td>' +
-                        '<td style="text-align:right">' +
+                        '<td style="text-align:right;white-space:nowrap">' +
+                            '<span style="font-size:11px;font-weight:700;color:#475569;margin-right:4px">Rp</span>' +
                             '<input type="text" inputmode="numeric" class="extra-amt" data-idx="' + i + '"' +
                             ' value="' + (existing ? existing.toLocaleString('id-ID') : '') + '"' +
-                            ' placeholder="Rp ..."' +
+                            ' placeholder="0"' +
                             ' style="width:130px;text-align:right;font-size:12px;padding:3px 8px;border:1px solid #fca5a5;border-radius:6px">' +
                         '</td></tr>';
                 }

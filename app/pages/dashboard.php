@@ -479,7 +479,7 @@ function dashboard(PDO $pdo): void
                             <td><?= h($row['floor']) ?></td>
                             <td><?= h($row['location_name']) ?></td>
                             <td><?= h($row['unit_type'] ?? '-') ?></td>
-                            <td><?= number_format((float) $row['area_sqm'], 1, ',', '.') ?></td>
+                            <td><?= angka($row['area_sqm']) ?></td>
                             <td><?= money($row['projection_monthly']) ?></td>
                             <td><?= h((string) $row['days']) ?></td>
                             <?php $_occ = $periodDays > 0 ? (float)$row['days'] / $periodDays : 0; ?><td<?= $_occ > 1 ? ' style="color:#dc2626;font-weight:700"' : '' ?>><?= pct($_occ) ?></td>
@@ -505,7 +505,7 @@ function dashboard(PDO $pdo): void
                         ?>
                         <tr data-gbody="<?= $gid ?>" style="background:#e0f2fe;font-weight:700;border-top:1px solid #7dd3fc">
                             <td colspan="4" style="padding:8px 11px">Subtotal <?= h($floor) ?> (<?= $fUnits ?> unit)</td>
-                            <td><?= number_format($fArea, 1, ',', '.') ?></td>
+                            <td><?= angka($fArea) ?></td>
                             <td><?= money($fPotensi) ?></td>
                             <td><?= $fDays ?></td>
                             <?php $_occ = $periodDays * $fUnits > 0 ? $fDays / ($periodDays * $fUnits) : 0; ?><td<?= $_occ > 1 ? ' style="color:#dc2626;font-weight:700"' : '' ?>><?= pct($_occ) ?></td>
@@ -610,7 +610,7 @@ function dashboard(PDO $pdo): void
                             <td><?= h($row['code']) ?></td>
                             <td><?= h($row['location']) ?></td>
                             <td><?= h($row['name']) ?></td>
-                            <td><?= number_format((float) $row['area_sqm'], 1, ',', '.') ?></td>
+                            <td><?= angka($row['area_sqm']) ?></td>
                             <td><?= money($row['projection_monthly']) ?></td>
                             <td><?= h((string) $row['days']) ?></td>
                             <?php $_occ = $periodDays > 0 ? (float)$row['days'] / $periodDays : 0; ?><td<?= $_occ > 1 ? ' style="color:#dc2626;font-weight:700"' : '' ?>><?= pct($_occ) ?></td>
@@ -635,7 +635,7 @@ function dashboard(PDO $pdo): void
                         ?>
                         <tr data-gbody="<?= $gid ?>" style="background:#e0f2fe;font-weight:700;border-top:1px solid #7dd3fc">
                             <td colspan="3" style="padding:8px 11px">Subtotal <?= h($loc) ?> (<?= $lUnits ?> unit)</td>
-                            <td><?= number_format($lArea, 1, ',', '.') ?></td>
+                            <td><?= angka($lArea) ?></td>
                             <td><?= money($lPotensi) ?></td>
                             <td><?= $lDays ?></td>
                             <?php $_occ = $periodDays * $lUnits > 0 ? $lDays / ($periodDays * $lUnits) : 0; ?><td<?= $_occ > 1 ? ' style="color:#dc2626;font-weight:700"' : '' ?>><?= pct($_occ) ?></td>

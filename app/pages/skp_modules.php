@@ -464,22 +464,38 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
 
         // Tabel harga — kolomnya tetap milik sistem (bisa banyak unit), hanya
         // bentuknya yang disamakan dengan kertas: kepala biru tua, isi biru muda.
+        //
+        // Kolom "Harga Sewa /Bulan" disembunyikan bila SELURUH barisnya berisi
+        // angka yang sama dengan "Total Harga Sewa" — yang selalu terjadi pada
+        // sewa gudang 1 bulan. Dua kolom berjudul beda berisi angka sama persis
+        // membuat penyewa mengira ada dua komponen biaya, lalu menagih
+        // penjelasan yang tidak ada. Kolomnya hanya disembunyikan; angkanya
+        // tidak diubah sama sekali.
+        $barisGdg = array_values((array) ($det['rows'] ?? []));
+        $adaKolomBulan = false;
+        foreach ($barisGdg as $r) {
+            $hb = (float) ($r['harga_bulan'] ?? 0);
+            if ($hb > 0 && round($hb) !== round((float) ($r['total'] ?? 0))) { $adaKolomBulan = true; break; }
+        }
         $o .= '<table class="harga"><tr>'
             . '<th style="width:28mm">Lokasi</th><th style="width:13mm">Luasan (m2)</th>'
-            . '<th style="width:23mm">Harga Sewa /m²/Bulan</th><th style="width:25mm">Harga Sewa /Bulan</th>'
+            . '<th style="width:23mm">Harga Sewa /m²/Bulan</th>'
+            . ($adaKolomBulan ? '<th style="width:25mm">Harga Sewa /Bulan</th>' : '')
             . '<th style="width:25mm">Total Harga Sewa</th><th>Keterangan</th></tr>';
-        foreach (($det['rows'] ?? []) as $r) {
+        foreach ($barisGdg as $r) {
             $ket = '';
             foreach (preg_split('/\R/', (string) ($r['keterangan'] ?? '')) as $b) {
                 if (trim($b) !== '') $ket .= '● ' . $h(trim($b)) . '<br>';
             }
             $o .= '<tr>'
                 . '<td class="n">' . $h($r['lokasi'] ?? '') . '</td>'
-                . '<td class="n">' . $h(skp_num($r['luas'] ?? '')) . ($r['luas'] !== '' ? ' m' : '') . '</td>'
+                . '<td class="n">' . $h(skp_num($r['luas'] ?? '')) . (($r['luas'] ?? '') !== '' ? ' m' : '') . '</td>'
                 // Tarif dan harga per bulan boleh dikosongkan — kosong dicetak
                 // kosong, bukan "Rp 0" yang terbaca sebagai gratis.
                 . '<td class="n">' . ((float) ($r['harga_m2'] ?? 0) > 0 ? $h($rp($r['harga_m2'])) : '&nbsp;') . '</td>'
-                . '<td class="n">' . ((float) ($r['harga_bulan'] ?? 0) > 0 ? $h($rp($r['harga_bulan'])) : '&nbsp;') . '</td>'
+                . ($adaKolomBulan
+                    ? '<td class="n">' . ((float) ($r['harga_bulan'] ?? 0) > 0 ? $h($rp($r['harga_bulan'])) : '&nbsp;') . '</td>'
+                    : '')
                 . '<td class="n">' . $h($rp($r['total'] ?? '')) . '</td>'
                 . '<td class="ket">' . ($ket ?: '&nbsp;') . '</td></tr>';
         }
@@ -698,9 +714,10 @@ function skp_standalone_src(PDO $pdo, int $pid, string $module, ?array $skp): ar
 /** Angka desimal gaya Indonesia: 6 → "6", 12.5 → "12,5". */
 function skp_num($v): string
 {
-    if ($v === '' || $v === null) return '';
-    if (!is_numeric($v)) return (string) $v;
-    return rtrim(rtrim(number_format((float) $v, 2, ',', '.'), '0'), ',');
+    // Satu sumber aturan angka rapi untuk seluruh CLARA — lihat angka() di
+    // app/helpers.php. Dulu rumus trim-nya disalin di beberapa berkas, dan
+    // setiap salinan yang tertinggal mencetak "4,00" lagi.
+    return angka($v);
 }
 
 /** Kotak isian rupiah: ada label "Rp." di depan & angkanya dirapikan saat diketik. */

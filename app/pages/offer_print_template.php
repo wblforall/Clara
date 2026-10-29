@@ -44,7 +44,7 @@ $JUDUL_BAGIAN = function (string $teks) use (&$_romawiN, $GAYA_JUDUL, $ROMAWI, $
 // Tarif efektif. 12% dengan rumus PMK 131/2024 = 11% polos — angkanya memang
 // sama; yang berbeda cuma kalimat di surat.
 $PPN_TARIF = $PPN_RUMUS ? ($PPN_PERSEN / 100) * 11 / 12 : ($PPN_PERSEN / 100);
-$PPN_LABEL = 'PPN ' . rtrim(rtrim(number_format($PPN_PERSEN, 2, ',', '.'), '0'), ',') . '%';
+$PPN_LABEL = 'PPN ' . angka($PPN_PERSEN) . '%';
 $PPN_HINT  = $PPN_RUMUS ? ' <span class="muted" style="font-weight:400">(Nilai × 11/12 × ' . $PPN_PERSEN . '%)</span>' : '';
 $propShort = ($prop['key'] ?? '') === 'pentacity' ? 'Pentacity' : 'e-Walk';
 $months = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
@@ -97,7 +97,7 @@ $diskonAktif  = !empty($o['diskon_aktif']) && $tarifPakai > 0 && $pengaliSewa > 
 $publishRp    = $diskonAktif ? round($tarifPublish * $pengaliSewa) : 0.0;
 $diskonRp     = $diskonAktif ? round(($tarifPublish - $tarifPakai) * $pengaliSewa) : 0.0;
 $diskonTeks   = $diskonAktif
-    ? rtrim(rtrim(number_format(($tarifPublish - $tarifPakai) / $tarifPublish * 100, 2, ',', '.'), '0'), ',')
+    ? angka(($tarifPublish - $tarifPakai) / $tarifPublish * 100)
     : '';
 // Biaya listrik (Exhibition): tarif per bulan × jumlah bulan, kena PPN 12% juga.
 // Nol untuk penawaran yang tidak mencentangnya — barisnya pun tidak dicetak.
@@ -320,9 +320,9 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                            ? offer_periode_panjang($o['start_date'] ?? null, $o['end_date'] ?? null) : $periode,
         'lokasi'     => (string) (($o['location_name'] ?: $o['master_code']) ?? ''),
         'luas'       => trim((string) ($o['ukuran'] ?? '')) !== '' ? (string) $o['ukuran']
-                      : ($o['area_sqm'] ? rtrim(rtrim(number_format((float) $o['area_sqm'], 2, ',', '.'), '0'), ',') . ' m²' : ''),
+                      : ($o['area_sqm'] ? angka((float) $o['area_sqm']) . ' m²' : ''),
         'harga'      => $rp($total),
-        'ppn_persen' => rtrim(rtrim(number_format($PPN_PERSEN, 2, ',', '.'), '0'), ',') . '%',
+        'ppn_persen' => angka($PPN_PERSEN) . '%',
         'pic'        => $picNama,
         'pic_besar'  => mb_strtoupper($picNama, 'UTF-8'),
         'wa'         => $picWa ?: $OFFICE_PHONE,
@@ -383,7 +383,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                 <?php /* Dua keterangan, bukan salah satu: paket campuran punya titik
                          media tanpa luas, dan jenisnya tetap perlu terbaca. */ ?>
                 <td><?= (float) ($it['area_sqm'] ?? 0) > 0
-                        ? $h(rtrim(rtrim(number_format((float) $it['area_sqm'], 2, ',', '.'), '0'), ',')) . ' m² · ' . $h($segLbl[$it['segment']] ?? $it['segment'])
+                        ? angka((float) $it['area_sqm']) . ' m² · ' . $h($segLbl[$it['segment']] ?? $it['segment'])
                         : $h($segLbl[$it['segment']] ?? $it['segment']) ?></td>
                 <td><?= $rp($it['total_amount']) ?></td>
                 <td><?= $h($it['master_code'] ?? '-') ?></td>
@@ -395,7 +395,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                   $jmlItem  = array_sum(array_map(fn($x) => (float) ($x['total_amount'] ?? 0), $items)); ?>
             <tr style="font-weight:700;background:#f1f5f9">
                 <td>TOTAL <?= count($items) ?> lokasi</td>
-                <td><?= $luasItem > 0 ? $h(rtrim(rtrim(number_format($luasItem, 2, ',', '.'), '0'), ',')) . ' m²' : '' ?></td>
+                <td><?= $luasItem > 0 ? angka($luasItem) . ' m²' : '' ?></td>
                 <td><?= $rp($jmlItem) ?></td>
                 <td></td>
             </tr>
@@ -418,7 +418,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                          daripada hasil kalinya; dipakai bila diisi. */ ?>
                 <td><?= trim((string) ($o['ukuran'] ?? '')) !== ''
                         ? $h($o['ukuran'])
-                        : ($o['area_sqm'] ? number_format((float)$o['area_sqm'], 2, ',', '.') . ' m²' : '-') ?></td>
+                        : angka_satuan($o['area_sqm'] ?? 0) ?></td>
                 <?php /* Surat kertas menulis harga PER BULAN di kolom ini, bukan
                          total kontrak. Templatenya yang menentukan; bawaannya
                          tetap total periode supaya template lama tak berubah.
@@ -471,13 +471,13 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             <tr><td class="lbl"><?= $h($t['label'] ?: 'Harga Sewa') ?>
                 <?php /* Keterangan perkaliannya hanya dicetak bila tarifnya memang
                          ada — "× Rp 0 ×" membuat barisnya terbaca sebagai gratis. */ ?>
-                <?php if ((float) $t['rate_per_sqm'] > 0): ?><span class="muted" style="font-weight:400">(<?= $h(rtrim(rtrim(number_format((float) $t['area_sqm'], 2, ',', '.'), '0'), ',')) ?> m² × <?= $rp($t['rate_per_sqm']) ?> × <?= (int) $days ?> hari)</span><?php endif; ?></td>
+                <?php if ((float) $t['rate_per_sqm'] > 0): ?><span class="muted" style="font-weight:400">(<?= angka((float) $t['area_sqm']) ?> m² × <?= $rp($t['rate_per_sqm']) ?> × <?= (int) $days ?> hari)</span><?php endif; ?></td>
                 <td class="amt"><?= $rp($sub) ?></td></tr>
             <?php endforeach; ?>
             <?php $luasUnit = array_sum(array_map(fn($x) => (float) ($x['area_sqm'] ?? 0), $items)); ?>
             <tr><td class="lbl">Total luas dasar perhitungan<?php if ($luasUnit > 0 && abs($luasUnit - $luasTier) >= 0.01): ?>
-                <span class="muted" style="font-weight:400">(luas terukur tiap titik <?= $h(rtrim(rtrim(number_format($luasUnit, 2, ',', '.'), '0'), ',')) ?> m²)</span>
-                <?php endif; ?></td><td class="amt"><?= $h(rtrim(rtrim(number_format($luasTier, 2, ',', '.'), '0'), ',')) ?> m²</td></tr>
+                <span class="muted" style="font-weight:400">(luas terukur tiap titik <?= angka($luasUnit) ?> m²)</span>
+                <?php endif; ?></td><td class="amt"><?= angka($luasTier) ?> m²</td></tr>
             <?= $BARIS_DISKON() ?>
             <tr class="sub"><td class="lbl">Biaya Sewa</td><td class="amt"><?= $rp($total) ?></td></tr>
         <?php elseif ($isBundle): ?>
@@ -530,22 +530,48 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             // Tercetak hanya bila memang diisi di formulir.
             $perBulan = (float) ($o['monthly_amount'] ?? 0);
             ?>
-            <?php /* Dasar harganya ditulis terang di surat: client harus tahu angka
-                     tarif itu per m² per HARI atau per m² per BULAN. Satu angka
-                     tanpa satuan bisa dibaca dua arti, dan itu baru ketahuan saat
-                     ditagih. Satuannya diambil dari daftar yang sama dengan yang
-                     dipakai SKP dan formulir, jadi tidak mungkin berbeda. */ ?>
-            <?php /* Kosong atau nol berarti barisnya tidak ada sama sekali. */ ?>
-            <?php if ($tarifCetak > 0 && ($o['pricing_type'] ?? '') !== 'fixed'): ?>
-            <tr><td class="lbl"><?= $h(clara_satuan_harga((string) ($o['pricing_type'] ?? ''))) ?></td>
-                <td class="amt"><?= $rp($tarifCetak) ?></td></tr>
-            <?php endif; ?>
-            <?php if ($perBulan > 0): ?>
-            <tr><td class="lbl">Harga Sewa / Bulan</td><td class="amt"><?= $rp($perBulan) ?></td></tr>
-            <?php endif; ?>
-            <tr class="sub"><td class="lbl">Harga Sewa / Periode<?= $blnKontrak > 1
-                ? ' <span class="muted" style="font-weight:400">(' . $blnKontrak . ' bulan)</span>' : '' ?></td>
-                <td class="amt"><?= $rp($total) ?></td></tr>
+            <?php
+            /*
+             * Barisnya disusun sebagai daftar dulu, baru dicetak, supaya baris
+             * yang nilainya sama dengan baris sesudahnya bisa dilebur.
+             *
+             * Pada kontrak 1 bulan ketiganya menghasilkan angka yang sama persis
+             * — tarif per m² per bulan × luas = harga sebulan = harga seluruh
+             * periode. Surat lama mencetaknya tiga kali dengan tiga nama, dan
+             * client membacanya sebagai tiga komponen biaya yang berbeda.
+             *
+             * Tidak ada nominal yang diubah; yang berubah hanya jumlah baris.
+             *
+             * Dasar harganya tetap ditulis terang: client harus tahu angka tarif
+             * itu per m² per HARI atau per m² per BULAN. Satuannya diambil dari
+             * daftar yang sama dengan yang dipakai SKP dan formulir, jadi tidak
+             * mungkin berbeda sebutan. Kosong atau nol berarti barisnya memang
+             * tidak ada sama sekali — bukan "Rp 0", yang terbaca sebagai gratis.
+             */
+            $barisHarga = [];
+            if ($tarifCetak > 0 && ($o['pricing_type'] ?? '') !== 'fixed') {
+                $barisHarga[] = [
+                    'label'  => $h(clara_satuan_harga((string) ($o['pricing_type'] ?? ''))),
+                    'amount' => (float) $tarifCetak,
+                    'lebur'  => true,
+                ];
+            }
+            if ($perBulan > 0) {
+                $barisHarga[] = ['label' => 'Harga Sewa / Bulan', 'amount' => $perBulan, 'lebur' => true];
+            }
+            $barisHarga[] = [
+                'label'  => 'Harga Sewa / Periode',
+                'note'   => $blnKontrak > 1 ? $blnKontrak . ' bulan' : '',
+                'amount' => (float) $total,
+                'lebur'  => true,
+                'sub'    => true,
+            ];
+            foreach (clara_rincian_rapi($barisHarga) as $b) {
+                echo '<tr' . (!empty($b['sub']) ? ' class="sub"' : '') . '><td class="lbl">' . $b['label']
+                   . ($b['note'] !== '' ? ' <span class="muted" style="font-weight:400">(' . $b['note'] . ')</span>' : '')
+                   . '</td><td class="amt">' . $rp($b['amount']) . '</td></tr>';
+            }
+            ?>
         <?php endif; ?>
         <?php if ($listrik > 0): ?>
             <?php /* Dirinci per komponen: sewa dan listrik masing-masing dengan

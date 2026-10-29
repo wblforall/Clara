@@ -111,6 +111,9 @@ function master_page(PDO $pdo, array $masterConfig): void
                             <?php $isMoney = is_numeric($row[$col] ?? null) && (str_contains($col, 'amount') || str_contains($col, 'rate') || str_contains($col, 'projection')); ?>
                             <?php $isShare = $col === 'target_share'; ?>
                             <?php $isUserId = $col === 'user_id'; ?>
+                            <?php /* Kolom ukuran bertipe decimal(12,2): tanpa ini daftar master
+                                     mencetak "4.00 m²" — ketelitian yang tak pernah diukur. */ ?>
+                            <?php $isAngka = in_array($col, ['area_sqm', 'quantity', 'slots', 'seating_area'], true); ?>
                             <td><?php
                                 if ($col === 'color') {
                                     // Warna lebih cepat dibaca sebagai kotak daripada sebagai kode heksa.
@@ -124,6 +127,8 @@ function master_page(PDO $pdo, array $masterConfig): void
                                     echo pct((float)($row[$col] ?? 0));
                                 } elseif ($isMoney) {
                                     echo money($row[$col]);
+                                } elseif ($isAngka) {
+                                    echo h(angka($row[$col] ?? ''));
                                 } else {
                                     echo h((string)($row[$col] ?? ''));
                                 }
@@ -457,7 +462,12 @@ function master_form(PDO $pdo, array $masterConfig): void
                             </script>
                         <?php elseif ($name === 'target_amount'): ?>
                             <?php $taRaw = (string) ($row['target_amount'] ?? ''); ?>
-                            <input type="text" inputmode="numeric" id="target_amount_fmt" value="<?= $taRaw !== '' ? number_format((float)$taRaw, 0, ',', '.') : '' ?>" placeholder="0">
+                            <?php /* Kotak uang selalu berlabel Rp — tanpa itu "1.000.000" di
+                                     layar bisa dibaca sebagai jumlah unit, bukan rupiah. */ ?>
+                            <div style="display:flex;align-items:stretch">
+                                <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
+                                <input type="text" inputmode="numeric" id="target_amount_fmt" value="<?= $taRaw !== '' ? number_format((float)$taRaw, 0, ',', '.') : '' ?>" placeholder="0" style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right">
+                            </div>
                             <input type="hidden" name="target_amount" id="target_amount_hidden" value="<?= h($taRaw) ?>">
                             <script>
                             document.getElementById('target_amount_fmt').addEventListener('input', function() {
@@ -467,15 +477,21 @@ function master_form(PDO $pdo, array $masterConfig): void
                             });
                             </script>
                         <?php elseif ($name === 'projection_monthly' && in_array($type, ['cl', 'gudang', 'media'], true)): ?>
-                            <input type="text" id="projection_monthly_fmt" readonly tabindex="-1"
-                                   value="<?= number_format(master_projection($type, $row), 0, ',', '.') ?>"
-                                   style="background:var(--bg2,#f1f5f9);color:var(--ink2,#475569)">
+                            <div style="display:flex;align-items:stretch">
+                                <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
+                                <input type="text" id="projection_monthly_fmt" readonly tabindex="-1"
+                                       value="<?= number_format(master_projection($type, $row), 0, ',', '.') ?>"
+                                       style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right;background:var(--bg2,#f1f5f9);color:var(--ink2,#475569)">
+                            </div>
                             <div class="help">Dihitung otomatis: <?= h(['cl' => 'tarif/hari/m² × luas × 30', 'gudang' => 'tarif/m² × luas', 'media' => 'tarif × qty (× slot × 30 hari, menurut pricing)'][$type]) ?>. Angka proyeksi — realisasi dari transaksi.</div>
                         <?php elseif (in_array($name, ['rate', 'monthly_rate', 'projection_monthly'], true)): ?>
                             <?php $rawVal = (string) ($row[$name] ?? ''); $rawInt = $rawVal !== '' ? (string)(int)(float)$rawVal : ''; ?>
-                            <input type="text" inputmode="numeric" id="<?= h($name) ?>_fmt" autocomplete="off"
-                                   value="<?= $rawInt !== '' && $rawInt !== '0' ? number_format((int)$rawInt, 0, ',', '.') : '' ?>"
-                                   placeholder="0">
+                            <div style="display:flex;align-items:stretch">
+                                <span style="display:flex;align-items:center;padding:0 10px;background:#f1f5f9;border:1px solid var(--border,#e2e8f0);border-right:none;border-radius:8px 0 0 8px;font-size:13px;font-weight:700;color:#475569">Rp</span>
+                                <input type="text" inputmode="numeric" id="<?= h($name) ?>_fmt" autocomplete="off"
+                                       value="<?= $rawInt !== '' && $rawInt !== '0' ? number_format((int)$rawInt, 0, ',', '.') : '' ?>"
+                                       placeholder="0" style="border-top-left-radius:0;border-bottom-left-radius:0;flex:1;min-width:0;text-align:right">
+                            </div>
                             <input type="hidden" name="<?= h($name) ?>" id="<?= h($name) ?>_hidden" value="<?= h($rawInt) ?>">
                             <script>
                             (function() {
@@ -523,6 +539,12 @@ function master_form(PDO $pdo, array $masterConfig): void
                                          diketik bebas — salah format membuat barisnya tidak
                                          pernah cocok dengan kalender. */ ?>
                                 <input type="date" name="<?= h($name) ?>" value="<?= field($row, $name) ?>">
+                            <?php elseif (in_array($name, ['area_sqm', 'quantity', 'slots'], true)): ?>
+                                <?php /* Kolom decimal(12,2) datang dari PDO sebagai "4.00" dan
+                                         dulu tercetak apa adanya di kotak isian — orang yang
+                                         mengetik 4 mendapati isiannya berubah sendiri jadi
+                                         4.00 setiap kali membuka Edit. */ ?>
+                                <input type="number" step="0.01" min="0" name="<?= h($name) ?>" value="<?= h(angka_input($row[$name] ?? '')) ?>">
                             <?php else: ?>
                             <input name="<?= h($name) ?>" value="<?= field($row, $name) ?>">
                             <?php endif; ?>

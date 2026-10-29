@@ -209,6 +209,119 @@ function money($value): string
 }
 
 /**
+ * Angka BUKAN uang (luas, jumlah bulan, slot, qty) untuk ditampilkan.
+ *
+ * Kolom luas di database bertipe decimal(12,2), sehingga PDO memulangkannya
+ * sebagai "4.00". Dicetak apa adanya ia jadi "4,00 m²" — dibaca orang sebagai
+ * ketelitian yang tidak pernah diukur, dan di surat ke client terbaca seolah
+ * luasnya hasil pengukuran dua angka di belakang koma. Yang benar: 4 m².
+ *
+ * Desimal hanya dicetak bila memang ADA isinya — 4,5 tetap 4,5. Pemangkasan
+ * nol aman karena koma selalu menghadang rtrim sebelum ia sampai ke pemisah
+ * ribuan: "1.000,00" → "1.000", bukan "1.".
+ */
+function angka($value, int $desimalMaks = 2): string
+{
+    if ($value === null || $value === '') return '';
+    if (!is_numeric($value)) return (string) $value;
+    $s = number_format((float) $value, max(0, $desimalMaks), ',', '.');
+    if ($desimalMaks > 0 && strpos($s, ',') !== false) {
+        $s = rtrim(rtrim($s, '0'), ',');
+    }
+    return $s;
+}
+
+/**
+ * Angka rapi untuk ISI KOTAK ISIAN (<input type="number">).
+ *
+ * Bedanya dengan angka(): pemisah desimalnya TITIK dan tanpa pemisah ribuan,
+ * karena itulah satu-satunya bentuk yang diterima <input type="number"> —
+ * "4,00" membuat kotaknya tampil kosong di browser.
+ *
+ * Dipakai supaya kotak Luas tidak lagi menyodorkan "4.00" kepada sales yang
+ * cuma mengetik 4.
+ */
+function angka_input($value, int $desimalMaks = 2): string
+{
+    if ($value === null || $value === '') return '';
+    if (!is_numeric($value)) return (string) $value;
+    $s = number_format((float) $value, max(0, $desimalMaks), '.', '');
+    if ($desimalMaks > 0 && strpos($s, '.') !== false) {
+        $s = rtrim(rtrim($s, '0'), '.');
+    }
+    return $s === '' || $s === '-' ? '0' : $s;
+}
+
+/** Angka rapi + satuan, kosong bila nilainya nol/kosong. Mis. angka_satuan(4, 'm²'). */
+function angka_satuan($value, string $satuan = 'm²', string $bilaKosong = '-'): string
+{
+    if ($value === null || $value === '' || (float) $value == 0.0) return $bilaKosong;
+    return angka($value) . ' ' . $satuan;
+}
+
+/**
+ * Buang baris rincian harga yang isinya terbaca dua kali.
+ *
+ * Tabel "Rincian Pembayaran Sewa" menurunkan satu nilai bertahap: tarif →
+ * harga per bulan → nilai sewa → total. Pada kontrak 1 bulan tanpa listrik &
+ * tanpa diskon, tahap-tahap itu nilainya PERSIS SAMA, sehingga surat mencetak
+ * angka yang sama dua-tiga kali dengan nama berbeda:
+ *
+ *     b. Biaya Sewa / Bulan (4 m² x Rp 3.600.000) ... Rp 14.400.000
+ *     c. Nilai Sewa                               ... Rp 14.400.000
+ *
+ * Client membaca dua baris itu sebagai dua tagihan, atau menghabiskan waktu
+ * mencari bedanya — dan tidak ada bedanya. Baris turunan yang nilainya sama
+ * dengan baris sesudahnya dilebur: barisnya hilang, keterangan dalam kurung
+ * ("4 m² x Rp 3.600.000") pindah ke baris yang bertahan, sehingga tidak ada
+ * keterangan yang ikut hilang.
+ *
+ * Yang DILEBUR hanya baris bertanda lebur = true (tarif / per bulan / nilai
+ * sewa / total). Baris PPN, listrik, diskon, deposit, dan service charge tidak
+ * pernah disentuh walau angkanya kebetulan sama.
+ *
+ * Tidak mengubah satu pun nominal — hanya memilih baris mana yang dicetak.
+ * Jumlah yang ditagih tetap sama persis.
+ *
+ * @param array<int,array{label:string,note?:string,amount:float,lebur?:bool}> $baris
+ * @return array<int,array{label:string,note:string,amount:float}>
+ */
+function clara_rincian_rapi(array $baris): array
+{
+    $baris = array_values($baris);
+    $n = count($baris);
+    $buang = [];
+
+    for ($i = 0; $i < $n; $i++) {
+        if (isset($buang[$i]) || empty($baris[$i]['lebur'])) continue;
+        // Baris berikutnya yang juga boleh dilebur; baris lain (PPN, listrik)
+        // memutus rantai supaya "Nilai Sewa" tidak dilebur ke "Total" yang
+        // sudah ditambah listrik.
+        $j = $i + 1;
+        while ($j < $n && isset($buang[$j])) $j++;
+        if ($j >= $n || empty($baris[$j]['lebur'])) continue;
+
+        // Dibandingkan dalam rupiah bulat: selisih pembulatan setengah rupiah
+        // bukan perbedaan yang berarti bagi pembaca surat.
+        if (round((float) $baris[$i]['amount']) !== round((float) $baris[$j]['amount'])) continue;
+
+        $catatan = trim((string) ($baris[$i]['note'] ?? ''));
+        if ($catatan !== '' && trim((string) ($baris[$j]['note'] ?? '')) === '') {
+            $baris[$j]['note'] = $catatan;
+        }
+        $buang[$i] = true;
+    }
+
+    $hasil = [];
+    foreach ($baris as $i => $b) {
+        if (isset($buang[$i])) continue;
+        $b['note'] = (string) ($b['note'] ?? '');
+        $hasil[] = $b;          // kunci lain (gaya warna, teks non-uang) ikut utuh
+    }
+    return $hasil;
+}
+
+/**
  * Parse input nominal rupiah dari form menjadi float, aman terhadap pemisah
  * ribuan & desimal. Konvensi Indonesia: titik = ribuan, koma = desimal.
  * Mengganti pola lama preg_replace('/\D/','',..) yang MEMBUANG titik desimal

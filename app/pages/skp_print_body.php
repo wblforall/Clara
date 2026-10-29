@@ -211,8 +211,8 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
     <table class="kv">
         <tr><td class="l">Lokasi</td><td class="c">:</td><td class="v"><?= $h($lokSkp) ?></td></tr>
         <tr><td class="l">Lantai</td><td class="c">:</td><td class="v"><?= $h($adaKmp && $lantaiKmp !== '' ? $lantaiKmp : ($d['floor'] ?? '-')) ?></td></tr>
-        <tr><td class="l">Luas Area</td><td class="c">:</td><td class="v"><?= number_format($adaKmp && $luasKmp > 0 ? $luasKmp : (float) ($d['area'] ?? 0), 2, ',', '.') ?> m²</td></tr>
-        <?php if (!empty($d['seating_area'])): ?><tr><td class="l">Luas Seating Area</td><td class="c">:</td><td class="v"><?= number_format((float) $d['seating_area'], 2, ',', '.') ?> m²</td></tr><?php endif; ?>
+        <tr><td class="l">Luas Area</td><td class="c">:</td><td class="v"><?= angka($adaKmp && $luasKmp > 0 ? $luasKmp : (float) ($d['area'] ?? 0)) ?> m²</td></tr>
+        <?php if (!empty($d['seating_area'])): ?><tr><td class="l">Luas Seating Area</td><td class="c">:</td><td class="v"><?= angka($d['seating_area']) ?> m²</td></tr><?php endif; ?>
         <tr><td class="l">Masa Sewa</td><td class="c">:</td><td class="v"><?= $h(date('d/m/Y', strtotime($d['start_date'])) . ' s/d ' . date('d/m/Y', strtotime($d['end_date']))) ?> (<?= (int) ($d['days'] ?? 0) ?> hari)</td></tr>
         <tr><td class="l">Status Sewa</td><td class="c">:</td><td class="v"><?= $h($d['status_sewa'] ?? '-') ?></td></tr>
         <tr><td class="l">Jenis Usaha / Kegiatan</td><td class="c">:</td><td class="v"><?= $h($d['business_type'] ?? '-') ?></td></tr>
@@ -238,13 +238,13 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
             <td class="lbl"><?= $h(($bi['name'] ?? '') ?: ($bi['master_code'] ?? '-')) ?></td>
             <td><?= $h($segL[$bi['segment'] ?? ''] ?? ($bi['segment'] ?? '-')) ?></td>
             <td><?= $h(($bi['lantai'] ?? '') !== '' ? $bi['lantai'] : '-') ?></td>
-            <td class="amt"><?= (float) ($bi['luas'] ?? 0) > 0 ? number_format((float) $bi['luas'], 2, ',', '.') . ' m²' : '-' ?></td>
+            <td class="amt"><?= angka_satuan($bi['luas'] ?? 0) ?></td>
             <td class="amt"><?= $rp($bi['total'] ?? 0) ?></td>
         </tr>
         <?php endforeach; ?>
         <tr class="grand">
             <td colspan="4">TOTAL <?= count($kmpSkp) ?> lokasi</td>
-            <td class="amt"><?= $luasKmp > 0 ? number_format($luasKmp, 2, ',', '.') . ' m²' : '-' ?></td>
+            <td class="amt"><?= angka_satuan($luasKmp) ?></td>
             <td class="amt"><?= $rp(array_sum(array_map(fn($x) => (float) ($x['total'] ?? 0), $kmpSkp))) ?></td>
         </tr>
     </table>
@@ -278,113 +278,137 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
      * "Rp -15.000.000" sulit dibaca, dan tanda minus tipografis tidak ada
      * glyph-nya di font PDF yang dipakai.
      */
-    $barisDiskon = function () use ($a, $rp, $h, $ab) {
-        if (empty($a['publish_on']) || (float) ($a['diskon'] ?? 0) <= 0) return '';
-        $pct = (float) ($a['diskon_pct'] ?? 0);
-        $pctTxt = rtrim(rtrim(number_format($pct, 2, ',', '.'), '0'), ',');
+    $barisDiskon = function () use ($a, $rp, $h) {
+        if (empty($a['publish_on']) || (float) ($a['diskon'] ?? 0) <= 0) return [];
+        $pctTxt = angka($a['diskon_pct'] ?? 0);
         // Dokumen yang dibekukan SEBELUM harga publish berbasis tarif tidak punya
         // kunci tarifnya. Dokumen itu harus tercetak persis seperti saat
         // ditandatangani — kalau dipaksa memakai kata-kata baru, yang muncul
         // "tarif Rp 0" di dokumen client.
         $pakaiTarif = (float) ($a['tarif_publish'] ?? 0) > 0 && (float) ($a['tarif_pakai'] ?? 0) > 0;
         if (!$pakaiTarif) {
-            return '<tr><td class="lbl">&nbsp;&nbsp;&nbsp;' . $ab() . 'Harga Publish '
-                 . '<span class="muted">(sebelum diskon)</span></td>'
-                 . '<td class="amt">' . $rp($a['publish']) . '</td></tr>'
-                 . '<tr><td class="lbl" style="color:#b91c1c">&nbsp;&nbsp;&nbsp;' . $ab() . 'Diskon '
-                 . '<span class="muted">(' . $h($pctTxt) . '%)</span></td>'
-                 . '<td class="amt" style="color:#b91c1c">- ' . $rp($a['diskon']) . '</td></tr>';
+            return [
+                ['label' => 'Harga Publish', 'note' => 'sebelum diskon', 'amount' => (float) $a['publish']],
+                ['label' => 'Diskon', 'note' => $h($pctTxt) . '%', 'amount' => (float) $a['diskon'], 'minus' => true],
+            ];
         }
         // Nilai sewa SEBELUM diskon, lalu potongannya — berikut tarifnya, supaya
         // client melihat tarif turun dari berapa ke berapa sekaligus berapa
         // rupiah yang dipotong dari nilai sewanya.
-        return '<tr><td class="lbl">&nbsp;&nbsp;&nbsp;' . $ab() . 'Nilai Sewa sebelum diskon '
-             . '<span class="muted">(tarif ' . $rp($a['tarif_publish']) . ')</span></td>'
-             . '<td class="amt">' . $rp($a['publish']) . '</td></tr>'
-             . '<tr><td class="lbl" style="color:#b91c1c">&nbsp;&nbsp;&nbsp;' . $ab() . 'Diskon '
-             . '<span class="muted">(' . $h($pctTxt) . '% &mdash; tarif jadi ' . $rp($a['tarif_pakai']) . ')</span></td>'
-             . '<td class="amt" style="color:#b91c1c">- ' . $rp($a['diskon']) . '</td></tr>';
+        return [
+            ['label' => 'Nilai Sewa sebelum diskon', 'note' => 'tarif ' . $rp($a['tarif_publish']), 'amount' => (float) $a['publish']],
+            ['label' => 'Diskon', 'note' => $h($pctTxt) . '% &mdash; tarif jadi ' . $rp($a['tarif_pakai']),
+             'amount' => (float) $a['diskon'], 'minus' => true],
+        ];
     };
     ?>
     <div class="sec">Rincian Pembayaran Sewa</div>
     <table class="pay">
         <tr><td class="lbl">A. Biaya Sewa Area</td><td class="amt"></td></tr>
-        <?php /* Tarif bertingkat per m²: dirinci apa adanya seperti di kertas —
-                 tiap tingkatan dengan luas, tarif, dan lama harinya sendiri.
-                 Menggantikan baris "Biaya Sewa / m² / hari" yang hanya muat satu tarif. */ ?>
-        <?php $tierSkp = $d['tier_harga'] ?? []; $hariSkp = (int) ($d['days'] ?? 0); ?>
-        <?php if ($tierSkp && $hariSkp > 0): $luasSkp = 0; ?>
-            <?php foreach ($tierSkp as $t): $luasSkp += (float) $t['area_sqm'];
-                  $subT = (float) $t['area_sqm'] * (float) $t['rate_per_sqm'] * $hariSkp; ?>
-            <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?><?= $h($t['label'] ?: 'Harga Sewa') ?>
-                <span class="muted">(<?= $h(rtrim(rtrim(number_format((float) $t['area_sqm'], 2, ',', '.'), '0'), ',')) ?> m² × <?= $rp($t['rate_per_sqm']) ?> × <?= $hariSkp ?> Hari)</span></td>
-                <td class="amt"><?= $rp($subT) ?></td></tr>
-            <?php endforeach; ?>
-            <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Luas Area <span class="muted">(dasar perhitungan)</span></td><td class="amt"><?= $h(rtrim(rtrim(number_format($luasSkp, 2, ',', '.'), '0'), ',')) ?> m²</td></tr>
-        <?php else: ?>
-        <?php /* Satuannya mengikuti jenis harga kontrak. Sewa bulanan selama ini
-                 tetap berlabel "per m² per hari" padahal isinya tarif PER BULAN —
-                 salah baca yang sudah lama dikeluhkan. Dokumen lama tidak
-                 menyimpan pricing_type, jadi labelnya dibiarkan seperti dulu. */ ?>
-        <?php /* Dulu hanya 'monthly' yang dikenali, sehingga kontrak berdasar
-                 tarif per m² per BULAN ikut tercetak "per m² per hari" — satu
-                 angka, dua arti, dan client yang membacanya salah. */ ?>
-        <?php $ptSkp = (string) ($d['pricing_type'] ?? '');
-              $satuanSkp = $ptSkp !== '' ? clara_satuan_harga($ptSkp) : 'Biaya Sewa / m² / hari'; ?>
-        <?php /* Tarif boleh dikosongkan. Kosong berarti barisnya memang tidak ada
-                 di surat — bukan "Rp 0", yang terbaca sebagai gratis. */ ?>
-        <?php if ((float) ($a['rate_m_day'] ?? 0) > 0): ?>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?><?= $h($satuanSkp) ?></td><td class="amt"><?= $rp($a['rate_m_day'] ?? 0) ?></td></tr>
-        <?php endif; ?>
-        <?php /* Biaya sewa per BULAN.
-                 Hanya untuk kontrak yang memang DIHARGAI per bulan. Pada kontrak
-                 harian angka ini tidak punya arti: ia akan terbaca client sebagai
-                 kesepakatan bulanan yang tidak pernah ada, dan tagihannya tidak
-                 pernah sebesar itu.
-                 Angkanya bukan karangan — tarif per m² per bulan dikalikan luas
-                 areanya, dua angka yang sama-sama tercetak di surat ini juga,
-                 jadi pembacanya bisa menjumlah ulang sendiri.
-                 Dokumen LAMA tidak menyimpan pricing_type di snapshotnya,
-                 sehingga baris ini tidak muncul di sana — surat yang sudah
-                 terbit tetap persis seperti saat diterbitkan. */ ?>
         <?php
-        // Dokumen yang SUDAH TERBIT dicetak dari snapshotnya. Yang terbit
-        // sebelum baris ini ada tidak punya kunci 'sewa_per_bulan', dan
-        // cetakan ulangnya harus tetap sama persis seperti saat diserahkan ke
-        // client — jadi barisnya tidak dimunculkan di sana. Dokumen yang belum
-        // terbit (draft & pratinjau) dihitung langsung.
-        $perBulanSkp = 0.0;
-        if (array_key_exists('sewa_per_bulan', (array) $d)) {
-            $perBulanSkp = (float) $d['sewa_per_bulan'];
-        } elseif (empty($skp['skp_no']) && in_array($ptSkp, ['monthly', 'monthly_area'], true)) {
-            $tarifSkp = (float) ($a['rate_m_day'] ?? 0);
-            $perBulanSkp = $ptSkp === 'monthly_area'
-                ? $tarifSkp * (float) ($d['area'] ?? 0)
-                : $tarifSkp;
+        /*
+         * Barisnya DISUSUN DULU sebagai daftar, baru dicetak.
+         *
+         * Dulu tiap baris ditulis langsung sebagai HTML, dan tidak ada tempat
+         * untuk melihat bahwa dua baris bersebelahan ternyata berisi angka yang
+         * sama. Pada kontrak 1 bulan hal itu selalu terjadi: tarif per m² per
+         * bulan dikalikan luas menghasilkan angka yang sama persis dengan Nilai
+         * Sewa, dan surat memuat Rp 14.400.000 dua kali dengan dua nama. Client
+         * membacanya sebagai dua tagihan.
+         *
+         * clara_rincian_rapi() melebur pasangan seperti itu: barisnya tinggal
+         * satu, keterangan "(4 m² × Rp 3.600.000)" pindah ke baris yang
+         * bertahan. Huruf urut (a, b, c) dibagikan SETELAH peleburan sehingga
+         * tidak pernah meloncat.
+         *
+         * Tidak ada nominal yang diubah — hanya baris mana yang dicetak.
+         */
+        $barisA  = [];
+        $tierSkp = $d['tier_harga'] ?? [];
+        $hariSkp = (int) ($d['days'] ?? 0);
+        $ptSkp   = (string) ($d['pricing_type'] ?? '');
+
+        if ($tierSkp && $hariSkp > 0) {
+            // Tarif bertingkat per m²: dirinci apa adanya seperti di kertas —
+            // tiap tingkatan dengan luas, tarif, dan lama harinya sendiri.
+            // TIDAK ikut dilebur: dua tingkatan boleh saja bernilai sama persis,
+            // dan keduanya memang harus tercetak.
+            $luasSkp = 0.0;
+            foreach ($tierSkp as $t) {
+                $luasSkp += (float) $t['area_sqm'];
+                $barisA[] = [
+                    'label'  => $h(($t['label'] ?? '') ?: 'Harga Sewa'),
+                    'note'   => angka($t['area_sqm']) . ' m² × ' . $rp($t['rate_per_sqm']) . ' × ' . $hariSkp . ' Hari',
+                    'amount' => (float) $t['area_sqm'] * (float) $t['rate_per_sqm'] * $hariSkp,
+                ];
+            }
+            $barisA[] = ['label' => 'Total Luas Area', 'note' => 'dasar perhitungan',
+                         'teks' => angka($luasSkp) . ' m²', 'amount' => 0.0];
+        } else {
+            /* Satuannya mengikuti jenis harga kontrak. Sewa bulanan selama ini
+               tetap berlabel "per m² per hari" padahal isinya tarif PER BULAN —
+               salah baca yang sudah lama dikeluhkan. Dokumen lama tidak
+               menyimpan pricing_type, jadi labelnya dibiarkan seperti dulu. */
+            $satuanSkp = $ptSkp !== '' ? clara_satuan_harga($ptSkp) : 'Biaya Sewa / m² / hari';
+            /* Tarif boleh dikosongkan. Kosong berarti barisnya memang tidak ada
+               di surat — bukan "Rp 0", yang terbaca sebagai gratis. */
+            if ((float) ($a['rate_m_day'] ?? 0) > 0) {
+                $barisA[] = ['label' => $h($satuanSkp), 'amount' => (float) $a['rate_m_day'], 'lebur' => true];
+            }
+            /* Biaya sewa per BULAN. Hanya untuk kontrak yang memang DIHARGAI per
+               bulan. Dokumen yang SUDAH TERBIT dicetak dari snapshotnya; yang
+               terbit sebelum baris ini ada tidak punya kunci 'sewa_per_bulan',
+               dan cetakan ulangnya harus tetap sama persis seperti saat
+               diserahkan ke client. */
+            $perBulanSkp = 0.0;
+            if (array_key_exists('sewa_per_bulan', (array) $d)) {
+                $perBulanSkp = (float) $d['sewa_per_bulan'];
+            } elseif (empty($skp['skp_no']) && in_array($ptSkp, ['monthly', 'monthly_area'], true)) {
+                $tarifSkp = (float) ($a['rate_m_day'] ?? 0);
+                $perBulanSkp = $ptSkp === 'monthly_area'
+                    ? $tarifSkp * (float) ($d['area'] ?? 0)
+                    : $tarifSkp;
+            }
+            if ($perBulanSkp > 0) {
+                $barisA[] = [
+                    'label'  => 'Biaya Sewa / Bulan',
+                    'note'   => $ptSkp === 'monthly_area'
+                        ? angka($d['area'] ?? 0) . ' m² × ' . $rp($a['rate_m_day'] ?? 0) : '',
+                    'amount' => $perBulanSkp,
+                    'lebur'  => true,
+                ];
+            }
+        }
+
+        if (($a['listrik'] ?? 0) > 0) {
+            $barisA[] = ['label' => 'Nilai Sewa', 'amount' => (float) ($a['sewa'] ?? 0), 'lebur' => true];
+            if ($kenaPpn) $barisA[] = ['label' => 'PPN 12% Sewa', 'note' => 'nilai × 11/12 × 12%',
+                                       'amount' => (float) ($a['ppn_sewa'] ?? 0)];
+            $barisA[] = ['label' => 'Biaya Listrik', 'note' => 'sesuai penawaran', 'amount' => (float) $a['listrik']];
+            if ($kenaPpn) $barisA[] = ['label' => 'PPN 12% Listrik', 'note' => 'nilai × 11/12 × 12%',
+                                       'amount' => (float) ($a['ppn_listrik'] ?? 0)];
+            foreach ($barisDiskon() as $bd) $barisA[] = $bd;
+            $barisA[] = ['label' => 'Total Biaya Sewa', 'amount' => (float) ($a['total'] ?? 0), 'lebur' => true];
+            if ($kenaPpn) $barisA[] = ['label' => 'Total Biaya Sewa Setelah PPN', 'amount' => (float) ($a['after_ppn'] ?? 0)];
+        } else {
+            foreach ($barisDiskon() as $bd) $barisA[] = $bd;
+            $barisA[] = ['label' => 'Total Biaya Sewa', 'amount' => (float) ($a['total'] ?? 0), 'lebur' => true];
+            if ($kenaPpn) {
+                $barisA[] = ['label' => 'PPN 12%', 'note' => 'nilai × 11/12 × 12%', 'amount' => (float) ($a['ppn'] ?? 0)];
+                $barisA[] = ['label' => 'Total Biaya Sewa Setelah PPN', 'amount' => (float) ($a['after_ppn'] ?? 0)];
+            }
+        }
+
+        foreach (clara_rincian_rapi($barisA) as $b) {
+            $gaya  = !empty($b['minus']) ? ' style="color:#b91c1c"' : '';
+            $nilai = array_key_exists('teks', $b)
+                ? $b['teks']
+                : (!empty($b['minus']) ? '- ' : '') . $rp($b['amount']);
+            echo '<tr><td class="lbl"' . $gaya . '>&nbsp;&nbsp;&nbsp;' . $ab() . $b['label']
+               . ($b['note'] !== '' ? ' <span class="muted">(' . $b['note'] . ')</span>' : '')
+               . '</td><td class="amt"' . $gaya . '>' . $nilai . '</td></tr>';
         }
         ?>
-        <?php if ($perBulanSkp > 0): ?>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Biaya Sewa / Bulan<?= $ptSkp === 'monthly_area'
-                ? ' <span class="muted">(' . $h(rtrim(rtrim(number_format((float) ($d['area'] ?? 0), 2, ',', '.'), '0'), ',')) . ' m² × ' . $rp($a['rate_m_day'] ?? 0) . ')</span>' : '' ?></td>
-            <td class="amt"><?= $rp($perBulanSkp) ?></td></tr>
-        <?php endif; ?>
-        <?php endif; ?>
-        <?php if (($a['listrik'] ?? 0) > 0): ?>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Nilai Sewa</td><td class="amt"><?= $rp($a['sewa'] ?? 0) ?></td></tr>
-        <?php if ($kenaPpn): ?><tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>PPN 12% Sewa <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn_sewa'] ?? 0) ?></td></tr><?php endif; ?>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Biaya Listrik <span class="muted">(sesuai penawaran)</span></td><td class="amt"><?= $rp($a['listrik']) ?></td></tr>
-        <?php if ($kenaPpn): ?><tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>PPN 12% Listrik <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn_listrik'] ?? 0) ?></td></tr><?php endif; ?>
-        <?= $barisDiskon() ?>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
-        <?php if ($kenaPpn): ?><tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Biaya Sewa Setelah PPN</td><td class="amt"><?= $rp($a['after_ppn'] ?? 0) ?></td></tr><?php endif; ?>
-        <?php else: ?>
-        <?= $barisDiskon() ?>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Biaya Sewa</td><td class="amt"><?= $rp($a['total'] ?? 0) ?></td></tr>
-        <?php if ($kenaPpn): ?>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>PPN 12% <span class="muted">(nilai × 11/12 × 12%)</span></td><td class="amt"><?= $rp($a['ppn'] ?? 0) ?></td></tr>
-        <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Biaya Sewa Setelah PPN</td><td class="amt"><?= $rp($a['after_ppn'] ?? 0) ?></td></tr>
-        <?php endif; ?>
-        <?php endif; ?>
         <?php /* Deposit yang sudah disetor di kontrak sebelumnya tetap dicantumkan
                  sebagai catatan (hijau), tapi tidak ditagih ulang di Grand Total. */ ?>
         <?php $depLunas = !empty($a['deposit_paid']); ?>

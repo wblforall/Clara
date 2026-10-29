@@ -204,7 +204,7 @@ function daily_occupancy_page(PDO $pdo): void
                             <tr>
                                 <td><a href="?r=allocation_detail&id=<?= (int)$u['trx_id'] ?>"><?= h($u['code']) ?></a></td>
                                 <td style="color:var(--muted)"><?= h($u['location_name']) ?></td>
-                                <td style="white-space:nowrap"><?= h((string)$u['area_sqm']) ?> m²</td>
+                                <td style="white-space:nowrap"><?= angka($u['area_sqm']) ?> m²</td>
                                 <td><?= h($u['company_name']) ?></td>
                                 <td style="white-space:nowrap;color:var(--muted)"><?= h($u['start_date']) ?> s/d <?= h($u['end_date']) ?></td>
                                 <td><?= h($u['pic_name']) ?></td>
