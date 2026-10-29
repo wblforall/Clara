@@ -362,7 +362,11 @@ function skp_detail_form(string $docType, array $d, bool $editable, array $srcHa
         <div class="form-grid">
             <?php /* Keduanya terisi sendiri dari Titik Media & tanggal di atas —
                      tetap bisa diketik ulang bila penulisannya mau lain. */ ?>
-            <div><label>Lokasi Kegiatan</label><input name="d_lokasi_kegiatan" value="<?= h($d['lokasi_kegiatan'] ?? '') ?>" <?= $dis ?>><div class="help">Otomatis mengikuti Titik Media.</div></div>
+            <?php /* Dokumen lama bisa menyimpan penggal yang berulang ("Atrium - GF -
+                     Atrium - GF"). Dilebur di sini juga, bukan hanya saat dicetak,
+                     supaya yang terlihat di formulir sama dengan yang tercetak —
+                     dan tersimpan rapi begitu dokumennya disimpan lagi. */ ?>
+            <div><label>Lokasi Kegiatan</label><input name="d_lokasi_kegiatan" value="<?= h(clara_gabung_lokasi($d['lokasi_kegiatan'] ?? '')) ?>" <?= $dis ?>><div class="help">Otomatis mengikuti Titik Media.</div></div>
             <div><label>Tanggal Pemakaian</label><input name="d_tanggal_pemakaian" value="<?= h($d['tanggal_pemakaian'] ?? '') ?>" <?= $dis ?>><div class="help">Otomatis mengikuti tanggal sewa.</div></div>
         </div>
 
