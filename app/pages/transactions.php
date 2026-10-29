@@ -1442,6 +1442,31 @@ function transaction_edit(PDO $pdo): void
                         <?php endforeach; ?>
                     </select>
                 </div>
+                <?php /* Referrer & Catatan sebelumnya TIDAK ADA di formulir ini,
+                         padahal penyimpanannya tetap menulis keduanya dari isian
+                         yang tak pernah terkirim. Membuka Edit lalu menekan Simpan
+                         — tanpa mengubah apa pun — mengosongkannya, dan komisi 1%
+                         referrer ikut hilang tanpa jejak. */ ?>
+                <div>
+                    <label>Referrer <span class="muted" style="font-weight:400">(opsional)</span></label>
+                    <select name="referrer_name">
+                        <option value="">- Tidak ada -</option>
+                        <?php
+                        // Referrer yang tersimpan tetapi sudah tidak aktif di master
+                        // ikut ditampilkan. Kalau tidak, pilihannya jatuh ke
+                        // "- Tidak ada -" dan namanya terhapus begitu disimpan.
+                        $refKini = (string) ($trx['referrer_name'] ?? '');
+                        $refNama = array_column($referrers, 'name');
+                        if ($refKini !== '' && !in_array($refKini, $refNama, true)): ?>
+                            <option selected><?= h($refKini) ?></option>
+                        <?php endif; ?>
+                        <?php foreach ($referrers as $rf): ?>
+                            <option <?= ($rf['name'] === $refKini) ? 'selected' : '' ?>><?= h($rf['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="help">Karyawan non-CL yang mereferensikan klien ini &mdash; mendapat komisi 1% dari nilai dealing.</div>
+                </div>
+                <div class="wide"><label>Catatan</label><textarea name="remarks"><?= h($trx['remarks'] ?? '') ?></textarea></div>
                 <div id="recognition_month_wrap" style="<?= $startMonth !== $endMonth ? '' : 'display:none' ?>">
                     <label>Nilai Diakui di Bulan</label>
                     <select name="recognition_month" id="recognition_month">
@@ -1939,9 +1964,16 @@ function transaction_update(PDO $pdo): void
         'recurring_flag'     => post('recurring_flag') ? 1 : 0,
         'cycle_recognition'  => post('cycle_recognition', 'cycle_start'),
         'pic_name'           => post('pic_name'),
-        'referrer_name'      => trim((string) post('referrer_name')) ?: null,
-        'remarks'            => post('remarks'),
-        'invoice_no'         => trim((string) post('invoice_no')) ?: null,
+        // Kolom yang TIDAK ADA di formulir harus mempertahankan isinya, bukan
+        // ditimpa string kosong. post() tidak bisa membedakan "dikosongkan
+        // orang" dari "tidak pernah dikirim" — pembedanya ada di $_POST.
+        'referrer_name'      => array_key_exists('referrer_name', $_POST)
+                                ? (trim((string) post('referrer_name')) ?: null)
+                                : $existing['referrer_name'],
+        'remarks'            => array_key_exists('remarks', $_POST) ? post('remarks') : $existing['remarks'],
+        'invoice_no'         => array_key_exists('invoice_no', $_POST)
+                                ? (trim((string) post('invoice_no')) ?: null)
+                                : $existing['invoice_no'],
     ];
     // ── LOCK offer-first ─────────────────────────────────────────────────────
     // Transaksi yang terbit dari SKP approved/signed → field NILAI dikunci agar
