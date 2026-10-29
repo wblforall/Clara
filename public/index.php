@@ -149,10 +149,13 @@ $masterConfig = [
         'title'         => 'Master PIC',
         'table'         => 'master_pic',
         'key'           => 'name',
-        'columns'       => ['name', 'color', 'role_name', 'email', 'phone', 'commission_cat', 'show_achievement', 'target_share', 'user_id', 'status'],
-        'column_labels' => ['user_id' => 'User Akun', 'commission_cat' => 'Kategori Komisi', 'show_achievement' => 'Achievement', 'phone' => 'WhatsApp', 'color' => 'Warna'],
+        'columns'       => ['name', 'full_name', 'color', 'role_name', 'email', 'phone', 'commission_cat', 'show_achievement', 'target_share', 'user_id', 'status'],
+        'column_labels' => ['user_id' => 'User Akun', 'commission_cat' => 'Kategori Komisi', 'show_achievement' => 'Achievement', 'phone' => 'WhatsApp', 'color' => 'Warna', 'full_name' => 'Nama Lengkap'],
         'fields'        => [
-            'name' => 'Nama PIC', 'role_name' => 'Jabatan',
+            // Nama PIC dipakai sebagai KUNCI di transaksi, alokasi, dan laporan —
+            // jangan diubah jadi nama lengkap. Nama lengkapnya ditulis terpisah
+            // di bawah ini, dan hanya itu yang tercetak di surat.
+            'name' => 'Nama PIC', 'full_name' => 'Nama Lengkap (dicetak di surat)', 'role_name' => 'Jabatan',
             // Warna ini yang mewarnai kotak di Kalender Pameran — satu orang satu
             // warna, seperti di spreadsheet yang dipakai tim selama ini.
             'color' => 'Warna di Kalender',
@@ -161,7 +164,7 @@ $masterConfig = [
             'show_in_offer' => 'Tampil di pilihan Penawaran',
             'target_share' => 'Porsi Target', 'user_id' => 'User Akun', 'status' => 'Status',
         ],
-        'search'        => ['name', 'role_name', 'email', 'phone'],
+        'search'        => ['name', 'full_name', 'role_name', 'email', 'phone'],
     ],
     'holiday' => [
         'title'         => 'Hari Libur',

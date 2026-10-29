@@ -165,6 +165,8 @@ function skp_detail_defaults(array $tpl, string $docType, array $src, array $amt
             'utilities'   => $mk($tpl['extra']['utilities']   ?? []),
             'media_promo' => $mk($tpl['extra']['media_promo'] ?? []),
             'parkir'      => $mk($tpl['extra']['parkir']      ?? []),
+            // Bawaannya harga TAMPIL, seperti selama ini.
+            'sembunyi_harga' => ['utilities' => 0, 'media_promo' => 0, 'parkir' => 0],
             'plat_nomor'  => '',
             'ppn'         => '',
             'grand'       => '',
@@ -226,12 +228,21 @@ function skp_detail_from_post(string $docType): array
             }
             return $out;
         };
+        $sembunyi = (array) ($_POST['d_sembunyi'] ?? []);
         return [
             'lokasi_kegiatan'   => trim((string) post('d_lokasi_kegiatan', '')),
             'tanggal_pemakaian' => trim((string) post('d_tanggal_pemakaian', '')),
             'utilities'         => $grup('util'),
             'media_promo'       => $grup('promo'),
             'parkir'            => $grup('parkir'),
+            // Sembunyikan kolom biaya per kelompok saat dicetak. Biayanya tetap
+            // tersimpan — yang berubah hanya apa yang tercetak dan apa yang
+            // ikut dijumlahkan ke Total Nilai Sewa.
+            'sembunyi_harga'    => [
+                'utilities'   => !empty($sembunyi['utilities'])   ? 1 : 0,
+                'media_promo' => !empty($sembunyi['media_promo']) ? 1 : 0,
+                'parkir'      => !empty($sembunyi['parkir'])      ? 1 : 0,
+            ],
             'plat_nomor'        => trim((string) post('d_plat_nomor', '')),
             // Angka rincian boleh diketik sendiri — yang tersimpan dipakai apa
             // adanya saat dicetak.
@@ -357,14 +368,28 @@ function skp_detail_form(string $docType, array $d, bool $editable, array $srcHa
 
         <?php $harga('media'); ?>
 
-        <h3>Utilities <span style="font-weight:400;font-size:12px;color:var(--muted)">(centang yang dipakai, isi biayanya — biaya yang dicentang ikut menambah Total Nilai Sewa)</span></h3>
-        <?php skp_fu_group('util', $d['utilities'] ?? [], false, $editable); ?>
+        <?php
+        /* Satu saklar per kelompok: "Sembunyikan harga". Dicentang → kolom
+           biaya tidak dicetak di surat, DAN biayanya tidak ikut menambah Total
+           Nilai Sewa. Harga yang sudah diketik tetap tersimpan, jadi saklarnya
+           bisa dilepas lagi kapan saja tanpa mengetik ulang. */
+        $sbn = (array) ($d['sembunyi_harga'] ?? []);
+        $saklar = function (string $key) use ($sbn, $dis) {
+            $on = !empty($sbn[$key]);
+            echo '<label class="fu-sembunyi" style="font-weight:400;font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:6px;margin-left:10px">'
+               . '<input type="checkbox" id="fu-sbn-' . h($key) . '" name="d_sembunyi[' . h($key) . ']" value="1" data-grup="' . h($key) . '"'
+               . ($on ? ' checked' : '') . ' ' . $dis . ' style="width:15px;height:15px">'
+               . 'Sembunyikan harga di surat</label>';
+        };
+        ?>
+        <h3>Utilities <span style="font-weight:400;font-size:12px;color:var(--muted)">(centang yang dipakai, isi biayanya — biaya yang dicentang ikut menambah Total Nilai Sewa)</span><?php $saklar('utilities'); ?></h3>
+        <?php skp_fu_group('util', $d['utilities'] ?? [], false, $editable, 'utilities'); ?>
 
-        <h3>Media Promo</h3>
-        <?php skp_fu_group('promo', $d['media_promo'] ?? [], true, $editable); ?>
+        <h3>Media Promo<?php $saklar('media_promo'); ?></h3>
+        <?php skp_fu_group('promo', $d['media_promo'] ?? [], true, $editable, 'media_promo'); ?>
 
-        <h3>Parkir Kendaraan (Test Drive)</h3>
-        <?php skp_fu_group('parkir', $d['parkir'] ?? [], false, $editable); ?>
+        <h3>Parkir Kendaraan (Test Drive)<?php $saklar('parkir'); ?></h3>
+        <?php skp_fu_group('parkir', $d['parkir'] ?? [], false, $editable, 'parkir'); ?>
         <div class="form-grid" style="margin-top:8px">
             <div class="wide"><label>Plat Nomor Kendaraan <span class="muted" style="font-weight:400">(STNK dilampirkan)</span></label><input name="d_plat_nomor" value="<?= h($d['plat_nomor'] ?? '') ?>" <?= $dis ?>></div>
         </div>
@@ -380,7 +405,7 @@ function skp_detail_form(string $docType, array $d, bool $editable, array $srcHa
  * daftar sepanjang ini terbaca sekali lihat; versi lama memakai baris flex
  * sehingga nama item ikut membungkus dan kotaknya tidak sejajar.
  */
-function skp_fu_group(string $key, array $items, bool $withLokasi, bool $editable): void
+function skp_fu_group(string $key, array $items, bool $withLokasi, bool $editable, string $grup = ''): void
 {
     $dis = $editable ? '' : 'disabled';
     if (!$items) { echo '<p class="muted" style="margin:0">Daftar item belum diatur — isi lewat menu <strong>Template Penawaran → Media</strong>.</p>'; return; }
@@ -400,7 +425,7 @@ function skp_fu_group(string $key, array $items, bool $withLokasi, bool $editabl
             // "Lainnya" tidak menyebut apa pun — barisnya diberi kotak isian
             // supaya yang dicentang itu jelas barangnya, bukan cuma biayanya.
             $bebas = strcasecmp(trim((string) $it['nama']), 'Lainnya') === 0; ?>
-            <tr class="fu-row" style="background:<?= $on ? '#f0fdf4' : 'transparent' ?>">
+            <tr class="fu-row" data-grup="<?= h($grup) ?>" style="background:<?= $on ? '#f0fdf4' : 'transparent' ?>">
                 <td style="text-align:center">
                     <input type="hidden" name="<?= $key ?>[<?= $i ?>][nama]" value="<?= h($it['nama']) ?>">
                     <input type="checkbox" class="fu-cek" name="<?= $key ?>[<?= $i ?>][checked]" value="1" <?= $on ? 'checked' : '' ?> <?= $dis ?>>
@@ -535,14 +560,23 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
             'No. KTP Penanggung Jawab' => $d['ktp_pj'] ?? '-',
             'No. NPWP'                 => $d['npwp'] ?? '-',
             'No. Telepon / Handphone'  => $d['phone'] ?? '-',
-            'Lokasi Kegiatan'          => $det['lokasi_kegiatan'] ?? '-',
+            // Penggal yang berulang dilebur: Jenis Media dan Lokasi di Master
+            // Media bisa saling memuat, dan rangkaian lugasnya mencetak
+            // "Atrium - GF - Atrium - GF". Berlaku juga untuk dokumen lama,
+            // karena peleburannya terjadi saat dicetak.
+            'Lokasi Kegiatan'          => clara_gabung_lokasi($det['lokasi_kegiatan'] ?? ''),
             'Tanggal Pemakaian'        => $det['tanggal_pemakaian'] ?? '-',
         ] as $l => $v) {
             $o .= '<tr><td class="l">' . $h($l) . '</td><td class="c">:</td><td class="v">' . $h($v ?: '-') . '</td></tr>';
         }
         $o .= '</table>';
 
-        $grup = function (string $judul, array $items, bool $withLokasi) use ($h, $rp): string {
+        // Daftar centang. Kolom biaya bisa disembunyikan per kelompok: ada
+        // penyewa yang cukup diberi tahu fasilitas APA yang dipakai, sedangkan
+        // tarif tiap fasilitas bukan urusannya — tarifnya tetap tersimpan di
+        // dokumen, hanya tidak dicetak.
+        $sembunyi = (array) ($det['sembunyi_harga'] ?? []);
+        $grup = function (string $judul, array $items, bool $withLokasi, bool $tanpaHarga) use ($h, $rp): string {
             if (!$items) return '';
             $x = '<div class="sec">' . $h($judul) . '</div><table class="pay">';
             foreach ($items as $it) {
@@ -558,59 +592,72 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
                 }
                 $b   = $it['biaya'] ?? '';
                 $sat = trim((string) ($it['satuan'] ?? ''));
-                $x .= '<tr><td class="lbl">' . $tanda . ' ' . $h($it['nama']) . $ket . '</td>'
-                    . '<td class="amt">' . ((float) $b > 0 ? $h($rp($b) . ($sat !== '' ? ' ' . $sat : '')) : '<span class="muted">—</span>') . '</td></tr>';
+                $x .= '<tr><td class="lbl"' . ($tanpaHarga ? ' colspan="2" style="width:auto"' : '') . '>'
+                    . $tanda . ' ' . $h($it['nama']) . $ket . '</td>'
+                    . ($tanpaHarga ? '' : '<td class="amt">'
+                        . ((float) $b > 0 ? $h($rp($b) . ($sat !== '' ? ' ' . $sat : '')) : '<span class="muted">—</span>')
+                        . '</td>')
+                    . '</tr>';
             }
             return $x . '</table>';
         };
-        $o .= $grup('Utilities', $det['utilities'] ?? [], false);
-        $o .= $grup('Media Promo', $det['media_promo'] ?? [], true);
-        $o .= $grup('Parkir Kendaraan (Test Drive)', $det['parkir'] ?? [], false);
+        $o .= $grup('Utilities', $det['utilities'] ?? [], false, !empty($sembunyi['utilities']));
+        $o .= $grup('Media Promo', $det['media_promo'] ?? [], true, !empty($sembunyi['media_promo']));
+        $o .= $grup('Parkir Kendaraan (Test Drive)', $det['parkir'] ?? [], false, !empty($sembunyi['parkir']));
         if (trim((string) ($det['plat_nomor'] ?? '')) !== '') {
             $o .= '<p style="margin:4px 0;font-size:11px">Plat Nomor Kendaraan (STNK dilampirkan): <strong>' . $h($det['plat_nomor']) . '</strong></p>';
         }
 
-        // Rincian biaya disusun persis seperti formulir kertas: satu kalimat
-        // "sewa + ppn = Rp. total,-", lalu terbilang. Angkanya memakai yang
-        // diketik di formulir bila ada, selebihnya hitungan otomatis.
+        // Rincian biaya sebagai TABEL — satu baris satu angka, jumlahnya bisa
+        // ditelusuri dari atas ke bawah. Sebelumnya berupa kalimat
+        // "100.000.000 + 11.000.000 = Rp. 111.000.000,-" lalu baris "Total Yang
+        // Harus Dibayarkan" yang mengulang angka yang sama ditambah jaminan —
+        // dua angka besar berdampingan yang artinya sulit dibedakan.
+        //
+        // Angkanya sama persis dengan sebelumnya; hanya susunannya yang berubah.
         $nf    = fn($v) => number_format((float) $v, 0, ',', '.');
         $tot   = (float) ($amt['total'] ?? 0);
         $ppn   = (float) ($det['ppn'] ?? 0) > 0 ? (float) $det['ppn'] : (float) ($amt['ppn'] ?? 0);
         $grand = (float) ($det['grand'] ?? 0) > 0 ? (float) $det['grand'] : $tot + $ppn;
-        // Ukuran hurufnya sama dengan badan surat — hanya ditebalkan, seperti
-        // di formulir kertas. (Versi sebelumnya 11.5pt sehingga terlihat jauh
-        // lebih besar dari teks lain.)
-        // Satu ukuran huruf untuk seluruh blok (10.5px) — yang membedakan hanya
-        // tebal/miringnya. Ukurannya ditulis di tiap paragraf karena tanpa itu
-        // mereka ikut ukuran dasar PDF yang lebih besar, dan jaraknya dilebarkan
-        // supaya tidak mepet seperti sebelumnya.
-        $baris = 'font-size:10.5px;line-height:1.6;';
-        $o .= '<div style="page-break-inside:avoid">'
-            . '<div class="sec">Rincian Biaya</div>'
-            . '<p style="' . $baris . 'margin:0 0 5px;font-weight:bold">Total Biaya Sewa + PPN 12%</p>'
-            . '<p style="' . $baris . 'margin:0 0 7px;font-weight:bold">'
-            . $h($nf($tot) . ' + ' . $nf($ppn) . ' = Rp. ' . $nf($grand) . ',-') . '</p>';
-        // Jaminan area — hanya tercetak bila memang ada. Yang sudah disetor
-        // dicantumkan sebagai keterangan (hijau) dan tidak ditagih ulang, sama
-        // seperti di SKP; yang belum disetor menambah angka yang harus dibayar.
         $dep   = (float) ($amt['deposit'] ?? 0);
         $depOk = !empty($amt['deposit_paid']);
+        // Jaminan yang SUDAH disetor tetap tercetak sebagai keterangan, tapi
+        // tidak ditagih ulang — sama seperti di SKP.
+        $bayar = $grand + ($dep > 0 && !$depOk ? $dep : 0.0);
+        $tarif = (float) ($amt['rate_m_day'] ?? 0);
+        // Nama baris tarif mengikuti dasar harga yang dipakai kontraknya, supaya
+        // "Biaya / Hari" tidak tercetak di dokumen yang dihitung per bulan.
+        $lblTarif = match ((string) ($d['pricing_type'] ?? '')) {
+            'daily_area'   => 'Biaya / m² / Hari',
+            'daily_slot'   => 'Biaya / Slot / Hari',
+            'monthly'      => 'Biaya / Bulan',
+            'monthly_area' => 'Biaya / m² / Bulan',
+            'fixed'        => 'Nilai Kontrak',
+            default        => 'Biaya / Hari',
+        };
+        $brs = fn(string $l, float $v, string $gaya = '') => '<tr><td class="lbl"' . $gaya . '>' . $l
+            . '</td><td class="amt"' . $gaya . '>Rp. ' . $nf($v) . '</td></tr>';
+        $o .= '<div style="page-break-inside:avoid">'
+            . '<div class="sec">Rincian Biaya</div><table class="pay">';
+        if ($tarif > 0) $o .= $brs($h($lblTarif), $tarif);
+        $o .= $brs('Total Biaya Sewa', $tot);
+        if ($ppn > 0) $o .= $brs('PPN 12%', $ppn);
         if ($dep > 0) {
-            $o .= '<p style="' . $baris . 'margin:0 0 5px' . ($depOk ? ';color:#166534' : '') . '">'
-                . 'Jaminan Area (Security Deposit) : <strong>Rp. ' . $h($nf($dep)) . ',-</strong>'
-                . ($depOk ? ' <strong>(Sudah Dibayarkan)</strong>' : '') . '</p>'
-                . '<p style="' . $baris . 'margin:0 0 7px;font-weight:bold">Total Yang Harus Dibayarkan : Rp. '
-                . $h($nf($grand + ($depOk ? 0.0 : $dep))) . ',-</p>';
+            $o .= $brs('Jaminan Area (Security Deposit)' . ($depOk ? ' <span class="muted">(Sudah Dibayarkan)</span>' : ''),
+                       $dep, $depOk ? ' style="color:#166534"' : '');
         }
+        $o .= '<tr class="grand"><td class="lbl">Grand Total</td><td class="amt">Rp. ' . $nf($bayar) . '</td></tr>'
+            . '</table>';
         if (trim((string) ($det['terbilang'] ?? '')) !== '') {
-            $o .= '<p style="' . $baris . 'margin:0 0 9px;font-style:italic;font-weight:bold">(terbilang : ' . $h($det['terbilang']) . ')</p>';
+            $o .= '<p style="font-size:10.5px;line-height:1.6;margin:5px 0 7px;font-style:italic;font-weight:bold">(terbilang : ' . $h($det['terbilang']) . ')</p>';
         }
-        // Catatan kaki: butir pertama (*PPN) miring, sisanya — nomor rekening
-        // pembayaran — tebal, mengikuti formulir aslinya.
+        // Catatan kaki: butir pertama (*PPN) kecil, tebal, miring — keterangan
+        // dasar hukum, bukan bagian dari angka. Sisanya — nomor rekening
+        // pembayaran — tebal seukuran badan surat, mengikuti formulir aslinya.
         foreach (($tpl['notes'] ?? []) as $i => $n) {
             $o .= $i === 0
-                ? '<p style="' . $baris . 'margin:0 0 7px;font-style:italic">' . $h($n) . '</p>'
-                : '<p style="' . $baris . 'margin:0 0 6px;font-weight:bold">' . $h($n) . '</p>';
+                ? '<p style="font-size:9px;line-height:1.5;margin:0 0 8px;font-style:italic;font-weight:bold">' . $h($n) . '</p>'
+                : '<p style="font-size:10.5px;line-height:1.6;margin:0 0 6px;font-weight:bold">' . $h($n) . '</p>';
         }
         $o .= '</div>';
 
@@ -702,10 +749,13 @@ function skp_standalone_src(PDO $pdo, int $pid, string $module, ?array $skp): ar
                 if (!$src['unit_rate']) $src['unit_rate'] = (float) $u['rate'];
             }
         } else {
-            $st = $pdo->prepare("SELECT CONCAT_WS(' - ', media_type, location, NULLIF(point,'')) AS location_name, location AS floor, rate, pricing_type, slots FROM master_media WHERE code=? AND property_id=? LIMIT 1");
+            // Labelnya dirangkai di PHP, bukan lewat CONCAT_WS: Jenis Media dan
+            // Lokasi bisa saling memuat, dan rangkaian lugasnya mencetak
+            // "Atrium - GF - Atrium - GF" di Lokasi Kegiatan.
+            $st = $pdo->prepare("SELECT media_type, location, point, location AS floor, rate, pricing_type, slots FROM master_media WHERE code=? AND property_id=? LIMIT 1");
             $st->execute([$src['master_code'], $pid]);
             if ($u = $st->fetch()) {
-                $src['location_name'] = $u['location_name'];
+                $src['location_name'] = clara_gabung_lokasi($u['media_type'], $u['location'], $u['point']);
                 $src['floor']  = $u['floor'];
                 $src['slots']  = (float) ($u['slots'] ?: 1);
                 $src['pricing_type'] = $u['pricing_type'] ?: 'daily';
@@ -785,10 +835,17 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
     if ($module === 'gudang') {
         $units = $pdo->prepare("SELECT code, CONCAT(code, ' — ', name) lbl, name nm, location lantai, area_sqm luas, ROUND(monthly_rate * area_sqm) tarif FROM master_gudang WHERE property_id=? AND status='active' ORDER BY sort_order, code");
     } else {
-        $units = $pdo->prepare("SELECT code, CONCAT(code, ' — ', CONCAT_WS(' ', media_type, location)) lbl, CONCAT_WS(' - ', media_type, location, NULLIF(point,'')) nm, location lantai, 0 luas, rate tarif FROM master_media WHERE property_id=? AND status='active' ORDER BY sort_order, code");
+        $units = $pdo->prepare("SELECT code, CONCAT(code, ' — ', CONCAT_WS(' ', media_type, location)) lbl, media_type, location, point, location lantai, 0 luas, rate tarif FROM master_media WHERE property_id=? AND status='active' ORDER BY sort_order, code");
     }
     $units->execute([$pid]);
     $units = $units->fetchAll();
+    // Nama titik media dirangkai di sini (bukan di SQL) supaya penggal yang
+    // berulang — "Atrium - GF - Atrium - GF" — dilebur jadi satu.
+    foreach ($units as $i => $u) {
+        if (!array_key_exists('nm', $u)) {
+            $units[$i]['nm'] = clara_gabung_lokasi($u['media_type'] ?? '', $u['location'] ?? '', $u['point'] ?? '');
+        }
+    }
     $rp = fn($v) => $v > 0 ? number_format((float) $v, 0, ',', '.') : '';
     ?>
     <?php
@@ -1021,10 +1078,18 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
 
         // Biaya utilities / media promo / parkir yang dicentang — hanya ada di
         // Form Utilities; untuk Gudang hasilnya 0 sehingga hitungannya tak berubah.
+        // Kelompok yang harganya disembunyikan tidak ikut dijumlahkan: harga yang
+        // tidak tercetak di surat tidak boleh diam-diam menambah tagihan.
+        function grupSembunyi(g) {
+            if (!g) return false;
+            var cb = document.getElementById('fu-sbn-' + g);
+            return !!(cb && cb.checked);
+        }
         function itemFU() {
             var s = 0;
             var baris = document.querySelectorAll('tr.fu-row');
             for (var i = 0; i < baris.length; i++) {
+                if (grupSembunyi(baris[i].getAttribute('data-grup'))) continue;
                 var c = baris[i].querySelector('.fu-cek'), b = baris[i].querySelector('.fu-biaya');
                 if (c && c.checked && b) s += angka(b);
             }
@@ -1235,6 +1300,25 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
             if (tr) tr.style.background = el.checked ? '#f0fdf4' : 'transparent';
             hitungTotal();
         });
+        // Saklar "Sembunyikan harga": totalnya langsung dihitung ulang, dan
+        // kolom biaya kelompok itu diredupkan supaya terlihat tidak terpakai.
+        document.addEventListener('change', function (e) {
+            var el = e.target;
+            if (!el.id || el.id.indexOf('fu-sbn-') !== 0) return;
+            redupkanGrup(el.getAttribute('data-grup'), el.checked);
+            hitungTotal();
+        });
+        function redupkanGrup(g, redup) {
+            if (!g) return;
+            var baris = document.querySelectorAll('tr.fu-row[data-grup="' + g + '"]');
+            for (var i = 0; i < baris.length; i++) {
+                var sel = baris[i].querySelectorAll('.fu-biaya, input[name$="[satuan]"]');
+                for (var j = 0; j < sel.length; j++) {
+                    var kotak = sel[j].closest('div') || sel[j];
+                    kotak.style.opacity = redup ? '.4' : '';
+                }
+            }
+        }
 
         function siap(fn) {
             if (document.readyState !== 'loading') fn();
@@ -1254,6 +1338,10 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
         siap(function () {
             pasangPemicuTarif();
             pasangTotal();
+            ['utilities', 'media_promo', 'parkir'].forEach(function (g) {
+                var cb = document.getElementById('fu-sbn-' + g);
+                if (cb && cb.checked) redupkanGrup(g, true);
+            });
             tandaiManual();
             var u = document.getElementById('s-unit');
             var uItem = u && u.value ? UNITS.filter(function (x) { return x.v === u.value; })[0] : null;

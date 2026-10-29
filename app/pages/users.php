@@ -56,7 +56,7 @@ function user_form(PDO $pdo): void
     $id = getv('id');
     $row = ['role' => 'sales', 'status' => 'active', 'must_change_password' => 0];
     if ($id) {
-        $stmt = $pdo->prepare('SELECT id, name, email, role, status, must_change_password FROM users WHERE id = ?');
+        $stmt = $pdo->prepare('SELECT id, name, full_name, email, role, status, must_change_password FROM users WHERE id = ?');
         $stmt->execute([$id]);
         $row = $stmt->fetch() ?: $row;
     }
@@ -77,8 +77,12 @@ function user_form(PDO $pdo): void
             <div class="panel" style="margin-bottom:16px">
                 <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:14px">Informasi Dasar</div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-                    <div><label>Nama</label><input name="name" required value="<?= field($row, 'name') ?>"></div>
+                    <div><label>Nama</label><input name="name" required value="<?= field($row, 'name') ?>"><div class="help">Nama panggilan yang dipakai di seluruh CLARA.</div></div>
                     <div><label>Email</label><input type="email" name="email" required value="<?= field($row, 'email') ?>"></div>
+                    <?php /* Nama lengkap TERPISAH dari Nama: "Nama" dipakai sebagai kunci
+                             pencocokan (created_by, PIC, penyetuju) di banyak tempat, jadi
+                             tidak boleh berubah. Yang tercetak di surat adalah yang ini. */ ?>
+                    <div style="grid-column:1/-1"><label>Nama Lengkap</label><input name="full_name" value="<?= field($row, 'full_name') ?>" placeholder="dicetak di bawah tanda tangan surat"><div class="help">Dipakai di Surat Penawaran, SKP, SKS, dan Form Utilities. Kosong = memakai Nama di atas.</div></div>
                     <div>
                         <label>Role</label>
                         <select name="role">
@@ -151,6 +155,7 @@ function user_save(PDO $pdo): void
     $id = post('id');
     $data = [
         'name'       => trim((string) post('name')),
+        'full_name'  => trim((string) post('full_name')) ?: null,
         'email'      => trim((string) post('email')),
         'role'       => post('role', 'sales'),
         'status'     => post('status', 'active'),
@@ -170,10 +175,10 @@ function user_save(PDO $pdo): void
             flash('User sedang login tidak boleh dinonaktifkan sendiri.');
             redirect_to('user_form', ['id' => $id]);
         }
-        $beforeStmt = $pdo->prepare('SELECT id, name, email, role, status FROM users WHERE id = ?');
+        $beforeStmt = $pdo->prepare('SELECT id, name, full_name, email, role, status FROM users WHERE id = ?');
         $beforeStmt->execute([$id]);
         $before = $beforeStmt->fetch() ?: [];
-        $sets = 'name=:name, email=:email, role=:role, status=:status, updated_at=:updated_at';
+        $sets = 'name=:name, full_name=:full_name, email=:email, role=:role, status=:status, updated_at=:updated_at';
         if (post('reset_password') === '1') {
             $data['password_hash']        = password_hash('123456', PASSWORD_DEFAULT);
             $data['must_change_password'] = 1;
@@ -192,8 +197,8 @@ function user_save(PDO $pdo): void
         $data['password_hash']        = password_hash('123456', PASSWORD_DEFAULT);
         $data['must_change_password'] = 1;
         $stmt = $pdo->prepare(
-            'INSERT INTO users (name, email, password_hash, role, status, must_change_password, updated_at)
-             VALUES (:name, :email, :password_hash, :role, :status, :must_change_password, :updated_at)'
+            'INSERT INTO users (name, full_name, email, password_hash, role, status, must_change_password, updated_at)
+             VALUES (:name, :full_name, :email, :password_hash, :role, :status, :must_change_password, :updated_at)'
         );
         $stmt->execute($data);
         $newUserId = (int) $pdo->lastInsertId();

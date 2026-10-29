@@ -1129,6 +1129,80 @@ function sign_token_expired(?string $expiresAt): bool
  * di satu tempat dan "per m² per bulan" di tempat lain. Dasar harganya DIPILIH,
  * bukan dipakai dua-duanya.
  */
+/**
+ * Nama lengkap seseorang untuk dicetak di surat.
+ *
+ * Di dalam aplikasi orang dipanggil nama pendeknya ("Sita", "Tengku") karena
+ * nama itulah kunci yang menyambungkan PIC ke transaksi, alokasi, dan laporan.
+ * Surat yang keluar ke penyewa adalah dokumen resmi, jadi yang tercetak di
+ * bawah garis tanda tangan harus nama lengkapnya — disimpan terpisah di
+ * master_pic.full_name / users.full_name (migrasi 093).
+ *
+ * Belum diisi → nama pendeknya dipakai apa adanya, persis seperti sebelum
+ * kolom itu ada. Kolomnya pun dibaca dengan penjaga: server yang belum
+ * menjalankan migrasinya tidak ikut mati.
+ */
+/**
+ * Gabung penggal lokasi jadi satu label, tanpa penggal yang berulang.
+ *
+ * Label titik media dirangkai dari Jenis Media + Lokasi + Titik. Bila isinya
+ * sudah saling memuat — mis. Jenis Media "Atrium - GF" dan Lokasi "Atrium - GF"
+ * — rangkaian lugasnya mencetak "Atrium - GF - Atrium - GF" di Form Utilities.
+ *
+ * Pemisahnya HANYA " - " (spasi-strip-spasi), yaitu pemisah yang dipakai saat
+ * merangkai. Strip tanpa spasi dibiarkan utuh, supaya "T-BANNER" tidak pecah
+ * jadi "T" dan "BANNER".
+ */
+function clara_gabung_lokasi(...$bagian): string
+{
+    $ada = [];
+    foreach ($bagian as $b) {
+        foreach (preg_split('/\s+-\s+/', trim((string) $b)) as $penggal) {
+            $penggal = trim($penggal);
+            if ($penggal === '') continue;
+            $kunci = mb_strtolower($penggal);
+            if (isset($ada[$kunci])) continue;
+            $ada[$kunci] = $penggal;
+        }
+    }
+    return implode(' - ', $ada);
+}
+
+function clara_nama_lengkap(PDO $pdo, ?string $nama, int $pid = 0): string
+{
+    static $memo = [];
+    $nama = trim((string) $nama);
+    if ($nama === '') return '';
+    $kunci = $pid . '/' . mb_strtolower($nama);
+    if (array_key_exists($kunci, $memo)) return $memo[$kunci];
+    $cari = static function (string $sql, array $par) use ($pdo): string {
+        try {
+            $st = $pdo->prepare($sql);
+            $st->execute($par);
+            return trim((string) $st->fetchColumn());
+        } catch (Throwable $e) {
+            return '';
+        }
+    };
+    $full = '';
+    if ($pid > 0) {
+        $full = $cari("SELECT full_name FROM master_pic
+                        WHERE name = ? AND property_id = ? AND COALESCE(full_name,'') <> ''
+                     ORDER BY (status = 'active') DESC, id LIMIT 1", [$nama, $pid]);
+    }
+    // Pemeriksa & manajer bisa terdaftar di properti lain, atau hanya punya
+    // akun pengguna tanpa baris PIC sama sekali.
+    if ($full === '') {
+        $full = $cari("SELECT full_name FROM master_pic
+                        WHERE name = ? AND COALESCE(full_name,'') <> ''
+                     ORDER BY (status = 'active') DESC, id LIMIT 1", [$nama]);
+    }
+    if ($full === '') {
+        $full = $cari("SELECT full_name FROM users WHERE name = ? AND COALESCE(full_name,'') <> '' LIMIT 1", [$nama]);
+    }
+    return $memo[$kunci] = ($full !== '' ? $full : $nama);
+}
+
 function clara_satuan_harga(string $pricingType): string
 {
     return match ($pricingType) {

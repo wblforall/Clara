@@ -4010,6 +4010,13 @@ function _skp_lengkapi_komponen(PDO $pdo, array $skp, array $d, int $pid): array
     // Ditaruh sebelum semua `return` di bawah supaya tidak ada jalur yang
     // terlewat.
     $d['sales_jabatan'] = skp_jabatan_pic($pdo, (string) ($d['sales'] ?? ''), $pid);
+    // Nama lengkap untuk blok tanda tangan & jejak paraf. Surat resmi menyebut
+    // orang dengan nama lengkapnya; nama pendek tetap dipakai di dalam aplikasi
+    // sebagai kunci data, jadi yang ditimpa hanya salinan yang dicetak.
+    $d['sales_nama'] = clara_nama_lengkap($pdo, (string) ($d['sales'] ?? ''), $pid);
+    foreach (($d['paraf'] ?? []) as $i => $pf) {
+        $d['paraf'][$i]['nama'] = clara_nama_lengkap($pdo, (string) ($pf['nama'] ?? ''), $pid);
+    }
     if (count($d['bundle_items'] ?? []) >= 2 || empty($skp['offer_id'])) return $d;
     $kmp = _skp_komponen_paket($pdo, (int) $skp['offer_id'], $pid);
     if (count($kmp) < 2) return $d;
@@ -4168,6 +4175,10 @@ function skp_verify_page(PDO $pdo): void
         $mp = $pdo->prepare("SELECT signature_path FROM users WHERE name=? LIMIT 1");
         $mp->execute([$skp['approved_by'] ?? '']);
         $mgrReg = !empty($mp->fetchColumn());
+        // Halaman validasi ikut menyebut nama lengkap, supaya yang dibaca saat
+        // QR dipindai sama persis dengan yang tercetak di suratnya.
+        $d['sales'] = clara_nama_lengkap($pdo, (string) ($d['sales'] ?? ''), (int) $skp['property_id']);
+        $skp['approved_by'] = clara_nama_lengkap($pdo, (string) ($skp['approved_by'] ?? ''), (int) $skp['property_id']);
     }
     include __DIR__ . '/skp_verify_template.php';
 }

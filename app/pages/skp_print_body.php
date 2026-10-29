@@ -70,6 +70,12 @@ if (function_exists('get_setting') && class_exists('Database')) {
     catch (Throwable $e) { $skpManager = ''; }
 }
 if ($skpManager === '') $skpManager = (string) ($skp['approved_by'] ?? '-');
+// Nama lengkap juga untuk yang "Mengetahui" — baik yang disetel di Pengaturan
+// maupun nama penyetuju yang terbaca dari dokumennya.
+if ($skpManager !== '' && $skpManager !== '-' && function_exists('clara_nama_lengkap') && class_exists('Database')) {
+    try { $skpManager = clara_nama_lengkap(Database::connect(), $skpManager, (int) ($skp['property_id'] ?? 0)); }
+    catch (Throwable $e) { /* dibiarkan memakai nama pendeknya */ }
+}
 // Gudang (sks) & Media (fu) memakai badan dokumen sendiri; teksnya dari snapshot
 // template yang terkunci saat approve.
 $skpDocType = (string) ($skp['doc_type'] ?? 'skp');
@@ -447,11 +453,14 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 
     <?php endif; ?>
 
-    <div style="text-align:right;margin-top:16px;font-size:10.5px">Balikpapan, <?= $h($skpToday) ?></div>
+    <?php /* Form Utilities menaruh kota & tanggal di KIRI, sejajar dengan
+             kolom "Dibuat Oleh" di bawahnya. SKP & SKS tetap di kanan seperti
+             bentuk kertasnya masing-masing. */ ?>
+    <div style="text-align:<?= $skpDocType === 'fu' ? 'left' : 'right' ?>;margin-top:16px;font-size:10.5px">Balikpapan, <?= $h($skpToday) ?></div>
     <table class="sign"><tr>
         <td class="col"><div class="role"><?= $skpDocType === 'sks' ? 'Hormat Kami,<br><strong>PT. Wulandari Bangun Laksana, Tbk.</strong>' : 'Dibuat Oleh,' ?></div>
             <div class="sigarea"><?php if ($skpHasQr): ?><?php if (empty($skp['sign_token'])): ?><?php /* Pratinjau: kotaknya ada supaya letaknya persis seperti surat asli, tetapi TIDAK memuat QR sungguhan — tokennya memang belum terbit, dan QR yang dipindai lalu gagal lebih buruk daripada tidak ada QR sama sekali. */ ?><table style="width:70px;margin:0 auto 3px;border-collapse:collapse"><tr><td style="width:70px;height:70px;border:1px dashed #cbd5e1;text-align:center;vertical-align:middle;font-size:6.5px;color:#94a3b8;line-height:1.4">QR validasi<br>terbit saat<br>disetujui</td></tr></table><?php elseif (!empty($PDF_MODE)): ?><div class="qrbox"><?= clara_qr_img($skpVerifyUrl, 18) ?></div><?php else: ?><div class="qrbox" data-qr="<?= $h($skpVerifyUrl) ?>"></div><?php endif; ?><div class="qrhint">Scan untuk validasi</div><?php endif; ?></div>
-            <div class="name"<?= $skpHasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h(trim((string) ($d['sales'] ?? '')) ?: '-') ?><br><span <?= $skpJab ?>><?= $h(trim((string) ($d['sales_jabatan'] ?? '')) ?: 'Sales Executive') ?></span></div>
+            <div class="name"<?= $skpHasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h(trim((string) ($d['sales_nama'] ?? $d['sales'] ?? '')) ?: '-') ?><br><span <?= $skpJab ?>><?= $h(trim((string) ($d['sales_jabatan'] ?? '')) ?: 'Sales Executive') ?></span></div>
         </td>
         <td class="col"><div class="role"><?= $skpDocType === 'sks' ? 'Menyetujui,' : 'Mengetahui,' ?></div>
             <div class="sigarea"><?php if ($skpHasQr): ?><?php if (empty($skp['sign_token'])): ?><?php /* Pratinjau: kotaknya ada supaya letaknya persis seperti surat asli, tetapi TIDAK memuat QR sungguhan — tokennya memang belum terbit, dan QR yang dipindai lalu gagal lebih buruk daripada tidak ada QR sama sekali. */ ?><table style="width:70px;margin:0 auto 3px;border-collapse:collapse"><tr><td style="width:70px;height:70px;border:1px dashed #cbd5e1;text-align:center;vertical-align:middle;font-size:6.5px;color:#94a3b8;line-height:1.4">QR validasi<br>terbit saat<br>disetujui</td></tr></table><?php elseif (!empty($PDF_MODE)): ?><div class="qrbox"><?= clara_qr_img($skpVerifyUrl, 18) ?></div><?php else: ?><div class="qrbox" data-qr="<?= $h($skpVerifyUrl) ?>"></div><?php endif; ?><div class="qrhint">Scan untuk validasi</div><?php endif; ?></div>

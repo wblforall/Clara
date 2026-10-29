@@ -301,7 +301,12 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
 <?php
     /* Nilai yang boleh disebut kalimat baku template, supaya bullet seperti
        "Masa sewa {hari} hari" tidak perlu diketik ulang tiap surat. */
-    $picNama = (string) ($o['pic_name'] ?: '');
+    // Surat resmi menyebut orang dengan nama lengkapnya (master_pic.full_name).
+    // Nama pendek tetap jadi kunci data di dalam aplikasi — yang diganti hanya
+    // yang tercetak. Belum diisi → tetap nama pendeknya, seperti sebelumnya.
+    $picNama = (isset($pdo) && $pdo instanceof PDO && function_exists('clara_nama_lengkap'))
+        ? clara_nama_lengkap($pdo, (string) ($o['pic_name'] ?? ''), (int) ($o['property_id'] ?? 0))
+        : (string) ($o['pic_name'] ?: '');
     $picWa   = function_exists('offer_telp_rapi') ? offer_telp_rapi($o['pic_phone'] ?? '') : (string) ($o['pic_phone'] ?? '');
     $amtsAwal = ['dp' => $o['dp_amount'] ?: 0, 'deposit' => $deposit, 'total' => $dasarPpn, 'ppn' => $ppn, 'grand' => $grand];
     $isiKet = [
@@ -660,7 +665,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             <strong>Nomor Rekening <?= $h($BANK['rekening']) ?></strong>
         </div>
         <p style="margin:7px 0 0">Bukti pembayaran di email ke <strong><?= $h($o['pic_email'] ?: '-') ?></strong>
-           atau whatsapp ke <strong><?= $h(mb_strtoupper((string) ($o['pic_name'] ?? ''), 'UTF-8')) ?></strong>
+           atau whatsapp ke <strong><?= $h(mb_strtoupper($picNama, 'UTF-8')) ?></strong>
            di nomor <strong><?= $h($payWa) ?></strong>.</p>
         <?php else: ?>
         <div class="rek">
@@ -711,7 +716,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                     <?php endif; ?>
                 <?php endif; ?>
             </div>
-            <div class="nm"<?= $hasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($o['pic_name'] ?: '-') ?><br><span class="muted" style="font-weight:400"><?= $h(trim((string) ($o['pic_role'] ?? '')) !== '' ? $o['pic_role'] : 'Sales ' . $propShort) ?></span></div>
+            <div class="nm"<?= $hasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($picNama ?: '-') ?><br><span class="muted" style="font-weight:400"><?= $h(trim((string) ($o['pic_role'] ?? '')) !== '' ? $o['pic_role'] : 'Sales ' . $propShort) ?></span></div>
         </td>
         <td class="col">
             <div>Menyetujui,</div>
