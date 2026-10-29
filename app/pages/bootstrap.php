@@ -117,6 +117,93 @@ function _mobile_active_tab(string $route): string
     return '';
 }
 
+/**
+ * Ikon menu samping (garis, 24×24, mengikuti warna teks). Satu tempat untuk
+ * semua ikon supaya menu baru cukup menambah satu baris di sini.
+ */
+function _nav_ikon(string $key): string
+{
+    $r = strtok($key, '&');
+    parse_str((string) parse_url('?' . $key, PHP_URL_QUERY), $q);
+    $k = $r . (isset($q['module']) ? ':' . $q['module'] : '') . (isset($q['type']) ? ':' . $q['type'] : '');
+    $p = [
+        'dashboard'          => '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
+        'exec_dashboard'     => '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
+        'trend'              => '<path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/>',
+        'performance'        => '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+        'unit_analysis'      => '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>',
+        'comparison'         => '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/>',
+        'offers'             => '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+        'skp:cl'             => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+        'skp:gudang'         => '<path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35a2 2 0 0 1 1.26-1.85l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z"/><path d="M6 18h12"/><path d="M6 14h12"/>',
+        'skp:media'          => '<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>',
+        'prospects'          => '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/>',
+        'contract_requests'  => '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+        'deletion_request'   => '<path d="M3 6h18"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>',
+        'transactions:cl'    => '<path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M2 7h20"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/>',
+        'transactions:media' => '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>',
+        'transactions:gudang'=> '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05"/><path d="M12 22.08V12"/>',
+        'payments'           => '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>',
+        'master:cl'          => '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+        'master:cl_unit_type'=> '<path d="M12 2H2v10l9.29 9.29a1 1 0 0 0 1.41 0l8.59-8.59a1 1 0 0 0 0-1.41Z"/><circle cx="7" cy="7" r="1.5"/>',
+        'offer_templates'    => '<rect x="3" y="3" width="18" height="7" rx="1"/><rect x="3" y="14" width="9" height="7" rx="1"/><rect x="16" y="14" width="5" height="7" rx="1"/>',
+        'master:media'       => '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/>',
+        'master:gudang'      => '<rect x="3" y="8" width="18" height="13" rx="1"/><path d="M3 8l2-5h14l2 5"/><path d="M10 12h4"/>',
+        'master:pic'         => '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+        'master:target'      => '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/>',
+        'master:holiday'     => '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+        'clients'            => '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01"/>',
+        'master_referrer'    => '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+        'calendar'           => '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>',
+        'daily_occupancy'    => '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
+        'renewals'           => '<path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+        'client_analysis'    => '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>',
+        'pic_report'         => '<path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="5"/><rect x="12" y="8" width="3" height="9"/><rect x="17" y="5" width="3" height="12"/>',
+        'pic_performance'    => '<circle cx="12" cy="8" r="6"/><path d="M15.48 12.89 17 22l-5-3-5 3 1.52-9.11"/>',
+        'pic_pipeline'       => '<path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>',
+        'pic_reward'         => '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
+        'commission_sim'     => '<path d="M19 5 5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+        'recurring_candidates'=> '<path d="m17 1 4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="m7 23-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
+        'lookup_manage'      => '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+        'users'              => '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+        'roles'              => '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+        'approval_flow'      => '<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+        'audit'              => '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+        'deleted_transactions'=> '<rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+        'my_signature'       => '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+        'my_paraf'           => '<path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+        '_logout'            => '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
+        '_hp'                => '<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/>',
+        '_ciut'              => '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>',
+        '_turun'             => '<path d="m6 9 6 6 6-6"/>',
+        '_tambah'            => '<circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/>',
+    ];
+    $d = $p[$k] ?? $p[$r] ?? '<circle cx="12" cy="12" r="3"/>';
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . $d . '</svg>';
+}
+
+/**
+ * Pintasan "buat baru" untuk tombol (+) di menu samping: [rute, izin, label].
+ * Hanya menu yang memang punya halaman buat-baru; SKP Exhibition sengaja tidak,
+ * karena SKP-nya lahir dari Surat Penawaran.
+ */
+function _nav_tambah(string $key): ?array
+{
+    return [
+        'offers'                    => ['offer_form', 'manage_offers', 'Surat Penawaran baru'],
+        'skp&module=gudang'         => ['skp_pick&module=gudang', 'manage_skp', 'SKS Gudang baru'],
+        'skp&module=media'          => ['skp_pick&module=media', 'manage_skp', 'Form Utilities baru'],
+        'prospects'                 => ['prospect_form', 'view_transactions', 'Prospek baru'],
+        'contract_requests'         => ['contract_request_form', 'manage_skp', 'Permintaan kontrak baru'],
+        'transactions&module=cl'    => ['transaction_form&module=cl', 'manage_transactions', 'Transaksi Exhibition baru'],
+        'transactions&module=media' => ['transaction_form&module=media', 'manage_transactions', 'Transaksi Media baru'],
+        'transactions&module=gudang'=> ['transaction_form&module=gudang', 'manage_transactions', 'Transaksi Gudang baru'],
+        'clients'                   => ['client_form', 'manage_master', 'Client baru'],
+        'offer_templates'           => ['offer_template_form', 'manage_master', 'Template baru'],
+        'users'                     => ['user_form', 'manage_users', 'User baru'],
+    ][$key] ?? null;
+}
+
 function layout(string $title, callable $body, array $opts = []): void
 {
     global $route, $config, $pdo;
@@ -185,7 +272,7 @@ function layout(string $title, callable $body, array $opts = []): void
     $currentPid   = current_property_id();
     ?>
     <!doctype html>
-    <html lang="id">
+    <html lang="id"<?= (($_COOKIE['clara_sb'] ?? '') === 'mini') ? ' class="sb-mini"' : '' ?>>
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -400,18 +487,21 @@ function layout(string $title, callable $body, array $opts = []): void
     <div class="app">
         <aside class="sidebar" id="sidebar">
             <div class="brand">
-                <img class="brand-logo" src="assets/clara-logo.png" alt="CLARA" onerror="this.hidden=true;this.nextElementSibling.style.display='flex'">
-                <div style="display:none;align-items:center;gap:10px">
-                    <div class="brand-icon">CL</div>
-                    <div class="brand-text"><?= h($appName) ?><small>Casual Leasing Achievement<br>& Revenue Analytics</small></div>
-                </div>
+                <img class="brand-logo" src="assets/clara-logo.png" alt="CLARA">
+                <img class="brand-mini" src="assets/icon-192.png" alt="CLARA">
             </div>
             <nav class="nav">
                 <?php
-                $_adminRoutes = ['lookup_manage','users','user_form','roles','approval_flow','audit','deleted_transactions'];
-                $_adminOpen   = in_array($route, $_adminRoutes);
-                $_inAdmin     = false;
-                foreach ($nav as [$group, $key, $label, $permission]):
+                // Kelompok yang dilipat diingat di cookie supaya server langsung
+                // merender keadaan yang sama — tanpa kedipan saat halaman dimuat.
+                // Admin terlipat sebagai bawaan; kelompok berisi halaman aktif selalu terbuka.
+                $_navState = [];
+                foreach (explode(',', (string) ($_COOKIE['clara_nav'] ?? '')) as $_kv) {
+                    if (preg_match('/^([a-z_]+)=([01])$/', $_kv, $_m)) $_navState[$_m[1]] = $_m[2] === '1';
+                }
+                $_groups = []; $_g = -1;
+                foreach ($nav as [$group, $key, $label, $permission]) {
+                    if ($group !== '' || $_g < 0) $_groups[++$_g] = ['label' => $group, 'items' => [], 'active' => false];
                     if (!can($permission)) continue;
                     parse_str('r=' . $key, $_kp);
                     $_active = ($route === ($_kp['r'] ?? ''));
@@ -421,57 +511,99 @@ function layout(string $title, callable $body, array $opts = []): void
                             if (getv($_pk) !== $_pv) { $_active = false; break; }
                         }
                     }
-                    if ($group === 'Admin' && !$_inAdmin) {
-                        $_inAdmin = true; ?>
-                        <button type="button" class="nav-admin-btn <?= $_adminOpen ? 'open' : '' ?>"
-                            onclick="var p=this.nextElementSibling;p.classList.toggle('open');this.classList.toggle('open')">
-                            Admin <span class="nav-admin-arr">▾</span>
-                        </button>
-                        <div class="nav-admin-panel <?= $_adminOpen ? 'open' : '' ?>">
-                    <?php } elseif ($group !== '' && $group !== 'Admin') {
-                        echo '<div class="nav-label">' . h($group) . '</div>';
-                    } ?>
-                    <?php $_bdg = (int) ($navBadge[$_kp['r'] ?? ''] ?? 0); ?>
-                    <a class="<?= $_active ? 'active' : '' ?>" href="?r=<?= h($key) ?>"><?= h($label) ?><?php
-                        if ($_bdg > 0): ?><span style="display:inline-block;min-width:17px;margin-left:6px;padding:0 5px;background:#dc2626;color:#fff;border-radius:9px;font-size:10px;font-weight:800;text-align:center;line-height:17px" title="<?= (int) $_bdg ?> pengajuan menunggu keputusan Anda"><?= (int) $_bdg ?></span><?php endif; ?></a>
+                    $_add = _nav_tambah($key);
+                    if ($_add && !can($_add[1])) $_add = null;
+                    $_groups[$_g]['items'][] = [$key, $label, $_active, (int) ($navBadge[$_kp['r'] ?? ''] ?? 0), $_add];
+                    if ($_active) $_groups[$_g]['active'] = true;
+                }
+                foreach ($_groups as $_grp):
+                    if (!$_grp['items']) continue;
+                    $_slug = strtolower(preg_replace('/[^a-z]+/i', '_', $_grp['label']));
+                    $_open = $_grp['active'] || ($_navState[$_slug] ?? ($_slug !== 'admin'));
+                ?>
+                <div class="nav-group<?= $_open ? '' : ' tutup' ?>"<?= $_grp['label'] !== '' ? ' data-grup="' . h($_slug) . '"' : '' ?>>
+                    <?php if ($_grp['label'] !== ''): ?>
+                    <button type="button" class="nav-group-btn" aria-expanded="<?= $_open ? 'true' : 'false' ?>">
+                        <span><?= h($_grp['label']) ?></span><?= _nav_ikon('_turun') ?>
+                    </button>
+                    <?php endif; ?>
+                    <div class="nav-group-isi">
+                    <?php foreach ($_grp['items'] as [$key, $label, $_active, $_bdg, $_add]): ?>
+                        <div class="nav-item">
+                            <a class="<?= $_active ? 'active' : '' ?>" href="?r=<?= h($key) ?>" data-label="<?= h($label) ?>"<?=
+                                $_add ? ' data-add="?r=' . h($_add[0]) . '" data-add-label="' . h($_add[2]) . '"' : '' ?>>
+                                <span class="nav-ico"><?= _nav_ikon($key) ?></span>
+                                <span class="nav-teks"><?= h($label) ?></span>
+                                <?php if ($_bdg > 0): ?><span class="nav-bdg" title="<?= $_bdg ?> pengajuan menunggu keputusan Anda"><?= $_bdg ?></span><?php endif; ?>
+                            </a>
+                            <?php if ($_add): ?>
+                            <a class="nav-add" href="?r=<?= h($_add[0]) ?>" title="<?= h($_add[2]) ?>" aria-label="<?= h($_add[2]) ?>"><?= _nav_ikon('_tambah') ?></a>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                    </div>
+                </div>
                 <?php endforeach; ?>
-                <?php if ($_inAdmin): ?></div><?php endif; ?>
                 <div class="nav-logout">
                     <?php if (is_mobile_device()): ?>
-                    <a href="?view=mobile">📱 Tampilan HP</a>
+                    <div class="nav-item"><a href="?view=mobile" data-label="Tampilan HP"><span class="nav-ico"><?= _nav_ikon('_hp') ?></span><span class="nav-teks">Tampilan HP</span></a></div>
                     <?php endif; ?>
-                    <a href="?r=logout">↩ Logout</a>
+                    <div class="nav-item"><a href="?r=logout" class="nav-keluar" data-label="Logout"><span class="nav-ico"><?= _nav_ikon('_logout') ?></span><span class="nav-teks">Logout</span></a></div>
                 </div>
             </nav>
-            <div style="padding:10px 16px 14px;border-top:1px solid #1A2D40;margin-top:2px">
-                <div style="font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#2E4A63;margin-bottom:3px">CLARA &middot; v<?= h($config['app_version'] ?? '1.0') ?></div>
-                <div style="font-size:9.5px;color:#3A5570;line-height:1.5">&copy; 2026 IT Dept. PT. Wulandari Bangun Laksana Tbk.</div>
+            <div class="nav-kaki">
+                <div class="nav-versi">
+                    <div>CLARA &middot; v<?= h($config['app_version'] ?? '1.0') ?></div>
+                    <small>&copy; 2026 IT Dept. PT. Wulandari Bangun Laksana Tbk.</small>
+                </div>
+                <button type="button" class="nav-ciut" id="nav-ciut" title="Ciutkan / lebarkan menu" aria-label="Ciutkan atau lebarkan menu"><?= _nav_ikon('_ciut') ?></button>
             </div>
         </aside>
+        <div class="nav-fly" id="nav-fly" role="tooltip"></div>
         <main class="main">
-            <div class="topbar">
-                <div style="display:flex;align-items:center;gap:12px;min-width:0;flex:1">
-                    <button class="hamburger" onclick="openSidebar()" title="Menu">&#9776;</button>
-                    <div style="min-width:0;flex:1">
+            <?php
+            // Keterangan kecil di atas judul = kelompok menu halaman ini (dari menu samping).
+            $_hdrGrup = '';
+            foreach ($_groups as $_grp) if ($_grp['active']) $_hdrGrup = $_grp['label'] !== '' ? $_grp['label'] : 'Ringkasan';
+            if ($_hdrGrup === '') {
+                // Halaman turunan yang tidak ada di menu (formulir, detail) ikut kelompok induknya.
+                foreach (['offer' => 'Input', 'skp' => 'Input', 'contract_request' => 'Input', 'prospect' => 'Input',
+                          'transaction' => 'Input', 'payment' => 'Input', 'deletion' => 'Input', 'allocation' => 'Input',
+                          'master' => 'Master Data', 'client' => 'Master Data', 'lookup' => 'Admin',
+                          'user' => 'Admin', 'role' => 'Admin', 'audit' => 'Admin', 'pic_' => 'Analisa',
+                          'calendar' => 'Analisa', 'unit_analysis' => 'Ringkasan'] as $_pre => $_lbl) {
+                    if (str_starts_with((string) $route, $_pre)) { $_hdrGrup = $_lbl; break; }
+                }
+            }
+            $_uNama = (string) ($_SESSION['user']['name'] ?? 'User');
+            ?>
+            <header class="topbar hdr">
+                <div class="hdr-kiri">
+                    <button class="hamburger" onclick="openSidebar()" title="Menu" aria-label="Buka menu">&#9776;</button>
+                    <div class="hdr-judul">
+                        <div class="hdr-jejak"><?= h($_hdrGrup !== '' ? $_hdrGrup : $appName) ?></div>
                         <h1><?= h($title) ?></h1>
-                        <div class="muted">
-                            Casual Leasing Achievement &amp; Revenue Analytics
-                            &middot; <span style="color:var(--primary);font-weight:700"><?= h($currentProp['name']) ?></span>
-                        </div>
                     </div>
+                </div>
+                <div class="hdr-kanan">
                     <?php if ($isMulti && empty($opts['hide_prop_tabs'])): ?>
-                    <div class="prop-tabs">
-                        <?php foreach ($allowedProps as $ap): ?>
+                    <nav class="prop-tabs hdr-prop" aria-label="Pilih properti">
+                        <?php foreach ($allowedProps as $ap): $_on = (int) $ap['id'] === $currentPid; ?>
                         <a href="?r=switch_property&to=<?= (int)$ap['id'] ?>&back=<?= urlencode('?' . $_SERVER['QUERY_STRING']) ?>"
-                           class="prop-tab <?= ((int)$ap['id'] === $currentPid) ? 'active' : '' ?>">
-                            <?= h($ap['name']) ?>
+                           class="prop-tab<?= $_on ? ' active' : '' ?>"<?= $_on ? ' aria-current="true"' : '' ?>>
+                            <span class="hdr-dot"></span><?= h($ap['name']) ?>
                         </a>
                         <?php endforeach; ?>
-                    </div>
+                    </nav>
+                    <?php else: ?>
+                    <div class="hdr-prop hdr-prop-satu"><span class="prop-tab active"><span class="hdr-dot"></span><?= h($currentProp['name']) ?></span></div>
                     <?php endif; ?>
+                    <div class="hdr-user" title="<?= h($_uNama) ?> · <?= h(roles()[current_role()] ?? current_role()) ?>">
+                        <span class="hdr-avatar"><?= h(mb_strtoupper(mb_substr($_uNama, 0, 1))) ?></span>
+                        <span class="hdr-user-teks"><b><?= h($_uNama) ?></b><small><?= h(roles()[current_role()] ?? current_role()) ?></small></span>
+                    </div>
                 </div>
-                <div class="badge" style="flex-shrink:0"><?= h($_SESSION['user']['name'] ?? 'User') ?> &middot; <?= h(roles()[current_role()] ?? current_role()) ?></div>
-            </div>
+            </header>
             <?php if ($flash): ?><div class="flash"><?= h($flash) ?></div><?php endif; ?>
             <?php $body(); ?>
         </main>
@@ -613,7 +745,56 @@ function layout(string $title, callable $body, array $opts = []): void
     <?php if (!$isMobile): ?>
     function openSidebar(){document.getElementById('sidebar').classList.add('open');document.getElementById('sidebar-overlay').classList.add('active');document.body.style.overflow='hidden';}
     function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebar-overlay').classList.remove('active');document.body.style.overflow='';}
-    (function(){var sb=document.getElementById('sidebar');var ss=sessionStorage.getItem('_sb_scroll');if(ss)sb.scrollTop=parseInt(ss,10);document.querySelectorAll('.nav a').forEach(function(a){a.addEventListener('click',function(){sessionStorage.setItem('_sb_scroll',sb.scrollTop);closeSidebar();});});})();
+    (function(){var sb=document.querySelector('#sidebar .nav')||document.getElementById('sidebar');var ss=sessionStorage.getItem('_sb_scroll');if(ss)sb.scrollTop=parseInt(ss,10);document.querySelectorAll('.nav a').forEach(function(a){a.addEventListener('click',function(){sessionStorage.setItem('_sb_scroll',sb.scrollTop);closeSidebar();});});})();
+    /* Menu samping: ciut/lebar, kelompok terlipat, label melayang saat ciut.
+       Status disimpan di cookie supaya server merender keadaan yang sama. */
+    (function(){
+        var html=document.documentElement, sb=document.getElementById('sidebar'), fly=document.getElementById('nav-fly');
+        if(!sb||!fly)return;
+        function simpan(n,v){document.cookie=n+'='+v+';path=/;max-age=31536000;samesite=lax';}
+        function mini(){return html.classList.contains('sb-mini')&&window.matchMedia('(min-width: 769px)').matches;}
+        document.getElementById('nav-ciut').addEventListener('click',function(){
+            html.classList.toggle('sb-mini'); simpan('clara_sb',html.classList.contains('sb-mini')?'mini':'wide'); sembunyi();
+        });
+        sb.querySelectorAll('.nav-group-btn').forEach(function(b){
+            b.addEventListener('click',function(){
+                var g=b.parentElement; g.classList.toggle('tutup');
+                b.setAttribute('aria-expanded',g.classList.contains('tutup')?'false':'true');
+                var st=[]; sb.querySelectorAll('.nav-group[data-grup]').forEach(function(x){st.push(x.dataset.grup+'='+(x.classList.contains('tutup')?0:1));});
+                simpan('clara_nav',st.join(','));
+            });
+        });
+        // Jenis penunjuk terakhir (mouse/touch/pen) — lebih andal daripada
+        // media query (hover) yang keliru di sebagian perangkat hibrida.
+        var tunda=null, aktif=null, penunjuk='mouse';
+        document.addEventListener('pointerdown',function(e){penunjuk=e.pointerType||'mouse';},true);
+        function sembunyi(){fly.classList.remove('show'); aktif=null;}
+        function tampil(a){
+            clearTimeout(tunda); aktif=a;
+            var esc=function(t){var d=document.createElement('div');d.textContent=t;return d.innerHTML;};
+            fly.innerHTML='<a class="nav-fly-lbl" href="'+a.getAttribute('href')+'">'+esc(a.dataset.label||'')+'</a>'
+                +(a.dataset.add?'<a class="nav-fly-add" href="'+a.dataset.add+'" title="'+esc(a.dataset.addLabel||'Baru')+'">'+document.querySelector('.nav-add svg').outerHTML+'</a>':'');
+            var r=a.getBoundingClientRect(), sr=sb.getBoundingClientRect();
+            fly.style.left=(sr.right+10)+'px';
+            fly.classList.add('show');
+            fly.style.top=Math.max(8,r.top+r.height/2-fly.offsetHeight/2)+'px';
+        }
+        sb.querySelectorAll('.nav-item > a:first-child').forEach(function(a){
+            a.addEventListener('pointerenter',function(e){ if(mini()&&e.pointerType==='mouse') tampil(a); });
+            a.addEventListener('pointerleave',function(e){ if(mini()&&e.pointerType==='mouse') tunda=setTimeout(sembunyi,160); });
+            a.addEventListener('click',function(e){
+                // Layar sentuh tidak punya "arahkan kursor": ketukan pertama menampilkan label, ketukan kedua membuka.
+                if(mini()&&penunjuk!=='mouse'&&aktif!==a){ e.preventDefault(); e.stopImmediatePropagation(); tampil(a); }
+            });
+        });
+        fly.addEventListener('pointerenter',function(){clearTimeout(tunda);});
+        fly.addEventListener('pointerleave',function(e){ if(e.pointerType==='mouse') tunda=setTimeout(sembunyi,160); });
+        (sb.querySelector('.nav')||sb).addEventListener('scroll',sembunyi);
+        // Menu aktif yang berada di luar layar (dibuka lewat tautan, bukan klik menu) digulir ke tempat terlihat.
+        var nv=sb.querySelector('.nav'), ak=sb.querySelector('.nav-item > a.active');
+        if(nv&&ak){var r=ak.getBoundingClientRect(), n=nv.getBoundingClientRect(); if(r.top<n.top||r.bottom>n.bottom) nv.scrollTop+=r.top-n.top-n.height/2+r.height/2;}
+        document.addEventListener('click',function(e){ if(fly.classList.contains('show')&&!fly.contains(e.target)&&!sb.contains(e.target)) sembunyi(); });
+    })();
     <?php endif; ?>
     (function(){
         var timeout=<?= SESSION_TIMEOUT ?>,warnBefore=120,warnAt=(timeout-warnBefore)*1000,logoutAt=timeout*1000;

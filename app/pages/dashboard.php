@@ -172,7 +172,7 @@ function dashboard(PDO $pdo): void
         $gi       = 0;
         ?>
         <style>
-            #period-form { position:sticky;top:0;z-index:50;background:var(--bg,#f8fafc);box-shadow:0 1px 0 var(--line,#e2e8f0); }
+            #period-form { position:sticky;top:12px;z-index:50;background:#fff;box-shadow:0 10px 30px rgba(15,22,35,.08); }
             .kpi-good .kpi-value { color:#16a34a; }
             .kpi-warn .kpi-value { color:#d97706; }
             .kpi-bad  .kpi-value { color:#dc2626; }

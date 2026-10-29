@@ -391,29 +391,35 @@ function performance_page(PDO $pdo): void
         <style>.perf-t td,.perf-t th{white-space:nowrap}.perf-t{letter-spacing:-.01em}.perf-t td{padding:7px 2px;font-size:10px}.perf-t th{padding:7px 2px;font-size:9px}.perf-t th.r{text-align:right}.perf-t td:first-child,.perf-t th:first-child{white-space:normal;min-width:60px;max-width:64px;padding-left:8px}</style>
         <form method="get" class="toolbar" style="margin-bottom:20px">
             <input type="hidden" name="r" value="performance">
-            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                <label style="margin:0;font-size:13px;color:var(--muted)">Tahun</label>
-                <select name="year" onchange="this.form.submit()" style="width:auto">
+            <div class="fld">
+                <label for="pf-year">Tahun</label>
+                <select id="pf-year" name="year" onchange="this.form.submit()" style="width:auto;min-width:96px">
                     <?php foreach ($years as $yr): ?>
                         <option value="<?= h($yr) ?>" <?= $yr === $year ? 'selected' : '' ?>><?= h($yr) ?></option>
                     <?php endforeach; ?>
                 </select>
-                <label style="margin:0 0 0 8px;font-size:13px;color:var(--muted)">Properti</label>
-                <select name="scope" onchange="this.form.submit()" style="width:auto">
+            </div>
+            <div class="fld">
+                <label for="pf-scope">Properti</label>
+                <select id="pf-scope" name="scope" onchange="this.form.submit()" style="width:auto;min-width:220px">
                     <option value="all" <?= $scope === 'all' ? 'selected' : '' ?>>Gabungan</option>
                     <?php foreach ($props as $p): ?>
                         <option value="<?= (int) $p['id'] ?>" <?= (string) $p['id'] === $scope ? 'selected' : '' ?>><?= h($p['name']) ?></option>
                     <?php endforeach; ?>
                 </select>
-                <label style="margin:0 0 0 8px;font-size:13px;color:var(--muted)">Asumsi perpanjangan</label>
-                <input type="number" name="renew" min="0" max="100" step="1" style="width:84px"
-                       value="<?= h((string) round($renew['dipakai'] * 100)) ?>" onchange="this.form.submit()">
-                <span style="font-size:13px;color:var(--muted)">%</span>
-                <?php if (can('export_reports')): ?>
-                    <a class="btn light" target="_blank" style="margin-left:auto;background:#f1f5f9;color:var(--ink2);border:1px solid var(--line);text-decoration:none"
-                       href="?r=print_performance&year=<?= h($year) ?>&scope=<?= h($scope) ?><?= $renew['ubah'] ? '&renew=' . (int) round($renew['dipakai'] * 100) : '' ?>">🖨 Print / PDF</a>
-                <?php endif; ?>
             </div>
+            <div class="fld">
+                <label for="pf-renew">Asumsi perpanjangan</label>
+                <div class="isi-akhiran" style="width:110px">
+                    <input id="pf-renew" type="number" name="renew" min="0" max="100" step="1"
+                           value="<?= h((string) round($renew['dipakai'] * 100)) ?>" onchange="this.form.submit()">
+                    <span>%</span>
+                </div>
+            </div>
+            <?php if (can('export_reports')): ?>
+                <a class="btn light" target="_blank" style="margin-left:auto"
+                   href="?r=print_performance&year=<?= h($year) ?>&scope=<?= h($scope) ?><?= $renew['ubah'] ? '&renew=' . (int) round($renew['dipakai'] * 100) : '' ?>">🖨 Print / PDF</a>
+            <?php endif; ?>
         </form>
 
         <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:20px">

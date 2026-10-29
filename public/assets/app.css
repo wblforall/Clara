@@ -1086,3 +1086,218 @@ div[style*="height:10px"] > div {
     .app a.card:hover, .app a.panel:hover, .app .card[onclick]:hover, .app .panel[onclick]:hover,
     .app .btn:hover { transform: none !important; }
 }
+
+/* =====================================================================
+   MENU SAMPING — panel mengambang, ikon, kelompok terlipat, mode ciut.
+   Lebar & keadaan dibaca dari cookie oleh server (kelas html.sb-mini dan
+   .nav-group.tutup), jadi tidak ada kedipan saat halaman dimuat. Mode ciut
+   hanya berlaku di desktop; di ≤768px menu tetap laci geser seperti biasa.
+   ===================================================================== */
+.app { --sb-w: 260px; grid-template-columns: var(--sb-w) 1fr; transition: grid-template-columns .25s var(--ease); }
+@media (max-width: 1100px) { .app { --sb-w: 220px; } }
+@media (max-width: 768px) { .app { grid-template-columns: 1fr; } }  /* layar kecil: menu jadi laci geser, bukan kolom */
+
+.app .sidebar { overflow-x: hidden; padding: 18px 10px 10px; }
+.brand-mini { display: none; width: 40px; height: 40px; border-radius: 12px; }
+
+.app .nav { display: flex; flex-direction: column; gap: 1px; flex: 1 0 auto; }
+.nav-group + .nav-group { border-top: 1px solid rgba(148,163,184,.09); margin-top: 6px; }
+.nav-group-btn {
+    display: flex; justify-content: space-between; align-items: center;
+    width: 100%; background: none; border: 0; cursor: pointer;
+    padding: 12px 10px 5px;
+    font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: #4A6681; transition: color .15s;
+}
+.nav-group-btn:hover { color: #8FB0CC; }
+.nav-group-btn svg { width: 14px; height: 14px; transition: transform .2s var(--ease); }
+.nav-group.tutup .nav-group-btn svg { transform: rotate(-90deg); }
+.nav-group.tutup .nav-group-isi { display: none; }
+
+.nav-item { position: relative; }
+.app .nav .nav-item > a:first-child { gap: 10px; padding: 8px 10px; }
+.nav-ico { width: 18px; height: 18px; flex-shrink: 0; display: grid; place-items: center; }
+.nav-ico svg { width: 18px; height: 18px; }
+.nav-teks { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-bdg {
+    min-width: 17px; padding: 0 5px; background: #dc2626; color: #fff; border-radius: 9px;
+    font-size: 10px; font-weight: 800; text-align: center; line-height: 17px; flex-shrink: 0;
+}
+.app .nav a.nav-add {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    width: 26px; height: 26px; padding: 0; display: grid; place-items: center;
+    border: 0; border-radius: 50%; background: transparent; color: #5EEAD4;
+    opacity: 0; transition: opacity .15s, background-color .15s;
+}
+.app .nav a.nav-add::before { display: none; }
+.app .nav a.nav-add svg { width: 18px; height: 18px; }
+.nav-item:hover a.nav-add, .app .nav a.nav-add:focus-visible { opacity: 1; }
+.app .nav a.nav-add:hover { background: rgba(94,234,212,.14); box-shadow: none; }
+.nav-item:has(.nav-add):hover > a:first-child { padding-right: 36px; }
+
+.nav-logout { margin-top: auto; }
+.nav-keluar:hover { color: #FCA5A5 !important; background: rgba(239,68,68,.08) !important; }
+.nav-kaki {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 4px 0; margin-top: 6px; border-top: 1px solid #1A2D40; flex-shrink: 0;
+}
+.nav-versi { flex: 1; min-width: 0; font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #2E4A63; }
+.nav-versi small { display: block; font-size: 9.5px; font-weight: 400; letter-spacing: 0; text-transform: none; color: #3A5570; line-height: 1.5; }
+.nav-ciut {
+    width: 34px; height: 34px; flex-shrink: 0; display: grid; place-items: center;
+    border: 0; border-radius: 10px; background: rgba(148,163,184,.08); color: #7A9AB8; cursor: pointer;
+    transition: background-color .15s, color .15s;
+}
+.nav-ciut:hover { background: rgba(94,234,212,.14); color: #5EEAD4; }
+.nav-ciut svg { width: 18px; height: 18px; }
+
+/* label melayang untuk mode ciut — di luar sidebar supaya tidak terpotong gulirannya */
+.nav-fly {
+    position: fixed; z-index: 200; display: none; align-items: center; gap: 4px;
+    padding: 4px 6px 4px 14px; background: #0F1623; border: 1px solid rgba(94,234,212,.2);
+    border-radius: 12px; box-shadow: 0 10px 28px rgba(15,22,35,.3); white-space: nowrap;
+}
+.nav-fly.show { display: flex; }
+.nav-fly-lbl { color: #E2E8F0; font-weight: 600; font-size: 13px; padding: 6px 8px 6px 0; }
+.nav-fly-lbl:hover { color: #5EEAD4; }
+.nav-fly-add { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; color: #5EEAD4; }
+.nav-fly-add:hover { background: rgba(94,234,212,.14); }
+.nav-fly-add svg { width: 18px; height: 18px; }
+
+@media (min-width: 769px) {
+    .app .sidebar {
+        margin: 12px 0 12px 12px; height: calc(100vh - 24px); top: 12px;
+        border-radius: 20px; box-shadow: 0 10px 30px rgba(15,22,35,.16);
+    }
+    html.sb-mini .app { --sb-w: 88px; }
+    html.sb-mini .brand { padding: 2px 0 12px; }
+    html.sb-mini .brand-logo, html.sb-mini .nav-teks, html.sb-mini .nav-versi,
+    html.sb-mini .nav-group-btn, html.sb-mini .app .nav a.nav-add { display: none; }
+    html.sb-mini .brand-mini { display: block; }
+    html.sb-mini .nav-group.tutup .nav-group-isi { display: block; }
+    html.sb-mini .nav-group + .nav-group { padding-top: 6px; }
+    html.sb-mini .app .nav .nav-item > a:first-child { justify-content: center; padding: 10px 0; }
+    html.sb-mini .nav-bdg { position: absolute; top: 2px; right: 10px; min-width: 15px; line-height: 15px; font-size: 9px; padding: 0 4px; }
+    html.sb-mini .nav-kaki { justify-content: center; padding: 10px 0 0; }
+}
+@media (max-width: 768px) { .nav-ciut { display: none; } }
+/* tombol menu samping tidak memakai gaya tombol aksi global (gradien + bayangan) */
+.nav-group-btn, .nav-group-btn:hover, .nav-ciut, .nav-ciut:hover { box-shadow: none; opacity: 1; font-family: inherit; }
+.nav-group-btn { border-radius: 6px; }
+/* hanya daftar menu yang bergulir; logo dan tombol ciut tetap di tempat */
+.app .sidebar { overflow: hidden; }
+.app .nav { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: rgba(148,163,184,.18) transparent; margin-right: -4px; padding-right: 4px; }
+.app .nav::-webkit-scrollbar { width: 6px; }
+.app .nav::-webkit-scrollbar-thumb { background: rgba(148,163,184,.18); border-radius: 99px; }
+
+/* =====================================================================
+   HEADER — kartu putih membulat yang sejajar dengan menu samping.
+   Pemilih properti dan kotak pengguna setinggi dan sebentuk, supaya tidak
+   ada lagi tiga gaya kapsul yang berbeda di satu baris.
+   ===================================================================== */
+@media (min-width: 769px) { .app .main { padding-top: 12px; } }
+.app .topbar.hdr {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+    gap: 12px 16px; margin-bottom: 20px; padding: 12px 12px 12px 22px;
+    background: #fff; border: 1px solid var(--line); border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(15,22,35,.06);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.hdr-kiri { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 260px; }
+.hdr-judul { min-width: 0; }
+.hdr-jejak {
+    font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--primary); margin-bottom: 2px;
+}
+.app .topbar.hdr h1 { font-size: 21px; line-height: 1.2; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hdr-kanan { display: flex; align-items: center; gap: 10px; margin-left: auto; min-width: 0; }
+
+.app .hdr-prop {
+    display: flex; align-items: center; gap: 2px; padding: 4px;
+    background: #F1F5F9; border: 1px solid var(--line); border-radius: 13px;
+    overflow-x: auto; scrollbar-width: none; max-width: 100%;
+}
+.app .hdr-prop::-webkit-scrollbar { display: none; }
+.app .hdr-prop .prop-tab {
+    display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
+    padding: 7px 13px; border: 0; border-radius: 10px; background: transparent;
+    font-size: 12.5px; font-weight: 600; color: var(--muted); white-space: nowrap;
+    transition: background-color .15s, color .15s, box-shadow .15s;
+}
+.app .hdr-prop .prop-tab:hover:not(.active) { background: rgba(255,255,255,.6); color: var(--ink); }
+.app .hdr-prop .prop-tab.active {
+    background: #fff; color: var(--primary-dark);
+    box-shadow: 0 1px 3px rgba(16,24,40,.1), 0 0 0 1px rgba(13,148,136,.14);
+}
+.hdr-dot { width: 7px; height: 7px; border-radius: 50%; background: #CBD5E1; flex-shrink: 0; }
+.prop-tab.active .hdr-dot { background: var(--primary); box-shadow: 0 0 0 3px rgba(13,148,136,.16); }
+.app .hdr-prop-satu .prop-tab { cursor: default; }
+
+.hdr-user {
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    padding: 4px 14px 4px 4px; background: #fff;
+    border: 1px solid var(--line); border-radius: 13px;
+}
+.hdr-avatar {
+    width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center;
+    background: linear-gradient(135deg, #0F766E, #0D9488 55%, #0891B2);
+    color: #fff; font-weight: 800; font-size: 13px;
+}
+.hdr-user-teks { display: flex; flex-direction: column; line-height: 1.25; }
+.hdr-user-teks b { font-size: 12.5px; color: var(--ink); font-weight: 700; }
+.hdr-user-teks small { font-size: 11px; color: var(--muted); }
+.app .topbar.hdr .hamburger { width: 38px; height: 38px; border-radius: 11px; box-shadow: none; }
+
+@media (max-width: 1100px) { .hdr-user-teks { display: none; } .hdr-user { padding-right: 4px; } }
+@media (max-width: 768px) {
+    .app .topbar.hdr { padding: 10px 12px; border-radius: 16px; margin-bottom: 14px; }
+    .app .topbar.hdr h1 { font-size: 18px; white-space: normal; }
+    .hdr-kanan { width: 100%; }
+    .app .hdr-prop { flex: 1; }
+}
+
+/* =====================================================================
+   DROPDOWN — satu bentuk untuk semua <select>: panah sendiri (bukan bawaan
+   peramban yang berbeda tiap OS), ruang kanan untuk panahnya, kursor tangan.
+   ===================================================================== */
+select:not([multiple]):not([size]) {
+    -webkit-appearance: none; -moz-appearance: none; appearance: none;
+    background-color: #fff;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 11px center; background-size: 16px;
+    padding-right: 34px; cursor: pointer; text-overflow: ellipsis;
+}
+select:not([multiple]):not([size]):hover:not(:disabled) { border-color: #B8C4D3; }
+select:not([multiple]):not([size]):focus {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%230D9488' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+select:disabled { cursor: not-allowed; background-color: #F8FAFC; color: var(--muted); }
+select option { color: var(--ink); }
+/* dropdown tidak "melompat" 1px saat dibuka — menggeser isian di sebelahnya */
+select:focus { transform: none; }
+
+/* isian dengan label di atas, dan isian berakhiran (mis. %) */
+.fld { display: flex; flex-direction: column; min-width: 0; }
+.isi-akhiran { position: relative; }
+.isi-akhiran input { padding-right: 30px; }
+.isi-akhiran span { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 13px; font-weight: 600; pointer-events: none; }
+
+/* =====================================================================
+   BARIS SARINGAN — form.toolbar jadi kartu putih senada dengan header;
+   label kecil seragam, semua isian & tombol setinggi 40px.
+   ===================================================================== */
+.app form.toolbar {
+    background: #fff; border: 1px solid var(--line); border-radius: 16px;
+    padding: 12px 16px; gap: 12px; align-items: flex-end;
+    box-shadow: 0 1px 3px rgba(16,24,40,.04);
+}
+.app form.toolbar label {
+    font-size: 11px !important; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted) !important; margin-bottom: 5px;
+}
+.app form.toolbar select,
+.app form.toolbar input:not([type=checkbox]):not([type=radio]):not([type=hidden]),
+.app form.toolbar .btn, .app form.toolbar button { height: 40px; }
+.app form.toolbar .btn, .app form.toolbar button { padding-top: 0; padding-bottom: 0; }
+.app form.toolbar .btn.light { background: #F1F5F9; color: var(--ink2); border: 1px solid var(--line); }
+.app form.toolbar .btn.light:hover { background: #E2E8F0; }
