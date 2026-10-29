@@ -98,7 +98,8 @@ function renderSpreadTable() {
             : '<td></td>';
         rows += '<tr data-row="'+m.key+'">'
               + '<td data-sel="label" style="padding:3px 8px 3px 0;color:#374151;white-space:nowrap">'+m.label+badge+rst+'</td>'
-              + '<td style="padding:3px 0;text-align:right"><input type="text" inputmode="numeric" data-period="'+m.key+'" value="'+amt.toLocaleString('id-ID')+'" '
+              + '<td style="padding:3px 0;text-align:right"><input type="text" inputmode="numeric" data-period="'+m.key+'" '
+              + 'data-asal="'+amt.toLocaleString('id-ID')+'" value="'+amt.toLocaleString('id-ID')+'" '
               + 'style="text-align:right;width:140px;font-size:13px;'+ibg+'" '
               + 'onchange="setSpreadOvr(\''+m.key+'\',this.value)" oninput="fmtSpreadInp(this)"></td>'
               + diffCell.replace('<td', '<td data-sel="diff"')
@@ -147,6 +148,7 @@ function clearSpreadOvr(k) {
     if (inp) {
         var amts = spreadAmounts(spreadBaseTotal, spreadMonths(spreadBaseStart, spreadBaseEnd, spreadBasePricing, spreadBaseCycle));
         inp.value = (amts[k] || 0).toLocaleString('id-ID');
+        inp.setAttribute('data-asal', inp.value);   // kembali jadi angka otomatis
     }
     segarkanSpread();
 }
@@ -200,15 +202,28 @@ function segarkanSpread() {
     syncOvrInputs();
 }
 
+/* Hanya bulan yang nominalnya BERBEDA dari pembagian otomatis yang dianggap
+   "ditentukan sendiri". Dulu setiap kotak yang terbaca ikut dicatat sebagai
+   nilai khusus — jadi menyimpan formulir sekali saja sudah memaku SELURUH
+   bulan, dan aturan bulan pengakuan tidak lagi punya satu pun bulan untuk
+   diatur. Tabel yang sedang disembunyikan (pengakuan bukan "dibagi rata")
+   tidak dibaca sama sekali. */
 function flushSpreadInputs() {
     var spreadDiv = document.getElementById('kalkulasi-spread');
     if (!spreadDiv) return;
+    if (spreadDiv.style.display === 'none') { spreadOverrides = {}; return; }
     spreadDiv.querySelectorAll('input[data-period]').forEach(function(inp) {
         var k = inp.getAttribute('data-period');
         var raw = inp.value.trim();
         if (!raw || raw.charAt(0) === '-') return;
         var r = raw.replace(/\D/g,'');
-        if (r) spreadOverrides[k] = parseInt(r, 10);
+        if (!r) return;
+        // Kotak yang isinya masih sama dengan yang dirender tidak pernah
+        // diketik orang — jangan dicatat sebagai nilai khusus. Yang sudah
+        // tercatat (karena diketik, atau memang tersimpan) tetap dipertahankan.
+        var asal = (inp.getAttribute('data-asal') || '').replace(/\D/g,'');
+        if (asal !== '' && asal === r && spreadOverrides[k] === undefined) return;
+        spreadOverrides[k] = parseInt(r, 10);
     });
 }
 

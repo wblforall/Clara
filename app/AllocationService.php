@@ -108,11 +108,32 @@ final class AllocationService
         }
     }
 
-    /** Tulis/ganti nominal bulanan khusus. Nilai kosong menghapus barisnya. */
-    public static function simpanMonthOverrides(PDO $pdo, int $pid, int $transactionId, array $overrides, ?string $oleh = null): void
+    /**
+     * Tulis/ganti nominal bulanan khusus. Nilai kosong menghapus barisnya.
+     *
+     * $ganti = true dipakai jalur FORMULIR: isian di layar menjadi satu-satunya
+     * kebenaran, jadi bulan yang tidak lagi disebut ikut dilepas. Tanpa itu,
+     * mengubah pengakuan dari "dibagi rata" ke "sekaligus" meninggalkan paku
+     * lama di setiap bulan — dan nilainya tetap terbagi rata seolah tidak ada
+     * yang berubah. Tombol per baris di Detail Alokasi memakai $ganti = false,
+     * karena ia memang hanya menyentuh satu bulan.
+     */
+    public static function simpanMonthOverrides(PDO $pdo, int $pid, int $transactionId, array $overrides, ?string $oleh = null, bool $ganti = false): void
     {
         if ($transactionId <= 0) return;
         try {
+            if ($ganti) {
+                $sisa = array_keys($overrides);
+                if ($sisa) {
+                    $tanda = implode(',', array_fill(0, count($sisa), '?'));
+                    $pdo->prepare("DELETE FROM transaction_month_overrides
+                                    WHERE transaction_id = ? AND period_key NOT IN ($tanda)")
+                        ->execute(array_merge([$transactionId], $sisa));
+                } else {
+                    $pdo->prepare('DELETE FROM transaction_month_overrides WHERE transaction_id = ?')
+                        ->execute([$transactionId]);
+                }
+            }
             $hapus = $pdo->prepare('DELETE FROM transaction_month_overrides WHERE transaction_id = ? AND period_key = ?');
             $tulis = $pdo->prepare('INSERT INTO transaction_month_overrides (property_id, transaction_id, period_key, amount, created_by)
                                     VALUES (?,?,?,?,?)
@@ -252,16 +273,17 @@ final class AllocationService
             }
             $recognitionPeriod = $trx['recognition_period'] ?? null;
             if ($recognitionPeriod !== null) {
+                // "Diakui sekaligus": SELURUH nilai jatuh di satu bulan. Nominal
+                // per bulan tidak berlaku di sini — bulan lain memang nol, dan
+                // memakunya hanya membuat pilihan pengakuan seolah tak berfungsi.
+                // Niat yang tersimpan tidak dihapus: ia hidup lagi begitu
+                // pengakuannya dikembalikan ke "dibagi rata".
                 $totalAmount = array_sum(array_column($allocations, 'amount'));
                 foreach ($allocations as &$a) {
                     $a['amount'] = $a['period_key'] === $recognitionPeriod ? $totalAmount : 0;
                 }
                 unset($a);
-            }
-            // Nominal khusus diterapkan PALING AKHIR — sesudah penumpukan ke
-            // bulan pengakuan. Kalau dibalik, angka yang baru saja ditentukan
-            // orang langsung ditimpa kembali oleh aturan bulan pengakuan.
-            if ($monthOverrides) {
+            } elseif ($monthOverrides) {
                 $allocations = self::applyMonthOverrides($allocations, $monthOverrides);
             }
         }
@@ -734,6 +756,18 @@ final class AllocationService
      */
     private static function applyMonthOverrides(array $allocations, array $overrides): array
     {
+        // Nominal yang PERSIS SAMA dengan hasil hitungan otomatis bukan sesuatu
+        // yang ditentukan orang — memakunya hanya mempersempit bulan yang bisa
+        // menyerap selisih, tanpa mengubah apa pun.
+        foreach ($overrides as $pk => $v) {
+            foreach ($allocations as $a) {
+                if ($a['period_key'] === $pk && abs((float) $a['amount'] - (float) $v) <= 1) {
+                    unset($overrides[$pk]);
+                    break;
+                }
+            }
+        }
+        if (!$overrides) return $allocations;
         $total = array_sum(array_column($allocations, 'amount'));
         $bebas = [];
         $terpakai = 0.0;
