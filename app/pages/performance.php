@@ -749,8 +749,9 @@ new Chart(document.getElementById('chartPerf'), {
     },
     options: {
         responsive: true, maintainAspectRatio: false, animation: false,
+        devicePixelRatio: 4,   // canvas beresolusi tinggi supaya tajam di PDF, tidak buram saat diperbesar
         plugins: {
-            legend: { position: 'top', labels: { usePointStyle: true, pointStyleWidth: 8, font: { size: 10 } } },
+            legend: { position: 'top', labels: { usePointStyle: true, boxWidth: 8, boxHeight: 8, font: { size: 10 } } },
             tooltip: { callbacks: { label: c => ' ' + c.dataset.label + ': ' + pFmt(c.raw) } }
         },
         scales: {
