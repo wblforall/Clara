@@ -207,6 +207,13 @@ function _nav_tambah(string $key): ?array
 function layout(string $title, callable $body, array $opts = []): void
 {
     global $route, $config, $pdo;
+    // Halaman HTML dimampatkan dari PHP: LiteSpeed di hosting tidak memampatkan
+    // keluaran dinamis walau .htaccess memintanya, sehingga Kalender (±570 KB)
+    // terkirim utuh. Hanya di sini — unduhan PDF/Excel tidak lewat layout() dan
+    // menulis Content-Length sendiri, jadi tidak tersentuh.
+    if (!headers_sent() && extension_loaded('zlib') && !ini_get('zlib.output_compression')) {
+        ob_start('ob_gzhandler');
+    }
     $appName = $config['app_name'] ?? 'CLARA';
     $flash   = flash();
     $nav     = [
