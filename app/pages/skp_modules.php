@@ -656,6 +656,17 @@ function skp_standalone_src(PDO $pdo, int $pid, string $module, ?array $skp): ar
         'location_name' => '', 'floor' => '', 'unit_area' => 0.0,
     ];
 
+    // Dokumen BARU: Sales/PIC diisi dengan PIC milik yang sedang membuatnya.
+    // Dialah yang namanya tercetak di kolom "Dibuat Oleh", jadi membiarkannya
+    // kosong hanya menghasilkan surat tanpa nama pembuat — dan dokumen Gudang/
+    // Media lama memang banyak yang tersimpan dengan pic_name kosong.
+    // Tetap bisa diganti lewat kotak Sales/PIC di formulir.
+    if (!$skp && $src['pic_name'] === '' && ($uid = (int) ($_SESSION['user']['id'] ?? 0))) {
+        $st = $pdo->prepare("SELECT name FROM master_pic WHERE user_id = ? AND property_id = ? AND status = 'active' LIMIT 1");
+        $st->execute([$uid, $pid]);
+        $src['pic_name'] = (string) ($st->fetchColumn() ?: '');
+    }
+
     if ($src['client_id']) {
         $st = $pdo->prepare('SELECT company_name, brand_name, npwp, ktp AS client_ktp, siup, address, business_type FROM master_clients WHERE id=? LIMIT 1');
         $st->execute([$src['client_id']]);

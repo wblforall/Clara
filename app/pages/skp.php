@@ -2674,6 +2674,15 @@ function _skp_src_dari_post(array $src, bool $standalone): array
         $src['start_date'] = $mulai;
         $src['end_date']   = $selesai;
     }
+    // Sales/PIC ikut yang SEDANG dipilih di formulir (dokumen Gudang & Media
+    // memilikinya sendiri, bukan menurun dari penawaran/transaksi).
+    //
+    // Tanpa ini pratinjau memakai PIC yang TERSIMPAN — dan pada dokumen baru
+    // yang belum pernah disimpan nilainya masih kosong, sehingga kolom
+    // "Dibuat Oleh" di Form Utilities tercetak tanpa nama sama sekali.
+    if ($standalone && isset($_POST['s_pic_name'])) {
+        $src['pic_name'] = trim((string) post('s_pic_name', ''));
+    }
     // Kotak tarif di formulir adalah tarif PUBLISH; tarif hasil nego diketik di
     // kotak diskon — dibaca persis seperti cara penyimpanan membacanya.
     if (isset($_POST[$pre . 'unit_rate'])) {
