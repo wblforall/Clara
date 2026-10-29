@@ -126,6 +126,7 @@ function layout(string $title, callable $body, array $opts = []): void
         ['', 'dashboard', 'Dashboard', 'view_dashboard'],
         ['', 'exec_dashboard', 'Executive Summary', 'view_exec_summary'],
         ['', 'trend', 'Trend Revenue', 'view_dashboard'],
+        ['', 'performance', 'Performance & Forecast', 'view_exec_summary'],
         ['', 'unit_analysis', 'Analisa Unit', 'view_dashboard'],
         ['', 'comparison', 'Perbandingan Periode', 'view_dashboard'],
         ['Input', 'offers', 'Surat Penawaran', 'manage_offers'],
