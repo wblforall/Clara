@@ -2,16 +2,16 @@
 declare(strict_types=1);
 
 /**
- * Performance & Forecast — pencapaian terhadap target per bulan dalam satu
+ * Performance & Outlook — pencapaian terhadap target per bulan dalam satu
  * tahun, plus perkiraan bulan yang belum selesai.
  *
  * Dasar perhitungan (ditulis juga di halaman supaya bisa dijelaskan ke direksi):
- *   - Bulan yang sudah lewat  : angka aktual (alokasi transaksi), forecast = aktual.
- *   - Bulan berjalan & depan  : Forecast = Kontrak panjang yang sudah terkunci
+ *   - Bulan yang sudah lewat  : angka aktual (alokasi transaksi), outlook = aktual.
+ *   - Bulan berjalan & depan  : Outlook = Kontrak panjang yang sudah terkunci
  *       + pameran/transaksi bulanan yang sudah terkunci, digenapkan sampai
  *         rata-rata 3 bulan terakhir yang sudah selesai bila masih di bawahnya
  *         (untuk bulan berjalan, hanya sebesar sisa harinya).
- *   - Forecast + Perpanjangan : Forecast ditambah kontrak panjang yang akan
+ *   - Outlook + Perpanjangan : Outlook ditambah kontrak panjang yang akan
  *       berakhir dan belum punya penerus, dikalikan tingkat perpanjangan riil
  *       12 bulan terakhir (bisa diubah di halaman).
  *
@@ -225,7 +225,7 @@ function _perf_ringkas($v): string
  */
 function _perf_tabel_bulanan(array $months, array $y, float $gapFcc, bool $cetak): void
 {
-    $badge = ['actual' => 'Aktual', 'running' => 'Berjalan', 'forecast' => 'Forecast'];
+    $badge = ['actual' => 'Aktual', 'running' => 'Berjalan', 'forecast' => 'Outlook'];
     $bg    = ['actual' => ['#047857', '#D1FAE5'], 'running' => ['#B45309', '#FEF3C7'], 'forecast' => ['#475569', '#E2E8F0']];
     $hijau = $cetak ? '#16a34a' : 'var(--green)';
     $merah = $cetak ? '#dc2626' : 'var(--accent)';
@@ -255,8 +255,8 @@ function _perf_tabel_bulanan(array $months, array $y, float $gapFcc, bool $cetak
             $a = $m['locked'] / $m['target'];
             return '<span style="color:' . $warna($a) . '">' . pct($a) . '</span>';
         }, $dash],
-        ['Forecast', '', fn($m) => $m['status'] === 'actual' ? $dash : _perf_jt($m['fc']), _perf_jt($y['fc'])],
-        ['Forecast + Perpanjangan', 'font-weight:700', function ($m) use ($warna, $dash) {
+        ['Outlook', '', fn($m) => $m['status'] === 'actual' ? $dash : _perf_jt($m['fc']), _perf_jt($y['fc'])],
+        ['Outlook + Perpanjangan', 'font-weight:700', function ($m) use ($warna, $dash) {
             if ($m['status'] === 'actual') return $dash;
             $h = _perf_jt($m['fcc']);
             if ($m['target'] > 0) {
@@ -295,7 +295,7 @@ function _perf_baris_prop(array $pp, ?array $lastDone, bool $cetak): string
     };
     $out = 'Pencapaian' . ($lastDone ? ' s.d. ' . h($lastDone['label']) : '') . ': <b style="color:' . $w($pp['ytd']) . '">'
          . ($pp['ytd'] === null ? '—' : pct($pp['ytd'])) . '</b>'
-         . ' &nbsp;·&nbsp; Forecast + perpanjangan akhir tahun: <b style="color:' . $w($pp['fcc']) . '">'
+         . ' &nbsp;·&nbsp; Outlook + perpanjangan akhir tahun: <b style="color:' . $w($pp['fcc']) . '">'
          . ($pp['fcc'] === null ? '—' : pct($pp['fcc'])) . '</b> (' . _perf_ringkas($pp['y']['fcc']) . ' dari target ' . _perf_ringkas($pp['y']['target']) . ')'
          . ' &nbsp;·&nbsp; ' . ($pp['gap'] >= 0 ? 'Lebih ' : 'Kurang ') . _perf_ringkas(abs($pp['gap'])) . ' dari target';
     return $out;
@@ -375,14 +375,14 @@ function performance_page(PDO $pdo): void
 
     extract(_perf_context($pdo));
 
-    layout('Performance & Forecast', function () use (
+    layout('Performance & Outlook', function () use (
         $months, $y, $d, $renew, $years, $year, $scope, $props, $scopeLabel, $ytdAch, $fcAch, $fccAch,
         $gapFcc, $curRow, $lastDone, $segLbl, $cur, $perProp
     ) {
         $badge = [
             'actual'   => ['Aktual',   '#047857', '#D1FAE5'],
             'running'  => ['Berjalan', '#B45309', '#FEF3C7'],
-            'forecast' => ['Forecast', '#475569', '#E2E8F0'],
+            'forecast' => ['Outlook', '#475569', '#E2E8F0'],
         ];
         $dash = '<span style="color:var(--muted)">—</span>';
         ?>
@@ -430,16 +430,16 @@ function performance_page(PDO $pdo): void
                 <?php $ca = ($curRow && $curRow['target'] > 0) ? $curRow['fc'] / $curRow['target'] : null; ?>
                 <div class="kpi-value" style="color:<?= _perf_warna($ca) ?>"><?= $ca === null ? '—' : pct($ca) ?></div>
                 <div style="font-size:12px;color:var(--muted);margin-top:4px">
-                    <?= $curRow ? 'Forecast ' . _perf_ringkas($curRow['fc']) . '<br>Target ' . _perf_ringkas($curRow['target']) : 'Bukan tahun berjalan' ?>
+                    <?= $curRow ? 'Outlook ' . _perf_ringkas($curRow['fc']) . '<br>Target ' . _perf_ringkas($curRow['target']) : 'Bukan tahun berjalan' ?>
                 </div>
             </div>
             <div class="card">
-                <div class="kpi-label">Forecast akhir tahun</div>
+                <div class="kpi-label">Outlook akhir tahun</div>
                 <div class="kpi-value" style="color:<?= _perf_warna($fcAch) ?>"><?= $fcAch === null ? '—' : pct($fcAch) ?></div>
                 <div style="font-size:12px;color:var(--muted);margin-top:4px"><?= _perf_ringkas($y['fc']) ?><br>dari target <?= _perf_ringkas($y['target']) ?></div>
             </div>
             <div class="card">
-                <div class="kpi-label">Forecast + perpanjangan</div>
+                <div class="kpi-label">Outlook + perpanjangan</div>
                 <div class="kpi-value" style="color:<?= _perf_warna($fccAch) ?>"><?= $fccAch === null ? '—' : pct($fccAch) ?></div>
                 <div style="font-size:12px;color:var(--muted);margin-top:4px">
                     <?= _perf_ringkas($y['fcc']) ?><br>
@@ -450,13 +450,13 @@ function performance_page(PDO $pdo): void
                 <div class="kpi-label">Recurring <?= h($year) ?></div>
                 <div class="kpi-value" style="color:#0369a1"><?= _perf_ringkas($y['recurring']) ?></div>
                 <div style="font-size:12px;color:var(--muted);margin-top:4px">
-                    <?= $y['fc'] > 0 ? pct($y['recurring'] / $y['fc']) . ' dari forecast' : '' ?>
+                    <?= $y['fc'] > 0 ? pct($y['recurring'] / $y['fc']) . ' dari outlook' : '' ?>
                 </div>
             </div>
         </div>
 
         <div class="panel" style="margin-bottom:16px">
-            <h2>Target, Aktual, dan Forecast — <?= h($year) ?> · <?= h($scopeLabel) ?></h2>
+            <h2>Target, Aktual, dan Outlook — <?= h($year) ?> · <?= h($scopeLabel) ?></h2>
             <div style="position:relative;height:320px"><canvas id="chartPerf"></canvas></div>
         </div>
 
@@ -480,8 +480,8 @@ function performance_page(PDO $pdo): void
                     <thead><tr>
                         <th>Segmen</th>
                         <th style="text-align:right">Aktual bulan selesai</th>
-                        <th style="text-align:right">Forecast akhir tahun</th>
-                        <th style="text-align:right">Forecast + Perpanjangan</th>
+                        <th style="text-align:right">Outlook akhir tahun</th>
+                        <th style="text-align:right">Outlook + Perpanjangan</th>
                         <th style="text-align:right">Porsi</th>
                     </tr></thead>
                     <tbody>
@@ -501,21 +501,23 @@ function performance_page(PDO $pdo): void
         </div>
 
         <details class="panel" style="margin-bottom:16px">
-            <summary style="cursor:pointer;font-weight:700">Cara membaca angka forecast</summary>
+            <summary style="cursor:pointer;font-weight:700">Cara membaca angka outlook</summary>
             <div style="font-size:13px;line-height:1.6;margin-top:10px;color:var(--ink2)">
                 <p><b>Aktual / Terkunci.</b> Bulan yang sudah lewat memakai angka aktual. Bulan berjalan dan bulan depan memakai
                    alokasi kontrak yang <i>sudah</i> ditandatangani, jadi masih akan bertambah sampai bulannya selesai.</p>
-                <p><b>Forecast.</b> Kontrak panjang yang sudah terkunci, ditambah pameran/transaksi bulanan yang sudah
+                <p><b>Outlook.</b> Kontrak panjang yang sudah terkunci, ditambah pameran/transaksi bulanan yang sudah
                    terkunci, digenapkan sampai rata-rata 3 bulan terakhir yang sudah selesai (untuk bulan berjalan hanya
                    sebesar sisa harinya). Kontrak panjang adalah
                    kontrak <i>spread</i> dengan rentang lebih dari <?= PERF_KONTRAK_PANJANG_HARI ?> hari.</p>
-                <p><b>Forecast + Perpanjangan.</b> Forecast ditambah kontrak panjang yang akan berakhir dan belum punya
+                <p><b>Outlook + Perpanjangan.</b> Outlook ditambah kontrak panjang yang akan berakhir dan belum punya
                    kontrak penerus, dikalikan tingkat perpanjangan.
                    Tingkat yang dipakai <b><?= round($renew['dipakai'] * 100) ?>%</b><?php if ($renew['ubah']): ?> (diubah manual)<?php elseif ($renew['bawaan']): ?> (nilai bawaan, contoh kontrak terlalu sedikit)<?php else: ?>, dihitung dari
                    <?= (int) $renew['ok'] ?> dari <?= (int) $renew['n'] ?> kontrak panjang yang berakhir dalam 12 bulan terakhir dan benar-benar diperpanjang<?php endif; ?>.</p>
                 <p><b>Recurring</b> memakai definisi yang sama dengan halaman Trend Revenue, sehingga angkanya sama.</p>
                 <p>Perpanjangan baru terasa saat ada kontrak panjang yang berakhir di dalam tahun yang dipilih. Untuk 2026 hampir semuanya berakhir 22–31 Desember, jadi dampaknya muncul di Januari 2027.</p>
-                <p>Forecast tidak memperhitungkan musim (mis. Desember yang biasanya lebih tinggi) dan belum memakai penawaran yang sedang berjalan.</p>
+                <p><b>Bukan FORECAST di Kalender.</b> Kolom FORECAST di Kalender Pameran adalah potensi unit bila semua terisi penuh
+                   dengan tarif normal (Proyeksi Bulanan di Master). Outlook di halaman ini adalah perkiraan pendapatan yang realistis.</p>
+                <p>Outlook tidak memperhitungkan musim (mis. Desember yang biasanya lebih tinggi) dan belum memakai penawaran yang sedang berjalan.</p>
             </div>
         </details>
 
@@ -532,12 +534,12 @@ function performance_page(PDO $pdo): void
                     { type: 'line', label: 'Target', data: pRows.map(r => Math.round(r.target)),
                       borderColor: '#EF4444', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 4],
                       pointRadius: 4, pointBackgroundColor: '#EF4444', tension: 0.3, order: 0, stack: 'garis-target' },
-                    { type: 'line', label: 'Forecast + Perpanjangan', data: pRows.map(r => solid(r) ? null : Math.round(r.fcc)),
+                    { type: 'line', label: 'Outlook + Perpanjangan', data: pRows.map(r => solid(r) ? null : Math.round(r.fcc)),
                       borderColor: '#D97706', backgroundColor: 'transparent', borderWidth: 2,
                       pointRadius: 4, pointBackgroundColor: '#D97706', tension: 0.3, order: 0, spanGaps: false, stack: 'garis-forecast' },
                     { label: 'Regular', data: pRows.map(r => Math.round(r.regular)), backgroundColor: 'rgba(13,148,136,.85)', stack: 'a', order: 1 },
                     { label: 'Recurring', data: pRows.map(r => Math.round(r.recurring)), backgroundColor: 'rgba(3,105,161,.8)', stack: 'a', order: 1 },
-                    { label: 'Tambahan forecast', data: pRows.map(r => solid(r) ? 0 : Math.max(0, Math.round(r.fc - r.locked))),
+                    { label: 'Tambahan outlook', data: pRows.map(r => solid(r) ? 0 : Math.max(0, Math.round(r.fc - r.locked))),
                       backgroundColor: 'rgba(148,163,184,.45)', borderColor: 'rgba(100,116,139,.8)', borderWidth: 1,
                       borderRadius: [4, 4, 0, 0], stack: 'a', order: 1 },
                 ]
@@ -568,13 +570,13 @@ function print_performance(PDO $pdo): void
     audit($pdo, 'print_performance', 'performance', $year, ['year' => $year, 'scope' => $scope], [], 'reporting');
     $warna = fn(?float $a) => $a === null ? '#0F1623' : ($a >= 1 ? '#16a34a' : ($a >= .8 ? '#d97706' : '#dc2626'));
     $dash  = '<span style="color:#CBD5E1">—</span>';
-    $badge = ['actual' => 'Aktual', 'running' => 'Berjalan', 'forecast' => 'Forecast'];
+    $badge = ['actual' => 'Aktual', 'running' => 'Berjalan', 'forecast' => 'Outlook'];
     ?>
 <!doctype html>
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<title>Performance & Forecast <?= h($year) ?> — <?= h($app) ?></title>
+<title>Performance & Outlook <?= h($year) ?> — <?= h($app) ?></title>
 <link rel="icon" type="image/png" href="assets/clara-logo.png">
 <script src="assets/chart.umd.min.js"></script>
 <style>
@@ -633,7 +635,7 @@ tr.berjalan td { background: #FFFBEB; }
 <div class="rpt-header">
     <div><img class="rpt-logo" src="assets/clara-logo.png" alt="CLARA"></div>
     <div class="rpt-meta">
-        <div class="rpt-period">Performance &amp; Forecast <?= h($year) ?></div>
+        <div class="rpt-period">Performance &amp; Outlook <?= h($year) ?></div>
         <div style="font-size:20px;font-weight:800;color:#0D9488;margin-bottom:2px"><?= h($scopeLabel) ?></div>
         <div>Dicetak: <?= date('d/m/Y H:i:s') ?></div>
         <div>Oleh: <?= h($_SESSION['user']['name'] ?? '-') ?> (<?= h($_SESSION['user']['role'] ?? '-') ?>)</div>
@@ -650,36 +652,36 @@ tr.berjalan td { background: #FFFBEB; }
         <?php $ca = ($curRow && $curRow['target'] > 0) ? $curRow['fc'] / $curRow['target'] : null; ?>
         <div class="kpi-box-label">Bulan berjalan<?= $curRow ? ' (' . h($curRow['label']) . ')' : '' ?></div>
         <div class="kpi-box-value" style="color:<?= $warna($ca) ?>"><?= $ca === null ? '—' : pct($ca) ?></div>
-        <div class="kpi-box-sub"><?= $curRow ? 'Forecast ' . _perf_ringkas($curRow['fc']) . '<br>Target ' . _perf_ringkas($curRow['target']) : 'Bukan tahun berjalan' ?></div>
+        <div class="kpi-box-sub"><?= $curRow ? 'Outlook ' . _perf_ringkas($curRow['fc']) . '<br>Target ' . _perf_ringkas($curRow['target']) : 'Bukan tahun berjalan' ?></div>
     </div>
     <div class="kpi-box">
-        <div class="kpi-box-label">Forecast akhir tahun</div>
+        <div class="kpi-box-label">Outlook akhir tahun</div>
         <div class="kpi-box-value" style="color:<?= $warna($fcAch) ?>"><?= $fcAch === null ? '—' : pct($fcAch) ?></div>
         <div class="kpi-box-sub"><?= _perf_ringkas($y['fc']) ?><br>dari target <?= _perf_ringkas($y['target']) ?></div>
     </div>
     <div class="kpi-box">
-        <div class="kpi-box-label">Forecast + perpanjangan</div>
+        <div class="kpi-box-label">Outlook + perpanjangan</div>
         <div class="kpi-box-value" style="color:<?= $warna($fccAch) ?>"><?= $fccAch === null ? '—' : pct($fccAch) ?></div>
         <div class="kpi-box-sub"><?= _perf_ringkas($y['fcc']) ?><br><?= $gapFcc >= 0 ? 'Lebih ' : 'Kurang ' ?><?= _perf_ringkas(abs($gapFcc)) ?> dari target</div>
     </div>
     <div class="kpi-box">
         <div class="kpi-box-label">Recurring <?= h($year) ?></div>
         <div class="kpi-box-value" style="color:#0369a1"><?= _perf_ringkas($y['recurring']) ?></div>
-        <div class="kpi-box-sub"><?= $y['fc'] > 0 ? pct($y['recurring'] / $y['fc']) . ' dari forecast' : '' ?></div>
+        <div class="kpi-box-sub"><?= $y['fc'] > 0 ? pct($y['recurring'] / $y['fc']) . ' dari outlook' : '' ?></div>
     </div>
 </div>
 
 <div class="chart-wrap">
-    <div class="chart-title">Target, Aktual, dan Forecast — <?= h($year) ?></div>
+    <div class="chart-title">Target, Aktual, dan Outlook — <?= h($year) ?></div>
     <div class="chart-box"><canvas id="chartPerf"></canvas></div>
 </div>
 
 <div class="catatan">
     <b>Cara membaca.</b> Bulan yang sudah lewat memakai angka aktual. Bulan berjalan dan bulan depan memakai kontrak yang sudah
     ditandatangani (terkunci), digenapkan sampai rata-rata 3 bulan terakhir yang sudah selesai (bulan berjalan hanya sebesar sisa harinya).
-    <b>Forecast + Perpanjangan</b> menambahkan kontrak panjang (spread, &gt; <?= PERF_KONTRAK_PANJANG_HARI ?> hari) yang akan berakhir tanpa penerus,
+    <b>Outlook + Perpanjangan</b> menambahkan kontrak panjang (spread, &gt; <?= PERF_KONTRAK_PANJANG_HARI ?> hari) yang akan berakhir tanpa penerus,
     dikalikan tingkat perpanjangan <b><?= round($renew['dipakai'] * 100) ?>%</b><?php if ($renew['ubah']): ?> (diatur manual)<?php elseif ($renew['bawaan']): ?> (nilai bawaan)<?php else: ?> (<?= (int) $renew['ok'] ?> dari <?= (int) $renew['n'] ?> kontrak panjang berakhir 12 bulan terakhir diperpanjang)<?php endif; ?>.
-    Recurring memakai definisi yang sama dengan Trend Revenue. Forecast belum memperhitungkan musim dan penawaran yang sedang berjalan.
+    Outlook berbeda dengan kolom FORECAST di Kalender (potensi unit bila terisi penuh). Recurring memakai definisi yang sama dengan Trend Revenue. Outlook belum memperhitungkan musim dan penawaran yang sedang berjalan.
 </div>
 
 <div class="page2">
@@ -691,8 +693,8 @@ tr.berjalan td { background: #FFFBEB; }
     <thead><tr>
         <th>Segmen (Rp)</th>
         <th class="r">Aktual bulan selesai</th>
-        <th class="r">Forecast akhir tahun</th>
-        <th class="r">Forecast + Perpanjangan</th>
+        <th class="r">Outlook akhir tahun</th>
+        <th class="r">Outlook + Perpanjangan</th>
         <th class="r">Porsi</th>
     </tr></thead>
     <tbody>
@@ -724,7 +726,7 @@ tr.berjalan td { background: #FFFBEB; }
 <?php endif; ?>
 
 <div class="rpt-footer">
-    <span><?= h($app) ?> — Performance &amp; Forecast</span>
+    <span><?= h($app) ?> — Performance &amp; Outlook</span>
     <span><?= h($scopeLabel) ?> &nbsp;|&nbsp; Tahun <?= h($year) ?> &nbsp;|&nbsp; Dicetak <?= date('d/m/Y H:i:s') ?></span>
 </div>
 
@@ -739,11 +741,11 @@ new Chart(document.getElementById('chartPerf'), {
         datasets: [
             { type: 'line', label: 'Target', data: pRows.map(r => Math.round(r.target)), borderColor: '#EF4444', backgroundColor: 'transparent',
               borderWidth: 2, borderDash: [6, 4], pointRadius: 3, pointBackgroundColor: '#EF4444', tension: 0.3, order: 0, stack: 'garis-target' },
-            { type: 'line', label: 'Forecast + Perpanjangan', data: pRows.map(r => solid(r) ? null : Math.round(r.fcc)), borderColor: '#D97706',
+            { type: 'line', label: 'Outlook + Perpanjangan', data: pRows.map(r => solid(r) ? null : Math.round(r.fcc)), borderColor: '#D97706',
               backgroundColor: 'transparent', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#D97706', tension: 0.3, order: 0, stack: 'garis-forecast' },
             { label: 'Regular', data: pRows.map(r => Math.round(r.regular)), backgroundColor: 'rgba(13,148,136,.85)', stack: 'a', order: 1 },
             { label: 'Recurring', data: pRows.map(r => Math.round(r.recurring)), backgroundColor: 'rgba(3,105,161,.8)', stack: 'a', order: 1 },
-            { label: 'Tambahan forecast', data: pRows.map(r => solid(r) ? 0 : Math.max(0, Math.round(r.fc - r.locked))),
+            { label: 'Tambahan outlook', data: pRows.map(r => solid(r) ? 0 : Math.max(0, Math.round(r.fc - r.locked))),
               backgroundColor: 'rgba(148,163,184,.45)', borderColor: 'rgba(100,116,139,.8)', borderWidth: 1, borderRadius: [4, 4, 0, 0], stack: 'a', order: 1 },
         ]
     },
