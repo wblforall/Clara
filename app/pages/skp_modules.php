@@ -723,8 +723,16 @@ function skp_standalone_src(PDO $pdo, int $pid, string $module, ?array $skp): ar
         'pic_name'    => (string) ($skp['pic_name'] ?? ''),
         'quantity' => 1, 'slots' => 1, 'area_sqm' => 0.0,
         'pricing_type' => $module === 'gudang' ? 'monthly' : 'daily',
-        'contract_months' => null, 'billing_method' => '', 'cycle_recognition' => '',
-        'recurring_flag' => 0, 'renewal_status' => null, 'content_note' => null,
+        // Pengakuan & Recurring diatur di dokumennya sendiri (migrasi 099) —
+        // Gudang & Media tidak lewat Surat Penawaran, jadi tidak ada tempat lain
+        // yang bisa menentukannya. Nilainya diteruskan apa adanya ke transaksi
+        // yang terbit saat dokumen disetujui.
+        'contract_months' => null,
+        'billing_method'    => (string) ($skp['billing_method'] ?? ''),
+        'cycle_recognition' => (string) ($skp['cycle_recognition'] ?? ''),
+        'recurring_flag'    => (int) ($skp['recurring_flag'] ?? 0),
+        'recognition_json'  => (string) ($skp['recognition_json'] ?? ''),
+        'renewal_status' => null, 'content_note' => null,
         'offer_no' => null, 'doc_type' => skp_doc_type($module),
         'company_name' => '', 'brand_name' => '', 'npwp' => '', 'client_ktp' => '',
         'siup' => '', 'address' => '', 'business_type' => '',
@@ -830,6 +838,88 @@ function skp_input_rp(string $name, $value, string $dis, bool $wajib = false, bo
  * nilai sewa. Dipisah dari blok Data Sewa supaya semua angka uang berkumpul di
  * bagian bawah formulir, sejajar dengan Security Deposit & Rincian Biaya.
  */
+/**
+ * Bulan-bulan tempat nilai kontrak ini akan diakui, beserta nominal bawaannya.
+ *
+ * Mengikuti aturan yang sama persis dengan yang dipakai saat alokasi ditulis
+ * (AllocationService::saveAllocations), supaya daftar bulan di formulir tidak
+ * pernah berbeda dari bulan yang nanti benar-benar terbentuk:
+ *
+ *   - diakui sekaligus  → satu bulan saja (awal atau akhir, sesuai siklusnya);
+ *   - dibagi rata, harga BULANAN tanpa prorata kalender → per siklus tanggal;
+ *   - selebihnya        → per bulan kalender, lewat preview().
+ *
+ * Mengembalikan [period_key => nominal]. Tanggal yang belum lengkap atau
+ * terbalik mengembalikan daftar kosong — formulirnya lalu tidak menampilkan
+ * tabel apa pun, bukan menampilkan bulan karangan.
+ */
+function skp_periode_akui(array $src): array
+{
+    require_once dirname(__DIR__) . '/AllocationService.php';
+    $mulai = trim((string) ($src['start_date'] ?? ''));
+    $akhir = trim((string) ($src['end_date'] ?? ''));
+    if ($mulai === '' || $akhir === '' || $akhir < $mulai) return [];
+    $total = (float) (($src['final_amount'] ?? 0) ?: ($src['total_calculated'] ?? 0));
+    if ($total <= 0) return [];
+
+    $bln = (int) ($src['contract_months'] ?? 0);
+    $bm  = (string) ($src['billing_method'] ?? '');
+    $sebar = in_array($bm, ['spread', 'anchor_cycle'], true) ? $bm === 'spread' : ($bln > 1);
+    $cr = ($src['cycle_recognition'] ?? '') === 'cycle_end' ? 'cycle_end' : 'cycle_start';
+
+    if (!$sebar) {
+        return [substr($cr === 'cycle_end' ? $akhir : $mulai, 0, 7) => $total];
+    }
+
+    $pt = (string) ($src['pricing_type'] ?? '');
+    try {
+        if (empty($src['prorata_kalender']) && in_array($pt, ['monthly', 'monthly_area'], true)) {
+            $baris = AllocationService::monthlyCycleAllocations(
+                new DateTimeImmutable($mulai), new DateTimeImmutable($akhir), $total, $cr);
+        } else {
+            $baris = AllocationService::preview(array_merge($src, [
+                'final_amount'   => $total,
+                'billing_method' => 'spread',
+            ]));
+        }
+    } catch (Throwable $e) {
+        return [];
+    }
+    $out = [];
+    foreach ($baris as $b) {
+        $pk = (string) ($b['period_key'] ?? '');
+        if ($pk === '') continue;
+        $out[$pk] = ($out[$pk] ?? 0) + (float) ($b['amount'] ?? 0);
+    }
+    ksort($out);
+    if (!$out) return [];
+
+    // preview() menghitung dari TARIF, bukan dari nilai kontrak — pada kontrak
+    // yang nilainya di-override hasilnya bisa jauh berbeda. Yang dipakai dari
+    // sana hanya BULAN-nya; nominalnya diskalakan ke nilai kontrak, dan sisa
+    // pembulatannya ditaruh di bulan terakhir supaya jumlahnya pas.
+    $jumlah = array_sum($out);
+    if ($jumlah > 0 && round($jumlah) !== round($total)) {
+        $kunci = array_keys($out);
+        $akhirnya = array_pop($kunci);
+        $sisa = $total;
+        foreach ($kunci as $pk) {
+            $out[$pk] = round($out[$pk] / $jumlah * $total);
+            $sisa -= $out[$pk];
+        }
+        $out[$akhirnya] = round($sisa);
+    }
+    return $out;
+}
+
+/** "2026-12" → "Desember 2026". */
+function skp_nama_periode(string $pk): string
+{
+    $bln = ['01'=>'Januari','02'=>'Februari','03'=>'Maret','04'=>'April','05'=>'Mei','06'=>'Juni',
+            '07'=>'Juli','08'=>'Agustus','09'=>'September','10'=>'Oktober','11'=>'November','12'=>'Desember'];
+    return ($bln[substr($pk, 5, 2)] ?? $pk) . ' ' . substr($pk, 0, 4);
+}
+
 function skp_blok_harga(string $module, array $src, bool $editable): void
 {
     $dis = $editable ? '' : 'disabled';
@@ -850,6 +940,123 @@ function skp_blok_harga(string $module, array $src, bool $editable): void
         </div>
         <?php endif; ?>
     </div>
+
+    <?php
+    /* ── Pengakuan & Recurring ─────────────────────────────────────────────
+       Isinya sama dengan yang di Surat Penawaran, karena hasil akhirnya memang
+       sama: kolom billing_method / cycle_recognition / recurring_flag pada
+       transaksi yang terbit saat dokumen ini disetujui.
+
+       Tabel nominal per bulan hanya muncul bila nilainya memang jatuh ke lebih
+       dari satu bulan. Daftar bulannya mengikuti tanggal & metode yang
+       TERSIMPAN — bukan yang sedang diketik — supaya tidak pernah menampilkan
+       bulan yang nanti tidak terbentuk. Ganti tanggalnya, simpan, daftarnya
+       ikut menyesuaikan. */
+    $bmKini = (string) ($src['billing_method'] ?? '');
+    $crKini = ($src['cycle_recognition'] ?? '') === 'cycle_end' ? 'cycle_end' : 'cycle_start';
+    $periode  = skp_periode_akui($src);
+    $tersimpan = json_decode((string) ($src['recognition_json'] ?? ''), true);
+    if (!is_array($tersimpan)) $tersimpan = [];
+    ?>
+    <h3 id="s-pengakuan">Pengakuan &amp; Recurring</h3>
+    <div class="form-grid">
+        <div>
+            <label>Metode Pengakuan</label>
+            <select name="s_billing_method" id="s-bm" <?= $dis ?>>
+                <option value="" <?= $bmKini === '' ? 'selected' : '' ?>>Otomatis (ikut periode)</option>
+                <option value="anchor_cycle" <?= $bmKini === 'anchor_cycle' ? 'selected' : '' ?>>Sekaligus &mdash; diakui utuh di 1 bulan</option>
+                <option value="spread" <?= $bmKini === 'spread' ? 'selected' : '' ?>>Dibagi rata tiap bulan</option>
+            </select>
+            <div class="help">Otomatis: kontrak <b>lebih dari 1 bulan</b> &rarr; dibagi rata. Satu periode &rarr; diakui utuh di bulan mulai.</div>
+        </div>
+        <div>
+            <label>Pengakuan per Siklus</label>
+            <select name="s_cycle_recognition" id="s-cr" <?= $dis ?>>
+                <option value="cycle_start" <?= $crKini === 'cycle_start' ? 'selected' : '' ?>>Bulan Awal siklus</option>
+                <option value="cycle_end" <?= $crKini === 'cycle_end' ? 'selected' : '' ?>>Bulan Akhir siklus</option>
+            </select>
+            <div class="help">Nilai tiap siklus diakui di bulan awal atau bulan akhir siklus itu.</div>
+        </div>
+        <div class="wide" style="display:flex;align-items:flex-start;gap:10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:11px 14px">
+            <input type="checkbox" name="s_recurring_flag" id="s-recurring" value="1" style="width:18px;height:18px;flex-shrink:0;margin-top:1px" <?= !empty($src['recurring_flag']) ? 'checked' : '' ?> <?= $dis ?>>
+            <label for="s-recurring" style="margin:0;cursor:pointer">
+                <span style="font-weight:700;color:#0369a1">Diakui Recurring</span>
+                <span class="help" style="display:block;margin-top:2px;font-weight:400">Penggolongan untuk Dashboard &amp; Laporan: centang bila ini bagian dari kontrak berulang. <b>Tidak</b> mengubah nilai maupun bulan jatuhnya income &mdash; itu diatur dua kotak di atas.</span>
+            </label>
+        </div>
+    </div>
+
+    <?php if (count($periode) >= 2): $jml = 0.0; ?>
+    <h3 style="margin-top:14px">Nominal Diakui per Bulan
+        <span style="font-weight:400;font-size:12px;color:var(--muted)">(<?= count($periode) ?> bulan &mdash; boleh berbeda tiap bulan)</span></h3>
+    <div style="overflow-x:auto">
+    <table class="data" id="s-akui" style="width:100%;max-width:560px">
+        <thead><tr><th>Bulan</th><th style="width:190px;text-align:right">Nominal Diakui</th></tr></thead>
+        <tbody>
+        <?php foreach ($periode as $pk => $bawaan):
+            $nilai = array_key_exists($pk, $tersimpan) ? (float) $tersimpan[$pk] : (float) $bawaan;
+            $jml += $nilai; ?>
+            <tr>
+                <td style="font-weight:600"><?= h(skp_nama_periode((string) $pk)) ?></td>
+                <td><?php skp_input_rp('s_akui[' . $pk . ']', $nilai, $dis, false, true, 'akui-nilai'); ?></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+        <tfoot><tr>
+            <td style="font-weight:700">Jumlah</td>
+            <td style="text-align:right;font-weight:700"><span id="s-akui-jml"><?= h(number_format($jml, 0, ',', '.')) ?></span></td>
+        </tr></tfoot>
+    </table>
+    </div>
+    <p class="help" id="s-akui-cek" style="margin-top:5px"></p>
+    <?php if ($editable): ?>
+    <p style="margin:6px 0 0"><button type="button" class="btn light" id="s-akui-rata">Bagi rata lagi</button></p>
+    <script>
+    (function () {
+        var tabel = document.getElementById('s-akui');
+        if (!tabel) return;
+        var angka = function (el) { return el ? parseInt((el.value || '').replace(/\D/g, ''), 10) || 0 : 0; };
+        var fmt   = function (n) { return (n || 0).toLocaleString('id-ID'); };
+        var baris = function () { return [].slice.call(tabel.querySelectorAll('.akui-nilai')); };
+        var totalKontrak = function () {
+            return angka(document.querySelector('input[name="s_total_amount"]'));
+        };
+        function periksa() {
+            var isi = baris(), jml = 0;
+            isi.forEach(function (el) { jml += angka(el); });
+            document.getElementById('s-akui-jml').textContent = fmt(jml);
+            var t = totalKontrak(), cek = document.getElementById('s-akui-cek');
+            if (!t) { cek.textContent = ''; return; }
+            if (jml === t) {
+                cek.innerHTML = '<span style="color:#166534">Cocok dengan Total Nilai Sewa ' + fmt(t) + '.</span>';
+            } else {
+                cek.innerHTML = '<span style="color:#b45309">Jumlahnya ' + fmt(jml)
+                    + ', sedangkan Total Nilai Sewa ' + fmt(t) + ' &mdash; selisih ' + fmt(Math.abs(jml - t))
+                    + '. Nilai kontraknya akan mengikuti jumlah di tabel ini.</span>';
+            }
+        }
+        function bagiRata() {
+            var isi = baris(), t = totalKontrak();
+            if (!isi.length || !t) return;
+            var per = Math.floor(t / isi.length);
+            isi.forEach(function (el, i) {
+                var v = (i === isi.length - 1) ? t - per * (isi.length - 1) : per;
+                el.value = fmt(v);
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+            periksa();
+        }
+        document.addEventListener('input', function (e) {
+            if (!e.target) return;
+            if (e.target.classList && e.target.classList.contains('akui-nilai')) periksa();
+            if (e.target.name === 's_total_amount') periksa();
+        });
+        document.getElementById('s-akui-rata').addEventListener('click', bagiRata);
+        periksa();
+    })();
+    </script>
+    <?php endif; ?>
+    <?php endif; ?>
     <?php
 }
 

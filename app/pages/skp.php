@@ -2661,6 +2661,27 @@ function _skp_simpan_periode(PDO $pdo, int $pid, int $trxId, ?array $skp, array 
  * ikut _skp_fields_dari_post(). Hanya dipakai pratinjau — tidak ada satu pun
  * baris yang ditulis ke basis data di sini.
  */
+/**
+ * Nominal pengakuan per bulan dari formulir Gudang/Media → JSON siap simpan.
+ *
+ * Bulan dengan nominal kosong/0 dibuang, bukan disimpan sebagai nol: nol
+ * berarti "bulan ini diakui Rp 0", dan itu beda dari "bulan ini ikut hitungan
+ * biasa". Tidak ada satu pun bulan yang sah → null, sehingga kolomnya kosong
+ * dan perhitungannya kembali ke pembagian normal.
+ */
+function _skp_akui_dari_post(): ?string
+{
+    $out = [];
+    foreach ((array) ($_POST['s_akui'] ?? []) as $pk => $v) {
+        if (!preg_match('/^\d{4}-\d{2}$/', (string) $pk)) continue;
+        $n = (float) parse_rupiah((string) $v);
+        if ($n <= 0) continue;
+        $out[(string) $pk] = $n;
+    }
+    ksort($out);
+    return $out ? json_encode($out, JSON_UNESCAPED_UNICODE) : null;
+}
+
 function _skp_src_dari_post(array $src, bool $standalone): array
 {
     $sah = static function (string $t): bool {
@@ -2812,6 +2833,18 @@ function skp_save(PDO $pdo): void
             })(),
             'total_amount' => parse_rupiah((string) post('s_total_amount', '0')),
             'pic_name'     => trim((string) post('s_pic_name', '')) ?: null,
+            // Pengakuan & Recurring — Gudang/Media tidak lewat Surat Penawaran,
+            // jadi inilah satu-satunya tempat yang menentukannya. Isinya
+            // diteruskan apa adanya ke transaksi saat dokumen disetujui.
+            'billing_method'    => in_array(post('s_billing_method'), ['spread', 'anchor_cycle'], true)
+                                   ? (string) post('s_billing_method') : null,
+            'cycle_recognition' => post('s_cycle_recognition') === 'cycle_end' ? 'cycle_end' : 'cycle_start',
+            'recurring_flag'    => post('s_recurring_flag') ? 1 : 0,
+            // Nominal per bulan. Tabelnya hanya muncul saat nilainya memang
+            // jatuh ke lebih dari satu bulan, jadi berpindah ke "diakui
+            // sekaligus" otomatis mengosongkan simpanan ini — bukan
+            // meninggalkan paku lama yang diam-diam masih dipakai.
+            'recognition_json'  => _skp_akui_dari_post(),
         ];
         $src = skp_standalone_src($pdo, $pid, $modKind, array_merge($sFields, ['deposit_amount' => post('deposit_raw', 0)]));
     } else {
@@ -3085,6 +3118,20 @@ function _skp_create_transaction(PDO $pdo, array $skp, array $src, int $pid, ?ar
     foreach ($trx as $k => $v) $vals[':' . $k] = $v;
     $pdo->prepare('INSERT INTO transactions (' . implode(', ', $cols) . ') VALUES (' . implode(', ', $ph) . ')')->execute($vals);
     $tid = (int) $pdo->lastInsertId();
+    // Nominal pengakuan per bulan yang sudah ditentukan di dokumen Gudang/Media
+    // diteruskan sebagai nominal bulanan khusus transaksinya. Yang membangun
+    // alokasinya (_skp_bangun_alokasi) membaca simpanan ini sendiri, jadi cukup
+    // ditulis sekali di sini.
+    //
+    // Hanya untuk dokumen tunggal: komponen paket punya nilainya masing-masing,
+    // dan satu daftar bulan tidak bisa mewakili semuanya.
+    if (!$item) {
+        $akui = json_decode((string) ($src['recognition_json'] ?? ''), true);
+        if (is_array($akui) && $akui) {
+            require_once dirname(__DIR__) . '/AllocationService.php';
+            AllocationService::simpanMonthOverrides($pdo, $pid, $tid, $akui, clara_pelaku(), true);
+        }
+    }
     // Alokasi bulanannya SENGAJA belum dibuat di sini. Kesepakatan baru sah
     // setelah diparaf Asst. Manager, disetujui Manager, DAN ditandatangani
     // client; sampai saat itu transaksinya memang sudah ada (perlu nomor &
