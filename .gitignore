@@ -20,6 +20,11 @@ scripts/handout_assets/
 # Source guide (docs/PANDUAN_*.md) & script TETAP di-commit; PNG di-regenerate.
 scripts/userguide_assets/
 
+# Screenshot tutorial harga (memuat data penyewa dari basis data lokal).
+# Skrip pembangun PDF-nya tetap di-commit; gambarnya diambil ulang dengan
+# scripts/tutorial_screenshot.js.
+scripts/tutorial_assets/
+
 # File kerja lokal (PDF/dokumen contoh, dll)
 *.doc
 *.docx

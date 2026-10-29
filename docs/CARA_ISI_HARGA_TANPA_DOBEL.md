@@ -8,16 +8,26 @@ formulirnya.
 > sebuah kotak isinya akan sama persis dengan kotak lain, **kosongkan** — yang
 > kosong tidak tercetak.
 
-Versi PDF berkop surat dibangun dari skrip, lengkap dengan angka hasil
-pemeriksaan yang dibaca langsung dari database saat dicetak:
+Versi PDF berkop surat dibangun dari skrip, lengkap dengan **potongan layar
+sungguhan** dan angka hasil pemeriksaan yang dibaca langsung dari database saat
+dicetak:
 
 ```bash
+# 1) ambil screenshot dari CLARA yang jalan di lokal (butuh puppeteer-core)
+CLARA_TEST_PASS='...' NODE_PATH=<...>/node_modules node scripts/tutorial_screenshot.js
+
+# 2) bangun PDF-nya
 php scripts/build_tutorial_dobel.php
 php scripts/build_tutorial_dobel.php --sejak=2026-10 --keluar=/jalur/Tutorial.pdf
 ```
 
-PDF-nya **tidak** ikut di-commit (`docs/**/*.pdf` ada di `.gitignore`) karena
-memuat nama penyewa dan nilai kontrak, sementara repo ini publik.
+Langkah 1 memerlukan dua dokumen Form Utilities contoh (id 99950 & 99951) — satu
+menampilkan harga item, satu menyembunyikannya. Tanpa screenshot, PDF-nya tetap
+terbangun: tempat gambarnya diisi keterangan cara mengambilnya.
+
+PDF dan screenshot-nya **tidak** ikut di-commit (`docs/**/*.pdf` dan
+`scripts/tutorial_assets/` ada di `.gitignore`) karena memuat nama penyewa dan
+nilai kontrak, sementara repo ini publik.
 
 ---
 

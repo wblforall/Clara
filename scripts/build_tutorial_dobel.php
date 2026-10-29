@@ -74,6 +74,24 @@ $langkah = function (int $no, string $kotak, string $isi): string {
          . '<td class="isi"><div class="kotak">' . $kotak . '</div>' . $isi . '</td>'
          . '</tr></table>';
 };
+/**
+ * Potongan layar sungguhan dari CLARA lokal (scripts/tutorial_screenshot.js).
+ *
+ * Berkasnya TIDAK di-commit, jadi bila belum pernah diambil, tempatnya diisi
+ * keterangan cara mengambilnya — tutorialnya tetap terbangun, tidak gagal.
+ */
+$gbr = function (string $nama, string $keterangan, int $lebarMm = 165) use ($h): string {
+    $file = __DIR__ . '/tutorial_assets/' . $nama . '.png';
+    if (!is_file($file)) {
+        return '<div class="box warn"><p style="margin:0">Gambar <b>' . $h($nama)
+             . '</b> belum diambil &mdash; jalankan <code>node scripts/tutorial_screenshot.js</code> '
+             . 'di komputer lokal lalu bangun ulang PDF ini.</p></div>';
+    }
+    return '<table class="gbr"><tr><td class="gbrc"><img src="' . $h($file)
+         . '" style="width:' . $lebarMm . 'mm"></td></tr>'
+         . '<tr><td class="gbrk">' . $keterangan . '</td></tr></table>';
+};
+
 /** Contoh baris yang tercetak di surat. */
 $cetak = function (string $judul, array $baris): string {
     // Dibungkus TABEL, bukan div: mPDF menggambar garis tabel dengan andal,
@@ -108,12 +126,16 @@ ob_start(); ?>
     li { margin-bottom: 3px; }
     p { margin: 5px 0; }
     /* Satu langkah: nomor bulat di kiri, isinya di kanan. */
-    table.lk { width: 100%; border-collapse: collapse; margin: 7px 0; page-break-inside: avoid; }
+    table.lk { width: 100%; border-collapse: collapse; margin: 7px 0; }
     table.lk td { border: 0; vertical-align: top; padding: 0; }
     table.lk td.no { width: 17px; font-size: 12pt; font-weight: 700; color: #0D9488; padding-right: 7px; }
     table.lk td.isi { font-size: 9.9pt; }
     .kotak { font-weight: 700; font-size: 10.4pt; margin-bottom: 1px; }
     .kotak .di { font-weight: 400; font-size: 8.8pt; color: #64748b; }
+    /* Potongan layar. */
+    table.gbr { width: 100%; border-collapse: collapse; margin: 6px 0 9px; page-break-inside: avoid; }
+    table.gbr td.gbrc { border: 1px solid #cbd5e1; padding: 4px; background: #fff; }
+    table.gbr td.gbrk { font-size: 8.6pt; color: #475569; padding: 3px 1px 0; line-height: 1.35; }
     /* Contoh hasil cetak surat. */
     table.ctk { width: 100%; border-collapse: collapse; margin: 4px 0 3px; page-break-inside: avoid; }
     table.ctk td.ctkc { border: 1px solid #94a3b8; background: #f8fafc; padding: 4px 8px; }
@@ -182,6 +204,9 @@ ob_start(); ?>
     . '<tr><td>Per bulan <span class="muted">(tanpa hitungan luas)</span></td><td>harga sebulan, luas tidak dikali</td><td>Biaya Sewa / bulan</td></tr>'
     . '<tr><td>Lump sum <span class="muted">(satu nilai)</span></td><td>&mdash; tidak dipakai</td><td>Nilai Kontrak (lump sum)</td></tr>'
     . '</table>'
+    . $gbr('f-dasar', 'Begitu <b>Dasar Harga Sewa</b> diisi &ldquo;Per m&sup2; / bulan&rdquo;, kotak di '
+         . 'sebelahnya langsung berganti nama jadi <b>Rate (Rp per m&sup2; / bulan)</b>. Satu tempat, '
+         . 'satu arti &mdash; angka ini tidak perlu diketik lagi di mana pun.', 150)
     . '<div class="box warn"><p style="margin:0">Memilih <b>Per bulan</b> lalu <i>juga</i> mengisi
      <b>Harga / Bulan</b> menghasilkan dua baris bernama hampir sama dengan angka yang sama.
      Sekarang keduanya dilebur sendiri oleh sistem, tetapi lebih baik tidak dibuat sejak awal.</p></div>') ?>
@@ -202,20 +227,20 @@ ob_start(); ?>
     . '<tr><td>lebih dari 1 bulan, ditagih bulanan</td><td class="hijau"><b>isi</b> harga sebulan</td><td>client perlu tahu cicilan tiap bulannya</td></tr>'
     . '<tr><td>setahun sekaligus, tidak ditagih bulanan</td><td class="merah"><b>kosongkan</b></td><td>surat tidak menyebut angka bulanan yang tidak pernah disepakati</td></tr>'
     . '</table>'
-    . $cetak('Kontrak 1 bulan &mdash; Harga / Bulan DIISI (dulu)', [
-        ['a. Biaya Sewa / m&sup2; / bulan', 'Rp 3.600.000'],
-        ['b. Harga Sewa / Bulan', '<b class="merah">Rp 14.400.000</b>'],
-        ['c. Harga Sewa / Periode', '<b class="merah">Rp 14.400.000</b>'],
-      ])
-    . $cetak('Kontrak 1 bulan &mdash; Harga / Bulan DIKOSONGKAN (benar)', [
-        ['a. Biaya Sewa / m&sup2; / bulan', 'Rp 3.600.000'],
-        ['b. Harga Sewa / Periode', '<b class="hijau">Rp 14.400.000</b>'],
-      ])
-    . $cetak('Kontrak 6 bulan &mdash; Harga / Bulan DIISI (benar)', [
-        ['a. Biaya Sewa / m&sup2; / bulan', 'Rp 3.600.000'],
-        ['b. Harga Sewa / Bulan', 'Rp 14.400.000'],
-        ['c. Harga Sewa / Periode (6 bulan)', 'Rp 86.400.000'],
-      ])) ?>
+    . '<p style="margin:7px 0 2px"><b>Begini bedanya di formulir</b> (contoh: 4 m&sup2; &times; '
+    . 'Rp 3.600.000 selama 1 bulan):</p>'
+    . $gbr('f-harga-kosong', '<b class="hijau">BENAR.</b> Kontrak 1 bulan &mdash; <b>Harga / Bulan</b> '
+         . 'dibiarkan kosong. Total Kontrak sudah terhitung sendiri Rp 14.400.000.')
+    . $gbr('f-harga-isi', '<b class="merah">INILAH YANG BIKIN DOBEL.</b> <b>Harga / Bulan</b> diisi '
+         . 'Rp 14.400.000 &mdash; angka yang sama persis dengan Total Kontrak di sebelahnya.')
+    . '<p style="margin:9px 0 2px"><b>Dan begini hasilnya di surat</b> &mdash; dua dokumen sungguhan '
+    . 'dari CLARA:</p>'
+    . $gbr('s-1bulan', 'Kontrak <b>1 bulan</b>: tarif per bulan dan nilai sewanya memang angka yang '
+         . 'sama, jadi yang tercetak <b>satu baris</b> &mdash; &ldquo;a. Nilai Sewa&rdquo;. Tidak ada '
+         . 'uang yang hilang; yang hilang barisnya yang mengulang.', 140)
+    . $gbr('s-12bulan', 'Kontrak <b>12 bulan</b>: harga sebulan Rp 16.800.000 dan totalnya '
+         . 'Rp 201.600.000 memang <b>dua angka berbeda</b>, jadi dua-duanya tercetak. Ini bukan dobel '
+         . '&mdash; inilah gunanya mengisi Harga / Bulan.', 140)) ?>
 
 <?= $langkah(6, 'Harga Nego Final <span class="di">&mdash; opsional</span>',
     '<p style="margin:2px 0">Diisi <b>hanya bila</b> nilai akhir yang disepakati berbeda dari
@@ -262,6 +287,8 @@ harganya <b>sudah terbawa</b>. Yang masih boleh disentuh hanya ini:</p>
 <p style="margin-top:-2px">Kalau <b>semua</b> baris di tabel itu isinya &ldquo;Harga Sewa /Bulan&rdquo;
 sama dengan &ldquo;Total Harga Sewa&rdquo;, kolom tengahnya <b>disembunyikan sendiri</b> saat
 dicetak. Yang hilang kolomnya &mdash; angkanya tidak diubah sama sekali.</p>
+<?= $gbr('f-gudang', 'Sewa 1 bulan: kolom tengah <b>Harga Sewa /Bulan</b> dibiarkan kosong. Di surat, '
+       . 'kolom itu hilang sendiri &mdash; tabelnya tinggal tarif per m&sup2; dan totalnya.') ?>
 
 <h2>Bagian 4 &mdash; Media (Form Utilities)</h2>
 <?= $langkah(1, 'Tarif &amp; Total Nilai Sewa',
@@ -279,19 +306,19 @@ dicetak. Yang hilang kolomnya &mdash; angkanya tidak diubah sama sekali.</p>
      biayanya <b>tidak ikut menambah</b> Total Nilai Sewa. Harga yang sudah diketik tetap
      tersimpan, jadi saklarnya bisa dilepas lagi tanpa mengetik ulang.</p>
      <p style="margin:2px 0">Dipakai untuk penyewa yang cukup diberi tahu fasilitas apa yang
-     dipakai, sedangkan tarif tiap fasilitas bukan urusannya.</p>') ?>
+     dipakai, sedangkan tarif tiap fasilitas bukan urusannya.</p>'
+    . $gbr('f-fu-saklar', 'Saklarnya ada di kanan judul tiap kelompok &mdash; Utilities, Media Promo, '
+         . 'dan Parkir Kendaraan punya saklarnya masing-masing.')
+    . '<p style="margin:7px 0 2px"><b>Hasilnya di surat</b>, dari dokumen yang isinya sama persis:</p>'
+    . $gbr('fu-tampil', 'Saklar <b>tidak</b> dicentang &mdash; kolom biaya ikut tercetak.', 140)
+    . $gbr('fu-sembunyi', 'Saklar <b>dicentang</b> &mdash; item yang dipakai tetap terlihat, '
+         . 'tarifnya tidak tercetak sama sekali.', 140)) ?>
 <?= $langkah(4, 'Rincian Biaya',
-    $cetak('Yang tercetak di halaman terakhir Form Utilities', [
-        ['Biaya / Hari', 'Rp. 25.000.000'],
-        ['Total Biaya Sewa', 'Rp. 100.000.000'],
-        ['PPN 12%', 'Rp. 11.000.000'],
-        ['Jaminan Area (Security Deposit)', 'Rp. 10.000.000'],
-        ['<b>Grand Total</b>', '<b>Rp. 121.000.000</b>'],
-      ])
-    . '<p style="margin:3px 0 0">Baris pertama mengikuti Dasar Harga &mdash; kontrak bulanan
-     tercetak &ldquo;Biaya / Bulan&rdquo;. <b>PPN 12%</b> dihitung nilai &times; 11/12 &times; 12%
-     (jadi 11% dari nilai sewa), sesuai PMK No. 131 Tahun 2024. <b>Grand Total</b> sudah termasuk
-     jaminan; jaminan yang sudah disetor tetap tercetak tapi tidak ditagih ulang.</p>') ?>
+    $gbr('fu-rincian', 'Tabel ini tercetak di halaman terakhir Form Utilities. Baris pertama '
+       . 'mengikuti Dasar Harga &mdash; kontrak bulanan tercetak &ldquo;Biaya / Bulan&rdquo;.', 140)
+    . '<p style="margin:3px 0 0"><b>PPN 12%</b> dihitung nilai &times; 11/12 &times; 12% (jadi 11% dari '
+    . 'nilai sewa), sesuai PMK No. 131 Tahun 2024. <b>Grand Total</b> sudah termasuk jaminan; jaminan '
+    . 'yang sudah disetor tetap tercetak tapi tidak ditagih ulang.</p>') ?>
 
 <h2>Bagian 5 &mdash; tiga kesalahan yang paling sering</h2>
 <table class="d">
