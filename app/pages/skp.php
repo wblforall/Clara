@@ -3903,6 +3903,7 @@ function skp_cancel_deal(PDO $pdo): void
             $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ? AND property_id = ?')->execute([$trxId, $pid]);
             $pdo->prepare('DELETE FROM transaction_pic_splits WHERE transaction_id = ?')->execute([$trxId]);
             $pdo->prepare('DELETE FROM price_steps WHERE transaction_id = ?')->execute([$trxId]);
+            $pdo->prepare('DELETE FROM transaction_month_overrides WHERE transaction_id = ?')->execute([$trxId]);
         }
         ApprovalLine::record($pdo, $pid, $id, 0, null, 'batal', $note, false);
         $pdo->commit();

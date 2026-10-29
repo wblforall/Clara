@@ -212,6 +212,19 @@ function flushSpreadInputs() {
     });
 }
 
+/* Nominal per bulan ikut terkirim walau tabelnya tidak pernah disentuh.
+   Dulu input tersembunyinya hanya dibuat saat tabel dirender ulang — jadi
+   membuka Edit lalu langsung Simpan mengirim formulir TANPA nominal per bulan,
+   dan seluruh angka khusus yang sudah tersimpan terhapus diam-diam. */
+document.addEventListener('submit', function (e) {
+    var f = e.target;
+    if (!f || !f.querySelector) return;
+    if (!document.getElementById('kalkulasi-spread')) return;
+    if (typeof spreadOverrides === 'undefined' || !Object.keys(spreadOverrides).length) return;
+    if (!f.querySelector('[name="recognition_month"], [name="pricing_type"]')) return;
+    syncOvrInputs();
+}, true);
+
 function syncOvrInputs() {
     flushSpreadInputs();
     var form = document.querySelector('form');

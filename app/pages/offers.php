@@ -2168,8 +2168,8 @@ function offer_form(PDO $pdo): void
                     <select name="billing_method" id="billing_method" <?= $disabled ?>>
                         <?php $bm = $offer['billing_method'] ?? ''; ?>
                         <option value="" <?= $bm === '' ? 'selected' : '' ?>>Otomatis (ikut periode)</option>
-                        <option value="anchor_cycle" <?= $bm === 'anchor_cycle' ? 'selected' : '' ?>>Sekaligus (anchor) — diakui 1 bulan</option>
-                        <option value="spread" <?= $bm === 'spread' ? 'selected' : '' ?>>Spread per Bulan (recurring)</option>
+                        <option value="anchor_cycle" <?= $bm === 'anchor_cycle' ? 'selected' : '' ?>>Sekaligus — diakui utuh di 1 bulan</option>
+                        <option value="spread" <?= $bm === 'spread' ? 'selected' : '' ?>>Dibagi rata tiap bulan</option>
                     </select>
                     <div class="help" id="billing_help">Otomatis: kontrak <b>lebih dari 1 bulan</b> &rarr; Spread (recurring). Satu periode &mdash; termasuk yang melewati batas bulan, mis. 28 Okt&ndash;1 Nov &mdash; &rarr; Sekaligus, diakui utuh di bulan mulai.</div>
                 </div>

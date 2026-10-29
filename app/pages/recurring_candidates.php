@@ -602,6 +602,7 @@ function recurring_merge_execute(PDO $pdo): void
                 ->execute([$oldId, $propertyId]);
             $pdo->prepare('DELETE FROM transaction_pic_splits WHERE transaction_id=?')->execute([$oldId]);
             $pdo->prepare('DELETE FROM price_steps WHERE transaction_id=?')->execute([$oldId]);
+            $pdo->prepare('DELETE FROM transaction_month_overrides WHERE transaction_id=?')->execute([$oldId]);
         }
 
         // Buat transaksi baru

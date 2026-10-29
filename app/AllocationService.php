@@ -87,10 +87,99 @@ final class AllocationService
         return $allocations;
     }
 
+    /**
+     * Nominal bulanan yang ditentukan orang (Special Price), tersimpan terpisah
+     * dari hasil hitungan. Dibaca ulang tiap kali alokasi dibangun, supaya
+     * perhitungan ulang — sunting transaksi, approve SKP, revisi SKP — tidak
+     * menghapusnya diam-diam.
+     */
+    public static function monthOverrides(PDO $pdo, int $transactionId): array
+    {
+        if ($transactionId <= 0) return [];
+        try {
+            $st = $pdo->prepare('SELECT period_key, amount FROM transaction_month_overrides
+                                  WHERE transaction_id = ? ORDER BY period_key');
+            $st->execute([$transactionId]);
+            $out = [];
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) ?: [] as $r) $out[(string) $r['period_key']] = (float) $r['amount'];
+            return $out;
+        } catch (Throwable $e) {
+            return [];   // migrasi 091 belum jalan → perilaku lama
+        }
+    }
+
+    /** Tulis/ganti nominal bulanan khusus. Nilai kosong menghapus barisnya. */
+    public static function simpanMonthOverrides(PDO $pdo, int $pid, int $transactionId, array $overrides, ?string $oleh = null): void
+    {
+        if ($transactionId <= 0) return;
+        try {
+            $hapus = $pdo->prepare('DELETE FROM transaction_month_overrides WHERE transaction_id = ? AND period_key = ?');
+            $tulis = $pdo->prepare('INSERT INTO transaction_month_overrides (property_id, transaction_id, period_key, amount, created_by)
+                                    VALUES (?,?,?,?,?)
+                                    ON DUPLICATE KEY UPDATE amount = VALUES(amount), created_by = VALUES(created_by)');
+            foreach ($overrides as $pk => $nilai) {
+                if (!preg_match('/^\d{4}-\d{2}$/', (string) $pk)) continue;
+                if ($nilai === null || $nilai === '') { $hapus->execute([$transactionId, $pk]); continue; }
+                $tulis->execute([$pid, $transactionId, $pk, (float) $nilai, $oleh]);
+            }
+        } catch (Throwable $e) {
+            // tabelnya belum ada — biarkan, perilaku lama tetap jalan
+        }
+    }
+
+    /**
+     * Dipanggil setelah baris alokasi ditulis.
+     *
+     * Dua hal yang HARUS terjadi bersama bila ada nominal bulanan khusus:
+     * simpanan dibersihkan dari bulan yang sudah tidak dicakup lagi, dan nilai
+     * kontraknya disamakan dengan jumlah seluruh bulan. Tanpa yang kedua,
+     * transaksi menyimpan satu angka sementara alokasinya menjumlahkan angka
+     * lain — dan dari situlah nilai kontrak bergeser sendiri setiap kali
+     * disimpan ulang.
+     */
+    private static function rapikanSetelahTulis(PDO $pdo, int $pid, int $transactionId, array $allocations, bool $adaOverride): void
+    {
+        self::bersihkanMonthOverrides($pdo, $transactionId, array_values(array_unique(array_column($allocations, 'period_key'))));
+        if (!$adaOverride) return;
+        try {
+            $st = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM transaction_allocations
+                                  WHERE transaction_id = ? AND property_id = ?');
+            $st->execute([$transactionId, $pid]);
+            $jumlah = (float) $st->fetchColumn();
+            $pdo->prepare('UPDATE transactions SET final_amount = ?, override_amount = ? WHERE id = ?')
+                ->execute([$jumlah, $jumlah, $transactionId]);
+        } catch (Throwable $e) {
+            // abaikan
+        }
+    }
+
+    /** Buang nominal khusus untuk bulan yang tidak lagi dicakup kontraknya. */
+    private static function bersihkanMonthOverrides(PDO $pdo, int $transactionId, array $periodeSah): void
+    {
+        if ($transactionId <= 0) return;
+        try {
+            if (!$periodeSah) {
+                $pdo->prepare('DELETE FROM transaction_month_overrides WHERE transaction_id = ?')->execute([$transactionId]);
+                return;
+            }
+            $tanda = implode(',', array_fill(0, count($periodeSah), '?'));
+            $pdo->prepare("DELETE FROM transaction_month_overrides
+                            WHERE transaction_id = ? AND period_key NOT IN ($tanda)")
+                ->execute(array_merge([$transactionId], array_values($periodeSah)));
+        } catch (Throwable $e) {
+            // abaikan
+        }
+    }
+
     public static function saveAllocations(PDO $pdo, int $transactionId, array $trx, array $monthOverrides = []): void
     {
         $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ?')->execute([$transactionId]);
         $allocations = self::preview($trx);
+        // Yang dikirim pemanggil menang atas yang tersimpan: itu niat yang baru
+        // saja diketik. Sisanya diambil dari simpanan, supaya jalur yang tidak
+        // lewat formulir (approve SKP, revisi SKP) tetap menghormatinya.
+        $monthOverrides = $monthOverrides + self::monthOverrides($pdo, $transactionId);
+        $adaOverride = (bool) $monthOverrides;
         // Pembagian income ke beberapa PIC: baris alokasi dipecah menurut porsinya
         // supaya laporan per PIC ikut benar tanpa satu query pun diubah.
         $splits = self::picSplits($pdo, $transactionId);
@@ -145,6 +234,7 @@ final class AllocationService
                         ]);
                     }
                 }
+                self::rapikanSetelahTulis($pdo, $propertyId, $transactionId, $allocations, $adaOverride);
                 return;
             }
             // Bagi RATA untuk siklus tanggal; untuk bulan kalender dipakai
@@ -167,6 +257,12 @@ final class AllocationService
                     $a['amount'] = $a['period_key'] === $recognitionPeriod ? $totalAmount : 0;
                 }
                 unset($a);
+            }
+            // Nominal khusus diterapkan PALING AKHIR — sesudah penumpukan ke
+            // bulan pengakuan. Kalau dibalik, angka yang baru saja ditentukan
+            // orang langsung ditimpa kembali oleh aturan bulan pengakuan.
+            if ($monthOverrides) {
+                $allocations = self::applyMonthOverrides($allocations, $monthOverrides);
             }
         }
 
@@ -195,6 +291,7 @@ final class AllocationService
                 ]);
             }
         }
+        self::rapikanSetelahTulis($pdo, $propertyId, $transactionId, $allocations, $adaOverride);
     }
 
     /**
@@ -618,14 +715,50 @@ final class AllocationService
         };
     }
 
+    /**
+     * Pasang nominal bulanan yang ditentukan orang, lalu BAGI ULANG sisanya ke
+     * bulan-bulan yang tidak ditentukan.
+     *
+     * Tanpa pembagian ulang, angkanya menggelembung sendiri setiap kali
+     * disimpan: nilai kontrak dibagi rata ke SEMUA bulan lebih dulu, bulan yang
+     * ditentukan ditimpa di atasnya, lalu nilai kontrak disamakan lagi dengan
+     * jumlah yang baru — dan putaran berikutnya berangkat dari angka yang sudah
+     * lebih besar. Satu kontrak Rp 36 juta berubah jadi Rp 42 juta, lalu
+     * Rp 47 juta, hanya karena tombol Simpan ditekan berulang kali.
+     *
+     * Sisanya dibagi MENURUT PORSI yang sudah ada, bukan rata. Dengan begitu
+     * bentuk alokasi tetap terjaga: kontrak yang diakui sekaligus tetap
+     * menumpuk di bulan pengakuannya (bulan lain memang bernilai nol dan tetap
+     * nol), sementara kontrak spread yang porsinya sudah rata tetap terbagi
+     * rata.
+     */
     private static function applyMonthOverrides(array $allocations, array $overrides): array
     {
+        $total = array_sum(array_column($allocations, 'amount'));
+        $bebas = [];
+        $terpakai = 0.0;
+        foreach ($allocations as $i => $a) {
+            if (isset($overrides[$a['period_key']])) $terpakai += (float) $overrides[$a['period_key']];
+            else                                     $bebas[] = $i;
+        }
         foreach ($allocations as &$a) {
-            if (isset($overrides[$a['period_key']])) {
-                $a['amount'] = (float) $overrides[$a['period_key']];
-            }
+            if (isset($overrides[$a['period_key']])) $a['amount'] = (float) $overrides[$a['period_key']];
         }
         unset($a);
+        if (!$bebas) return $allocations;
+
+        $sisa = $total - $terpakai;
+        if ($sisa < 0) $sisa = 0.0;   // yang ditentukan melebihi nilai kontrak → sisanya nol
+        $dasar = 0.0;
+        foreach ($bebas as $i) $dasar += (float) $allocations[$i]['amount'];
+        $jalan = 0.0;
+        $akhir = $bebas[count($bebas) - 1];
+        foreach ($bebas as $i) {
+            if ($i === $akhir) { $allocations[$i]['amount'] = round($sisa - $jalan); break; }
+            $porsi = $dasar > 0 ? ((float) $allocations[$i]['amount'] / $dasar) : (1 / count($bebas));
+            $allocations[$i]['amount'] = round($sisa * $porsi);
+            $jalan += $allocations[$i]['amount'];
+        }
         return $allocations;
     }
 

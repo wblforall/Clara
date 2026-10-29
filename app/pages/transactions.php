@@ -328,6 +328,7 @@ function transaction_delete(PDO $pdo): void
         // tertinggal yatim dan bisa terpakai lagi bila transaksinya tersentuh.
         $pdo->prepare('DELETE FROM transaction_pic_splits WHERE transaction_id = ?')->execute([$id]);
         $pdo->prepare('DELETE FROM price_steps WHERE transaction_id = ?')->execute([$id]);
+        $pdo->prepare('DELETE FROM transaction_month_overrides WHERE transaction_id = ?')->execute([$id]);
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();
@@ -378,6 +379,7 @@ function transaction_cancel(PDO $pdo): void
         $pdo->prepare('DELETE FROM transaction_allocations WHERE transaction_id = ? AND property_id = ?')->execute([$id, $pid]);
         $pdo->prepare('DELETE FROM transaction_pic_splits WHERE transaction_id = ?')->execute([$id]);
         $pdo->prepare('DELETE FROM price_steps WHERE transaction_id = ?')->execute([$id]);
+        $pdo->prepare('DELETE FROM transaction_month_overrides WHERE transaction_id = ?')->execute([$id]);
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();
@@ -645,7 +647,7 @@ function transaction_form(PDO $pdo): void
                     <select name="recognition_month" id="recognition_month">
                         <option value="start">Bulan Awal (bulan mulai)</option>
                         <option value="end">Bulan Akhir (bulan selesai)</option>
-                        <option value="spread">Spread per Bulan (Recurring)</option>
+                        <option value="spread">Dibagi rata tiap bulan</option>
                     </select>
                     <div class="help" id="recognition_help">Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.</div>
                 </div>
@@ -664,7 +666,7 @@ function transaction_form(PDO $pdo): void
                     <input type="checkbox" name="recurring_flag" id="recurring_flag" value="1" style="width:18px;height:18px;flex-shrink:0;margin-top:1px" <?= !empty($prefill['recurring_flag']) ? 'checked' : '' ?>>
                     <label for="recurring_flag" style="margin:0;cursor:pointer">
                         <span style="font-weight:700;color:#0369a1">Diakui Recurring</span>
-                        <span class="help" style="display:block;margin-top:2px;font-weight:400">Centang bila input bulanan ini bagian dari kontrak berulang. Akan dihitung sebagai recurring di laporan — tanpa mengubah atau meng-convert transaksi.</span>
+                        <span class="help" style="display:block;margin-top:2px;font-weight:400">Hanya penggolongan untuk Dashboard &amp; Laporan: centang bila ini bagian dari kontrak berulang. <b>Tidak</b> mengubah nilai, tanggal, maupun bulan jatuhnya income &mdash; yang mengatur itu kolom <b>Nilai Diakui di Bulan</b>.</span>
                     </label>
                 </div>
                 <div class="wide"><label>Materi / Keterangan</label><textarea name="content_note"><?= h($prefill['content_note'] ?? '') ?></textarea></div>
@@ -900,8 +902,8 @@ function transaction_form(PDO $pdo): void
                 const help = document.getElementById('recognition_help');
                 const cycleWrap = document.getElementById('cycle_recognition_wrap');
                 help.textContent = val === 'spread'
-                    ? 'Revenue dibagi rata ke setiap bulan yang dicakup kontrak.'
-                    : 'Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.';
+                    ? 'Nilainya dibagi rata ke setiap bulan yang dicakup kontrak. Pilihan ini juga membuat kontraknya dihitung sebagai Recurring di Dashboard dan Laporan.'
+                    : 'Satu acara dicatat utuh di satu bulan. Pilih bulan mana yang dipakai.';
                 if (cycleWrap) cycleWrap.style.display = val === 'spread' ? '' : 'none';
                 peringatanPricing();
             }
@@ -1184,19 +1186,12 @@ function transaction_save(PDO $pdo): void
             $monthOverrides[(string) $k] = (float) $v;
         }
     }
+    // Nominal per bulan yang diketik orang disimpan TERPISAH dari hasil
+    // hitungannya. Baris alokasi selalu dihapus-tulis-ulang, jadi menaruh
+    // niatnya di sana sama saja dengan membuangnya pada perhitungan berikutnya.
+    // Penyesuaian final_amount dikerjakan AllocationService setelah menulis.
+    AllocationService::simpanMonthOverrides($pdo, current_property_id(), $id, $monthOverrides, clara_pelaku());
     AllocationService::saveAllocations($pdo, $id, $trx, $monthOverrides);
-    if ($monthOverrides) {
-        $s = $pdo->prepare('SELECT SUM(amount) FROM transaction_allocations WHERE transaction_id=? AND property_id=?');
-        $s->execute([$id, current_property_id()]);
-        $newFinal = (float) ($s->fetchColumn() ?: $trx['final_amount']);
-        // override_amount IKUT disamakan. Kalau hanya final_amount yang diubah,
-        // kotak "Override Aktual" di form Edit menyimpan angka lama — dan
-        // pengeditan berikutnya (tanpa menyentuh nominal per bulan) akan
-        // mengirim angka lama itu kembali, diam-diam menurunkan nilai kontrak
-        // ke besaran sebelum alokasinya disesuaikan.
-        $pdo->prepare('UPDATE transactions SET final_amount=?, override_amount=? WHERE id=?')
-            ->execute([$newFinal, $newFinal, $id]);
-    }
     audit($pdo, 'create', 'transactions', (string) $id, $trx);
     // Datang dari tombol "Perpanjang": lanjut langsung ke form SKP periode baru
     // (status sewa otomatis "Perpanjangan"), bukan ke detail alokasi.
@@ -1452,7 +1447,7 @@ function transaction_edit(PDO $pdo): void
                     <select name="recognition_month" id="recognition_month">
                         <option value="start"  <?= $recognitionMonth === 'start'  ? 'selected' : '' ?>>Bulan Awal (bulan mulai)</option>
                         <option value="end"    <?= $recognitionMonth === 'end'    ? 'selected' : '' ?>>Bulan Akhir (bulan selesai)</option>
-                        <option value="spread" <?= $recognitionMonth === 'spread' ? 'selected' : '' ?>>Spread per Bulan (Recurring)</option>
+                        <option value="spread" <?= $recognitionMonth === 'spread' ? 'selected' : '' ?>>Dibagi rata tiap bulan</option>
                     </select>
                     <div class="help" id="recognition_help">Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.</div>
                 </div>
@@ -1704,8 +1699,8 @@ function transaction_edit(PDO $pdo): void
                 const help = document.getElementById('recognition_help');
                 const cycleWrap = document.getElementById('cycle_recognition_wrap');
                 help.textContent = val === 'spread'
-                    ? 'Revenue dibagi rata ke setiap bulan yang dicakup kontrak.'
-                    : 'Transaksi lintas bulan — pilih bulan mana yang dicatat sebagai periode utama.';
+                    ? 'Nilainya dibagi rata ke setiap bulan yang dicakup kontrak. Pilihan ini juga membuat kontraknya dihitung sebagai Recurring di Dashboard dan Laporan.'
+                    : 'Satu acara dicatat utuh di satu bulan. Pilih bulan mana yang dipakai.';
                 if (cycleWrap) cycleWrap.style.display = val === 'spread' ? '' : 'none';
                 peringatanPricing();
             }
@@ -1851,9 +1846,17 @@ function transaction_edit(PDO $pdo): void
             }
 
 
-            // Auto-tampilkan spread table saat buka edit form transaksi recurring
+            // Auto-tampilkan tabel nominal per bulan saat form edit dibuka.
+            //
+            // DITUNDA sampai seluruh halaman termuat. assets/spread-table.js
+            // disisipkan di kaki halaman, jadi saat baris ini dijalankan
+            // renderSpreadTable() belum ada — dan ReferenceError-nya mematikan
+            // kalkulasiTotal() di tengah jalan. Akibatnya tabel per bulan tidak
+            // pernah muncul di form Edit, dan nominal khusus yang sudah
+            // tersimpan tidak ikut terkirim waktu disimpan.
             <?php if (($trx['billing_method'] ?? '') === 'spread'): ?>
-            kalkulasiTotal();
+            if (document.readyState === 'complete') kalkulasiTotal();
+            else window.addEventListener('load', kalkulasiTotal);
             <?php endif; ?>
         </script>
         <?php
@@ -1872,9 +1875,22 @@ function transaction_update(PDO $pdo): void
         redirect_to('dashboard');
     }
 
+    // Transaksi yang terbit dari dokumen bertanda tangan: formulirnya mematikan
+    // seluruh kolom nilai demi kejelasan — dan kolom yang disabled TIDAK ikut
+    // terkirim. Tanggalnya lalu terbaca kosong dan penyimpanan ditolak dengan
+    // "tanggal mulai wajib diisi", padahal yang hendak diubah cuma PIC atau
+    // nomor invoice. Akibatnya kontrak yang sudah diteken tidak pernah bisa
+    // diperbarui sama sekali. Nilai lamanya dipakai di sini, dan toh di bawah
+    // seluruh field nilai ditimpa lagi dari baris yang tersimpan.
+    $lockSkp = _trx_locking_skp($pdo, $id, current_property_id());
     $start  = (string) post('start_date');
     $end    = (string) post('end_date');
     $months = (int) post('contract_months', 0);
+    if ($lockSkp) {
+        $start  = (string) $existing['start_date'];
+        $end    = (string) $existing['end_date'];
+        $months = (int) $existing['contract_months'];
+    }
     if (!transaction_date_ok($start)) {
         flash('Perubahan tidak disimpan: tanggal mulai wajib diisi dengan tanggal yang benar.');
         redirect_to('transaction_edit', ['id' => $id]);
@@ -1896,7 +1912,9 @@ function transaction_update(PDO $pdo): void
     // Menyunting baris B sampai persis sama dengan baris A menghasilkan kembar
     // yang sama saja — jadi diperiksa di sini juga, dengan baris ini sendiri
     // dikecualikan (menyimpan tanpa mengubah apa pun tidak boleh ditolak).
-    $kembar = transaksi_kembar(
+    // Transaksi terkunci tidak mungkin berubah jadi kembar: unit, client, dan
+    // tanggalnya tidak ikut terkirim dan memang tidak boleh berubah.
+    $kembar = $lockSkp ? [] : transaksi_kembar(
         $pdo, current_property_id(), (string) $existing['module'], (string) post('master_code'),
         $clientId ?: null, $start, $end, $id
     );
@@ -1925,28 +1943,16 @@ function transaction_update(PDO $pdo): void
         'remarks'            => post('remarks'),
         'invoice_no'         => trim((string) post('invoice_no')) ?: null,
     ];
-    $calculated = AllocationService::totalCalculated($trx);
-    $override = post('override_amount') !== '' ? (float) post('override_amount') : null;
-    $trx['total_calculated'] = $calculated;
-    $trx['override_amount']  = $override;
-    $trx['final_amount']     = $override ?: $calculated;
-    $recognitionMonth = post('recognition_month', 'start');
-    if ($recognitionMonth === 'spread') {
-        $trx['billing_method'] = 'spread';
-        $trx['period_key']     = substr($start, 0, 7);
-    } else {
-        $trx['period_key'] = $recognitionMonth === 'end' ? substr($end, 0, 7) : substr($start, 0, 7);
-        if (substr($start, 0, 7) !== substr($end, 0, 7)) {
-            $trx['recognition_period'] = $trx['period_key'];
-        }
-    }
-
     // ── LOCK offer-first ─────────────────────────────────────────────────────
     // Transaksi yang terbit dari SKP approved/signed → field NILAI dikunci agar
     // tak menyimpang dari dokumen bertanda tangan. Hanya PIC / referrer / no.
     // invoice / catatan / kontak yang boleh berubah. Paksa nilai lama (server-
     // side; tak percaya form). Alokasi bulanan TIDAK disentuh.
-    $lockSkp = _trx_locking_skp($pdo, $id, current_property_id());
+    //
+    // Nilai lama dipasang SEBELUM apa pun dihitung. Dulu totalCalculated()
+    // dipanggil lebih dulu atas isian formulir — dan karena formulir mematikan
+    // kolom nilai, pricing_type-nya null dan permintaannya mati dengan fatal
+    // error, bukan tersimpan.
     if ($lockSkp) {
         foreach (['master_code', 'content_note', 'start_date', 'end_date', 'quantity', 'slots',
                   'area_sqm', 'pricing_type', 'unit_rate', 'contract_months', 'billing_method',
@@ -1956,6 +1962,22 @@ function transaction_update(PDO $pdo): void
         }
         $trx['period_key'] = $existing['period_key'];
         $clientId = (int) $existing['client_id'];
+    } else {
+        $calculated = AllocationService::totalCalculated($trx);
+        $override = post('override_amount') !== '' ? (float) post('override_amount') : null;
+        $trx['total_calculated'] = $calculated;
+        $trx['override_amount']  = $override;
+        $trx['final_amount']     = $override ?: $calculated;
+        $recognitionMonth = post('recognition_month', 'start');
+        if ($recognitionMonth === 'spread') {
+            $trx['billing_method'] = 'spread';
+            $trx['period_key']     = substr($start, 0, 7);
+        } else {
+            $trx['period_key'] = $recognitionMonth === 'end' ? substr($end, 0, 7) : substr($start, 0, 7);
+            if (substr($start, 0, 7) !== substr($end, 0, 7)) {
+                $trx['recognition_period'] = $trx['period_key'];
+            }
+        }
     }
 
     $pdo->prepare(
@@ -2003,16 +2025,9 @@ function transaction_update(PDO $pdo): void
                 $monthOverrides[(string) $k] = (float) $v;
             }
         }
+        // Lihat catatan di transaction_save(): niatnya disimpan terpisah.
+        AllocationService::simpanMonthOverrides($pdo, current_property_id(), $id, $monthOverrides, clara_pelaku());
         AllocationService::saveAllocations($pdo, $id, $trx, $monthOverrides);
-        if ($monthOverrides) {
-            $s = $pdo->prepare('SELECT SUM(amount) FROM transaction_allocations WHERE transaction_id=? AND property_id=?');
-            $s->execute([$id, current_property_id()]);
-            $newFinal = (float) ($s->fetchColumn() ?: $trx['final_amount']);
-            // Lihat catatan yang sama di transaction_save(): override_amount wajib
-            // ikut, kalau tidak angka lama akan dikirim balik pada edit berikutnya.
-            $pdo->prepare('UPDATE transactions SET final_amount=?, override_amount=? WHERE id=?')
-                ->execute([$newFinal, $newFinal, $id]);
-        }
     }
     audit($pdo, 'update', 'transactions', (string) $id, $trx, (array) $existing);
     flash($lockSkp
@@ -2228,8 +2243,16 @@ function allocation_detail(PDO $pdo): void
     $pq->execute([current_property_id()]);
     $picPilihan = $pq->fetchAll(PDO::FETCH_ASSOC) ?: [];
     $bisaUbahBagi = can('approve_skp');
+    // Nominal satu bulan boleh disetel sendiri bila kontraknya memang menyentuh
+    // lebih dari satu bulan — bukan hanya bila metodenya Spread. Kontrak yang
+    // diakui sekaligus pun bisa punya beberapa baris bulan, dan sebelumnya
+    // baris-baris itu tampil di layar tanpa satu pun cara mengubahnya.
+    // Satu bulan saja tidak diberi tombol: mengubahnya sama dengan mengubah
+    // nilai kontrak, dan itu sudah ada tempatnya di "Override Aktual".
     $acuanBagiTrx = round((float) ($trx['final_amount'] ?: $trx['total_calculated']));
     $lockSkp = _trx_locking_skp($pdo, $id, current_property_id());
+    $bulanTersentuh = count(array_unique(array_column($allocRows, 'period_key')));
+    $bisaUbahBulan  = can('manage_transactions') && !$lockSkp && $bulanTersentuh > 1;
     // Jadwal harga bertahap kontrak ini (kosong = harga tunggal).
     require_once dirname(__DIR__) . '/AllocationService.php';
     $tahap = AllocationService::priceSteps($pdo, $id);
@@ -2238,7 +2261,7 @@ function allocation_detail(PDO $pdo): void
     // itu memang kebutuhannya — tapi harus terbaca jelas bahwa nilainya lalu
     // berbeda dari surat yang dipegang client.
     $bedaDariSurat = _trx_tahap_beda_dari_surat($lockSkp, $tahap);
-    layout('Detail Alokasi Transaksi #' . $id, function () use ($trx, $allocRows, $adaBagi, $lockSkp, $tahap, $bisaUbahHarga, $bedaDariSurat, $bagiTrx, $picPilihan, $bisaUbahBagi, $acuanBagiTrx) {
+    layout('Detail Alokasi Transaksi #' . $id, function () use ($trx, $allocRows, $adaBagi, $lockSkp, $tahap, $bisaUbahHarga, $bedaDariSurat, $bagiTrx, $picPilihan, $bisaUbahBagi, $acuanBagiTrx, $bisaUbahBulan) {
         ?>
         <div class="panel">
             <?php $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang']; ?>
@@ -2468,11 +2491,11 @@ function allocation_detail(PDO $pdo): void
                 <table>
                     <thead><tr>
                         <th>Bulan</th><th>Periode Alokasi</th><?php if ($adaBagi): ?><th>PIC</th><?php endif; ?><th>Hari</th><th>Capacity-days</th><th>Aktual</th>
-                        <?php if (($trx['billing_method'] ?? '') === 'spread' && can('manage_transactions')): ?><th></th><?php endif; ?>
+                        <?php if ($bisaUbahBulan): ?><th></th><?php endif; ?>
                     </tr></thead>
                     <tbody>
                     <?php
-                    $isSpreadEditable = ($trx['billing_method'] ?? '') === 'spread' && can('manage_transactions') && !$lockSkp;
+                    $isSpreadEditable = $bisaUbahBulan;
                     $csrfToken = csrf_token();
                     $kolom = $adaBagi ? 7 : 6;
                     // Subtotal dicetak setiap kali siklusnya berganti.
@@ -2534,7 +2557,7 @@ function allocation_detail(PDO $pdo): void
             <p class="help" style="margin-top:7px">Income kontrak ini dibagi ke <strong><?= count(array_unique(array_filter(array_column($allocRows, 'pic_name')))) ?> PIC</strong>, jadi tiap bulan punya satu baris per PIC. <strong>Special Price</strong> mengubah porsi satu PIC saja &mdash; nominal pembagiannya ikut disesuaikan otomatis.</p>
             <?php endif; ?>
         </div>
-        <?php if (($trx['billing_method'] ?? '') === 'spread' && can('manage_transactions')): ?>
+        <?php if ($bisaUbahBulan): ?>
         <script>
         function toggleEditRow(id, currentAmt) {
             var editRow = document.getElementById('edit-' + id);
@@ -2574,17 +2597,19 @@ function allocation_amount_override(PDO $pdo): void
     $newAmt   = (float) post('new_amount');
     $pid      = current_property_id();
 
-    // Verifikasi alokasi milik properti & transaksi yang tepat, dan transaksinya adalah spread
+    // Syarat "harus spread" dicabut. Kontrak yang diakui sekaligus pun bisa
+    // punya lebih dari satu bulan — dan bulan-bulan itu dulu tidak bisa
+    // disentuh sama sekali, padahal halamannya menampilkan angkanya.
     $alloc = $pdo->prepare(
-        'SELECT ta.id, ta.period_key FROM transaction_allocations ta
+        'SELECT ta.id, ta.period_key, t.id trx FROM transaction_allocations ta
          JOIN transactions t ON t.id = ta.transaction_id
-         WHERE ta.id = ? AND ta.transaction_id = ? AND ta.property_id = ? AND t.billing_method = "spread"'
+         WHERE ta.id = ? AND ta.transaction_id = ? AND ta.property_id = ? AND t.deleted_at IS NULL'
     );
     $alloc->execute([$allocId, $trxId, $pid]);
     $row = $alloc->fetch();
 
     if (!$row) {
-        flash('Alokasi tidak ditemukan atau bukan transaksi recurring.');
+        flash('Alokasi tidak ditemukan.');
         redirect_to('allocation_detail', ['id' => $trxId]);
     }
 
@@ -2623,6 +2648,17 @@ function allocation_amount_override(PDO $pdo): void
                 $updBagi->execute([(float) $b['n'], $trxId, $b['pic_name']]);
             }
         }
+
+        // Angka yang baru saja diketik disimpan sebagai NIAT, bukan cuma
+        // sebagai hasil. Tanpa ini ia hilang pada perhitungan ulang berikutnya
+        // — dan karena nilai kontrak sudah terlanjur disamakan dengan jumlah
+        // alokasi yang baru, sisa bulan lain ikut bergeser.
+        $totalBulan = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM transaction_allocations
+                                      WHERE transaction_id = ? AND property_id = ? AND period_key = ?');
+        $totalBulan->execute([$trxId, $pid, $row['period_key']]);
+        AllocationService::simpanMonthOverrides(
+            $pdo, $pid, $trxId, [$row['period_key'] => (float) $totalBulan->fetchColumn()], clara_pelaku()
+        );
 
         audit($pdo, 'allocation_override', 'transaction_allocations', (string) $allocId, [
             'transaction_id' => $trxId,
