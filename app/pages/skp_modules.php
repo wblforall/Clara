@@ -260,27 +260,52 @@ function skp_detail_from_post(string $docType): array
  *
  * Isi dokumen disimpan sebagai salinan (detail_json) supaya dokumen yang sudah
  * terbit tidak ikut berubah ketika templatenya diubah. Untuk dokumen yang MASIH
- * draft salinan itu justru menyesatkan: item yang baru ditambahkan lewat
- * Template Penawaran → Media tidak pernah muncul, dan satu-satunya cara
- * memunculkannya adalah membuang dokumennya lalu membuat yang baru.
+ * draft salinan itu justru menyesatkan: daftar itemnya membeku di keadaan saat
+ * dokumen dibuat.
  *
- * Maka item template yang belum ada di dokumen ditambahkan di bawah daftarnya.
- * Yang sudah ada tidak disentuh sama sekali — centang, biaya, dan urutannya
- * tetap seperti yang diketik.
+ * Maka selama dokumennya masih bisa diedit, daftarnya disamakan DUA ARAH:
+ *
+ *   - item template yang belum ada di dokumen → ditambahkan di bawah daftarnya;
+ *   - item yang sudah DIHAPUS dari template → ikut hilang dari dokumen.
+ *
+ * Yang kedua dijaga ketat: item hanya boleh hilang bila belum tersentuh sama
+ * sekali — belum dicentang, belum berisi biaya, keterangan, atau lokasi. Item
+ * yang sudah dipakai tetap tinggal walaupun templatenya berubah, karena itu
+ * keputusan orang yang mengisi dokumennya, bukan keputusan template.
+ *
+ * Penjaga kedua: bila daftar template kelompok itu KOSONG (templatenya memang
+ * belum diatur), tidak ada yang dibuang sama sekali. Tanpa itu, template yang
+ * belum diisi akan mengosongkan daftar item seluruh dokumen draft.
  */
 function skp_fu_sinkron_tpl(array $det, array $tpl): array
 {
     foreach (['utilities', 'media_promo', 'parkir'] as $k) {
-        $ada = array_map(
-            fn($it) => mb_strtolower(trim((string) ($it['nama'] ?? ''))),
-            (array) ($det[$k] ?? [])
-        );
+        $tplNama = [];
         foreach ((array) ($tpl['extra'][$k] ?? []) as $n) {
-            $nama = trim((string) $n);
-            if ($nama === '' || in_array(mb_strtolower($nama), $ada, true)) continue;
-            $det[$k][] = ['nama' => $nama, 'checked' => 0, 'ket' => '', 'lokasi' => '', 'biaya' => '', 'satuan' => ''];
-            $ada[] = mb_strtolower($nama);
+            $n = trim((string) $n);
+            if ($n !== '') $tplNama[mb_strtolower($n)] = $n;
         }
+        $bolehBuang = $tplNama !== [];
+        $hasil = $ada = [];
+        foreach ((array) ($det[$k] ?? []) as $it) {
+            $nama = trim((string) ($it['nama'] ?? ''));
+            if ($nama === '') continue;
+            $kunci = mb_strtolower($nama);
+            if (in_array($kunci, $ada, true)) continue;          // kembar di dokumen lama
+            $terpakai = !empty($it['checked'])
+                || (float) ($it['biaya'] ?? 0) > 0
+                || trim((string) ($it['ket'] ?? '')) !== ''
+                || trim((string) ($it['lokasi'] ?? '')) !== '';
+            if ($bolehBuang && !$terpakai && !isset($tplNama[$kunci])) continue;
+            $hasil[] = $it;
+            $ada[]   = $kunci;
+        }
+        foreach ($tplNama as $kunci => $nama) {
+            if (in_array($kunci, $ada, true)) continue;
+            $hasil[] = ['nama' => $nama, 'checked' => 0, 'ket' => '', 'lokasi' => '', 'biaya' => '', 'satuan' => ''];
+            $ada[]   = $kunci;
+        }
+        $det[$k] = $hasil;
     }
     return $det;
 }
