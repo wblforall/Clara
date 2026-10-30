@@ -91,7 +91,7 @@ function performance_compute(PDO $pdo, array $pids, int $year, ?float $renewOver
     $amt = $rec = [];
     foreach ($st->fetchAll() as $r) {
         $amt[$r['pid']][$r['pk']][$r['seg']][$r['cls']] = (float) $r['amt'];
-        $rec[$r['pid']][$r['pk']] = ($rec[$r['pid']][$r['pk']] ?? 0) + (float) $r['rec'];
+        $rec[$r['pid']][$r['pk']][$r['seg']] = ($rec[$r['pid']][$r['pk']][$r['seg']] ?? 0) + (float) $r['rec'];
     }
 
     // Target bulanan
@@ -140,6 +140,7 @@ function performance_compute(PDO $pdo, array $pids, int $year, ?float $renewOver
     foreach (array_keys($segmen) as $mod) $seg[$mod] = ['aktual' => 0.0, 'fc' => 0.0, 'fcc' => 0.0];
     $ytdAct = $ytdTgt = $hit = $done = 0;
     $yearTgt = $yearFc = $yearFcc = $yearRec = 0.0;
+    $yearSeg = [];
 
     for ($i = 1; $i <= 12; $i++) {
         $m  = sprintf('%02d', $i);
@@ -149,8 +150,9 @@ function performance_compute(PDO $pdo, array $pids, int $year, ?float $renewOver
         $mEnd   = $mStart->modify('last day of this month');
 
         $locked = $fc = $fcc = $recur = 0.0;
+        // Porsi non-recurring per segmen, supaya Recurring + Exhibition + Media + Gudang = Total (outlook).
+        $nonRec = array_fill_keys(array_keys($segmen), 0.0);
         foreach ($pids as $pid) {
-            $recur += $rec[$pid][$pk] ?? 0;
             // Pelengkap baseline dihitung di tingkat properti (bukan per segmen) supaya
             // jumlah max() per segmen tidak menggelembungkan total, lalu dibagi
             // ke segmen menurut porsi baseline masing-masing.
@@ -179,6 +181,9 @@ function performance_compute(PDO $pdo, array $pids, int $year, ?float $renewOver
                         $c += ((float) $k['final_amount'] / max(1, $span)) * $hari * $rate;
                     }
                 }
+                $recSeg = min($rec[$pid][$pk][$mod] ?? 0, $a);
+                $recur += $recSeg;
+                $nonRec[$mod] += $a - $recSeg;
                 $locked += $lock; $fc += $a; $fcc += $c;
                 if ($status === 'actual') $seg[$mod]['aktual'] += $lock;
                 $seg[$mod]['fc']  += $a;
@@ -189,9 +194,10 @@ function performance_compute(PDO $pdo, array $pids, int $year, ?float $renewOver
         $months[] = [
             'pk' => $pk, 'label' => _perf_bulan_label($m), 'status' => $status,
             'locked' => $locked, 'recurring' => $recur, 'regular' => max(0, $locked - $recur),
-            'target' => $tgt, 'fc' => $fc, 'fcc' => $fcc,
+            'target' => $tgt, 'fc' => $fc, 'fcc' => $fcc, 'seg' => $nonRec,
         ];
         $yearTgt += $tgt; $yearFc += $fc; $yearFcc += $fcc; $yearRec += $recur;
+        foreach ($nonRec as $mod => $v) $yearSeg[$mod] = ($yearSeg[$mod] ?? 0) + $v;
         if ($status === 'actual') {
             $ytdAct += $locked; $ytdTgt += $tgt;
             if ($tgt > 0) { $done++; if ($locked >= $tgt) $hit++; }
@@ -200,7 +206,7 @@ function performance_compute(PDO $pdo, array $pids, int $year, ?float $renewOver
 
     return [
         'months' => $months, 'seg' => $seg, 'renew' => $renew, 'cur' => $cur,
-        'year' => ['target' => $yearTgt, 'fc' => $yearFc, 'fcc' => $yearFcc, 'recurring' => $yearRec,
+        'year' => ['target' => $yearTgt, 'fc' => $yearFc, 'fcc' => $yearFcc, 'recurring' => $yearRec, 'seg' => $yearSeg,
                    'ytd_act' => $ytdAct, 'ytd_tgt' => $ytdTgt, 'hit' => $hit, 'done' => $done],
     ];
 }
@@ -221,6 +227,11 @@ function _perf_ringkas($v): string
  * Tabel bulanan melintang: bulan Jan–Des dari kiri ke kanan, indikator di baris,
  * kolom Total di ujung. Dipakai halaman dan cetakan agar isinya tidak berbeda.
  *
+ * Urutan baris (ditetapkan Sales): Target, Recurring, Exhibition, Media, Gudang,
+ * Total, % Ach, Gap ke target. Exhibition/Media/Gudang hanya porsi non-recurring,
+ * jadi keempatnya berjumlah Total. Bulan yang belum selesai memakai outlook
+ * (statusnya tertulis di bawah nama bulan); baris terakhir menambahkan perpanjangan.
+ *
  * @param bool $cetak true = warna hex & kelas cetak, false = variabel tema halaman
  */
 function _perf_tabel_bulanan(array $months, array $y, float $gapFcc, bool $cetak): void
@@ -235,53 +246,46 @@ function _perf_tabel_bulanan(array $months, array $y, float $gapFcc, bool $cetak
     $jt    = fn($v) => $v > 0 ? _perf_jt($v) : $dash;
     $gapFmt = fn(?float $g) => $g === null ? $dash
         : '<span style="color:' . ($g >= 0 ? $hijau : $merah) . '">' . ($g >= 0 ? '+' : '−') . _perf_jt(abs($g)) . '</span>';
-
-    $tReg = $tRec = $tLock = 0.0;
-    foreach ($months as $m) { $tReg += $m['regular']; $tRec += $m['recurring']; $tLock += $m['locked']; }
+    $ach = fn(float $v, float $t) => $t > 0 ? '<span style="color:' . $warna($v / $t) . '">' . pct($v / $t) . '</span>' : $dash;
+    $garis = 'border-top:1.5px solid ' . ($cetak ? '#0F1623' : 'var(--ink)');
 
     // [judul, gaya sel, penghasil isi sel per bulan, isi sel Total]
     $baris = [
-        ['Status', '', function ($m) use ($badge, $bg, $cetak) {
-            if ($cetak) return $badge[$m['status']];
-            [$c, $b] = $bg[$m['status']];
-            return '<span style="display:inline-block;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:700;color:' . $c . ';background:' . $b . '">' . $badge[$m['status']] . '</span>';
-        }, ''],
-        ['Regular', '', fn($m) => $jt($m['regular']), $jt($tReg)],
-        ['Recurring', 'color:#0369a1', fn($m) => $jt($m['recurring']), $jt($tRec)],
-        ['Aktual / Terkunci', 'font-weight:700', fn($m) => $jt($m['locked']), $jt($tLock)],
-        ['Target', '', fn($m) => $jt($m['target']), $jt($y['target'])],
-        ['Achievement', 'font-weight:700', function ($m) use ($warna, $dash) {
-            if ($m['status'] !== 'actual' || $m['target'] <= 0) return $dash;
-            $a = $m['locked'] / $m['target'];
-            return '<span style="color:' . $warna($a) . '">' . pct($a) . '</span>';
-        }, $dash],
-        ['Outlook', '', fn($m) => $m['status'] === 'actual' ? $dash : _perf_jt($m['fc']), _perf_jt($y['fc'])],
-        ['Outlook + Perpanjangan', 'font-weight:700', function ($m) use ($warna, $dash) {
-            if ($m['status'] === 'actual') return $dash;
-            $h = _perf_jt($m['fcc']);
-            if ($m['target'] > 0) {
-                $a = $m['fcc'] / $m['target'];
-                $h .= '<div style="font-size:9.5px;font-weight:700;color:' . $warna($a) . '">' . pct($a) . '</div>';
-            }
-            return $h;
-        }, _perf_jt($y['fcc'])],
-        ['Gap ke Target', '', fn($m) => $gapFmt($m['target'] > 0 ? $m['fcc'] - $m['target'] : null), $gapFmt($y['target'] > 0 ? $gapFcc : null)],
+        ['Target', 'color:' . $muted, fn($m) => $jt($m['target']), $jt($y['target'])],
+        ['Recurring', '', fn($m) => $jt($m['recurring']), $jt($y['recurring'])],
     ];
+    foreach (_perf_segmen() as $mod => $lbl) {
+        $baris[] = [$lbl, '', fn($m) => $jt($m['seg'][$mod] ?? 0), $jt($y['seg'][$mod] ?? 0)];
+    }
+    $baris[] = ['Total', 'font-weight:800;' . $garis, fn($m) => $jt($m['fc']), $jt($y['fc'])];
+    $baris[] = ['% Ach', 'font-weight:700', fn($m) => $ach($m['fc'], $m['target']), $ach($y['fc'], $y['target'])];
+    $baris[] = ['Gap ke target', 'font-weight:700', fn($m) => $gapFmt($m['target'] > 0 ? $m['fc'] - $m['target'] : null),
+                $gapFmt($y['target'] > 0 ? $y['fc'] - $y['target'] : null)];
+    $baris[] = ['+ Perpanjangan', 'color:' . $muted . ';font-size:.92em', function ($m) use ($dash, $warna) {
+        if ($m['status'] === 'actual') return $dash;
+        $h = _perf_jt($m['fcc']);
+        if ($m['target'] > 0) $h .= ' <span style="font-weight:700;color:' . $warna($m['fcc'] / $m['target']) . '">' . pct($m['fcc'] / $m['target']) . '</span>';
+        return $h;
+    }, _perf_jt($y['fcc']) . ($y['target'] > 0 ? ' <span style="font-weight:700;color:' . $warna($y['fcc'] / $y['target']) . '">' . pct($y['fcc'] / $y['target']) . '</span>' : '')];
 
     $stk = $cetak ? '' : 'position:sticky;left:0;background:#fff;z-index:1;';
     echo '<table class="' . ($cetak ? 'tbl-bulan' : 'perf-t') . '"><thead><tr><th style="' . $stk . '">Rupiah</th>';
     foreach ($months as $m) {
         $now = $m['status'] === 'running';
-        echo '<th class="r"' . ($now ? ' style="background:#FEF3C7;color:#92400E"' : '') . '>' . h($m['label']) . '</th>';
+        [$c, $b] = $bg[$m['status']];
+        echo '<th class="r"' . ($now ? ' style="background:#FEF3C7;color:#92400E"' : '') . '>' . h($m['label'])
+           . '<div style="font-size:.85em;font-weight:700;letter-spacing:0;text-transform:none;color:' . $c . '">' . $badge[$m['status']] . '</div></th>';
     }
     echo '<th class="r">Total</th></tr></thead><tbody>';
     foreach ($baris as [$judul, $gaya, $isi, $total]) {
-        echo '<tr><td style="font-weight:600;' . $stk . '">' . h($judul) . '</td>';
+        $tebal = str_contains($gaya, 'font-weight:800') ? '800' : '600';
+        $tepi  = str_contains($gaya, 'border-top') ? $garis . ';' : '';
+        echo '<tr><td style="font-weight:' . $tebal . ';' . $tepi . $stk . '">' . h($judul) . '</td>';
         foreach ($months as $m) {
             $now = $m['status'] === 'running';
             echo '<td style="text-align:right;' . $gaya . ($now ? ';background:#FFFBEB' : '') . '">' . $isi($m) . '</td>';
         }
-        echo '<td style="text-align:right;font-weight:700;background:' . ($cetak ? '#F0FDFA' : '#F8FAFC') . ';' . ($gaya && str_contains($gaya, 'color') ? $gaya : '') . '">' . $total . '</td></tr>';
+        echo '<td style="text-align:right;font-weight:700;background:' . ($cetak ? '#F0FDFA' : '#F8FAFC') . ';' . $tepi . '">' . $total . '</td></tr>';
     }
     echo '</tbody></table>';
 }
@@ -461,16 +465,7 @@ function performance_page(PDO $pdo): void
             </div>
         </div>
 
-        <div class="panel" style="margin-bottom:16px">
-            <h2>Target, Aktual, dan Outlook — <?= h($year) ?> · <?= h($scopeLabel) ?></h2>
-            <div style="position:relative;height:320px"><canvas id="chartPerf"></canvas></div>
-        </div>
-
-        <div class="panel" style="margin-bottom:16px">
-            <h2>Tabel Bulanan — <?= h($scopeLabel) ?></h2>
-            <div class="table-wrap"><?php _perf_tabel_bulanan($months, $y, $gapFcc, false); ?></div>
-        </div>
-
+<?php // Per mall dulu, baru gabungan; grafik paling bawah (permintaan Sales). ?>
         <?php foreach ($perProp as $pp): ?>
         <div class="panel" style="margin-bottom:16px">
             <h2><?= h($pp['name']) ?></h2>
@@ -478,6 +473,11 @@ function performance_page(PDO $pdo): void
             <div class="table-wrap"><?php _perf_tabel_bulanan($pp['months'], $pp['y'], $pp['gap'], false); ?></div>
         </div>
         <?php endforeach; ?>
+
+        <div class="panel" style="margin-bottom:16px">
+            <h2>Tabel Bulanan — <?= h($scopeLabel) ?></h2>
+            <div class="table-wrap"><?php _perf_tabel_bulanan($months, $y, $gapFcc, false); ?></div>
+        </div>
 
         <div class="panel" style="margin-bottom:16px">
             <h2>Per Segmen — <?= h($year) ?> <span style="font-weight:400;font-size:13px;color:var(--muted)">(Rp)</span></h2>
@@ -506,6 +506,11 @@ function performance_page(PDO $pdo): void
             <div style="font-size:12px;color:var(--muted);margin-top:8px">Target ditetapkan per properti, bukan per segmen, sehingga pencapaian terhadap target hanya ditampilkan untuk total.</div>
         </div>
 
+        <div class="panel" style="margin-bottom:16px">
+            <h2>Target, Aktual, dan Outlook — <?= h($year) ?> · <?= h($scopeLabel) ?></h2>
+            <div style="position:relative;height:320px"><canvas id="chartPerf"></canvas></div>
+        </div>
+
         <details class="panel" style="margin-bottom:16px">
             <summary style="cursor:pointer;font-weight:700">Cara membaca angka outlook</summary>
             <div style="font-size:13px;line-height:1.6;margin-top:10px;color:var(--ink2)">
@@ -520,6 +525,9 @@ function performance_page(PDO $pdo): void
                    Tingkat yang dipakai <b><?= round($renew['dipakai'] * 100) ?>%</b><?php if ($renew['ubah']): ?> (diubah manual)<?php elseif ($renew['bawaan']): ?> (nilai bawaan, contoh kontrak terlalu sedikit)<?php else: ?>, dihitung dari
                    <?= (int) $renew['ok'] ?> dari <?= (int) $renew['n'] ?> kontrak panjang yang berakhir dalam 12 bulan terakhir dan benar-benar diperpanjang<?php endif; ?>.</p>
                 <p><b>Recurring</b> memakai definisi yang sama dengan halaman Trend Revenue, sehingga angkanya sama.</p>
+                <p><b>Baris tabel.</b> Exhibition, Media, dan Gudang hanya berisi porsi yang <i>bukan</i> recurring, sehingga
+                   Recurring + Exhibition + Media + Gudang = Total. Untuk bulan yang belum selesai, Total adalah outlook;
+                   % Ach dan Gap ke target dihitung dari Total itu. Baris <b>+ Perpanjangan</b> menambahkan perkiraan perpanjangan kontrak.</p>
                 <p>Perpanjangan baru terasa saat ada kontrak panjang yang berakhir di dalam tahun yang dipilih. Untuk 2026 hampir semuanya berakhir 22–31 Desember, jadi dampaknya muncul di Januari 2027.</p>
                 <p><b>Bukan FORECAST di Kalender.</b> Kolom FORECAST di Kalender Pameran adalah potensi unit bila semua terisi penuh
                    dengan tarif normal (Proyeksi Bulanan di Master). Outlook di halaman ini adalah perkiraan pendapatan yang realistis.</p>
@@ -530,6 +538,18 @@ function performance_page(PDO $pdo): void
         <script>
         const pFmt = v => 'Rp ' + Number(v).toLocaleString('id-ID');
         const pRows = <?= json_encode($months, JSON_UNESCAPED_UNICODE) ?>;
+// Batang bertumpuk sama dengan baris tabel: Recurring + Exhibition + Media + Gudang = Total.
+// Bulan yang belum selesai (outlook) digambar lebih pudar.
+const pBatang = rows => [
+    ['Recurring', 'recurring', '3,105,161'], ['Exhibition', 'cl', '13,148,136'],
+    ['Media', 'media', '8,145,178'], ['Gudang', 'gudang', '94,184,170'],
+].map(([label, k, rgb], i, arr) => ({
+    label, stack: 'a', order: 1,
+    data: rows.map(r => Math.round(k === 'recurring' ? r.recurring : (r.seg[k] || 0))),
+    backgroundColor: rows.map(r => `rgba(${rgb},${r.status === 'actual' ? .85 : .35})`),
+    borderRadius: i === arr.length - 1 ? [4, 4, 0, 0] : 0,
+}));
+
         const pLbl  = pRows.map(r => r.label);
         const solid = r => r.status === 'actual';
         new Chart(document.getElementById('chartPerf'), {
@@ -543,11 +563,7 @@ function performance_page(PDO $pdo): void
                     { type: 'line', label: 'Outlook + Perpanjangan', data: pRows.map(r => solid(r) ? null : Math.round(r.fcc)),
                       borderColor: '#D97706', backgroundColor: 'transparent', borderWidth: 2,
                       pointRadius: 4, pointBackgroundColor: '#D97706', tension: 0.3, order: 0, spanGaps: false, stack: 'garis-forecast' },
-                    { label: 'Regular', data: pRows.map(r => Math.round(r.regular)), backgroundColor: 'rgba(13,148,136,.85)', stack: 'a', order: 1 },
-                    { label: 'Recurring', data: pRows.map(r => Math.round(r.recurring)), backgroundColor: 'rgba(3,105,161,.8)', stack: 'a', order: 1 },
-                    { label: 'Tambahan outlook', data: pRows.map(r => solid(r) ? 0 : Math.max(0, Math.round(r.fc - r.locked))),
-                      backgroundColor: 'rgba(148,163,184,.45)', borderColor: 'rgba(100,116,139,.8)', borderWidth: 1,
-                      borderRadius: [4, 4, 0, 0], stack: 'a', order: 1 },
+                    ...pBatang(pRows),
                 ]
             },
             options: {
@@ -588,16 +604,16 @@ function print_performance(PDO $pdo): void
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Inter', sans-serif; font-size: 11px; color: #0F1623; background: #fff; }
-@page { size: A4 landscape; margin: 14mm 12mm; }
+@page { size: A4 landscape; margin: 10mm 12mm; }
 .no-print { position: fixed; top: 16px; right: 16px; display: flex; gap: 8px; z-index: 99; }
 .no-print button { padding: 9px 18px; border: none; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; }
 .btn-print { background: #0D9488; color: #fff; }
 .btn-close { background: #f1f5f9; color: #374151; }
 @media print { .no-print { display: none; } }
 .rpt-header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 10px; border-bottom: 2px solid #0D9488; margin-bottom: 14px; }
-.rpt-logo { width: 160px; height: auto; display: block; object-fit: contain; }
+.rpt-logo { width: 120px; height: auto; display: block; object-fit: contain; }
 .rpt-meta { text-align: right; font-size: 12px; color: #7B8A9C; line-height: 1.8; }
-.rpt-period { font-size: 24px; font-weight: 900; color: #0F1623; }
+.rpt-period { font-size: 18px; font-weight: 900; color: #0F1623; }
 .kpi-row { display: grid; grid-template-columns: repeat(5,1fr); gap: 10px; margin-bottom: 14px; }
 .kpi-box { border: 1px solid #E4E9F0; border-radius: 8px; padding: 10px 12px; }
 .kpi-box-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #7B8A9C; }
@@ -611,7 +627,15 @@ body { font-family: 'Inter', sans-serif; font-size: 11px; color: #0F1623; backgr
 .chart-wrap { border: 1px solid #E4E9F0; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; page-break-inside: avoid; break-inside: avoid; }
 .chart-title { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: #0D9488; margin-bottom: 8px; }
 .chart-box { position: relative; height: 230px; }
-.page2 { page-break-before: always; break-before: page; }
+.hal .chart-wrap.besar .chart-box { height: 96mm; }
+.hal { height: 189mm; display: flex; flex-direction: column; overflow: hidden; break-after: page; page-break-after: always; }
+.hal:last-of-type { break-after: auto; page-break-after: auto; }
+.hal-isi { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.hal-judul { font-size: 15px; font-weight: 800; color: #0D9488; margin-bottom: 4px; }
+@media screen {
+  body { background: #E2E8F0; padding: 20px 0; }
+  .hal { width: 273mm; margin: 0 auto 20px; background: #fff; padding: 8mm 10mm; height: calc(189mm + 16mm); box-shadow: 0 6px 20px rgba(15,22,35,.12); }
+}
 table { width: 100%; border-collapse: collapse; font-size: 10px; }
 th { background: #F8FAFC; color: #344054; font-weight: 700; text-transform: uppercase; font-size: 9px; letter-spacing: .04em; padding: 6px 8px; border: 1px solid #E4E9F0; text-align: left; }
 td { padding: 5px 8px; border: 1px solid #E4E9F0; vertical-align: middle; white-space: nowrap; }
@@ -621,13 +645,16 @@ td.r, th.r { text-align: right; }
 .tbl-bulan th { font-size: 7.5px; }
 .tbl-bulan th { text-align: right; }
 .tbl-bulan th:first-child { text-align: left; }
+.tabel-mall .tbl-bulan { font-size: 8.5px; }
+.tabel-mall .tbl-bulan td { padding: 10px 3px; }
+.tabel-mall .tbl-bulan th { font-size: 7.5px; padding: 8px 3px; }
 td.money { text-align: right; font-weight: 600; }
 tfoot td { background: #F0FDFA; font-weight: 800; border-top: 2px solid #0D9488; }
 tr.berjalan td { background: #FFFBEB; }
 .sec { margin-top: 14px; }
 .catatan { margin-top: 12px; font-size: 9.5px; line-height: 1.55; color: #475467; border: 1px solid #E4E9F0; border-radius: 8px; padding: 10px 12px; page-break-inside: avoid; break-inside: avoid; }
 .catatan b { color: #0F1623; }
-.rpt-footer { margin-top: 14px; padding-top: 8px; border-top: 1px solid #E4E9F0; display: flex; justify-content: space-between; font-size: 9px; color: #7B8A9C; }
+.rpt-footer { margin-top: auto; padding-top: 8px; border-top: 1px solid #E4E9F0; display: flex; justify-content: space-between; font-size: 9px; color: #7B8A9C; }
 * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 </style>
 </head>
@@ -638,16 +665,30 @@ tr.berjalan td { background: #FFFBEB; }
     <button class="btn-close" onclick="window.close()">✕ Tutup</button>
 </div>
 
+<?php
+// Satu halaman A4 per bagian: per mall dulu, lalu gabungan, grafik paling akhir.
+$halaman = [];
+foreach ($perProp as $pp) $halaman[] = ['jenis' => 'prop', 'judul' => $pp['name'], 'pp' => $pp];
+$halaman[] = ['jenis' => 'utama', 'judul' => $scopeLabel];
+$halaman[] = ['jenis' => 'grafik', 'judul' => 'Grafik & catatan — ' . $scopeLabel];
+$nHal = count($halaman);
+$dicetak = date('d/m/Y H:i');
+foreach ($halaman as $i => $hal):
+?>
+<section class="hal">
 <div class="rpt-header">
     <div><img class="rpt-logo" src="assets/clara-logo.png" alt="CLARA"></div>
     <div class="rpt-meta">
         <div class="rpt-period">Performance &amp; Outlook <?= h($year) ?></div>
-        <div style="font-size:20px;font-weight:800;color:#0D9488;margin-bottom:2px"><?= h($scopeLabel) ?></div>
-        <div>Dicetak: <?= date('d/m/Y H:i:s') ?></div>
-        <div>Oleh: <?= h($_SESSION['user']['name'] ?? '-') ?> (<?= h($_SESSION['user']['role'] ?? '-') ?>)</div>
+        <div style="font-size:16px;font-weight:800;color:#0D9488;line-height:1.4"><?= h($hal['judul']) ?></div>
+        <?php if ($i === 0): ?><div>Dicetak <?= $dicetak ?> oleh <?= h($_SESSION['user']['name'] ?? '-') ?> (<?= h($_SESSION['user']['role'] ?? '-') ?>)</div><?php endif; ?>
     </div>
 </div>
-
+<div class="hal-isi">
+<?php if ($hal['jenis'] === 'prop'): $pp = $hal['pp']; ?>
+    <div style="font-size:10.5px;margin-bottom:8px;color:#475467"><?= _perf_baris_prop($pp, $lastDone, true) ?></div>
+    <div class="tabel-mall"><?php _perf_tabel_bulanan($pp['months'], $pp['y'], $pp['gap'], true); ?></div>
+<?php elseif ($hal['jenis'] === 'utama'): ?>
 <div class="kpi-row">
     <div class="kpi-box">
         <div class="kpi-box-label">Pencapaian<?= $lastDone ? ' s.d. ' . h($lastDone['label']) : '' ?></div>
@@ -676,25 +717,8 @@ tr.berjalan td { background: #FFFBEB; }
         <div class="kpi-box-sub"><?= $y['fc'] > 0 ? pct($y['recurring'] / $y['fc']) . ' dari outlook' : '' ?></div>
     </div>
 </div>
-
-<div class="chart-wrap">
-    <div class="chart-title">Target, Aktual, dan Outlook — <?= h($year) ?></div>
-    <div class="chart-box"><canvas id="chartPerf"></canvas></div>
-</div>
-
-<div class="catatan">
-    <b>Cara membaca.</b> Bulan yang sudah lewat memakai angka aktual. Bulan berjalan dan bulan depan memakai kontrak yang sudah
-    ditandatangani (terkunci), digenapkan sampai rata-rata 3 bulan terakhir yang sudah selesai (bulan berjalan hanya sebesar sisa harinya).
-    <b>Outlook + Perpanjangan</b> menambahkan kontrak panjang (spread, &gt; <?= PERF_KONTRAK_PANJANG_HARI ?> hari) yang akan berakhir tanpa penerus,
-    dikalikan tingkat perpanjangan <b><?= round($renew['dipakai'] * 100) ?>%</b><?php if ($renew['ubah']): ?> (diatur manual)<?php elseif ($renew['bawaan']): ?> (nilai bawaan)<?php else: ?> (<?= (int) $renew['ok'] ?> dari <?= (int) $renew['n'] ?> kontrak panjang berakhir 12 bulan terakhir diperpanjang)<?php endif; ?>.
-    Outlook berbeda dengan kolom FORECAST di Kalender (potensi unit bila terisi penuh). Recurring memakai definisi yang sama dengan Trend Revenue. Outlook belum memperhitungkan musim dan penawaran yang sedang berjalan.
-</div>
-
-<div class="page2">
-<div style="font-size:14px;font-weight:800;color:#0D9488;margin-bottom:6px">Tabel Bulanan — <?= h($scopeLabel) ?></div>
-<?php _perf_tabel_bulanan($months, $y, $gapFcc, true); ?>
-
-<div class="sec">
+    <?php _perf_tabel_bulanan($months, $y, $gapFcc, true); ?>
+    <div class="sec">
 <table style="width:70%">
     <thead><tr>
         <th>Segmen (Rp)</th>
@@ -716,29 +740,44 @@ tr.berjalan td { background: #FFFBEB; }
     </tbody>
 </table>
 <div style="font-size:9px;color:#7B8A9C;margin-top:5px">Target ditetapkan per properti, bukan per segmen, sehingga pencapaian terhadap target hanya ditampilkan untuk total.</div>
-</div>
-</div>
-
-<?php if ($perProp): ?>
-<div class="page2">
-<?php foreach ($perProp as $i => $pp): ?>
-    <div class="sec" style="<?= $i === 0 ? 'margin-top:0' : '' ?>">
-        <div style="font-size:14px;font-weight:800;color:#0D9488;margin-bottom:3px"><?= h($pp['name']) ?></div>
-        <div style="font-size:10px;margin-bottom:6px;color:#475467"><?= _perf_baris_prop($pp, $lastDone, true) ?></div>
-        <?php _perf_tabel_bulanan($pp['months'], $pp['y'], $pp['gap'], true); ?>
     </div>
-<?php endforeach; ?>
+<?php else: ?>
+    <div class="chart-wrap besar">
+        <div class="chart-title">Target, Aktual, dan Outlook — <?= h($year) ?> · <?= h($scopeLabel) ?></div>
+        <div class="chart-box"><canvas id="chartPerf"></canvas></div>
+    </div>
+    <div class="catatan">
+    <b>Cara membaca.</b> Bulan yang sudah lewat memakai angka aktual. Bulan berjalan dan bulan depan memakai kontrak yang sudah
+    ditandatangani (terkunci), digenapkan sampai rata-rata 3 bulan terakhir yang sudah selesai (bulan berjalan hanya sebesar sisa harinya).
+    <b>Outlook + Perpanjangan</b> menambahkan kontrak panjang (spread, &gt; <?= PERF_KONTRAK_PANJANG_HARI ?> hari) yang akan berakhir tanpa penerus,
+    dikalikan tingkat perpanjangan <b><?= round($renew['dipakai'] * 100) ?>%</b><?php if ($renew['ubah']): ?> (diatur manual)<?php elseif ($renew['bawaan']): ?> (nilai bawaan)<?php else: ?> (<?= (int) $renew['ok'] ?> dari <?= (int) $renew['n'] ?> kontrak panjang berakhir 12 bulan terakhir diperpanjang)<?php endif; ?>.
+    Outlook berbeda dengan kolom FORECAST di Kalender (potensi unit bila terisi penuh). Recurring memakai definisi yang sama dengan Trend Revenue. Outlook belum memperhitungkan musim dan penawaran yang sedang berjalan.
+    <b>Baris tabel.</b> Exhibition, Media, dan Gudang hanya porsi non-recurring, jadi Recurring + Exhibition + Media + Gudang = Total. Untuk bulan yang belum selesai, Total = outlook, dan % Ach serta Gap ke target dihitung dari Total itu.
 </div>
 <?php endif; ?>
-
-<div class="rpt-footer">
-    <span><?= h($app) ?> — Performance &amp; Outlook</span>
-    <span><?= h($scopeLabel) ?> &nbsp;|&nbsp; Tahun <?= h($year) ?> &nbsp;|&nbsp; Dicetak <?= date('d/m/Y H:i:s') ?></span>
 </div>
+<div class="rpt-footer">
+    <span><?= h($app) ?> — Performance &amp; Outlook · <?= h($scopeLabel) ?> · Tahun <?= h($year) ?></span>
+    <span>Dicetak <?= $dicetak ?> &nbsp;|&nbsp; <b>Halaman <?= $i + 1 ?> dari <?= $nHal ?></b></span>
+</div>
+</section>
+<?php endforeach; ?>
 
 <script>
 const pFmt = v => 'Rp ' + Number(v).toLocaleString('id-ID');
 const pRows = <?= json_encode($months, JSON_UNESCAPED_UNICODE) ?>;
+// Batang bertumpuk sama dengan baris tabel: Recurring + Exhibition + Media + Gudang = Total.
+// Bulan yang belum selesai (outlook) digambar lebih pudar.
+const pBatang = rows => [
+    ['Recurring', 'recurring', '3,105,161'], ['Exhibition', 'cl', '13,148,136'],
+    ['Media', 'media', '8,145,178'], ['Gudang', 'gudang', '94,184,170'],
+].map(([label, k, rgb], i, arr) => ({
+    label, stack: 'a', order: 1,
+    data: rows.map(r => Math.round(k === 'recurring' ? r.recurring : (r.seg[k] || 0))),
+    backgroundColor: rows.map(r => `rgba(${rgb},${r.status === 'actual' ? .85 : .35})`),
+    borderRadius: i === arr.length - 1 ? [4, 4, 0, 0] : 0,
+}));
+
 const solid = r => r.status === 'actual';
 new Chart(document.getElementById('chartPerf'), {
     type: 'bar',
@@ -749,10 +788,7 @@ new Chart(document.getElementById('chartPerf'), {
               borderWidth: 2, borderDash: [6, 4], pointRadius: 3, pointBackgroundColor: '#EF4444', tension: 0.3, order: 0, stack: 'garis-target' },
             { type: 'line', label: 'Outlook + Perpanjangan', data: pRows.map(r => solid(r) ? null : Math.round(r.fcc)), borderColor: '#D97706',
               backgroundColor: 'transparent', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#D97706', tension: 0.3, order: 0, stack: 'garis-forecast' },
-            { label: 'Regular', data: pRows.map(r => Math.round(r.regular)), backgroundColor: 'rgba(13,148,136,.85)', stack: 'a', order: 1 },
-            { label: 'Recurring', data: pRows.map(r => Math.round(r.recurring)), backgroundColor: 'rgba(3,105,161,.8)', stack: 'a', order: 1 },
-            { label: 'Tambahan outlook', data: pRows.map(r => solid(r) ? 0 : Math.max(0, Math.round(r.fc - r.locked))),
-              backgroundColor: 'rgba(148,163,184,.45)', borderColor: 'rgba(100,116,139,.8)', borderWidth: 1, borderRadius: [4, 4, 0, 0], stack: 'a', order: 1 },
+            ...pBatang(pRows),
         ]
     },
     options: {
