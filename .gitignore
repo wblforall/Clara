@@ -105,5 +105,6 @@ docs/banding_*.json
 # Repo ini PUBLIK — isinya pernah bisa diunduh siapa pun lewat raw.githubusercontent.
 /testing/
 
-# Pembangun laporan per-PIC Shinta: memuat nama penyewa & nilai kontrak asli.
+# Pembangun laporan per-PIC Shinta & Sita: memuat nama penyewa & nilai kontrak asli.
 scripts/build_laporan_shinta_okt.php
+scripts/build_laporan_sita_okt.php
