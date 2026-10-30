@@ -111,7 +111,11 @@ function _pay_query(PDO $pdo, bool $semuaBaris): array
     // satu kontrak 34 bulan membuat ringkasan Oktober terlihat ratusan juta
     // lebih besar daripada yang sebenarnya ditagih.
     $sum['porsi'] = 0.0;
-    foreach (pembayaran_porsi_bulan($pdo, $semuaBaris2, $periode) as $b) $sum['porsi'] += (float) $b['tagihan_bulan'];
+    $sum['porsi_bayar'] = 0.0;
+    foreach (pembayaran_terbayar_bulan($pdo, pembayaran_porsi_bulan($pdo, $semuaBaris2, $periode), $periode) as $b) {
+        $sum['porsi'] += (float) $b['tagihan_bulan'];
+        $sum['porsi_bayar'] += (float) $b['terbayar_bulan'];
+    }
 
     $halaman = max(1, (int) getv('page', 1));
     $per     = 200;
@@ -123,7 +127,9 @@ function _pay_query(PDO $pdo, bool $semuaBaris): array
         ? "($kolom IS NULL OR $kolom = '') ASC, " : '';
     $st = $pdo->prepare("SELECT x.* $luar ORDER BY $kosongAkhir$kolom $arah, x.start_date DESC, x.id DESC" . $batas);
     $st->execute($bind);
-    $rows = pembayaran_porsi_bulan($pdo, pembayaran_nama_unit($pdo, pembayaran_lengkapi_komponen($pdo, $st->fetchAll()), $pid), $periode);
+    $rows = pembayaran_terbayar_bulan($pdo,
+        pembayaran_porsi_bulan($pdo, pembayaran_nama_unit($pdo, pembayaran_lengkapi_komponen($pdo, $st->fetchAll()), $pid), $periode),
+        $periode);
     return [
         'rows' => $rows, 'sum' => $sum, 'halaman' => $halaman, 'per' => $per,
         'f' => ['period' => $periode, 'mode' => $mode, 'module' => $modul, 'pic' => $pic, 'status' => $status,
@@ -197,7 +203,8 @@ function payments_page(PDO $pdo): void
         if ($satuBulan) {
             array_splice($kartu, 1, 0, [[
                 'Ditagih ' . pembayaran_nama_bulan($f['period']), money($sum['porsi']), '#7C3AED',
-                'Bagian nilai kontrak yang jatuh di bulan ini. Kontrak jangka panjang ikut hanya sebesar porsi bulannya, bukan nilai penuh.',
+                'Bagian nilai kontrak yang jatuh di bulan ini. Kontrak jangka panjang ikut hanya sebesar porsi bulannya, bukan nilai penuh.'
+                . "\n" . 'Sudah ditandai dibayar untuk bulan ini: ' . money($sum['porsi_bayar']),
             ]]);
         }
         ?>
@@ -296,16 +303,39 @@ function payments_page(PDO $pdo): void
                                       title="Transaksi ini belum punya pembagian bulan, jadi nilainya tidak masuk Laporan PIC maupun Dashboard. Buka lalu simpan ulang transaksinya.">⚠ belum masuk laporan</span>
                             <?php endif; ?>
                         <?php endif; ?></td>
-                    <td style="text-align:right"><?= money($r['terbayar']) ?>
-                        <?php if ($cocokPerkiraan): ?><br><span style="font-size:11px;color:#047857;white-space:nowrap"
-                            title="Bayarannya pas dengan sewa + PPN + listrik/deposit — bukan kelebihan bayar">sesuai rincian</span><?php endif; ?></td>
-                    <td style="text-align:right;color:<?= $sisaR > 0.5 ? '#B91C1C' : 'inherit' ?>"><?= money($sisaR) ?></td>
+                    <td style="text-align:right">
+                        <?php if (!empty($r['bagi_pakai'])): ?>
+                            <?= money($r['terbayar_bulan']) ?>
+                            <br><span class="muted" style="font-size:11px;white-space:nowrap">untuk <?= h(pembayaran_nama_bulan($f['period'])) ?></span>
+                            <?php if ((float) $r['terbayar'] > (float) $r['terbayar_bulan'] + 0.5): ?>
+                                <br><span class="muted" style="font-size:11px;white-space:nowrap">kontrak <?= h(money($r['terbayar'])) ?></span>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <?= money($r['terbayar']) ?>
+                            <?php if ($cocokPerkiraan): ?><br><span style="font-size:11px;color:#047857;white-space:nowrap"
+                                title="Bayarannya pas dengan sewa + PPN + listrik/deposit — bukan kelebihan bayar">sesuai rincian</span><?php endif; ?>
+                        <?php endif; ?></td>
+                    <?php $sisaBulan = (float) ($r['tagihan_bulan'] ?? 0) - (float) ($r['terbayar_bulan'] ?? 0); ?>
+                    <td style="text-align:right">
+                        <?php if (!empty($r['bagi_pakai'])): ?>
+                            <span style="color:<?= $sisaBulan > 0.5 ? '#B91C1C' : 'inherit' ?>"><?= money($sisaBulan) ?></span>
+                            <br><span class="muted" style="font-size:11px;white-space:nowrap">bulan ini</span>
+                        <?php else: ?>
+                            <span style="color:<?= $sisaR > 0.5 ? '#B91C1C' : 'inherit' ?>"><?= money($sisaR) ?></span>
+                        <?php endif; ?></td>
                     <td style="white-space:nowrap"><?= $r['invoice_no'] ? h($r['invoice_no']) : '<span class="muted">-</span>' ?>
                         <?= $r['invoice_due'] ? '<br><span class="muted" style="font-size:11px">tempo ' . h($r['invoice_due']) . '</span>' : '' ?></td>
-                    <td><?= pembayaran_badge((string) $r['bayar_status'], (bool) $r['bayar_lewat']) ?>
+                    <td>
                         <?php if (!empty($r['bagi_pakai'])): ?>
-                            <br><span class="muted" style="font-size:10.5px;white-space:nowrap"
-                                  title="Status dan kolom Terbayar dihitung atas SELURUH nilai kontrak, bukan per bulan.">atas seluruh kontrak</span>
+                            <?php /* Kontrak recurring punya dua kebenaran sekaligus: bulan ini
+                                     bisa lunas sementara kontraknya baru lunas tahun depan.
+                                     Dua-duanya ditulis, masing-masing dengan labelnya. */ ?>
+                            <div style="white-space:nowrap"><span class="muted" style="font-size:10.5px"><?= h(pembayaran_nama_bulan($f['period'])) ?></span>
+                                <?= pembayaran_badge((string) $r['status_bulan'], false) ?></div>
+                            <div style="white-space:nowrap;margin-top:3px"><span class="muted" style="font-size:10.5px">kontrak</span>
+                                <?= pembayaran_badge((string) $r['bayar_status'], (bool) $r['bayar_lewat']) ?></div>
+                        <?php else: ?>
+                            <?= pembayaran_badge((string) $r['bayar_status'], (bool) $r['bayar_lewat']) ?>
                         <?php endif; ?></td>
                     <td><a class="btn light" href="?r=payment_form&id=<?= (int) $r['id'] ?>&back=<?= h(urlencode(ltrim($qs([]), '?'))) ?>">Kelola</a></td>
                 </tr>
@@ -550,16 +580,15 @@ function payment_form(PDO $pdo): void
     // Pembagian nilai kontrak ke bulan pengakuannya. Dasarnya tabel yang sama
     // dengan Laporan PIC & Dashboard, jadi angka di sini tidak akan berbeda
     // dengan income bulan itu.
-    $al = $pdo->prepare('SELECT period_key, ROUND(SUM(amount)) nilai, SUM(allocated_days) hari
-                           FROM transaction_allocations WHERE transaction_id = ?
-                          GROUP BY period_key ORDER BY period_key');
-    $al->execute([$id]);
-    $alokasi = $al->fetchAll();
+    $alokasi = pembayaran_bulan_kontrak($pdo, $id);
+    // Bulan yang ditutup tiap baris pembayaran — supaya terbaca langsung di
+    // barisnya, bukan harus ditebak dari tanggal atau keterangannya.
+    $bulanBayar = pembayaran_bulan_per_baris($pdo, array_map(fn($b) => (int) $b['id'], $bayar));
     // Bulan yang sedang dibuka di daftar — barisnya disorot supaya tidak perlu
     // dicari satu per satu pada kontrak yang panjang.
     $bulanAktif = preg_match('/[?&]period=(\d{4}-\d{2})/', '&' . $back, $m) ? $m[1] : '';
 
-    layout('Tagihan & Pembayaran', function () use ($trx, $bayar, $back, $sisa, $modLabel, $id, $bisaIsi, $dariLegal, $alokasi, $bulanAktif) {
+    layout('Tagihan & Pembayaran', function () use ($trx, $bayar, $back, $sisa, $modLabel, $id, $bisaIsi, $dariLegal, $alokasi, $bulanAktif, $bulanBayar) {
         $tagihan  = (float) $trx['tagihan'];
         $terbayar = (float) $trx['terbayar'];
         $persen   = $tagihan > 0 ? max(0, min(100, (int) round($terbayar / $tagihan * 100))) : 0;
@@ -580,6 +609,46 @@ function payment_form(PDO $pdo): void
             'DP 50%'           => 'Pembayaran muka',
             '2 KONTRAK'        => 'Satu transfer untuk dua kontrak sekaligus',
         ];
+        /**
+         * Daftar centang "untuk bulan mana". Dipakai form catat maupun tiap
+         * form ubah, jadi pilihannya pasti sama di semua tempat.
+         *
+         * $pre     = awalan id, supaya beberapa form di satu halaman tidak
+         *            saling mengubah centang milik yang lain
+         * $pilih   = bulan yang sudah ditandai pembayaran ini (saat menyunting)
+         * $idJuml  = id kotak "Jumlah dibayar" yang diisi tombol pintasan
+         */
+        $pilihBulan = function (string $pre, array $pilih, string $idJuml) use ($alokasi) {
+            if (count($alokasi) < 2) return;
+            $stDaftar = pembayaran_status_daftar();
+            ?>
+            <label>Untuk bulan mana <span class="muted" style="font-weight:400">(boleh lebih dari satu)</span></label>
+            <div class="pf-pilihbln" id="bln-<?= h($pre) ?>">
+                <?php foreach ($alokasi as $b):
+                    $st  = $stDaftar[$b['status']] ?? ['-', '#475569', '#E2E8F0'];
+                    // Saat menyunting, sisa bulannya sudah dihitung TANPA
+                    // pembayaran ini — jadi yang ditawarkan tombol pintasan
+                    // adalah sisa sebenarnya, bukan sisa setelah dirinya.
+                    $sisaB = (float) $b['sisa'] + (float) ($pilih[$b['period_key']] ?? 0); ?>
+                    <label class="<?= $b['status'] === 'lunas' && !isset($pilih[$b['period_key']]) ? 'lunas' : '' ?>">
+                        <input type="checkbox" name="bulan[]" value="<?= h($b['period_key']) ?>"
+                               data-sisa="<?= (int) round($sisaB) ?>" <?= isset($pilih[$b['period_key']]) ? 'checked' : '' ?>>
+                        <span class="nm"><?= h(pembayaran_nama_bulan((string) $b['period_key'], true)) ?></span>
+                        <span class="st" style="color:<?= $st[1] ?>;background:<?= $st[2] ?>"><?= h($st[0]) ?></span>
+                        <span class="sz"><?= $sisaB > 0.5 ? 'sisa ' . money($sisaB) : money($b['tagihan']) ?></span>
+                    </label>
+                <?php endforeach; ?>
+            </div>
+            <div class="pf-cepat">
+                <button type="button" class="btn light" onclick="blnTerlama('<?= h($pre) ?>')">Bulan terlama yang belum lunas</button>
+                <button type="button" class="btn light" onclick="blnJumlah('<?= h($pre) ?>','<?= h($idJuml) ?>')">Isi jumlah dari bulan terpilih</button>
+                <button type="button" class="btn light" style="color:#B91C1C" onclick="blnKosong('<?= h($pre) ?>')">Kosongkan</button>
+            </div>
+            <div class="pf-bantu">Kalau tidak ada yang dicentang, pembayaran ini tetap menambah total kontrak tapi
+                tidak melunaskan bulan mana pun. Uangnya diisikan berurutan dari bulan terlama yang dicentang,
+                masing-masing paling banyak sebesar sisanya; kelebihannya jatuh ke bulan terakhir yang dicentang.</div>
+            <?php
+        };
         ?>
         <style>
             /* Satu bahasa rupa untuk seluruh halaman ini: kotak putih, garis
@@ -635,6 +704,20 @@ function payment_form(PDO $pdo): void
             .pf-bagi td.n{text-align:right;font-variant-numeric:tabular-nums}
             .pf-bagi tr.kini td{background:#FFFBEB;font-weight:700}
             .pf-bagi tfoot td{border-top:1px solid var(--line);border-bottom:0;font-weight:800;background:#fff;position:sticky;bottom:0}
+            /* Pemilih bulan: dibuat sebagai daftar centang, bukan dropdown,
+               karena satu transfer kerap menutup beberapa bulan sekaligus. */
+            .pf-pilihbln{max-height:196px;overflow:auto;border:1px solid var(--line);border-radius:9px;background:#fff}
+            .pf-pilihbln label{display:flex;align-items:center;gap:9px;margin:0;padding:7px 11px;
+                border-bottom:1px solid #F5F7FA;font-size:12.5px;font-weight:500;color:#1F2937;cursor:pointer}
+            .pf-pilihbln label:last-child{border-bottom:0}
+            .pf-pilihbln label:hover{background:#F8FAFC}
+            .pf-pilihbln label.lunas{color:#64748B}
+            .pf-pilihbln input{width:auto;margin:0;flex:0 0 auto}
+            .pf-pilihbln .nm{flex:1 1 auto;white-space:nowrap}
+            .pf-pilihbln .st{flex:0 0 auto;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;white-space:nowrap}
+            .pf-pilihbln .sz{flex:0 0 auto;font-variant-numeric:tabular-nums;white-space:nowrap;color:#475569;font-size:11.5px}
+            .pf-blntag{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:4px;
+                background:#EDE9FE;color:#6D28D9;margin:2px 4px 0 0;white-space:nowrap}
             .pf-aksi{display:flex;gap:6px;justify-content:flex-end}
             .pf-aksi .btn{padding:3px 10px;font-size:11.5px}
             /* Baris yang sedang diperbaiki: formnya muncul tepat di bawah
@@ -788,36 +871,48 @@ function payment_form(PDO $pdo): void
                 <?php /* Kontrak recurring tidak ditagih sekaligus. Tanpa rincian ini,
                          nilai kontrak 34 bulan terbaca seperti tunggakan sekali bayar. */ ?>
                 <?php if (count($alokasi) > 1): ?>
-                <?php $totBagi = array_sum(array_map(fn($a) => (float) $a['nilai'], $alokasi));
-                      $porsiKini = null;
-                      foreach ($alokasi as $a) if ($a['period_key'] === $bulanAktif) $porsiKini = (float) $a['nilai']; ?>
+                <?php
+                $totBagi  = array_sum(array_map(fn($a) => (float) $a['tagihan'], $alokasi));
+                $totBayar = array_sum(array_map(fn($a) => (float) $a['terbayar'], $alokasi));
+                $nLunas   = count(array_filter($alokasi, fn($a) => $a['status'] === 'lunas'));
+                $kini     = null;
+                foreach ($alokasi as $a) if ($a['period_key'] === $bulanAktif) $kini = $a;
+                $stDaftar = pembayaran_status_daftar();
+                ?>
                 <div class="pf-kartu">
-                    <h3>Pembagian per bulan <span class="muted" style="font-weight:400">(<?= count($alokasi) ?> bulan)</span></h3>
+                    <h3>Pembagian per bulan
+                        <span class="muted" style="font-weight:400"><?= $nLunas ?> dari <?= count($alokasi) ?> bulan lunas</span></h3>
                     <div class="pf-isi">
-                        <?php if ($porsiKini !== null): ?>
+                        <?php if ($kini !== null): ?>
                             <div class="pf-bantu" style="margin:0 0 10px">Yang ditagihkan untuk
                                 <b><?= h(pembayaran_nama_bulan($bulanAktif, true)) ?></b>:
-                                <b style="font-size:14px;color:#6D28D9"><?= money($porsiKini) ?></b>
-                                &mdash; dari nilai kontrak <?= money($totBagi) ?>.</div>
+                                <b style="font-size:14px;color:#6D28D9"><?= money($kini['tagihan']) ?></b>
+                                &mdash; sudah dibayar <b><?= money($kini['terbayar']) ?></b>,
+                                <?= $kini['sisa'] > 0.5 ? 'sisa <b>' . money($kini['sisa']) . '</b>' : '<b style="color:#047857">lunas</b>' ?>.</div>
                         <?php endif; ?>
                         <div class="pf-bagi-wrap">
                             <table class="pf-bagi">
-                                <thead><tr><th>BULAN</th><th style="text-align:right">HARI</th><th style="text-align:right">NILAI</th></tr></thead>
+                                <thead><tr><th>BULAN</th><th style="text-align:right">DITAGIH</th>
+                                    <th style="text-align:right">DIBAYAR</th><th>STATUS</th></tr></thead>
                                 <tbody>
-                                <?php foreach ($alokasi as $a): ?>
+                                <?php foreach ($alokasi as $a): $st = $stDaftar[$a['status']] ?? ['-', '#475569', '#E2E8F0']; ?>
                                     <tr<?= $a['period_key'] === $bulanAktif ? ' class="kini"' : '' ?>>
                                         <td><?= h(pembayaran_nama_bulan((string) $a['period_key'], true)) ?></td>
-                                        <td class="n"><?= (int) $a['hari'] ?: '&mdash;' ?></td>
-                                        <td class="n"><?= money($a['nilai']) ?></td>
+                                        <td class="n"><?= money($a['tagihan']) ?></td>
+                                        <td class="n"><?= $a['terbayar'] > 0.5 ? money($a['terbayar']) : '<span class="muted">&mdash;</span>' ?></td>
+                                        <td><span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;
+                                                  color:<?= $st[1] ?>;background:<?= $st[2] ?>"><?= h($st[0]) ?></span></td>
                                     </tr>
                                 <?php endforeach; ?>
                                 </tbody>
-                                <tfoot><tr><td colspan="2">Nilai kontrak</td><td class="n"><?= money($totBagi) ?></td></tr></tfoot>
+                                <tfoot><tr><td>Nilai kontrak</td><td class="n"><?= money($totBagi) ?></td>
+                                    <td class="n"><?= money($totBayar) ?></td><td></td></tr></tfoot>
                             </table>
                         </div>
                         <div class="pf-bantu" style="margin-top:10px">Pembagian ini dasar yang sama dengan Laporan PIC dan
-                            Dashboard, jadi angka per bulannya tidak akan berbeda dengan income bulan itu. Status
-                            <b>Lunas</b> dan kolom <b>Sudah dibayar</b> tetap dihitung atas seluruh nilai kontrak, bukan per bulan.</div>
+                            Dashboard, jadi angka per bulannya tidak akan berbeda dengan income bulan itu. Kolom
+                            <b>Dibayar</b> terisi dari pembayaran yang ditandai untuk bulan itu di bawah &mdash;
+                            pembayaran tanpa penanda bulan tetap menambah total kontrak, tapi tidak melunaskan bulan mana pun.</div>
                     </div>
                 </div>
                 <?php endif; ?>
@@ -840,6 +935,13 @@ function payment_form(PDO $pdo): void
                                         <?php /* Baris yang pernah diperbaiki menyebutkannya sendiri —
                                                  angka yang diam-diam berubah lebih meresahkan daripada
                                                  angka yang salah. */ ?>
+                                        <?php if (!empty($bulanBayar[$k])): ?><div style="margin-top:3px">
+                                            <?php foreach ($bulanBayar[$k] as $pk => $jml): ?>
+                                                <span class="pf-blntag" title="<?= h(money($jml)) ?> untuk bulan ini">untuk <?= h(pembayaran_nama_bulan((string) $pk)) ?></span>
+                                            <?php endforeach; ?></div>
+                                        <?php elseif (count($alokasi) > 1): ?>
+                                            <div class="pf-bantu" style="margin-top:3px;color:#B45309">belum ditandai bulannya</div>
+                                        <?php endif; ?>
                                         <?php if (!empty($p['updated_at'])): ?><div class="pf-bantu" style="margin-top:3px">diubah
                                             <?= h($tglID(substr((string) $p['updated_at'], 0, 10))) ?><?= $p['updated_by'] ? ' oleh ' . h($p['updated_by']) : '' ?></div><?php endif; ?></td>
                                     <td class="n"><?= money($p['amount']) ?></td>
@@ -866,9 +968,10 @@ function payment_form(PDO $pdo): void
                                                     <input type="date" name="paid_at" value="<?= h((string) $p['paid_at']) ?>" required></div>
                                                 <div><label>Jumlah dibayar</label>
                                                     <div class="rp-box"><span>Rp</span>
-                                                        <input type="text" name="amount" class="rp-ketik" inputmode="numeric"
+                                                        <input type="text" name="amount" class="rp-ketik" id="amt-<?= $k ?>" inputmode="numeric"
                                                                value="<?= h(number_format((float) $p['amount'], 0, ',', '.')) ?>" required></div></div>
                                             </div>
+                                            <?php $pilihBulan('ed' . $k, $bulanBayar[$k] ?? [], 'amt-' . $k); ?>
                                             <div class="pf-dua">
                                                 <div><label>Cara bayar</label>
                                                     <select name="method">
@@ -914,6 +1017,7 @@ function payment_form(PDO $pdo): void
                                         <input type="text" name="amount" id="pay-amt" inputmode="numeric"
                                                value="<?= $sisa > 0.5 ? h(number_format($sisa, 0, ',', '.')) : '' ?>" placeholder="0" required></div></div>
                             </div>
+                            <?php $pilihBulan('add', [], 'pay-amt'); ?>
                             <label>Cara bayar</label>
                             <select name="method"><option>Transfer</option><option>Tunai</option><option>Giro</option><option>Lainnya</option></select>
                             <label>No. referensi / bukti <span class="muted" style="font-weight:400">(opsional)</span></label>
@@ -970,6 +1074,29 @@ function payment_form(PDO $pdo): void
             var el = document.getElementById('inv-amt');
             el.value = n === '' ? '' : Number(n).toLocaleString('id-ID');
         }
+        // Pemilih bulan: tombol pintasan supaya tidak perlu mencentang dan
+        // menjumlah sendiri pada kontrak yang puluhan bulan.
+        function blnKotak(pre) {
+            var w = document.getElementById('bln-' + pre);
+            return w ? w.querySelectorAll('input[type=checkbox]') : [];
+        }
+        function blnTerlama(pre) {
+            var k = blnKotak(pre);
+            for (var i = 0; i < k.length; i++) k[i].checked = false;
+            for (var j = 0; j < k.length; j++) {
+                if ((parseInt(k[j].dataset.sisa, 10) || 0) > 0) { k[j].checked = true; return; }
+            }
+        }
+        function blnJumlah(pre, idJuml) {
+            var k = blnKotak(pre), t = 0;
+            for (var i = 0; i < k.length; i++) if (k[i].checked) t += parseInt(k[i].dataset.sisa, 10) || 0;
+            var el = document.getElementById(idJuml);
+            if (el) el.value = t ? t.toLocaleString('id-ID') : '';
+        }
+        function blnKosong(pre) {
+            var k = blnKotak(pre);
+            for (var i = 0; i < k.length; i++) k[i].checked = false;
+        }
         function tambahKet(t, id) {
             var n = document.getElementById(id || 'pay-note');
             if (!n) return;
@@ -1015,6 +1142,15 @@ function payment_invoice_save(PDO $pdo): void
  * memperbaiki. Isian yang tidak masuk akal tidak pernah lolos ke basis data:
  * pengguna dikembalikan ke halamannya dengan pesan, bukan disimpan diam-diam.
  */
+/** Bulan-bulan yang dicentang di form; hanya yang berbentuk YYYY-MM. */
+function _pay_bulan_post(): array
+{
+    $b = $_POST['bulan'] ?? [];
+    if (!is_array($b)) $b = [$b];
+    return array_values(array_filter(array_map(fn($v) => trim((string) $v), $b),
+        fn($v) => (bool) preg_match('/^\d{4}-\d{2}$/', $v)));
+}
+
 function _pay_baris_post(int $id): array
 {
     $tgl = (string) post('paid_at', '');
@@ -1039,8 +1175,12 @@ function payment_add(PDO $pdo): void
     $pdo->prepare('INSERT INTO transaction_payments (property_id, transaction_id, paid_at, amount, method, ref_no, note, created_by)
                    VALUES (:pid, :tid, :paid_at, :amount, :method, :ref_no, :note, :by)')
         ->execute($baris + [':pid' => current_property_id(), ':tid' => $id, ':by' => (string) ($_SESSION['user']['name'] ?? '')]);
-    audit($pdo, 'create', 'transaction_payments', (string) $pdo->lastInsertId(), $baris + ['transaction_id' => $id], [], 'payments');
-    flash('Pembayaran dicatat.');
+    $payId = (int) $pdo->lastInsertId();
+    $bulan = _pay_bulan_post();
+    pembayaran_simpan_bulan($pdo, $payId, $id, $bulan, (float) $baris['amount']);
+    audit($pdo, 'create', 'transaction_payments', (string) $payId,
+        $baris + ['transaction_id' => $id, 'bulan' => implode(', ', $bulan)], [], 'payments');
+    flash($bulan ? 'Pembayaran dicatat untuk ' . count($bulan) . ' bulan.' : 'Pembayaran dicatat.');
     _pay_kembali($id);
 }
 
@@ -1070,7 +1210,14 @@ function payment_edit(PDO $pdo): void
                           ref_no = :ref_no, note = :note, updated_at = NOW(), updated_by = :by
                     WHERE id = :payid')
         ->execute($baru + [':by' => (string) ($_SESSION['user']['name'] ?? ''), ':payid' => $payId]);
-    audit($pdo, 'update', 'transaction_payments', (string) $payId, $baru, array_intersect_key($lama, $baru), 'payments');
+    // Bulan yang ditutup dibagi ulang dari nol: jumlahnya boleh berubah, dan
+    // sisa tiap bulan harus dihitung tanpa memperhitungkan uang ini sendiri.
+    $bulanLama = array_keys(pembayaran_bulan_per_baris($pdo, [$payId])[$payId] ?? []);
+    $bulan = _pay_bulan_post();
+    pembayaran_simpan_bulan($pdo, $payId, $id, $bulan, (float) $baru['amount']);
+    audit($pdo, 'update', 'transaction_payments', (string) $payId,
+        $baru + ['bulan' => implode(', ', $bulan)],
+        array_intersect_key($lama, $baru) + ['bulan' => implode(', ', $bulanLama)], 'payments');
     flash('Pembayaran diperbarui.');
     _pay_kembali($id);
 }

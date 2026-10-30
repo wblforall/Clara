@@ -110,6 +110,136 @@ function pembayaran_porsi_bulan(PDO $pdo, array $rows, string $periode): array
     return $rows;
 }
 
+
+/**
+ * Keadaan tiap bulan pengakuan satu kontrak: ditagih berapa, sudah dibayar
+ * berapa, dan statusnya apa.
+ *
+ * Inilah yang menjawab "Oktober sudah lunas belum?" pada kontrak yang berjalan
+ * bertahun-tahun — pertanyaan yang tidak bisa dijawab oleh status di tingkat
+ * kontrak, karena kontrak 34 bulan baru lunas tiga tahun lagi.
+ *
+ * @param int $kecualiPay abaikan satu pembayaran (dipakai saat menyuntingnya,
+ *                        supaya uangnya sendiri tidak ikut terhitung dua kali)
+ */
+function pembayaran_bulan_kontrak(PDO $pdo, int $trxId, int $kecualiPay = 0): array
+{
+    $st = $pdo->prepare('SELECT period_key, ROUND(SUM(amount)) nilai, SUM(allocated_days) hari
+                           FROM transaction_allocations WHERE transaction_id = ?
+                          GROUP BY period_key ORDER BY period_key');
+    $st->execute([$trxId]);
+    $bulan = [];
+    foreach ($st->fetchAll() as $a) {
+        $bulan[(string) $a['period_key']] = [
+            'period_key' => (string) $a['period_key'],
+            'hari'       => (int) $a['hari'],
+            'tagihan'    => (float) $a['nilai'],
+            'terbayar'   => 0.0,
+        ];
+    }
+    if (!$bulan) return [];
+
+    $sql = 'SELECT pp.period_key, COALESCE(SUM(pp.amount),0) bayar
+              FROM transaction_payment_periods pp
+              JOIN transaction_payments py ON py.id = pp.payment_id AND py.deleted_at IS NULL
+             WHERE pp.transaction_id = ?' . ($kecualiPay ? ' AND pp.payment_id <> ?' : '') . '
+             GROUP BY pp.period_key';
+    $st = $pdo->prepare($sql);
+    $st->execute($kecualiPay ? [$trxId, $kecualiPay] : [$trxId]);
+    foreach ($st->fetchAll() as $b) {
+        $k = (string) $b['period_key'];
+        if (isset($bulan[$k])) $bulan[$k]['terbayar'] = (float) $b['bayar'];
+    }
+    foreach ($bulan as $k => $v) {
+        $bulan[$k]['sisa']   = $v['tagihan'] - $v['terbayar'];
+        $bulan[$k]['status'] = $v['tagihan'] <= 0.5 && $v['terbayar'] <= 0.5 ? 'tanpa_tagihan'
+            : ($v['terbayar'] >= $v['tagihan'] - 0.5 ? 'lunas'
+            : ($v['terbayar'] > 0.5 ? 'sebagian' : 'belum_bayar'));
+    }
+    return array_values($bulan);
+}
+
+/**
+ * Simpan bulan-bulan yang ditutup oleh satu pembayaran.
+ *
+ * Aturan pembagiannya sengaja dibuat bisa ditebak: bulan terpilih diisi
+ * berurutan dari yang paling lama, tiap bulan paling banyak sebesar sisanya,
+ * dan kelebihannya jatuh ke bulan terakhir yang dipilih. Jadi menandai tiga
+ * bulan untuk satu transfer selalu menghasilkan angka yang sama, siapa pun
+ * yang mengerjakannya.
+ *
+ * Daftar lama dihapus dulu — pembayaran yang disunting harus membagi ulang
+ * dari nol, kalau tidak sisa bulannya akan dihitung di atas dirinya sendiri.
+ */
+function pembayaran_simpan_bulan(PDO $pdo, int $payId, int $trxId, array $pilih, float $jumlah): void
+{
+    $pdo->prepare('DELETE FROM transaction_payment_periods WHERE payment_id = ?')->execute([$payId]);
+    $pilih = array_values(array_unique(array_filter(
+        array_map(fn($p) => trim((string) $p), $pilih),
+        fn($p) => (bool) preg_match('/^\d{4}-\d{2}$/', $p)
+    )));
+    if (!$pilih || $jumlah <= 0) return;
+    sort($pilih);
+
+    $sisa = [];
+    foreach (pembayaran_bulan_kontrak($pdo, $trxId, $payId) as $b) $sisa[$b['period_key']] = (float) $b['sisa'];
+
+    $ins = $pdo->prepare('INSERT INTO transaction_payment_periods (payment_id, transaction_id, period_key, amount)
+                          VALUES (?, ?, ?, ?)');
+    $kurang = $jumlah;
+    $akhir  = count($pilih) - 1;
+    foreach ($pilih as $i => $p) {
+        if ($kurang <= 0.004) break;
+        $jatah = $i === $akhir ? $kurang : min($kurang, max(0.0, $sisa[$p] ?? 0.0));
+        $jatah = round($jatah, 2);
+        if ($jatah <= 0.004) continue;
+        $ins->execute([$payId, $trxId, $p, $jatah]);
+        $kurang -= $jatah;
+    }
+}
+
+/** Bulan yang ditutup tiap pembayaran: [payment_id => [period_key => jumlah]]. */
+function pembayaran_bulan_per_baris(PDO $pdo, array $payIds): array
+{
+    $payIds = array_values(array_filter(array_map('intval', $payIds)));
+    if (!$payIds) return [];
+    $st = $pdo->prepare('SELECT payment_id, period_key, amount FROM transaction_payment_periods
+                          WHERE payment_id IN (' . implode(',', array_fill(0, count($payIds), '?')) . ')
+                          ORDER BY period_key');
+    $st->execute($payIds);
+    $peta = [];
+    foreach ($st->fetchAll() as $r) $peta[(int) $r['payment_id']][(string) $r['period_key']] = (float) $r['amount'];
+    return $peta;
+}
+
+/** Sudah dibayar untuk SATU bulan pada sekumpulan transaksi sekaligus. */
+function pembayaran_terbayar_bulan(PDO $pdo, array $rows, string $periode): array
+{
+    if (!$rows) return $rows;
+    $satuBulan = $periode !== '' && $periode !== 'semua';
+    $ids = array_values(array_filter(array_unique(array_map(fn($r) => (int) ($r['id'] ?? 0), $rows))));
+    $peta = [];
+    if ($satuBulan && $ids) {
+        $st = $pdo->prepare('SELECT pp.transaction_id, COALESCE(SUM(pp.amount),0) bayar
+                               FROM transaction_payment_periods pp
+                               JOIN transaction_payments py ON py.id = pp.payment_id AND py.deleted_at IS NULL
+                              WHERE pp.period_key = ? AND pp.transaction_id IN ('
+                            . implode(',', array_fill(0, count($ids), '?')) . ')
+                              GROUP BY pp.transaction_id');
+        $st->execute(array_merge([$periode], $ids));
+        foreach ($st->fetchAll() as $r) $peta[(int) $r['transaction_id']] = (float) $r['bayar'];
+    }
+    foreach ($rows as $i => $r) {
+        $bayar = $peta[(int) ($r['id'] ?? 0)] ?? 0.0;
+        $tag   = (float) ($r['tagihan_bulan'] ?? 0);
+        $rows[$i]['terbayar_bulan'] = $bayar;
+        $rows[$i]['status_bulan']   = !$satuBulan ? ''
+            : ($tag <= 0.5 && $bayar <= 0.5 ? 'tanpa_tagihan'
+            : ($bayar >= $tag - 0.5 ? 'lunas' : ($bayar > 0.5 ? 'sebagian' : 'belum_bayar')));
+    }
+    return $rows;
+}
+
 /**
  * Nama unit untuk sekumpulan baris transaksi.
  *
