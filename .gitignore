@@ -33,6 +33,7 @@ scripts/build_laporan_evan_okt.php
 # File kerja lokal (PDF/dokumen contoh, dll)
 *.doc
 *.docx
+*.xls
 *.xlsx
 *.code-workspace
 
@@ -103,3 +104,6 @@ docs/banding_*.json
 # nomor dokumen, nilai kontrak, serta email & password akun sungguhan.
 # Repo ini PUBLIK — isinya pernah bisa diunduh siapa pun lewat raw.githubusercontent.
 /testing/
+
+# Pembangun laporan per-PIC Shinta: memuat nama penyewa & nilai kontrak asli.
+scripts/build_laporan_shinta_okt.php
