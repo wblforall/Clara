@@ -732,6 +732,7 @@ function skp_standalone_src(PDO $pdo, int $pid, string $module, ?array $skp): ar
         'cycle_recognition' => (string) ($skp['cycle_recognition'] ?? ''),
         'recurring_flag'    => (int) ($skp['recurring_flag'] ?? 0),
         'recognition_json'  => (string) ($skp['recognition_json'] ?? ''),
+        'prorata_kalender'  => (int) ($skp['prorata_kalender'] ?? 0),
         'renewal_status' => null, 'content_note' => null,
         'offer_no' => null, 'doc_type' => skp_doc_type($module),
         'company_name' => '', 'brand_name' => '', 'npwp' => '', 'client_ktp' => '',
@@ -807,6 +808,68 @@ function skp_standalone_src(PDO $pdo, int $pid, string $module, ?array $skp): ar
         $src['contract_months'] = max(1, (int) round(($a->diff($b)->days + 1) / 30));
     }
     return $src;
+}
+
+/**
+ * Sumber data untuk dokumen Gudang/Media PERIODE BERIKUTNYA.
+ *
+ * "Diakui Recurring" selama ini hanya penggolongan untuk laporan — tidak ada
+ * satu pun tombol yang benar-benar meneruskan kontraknya, sehingga periode
+ * berikutnya diketik ulang dari nol setiap kali, lengkap dengan risiko salah
+ * ketik client, unit, dan tarif.
+ *
+ * Fungsi ini menyalin isi dokumen yang sudah berjalan dan memajukan tanggalnya
+ * satu periode penuh: hari pertama sesudah periode lama berakhir, selama jumlah
+ * bulan yang sama (Gudang) atau jumlah hari yang sama (Media). Yang TIDAK ikut
+ * disalin: nominal pengakuan per bulan — bulannya memang sudah berbeda — dan
+ * seluruh isian dokumen (nomor, tanda tangan, lampiran), karena ini dokumen
+ * baru yang masih harus diperiksa dan disetujui seperti biasa.
+ */
+function skp_lanjut_periode(PDO $pdo, int $pid, string $module, int $dariId): ?array
+{
+    $st = $pdo->prepare("SELECT * FROM skp_documents
+                          WHERE id = ? AND property_id = ? AND module = ?
+                            AND status IN ('approved', 'signed') AND deleted_at IS NULL");
+    $st->execute([$dariId, $pid, $module]);
+    $asal = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$asal) return null;
+
+    $mulaiLama = (string) ($asal['start_date'] ?? '');
+    $akhirLama = (string) ($asal['end_date'] ?? '');
+    if ($mulaiLama === '' || $akhirLama === '' || $akhirLama < $mulaiLama) return null;
+
+    try {
+        $a = new DateTimeImmutable($mulaiLama);
+        $b = new DateTimeImmutable($akhirLama);
+        $mulaiBaru = $b->modify('+1 day');
+        if ($module === 'gudang') {
+            // Kontrak bulanan dilanjutkan per BULAN, bukan per jumlah hari —
+            // 3 bulan Des–Feb berlanjut ke Mar–Mei, bukan Mar + 89 hari.
+            $bulan = max(1, (int) round(($a->diff($b)->days + 1) / 30));
+            $akhirBaru = $mulaiBaru->modify('+' . $bulan . ' months')->modify('-1 day');
+        } else {
+            $akhirBaru = $mulaiBaru->modify('+' . $a->diff($b)->days . ' days');
+        }
+    } catch (Throwable $e) {
+        return null;
+    }
+
+    return skp_standalone_src($pdo, $pid, $module, [
+        'client_id'   => $asal['client_id'],
+        'contact_id'  => $asal['contact_id'],
+        'master_code' => $asal['master_code'],
+        'start_date'  => $mulaiBaru->format('Y-m-d'),
+        'end_date'    => $akhirBaru->format('Y-m-d'),
+        'unit_rate'   => $asal['unit_rate'],
+        'total_amount'=> $asal['total_amount'],
+        'deposit_amount' => $asal['deposit_amount'],
+        'pic_name'    => $asal['pic_name'],
+        'billing_method'    => $asal['billing_method'],
+        'cycle_recognition' => $asal['cycle_recognition'],
+        'recurring_flag'    => $asal['recurring_flag'],
+        'prorata_kalender'  => $asal['prorata_kalender'] ?? 0,
+        'recognition_json'  => null,
+    ]);
 }
 
 /** Angka desimal gaya Indonesia: 6 → "6", 12.5 → "12,5". */
@@ -969,7 +1032,7 @@ function skp_blok_harga(string $module, array $src, bool $editable): void
             </select>
             <div class="help">Otomatis: kontrak <b>lebih dari 1 bulan</b> &rarr; dibagi rata. Satu periode &rarr; diakui utuh di bulan mulai.</div>
         </div>
-        <div>
+        <div id="s-cr-wrap">
             <label>Pengakuan per Siklus</label>
             <select name="s_cycle_recognition" id="s-cr" <?= $dis ?>>
                 <option value="cycle_start" <?= $crKini === 'cycle_start' ? 'selected' : '' ?>>Bulan Awal siklus</option>
@@ -977,6 +1040,20 @@ function skp_blok_harga(string $module, array $src, bool $editable): void
             </select>
             <div class="help">Nilai tiap siklus diakui di bulan awal atau bulan akhir siklus itu.</div>
         </div>
+        <?php if ($module === 'gudang'): ?>
+        <div class="wide" id="s-prorata-wrap" style="display:flex;align-items:flex-start;gap:10px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:11px 14px">
+            <input type="checkbox" name="s_prorata_kalender" id="s-prorata" value="1" style="width:18px;height:18px;flex-shrink:0;margin-top:1px" <?= !empty($src['prorata_kalender']) ? 'checked' : '' ?> <?= $dis ?>>
+            <label for="s-prorata" style="margin:0;cursor:pointer">
+                <span style="font-weight:700;color:#92400e">Prorata ikut bulan kalender</span>
+                <span class="help" style="display:block;margin-top:2px;font-weight:400">
+                    Centang bila sewanya tidak mulai tanggal 1. Bulan yang tidak penuh dihitung
+                    <b>per hari bulan itu</b> (mis. 11&ndash;30 November = 20/30 bulan), sisanya bulan penuh &mdash;
+                    cara yang dipakai surat kertas. Tanpa centang, siklusnya mengikuti tanggal mulai (11 &rarr; 10)
+                    dan nilainya bisa berbeda ratusan ribu.
+                </span>
+            </label>
+        </div>
+        <?php endif; ?>
         <div class="wide" style="display:flex;align-items:flex-start;gap:10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:11px 14px">
             <input type="checkbox" name="s_recurring_flag" id="s-recurring" value="1" style="width:18px;height:18px;flex-shrink:0;margin-top:1px" <?= !empty($src['recurring_flag']) ? 'checked' : '' ?> <?= $dis ?>>
             <label for="s-recurring" style="margin:0;cursor:pointer">
@@ -1032,7 +1109,7 @@ function skp_blok_harga(string $module, array $src, bool $editable): void
             } else {
                 cek.innerHTML = '<span style="color:#b45309">Jumlahnya ' + fmt(jml)
                     + ', sedangkan Total Nilai Sewa ' + fmt(t) + ' &mdash; selisih ' + fmt(Math.abs(jml - t))
-                    + '. Nilai kontraknya akan mengikuti jumlah di tabel ini.</span>';
+                    + '. Dokumen belum bisa disubmit sampai keduanya sama.</span>';
             }
         }
         function bagiRata() {
@@ -1056,6 +1133,38 @@ function skp_blok_harga(string $module, array $src, bool $editable): void
     })();
     </script>
     <?php endif; ?>
+    <?php endif; ?>
+    <?php if ($editable): ?>
+    <script>
+    /* "Pengakuan per Siklus" hanya berarti pada pembagian rata — di luar itu
+       nilainya diakui utuh di bulan mulai, dan kotak ini tidak mengubah apa pun.
+       Surat Penawaran menyembunyikannya dengan aturan yang sama persis; kalau di
+       sini dibiarkan tampak, orang mengira sudah memilih sesuatu padahal tidak. */
+    (function () {
+        var bm = document.getElementById('s-bm');
+        var wrap = document.getElementById('s-cr-wrap');
+        if (!bm || !wrap) return;
+        var d1 = document.querySelector('input[name="s_start_date"]');
+        var d2 = document.querySelector('input[name="s_end_date"]');
+        function bulanKontrak() {
+            if (!d1 || !d2 || !d1.value || !d2.value) return 0;
+            var a = new Date(d1.value), b = new Date(d2.value);
+            if (isNaN(a) || isNaN(b) || b < a) return 0;
+            var n = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+            if (b.getDate() >= a.getDate()) n++;
+            return Math.max(1, n);
+        }
+        function sinkron() {
+            var v = bm.value;
+            var sebar = v === 'spread' || (v === '' && bulanKontrak() > 1);
+            wrap.style.display = sebar ? '' : 'none';
+        }
+        bm.addEventListener('change', sinkron);
+        if (d1) d1.addEventListener('change', sinkron);
+        if (d2) d2.addEventListener('change', sinkron);
+        sinkron();
+    })();
+    </script>
     <?php endif; ?>
     <?php
 }
@@ -1135,8 +1244,15 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
         </div>
         <?php /* Tanggal mulai & selesai sengaja bersebelahan supaya periodenya
                  terbaca sekali lihat. */ ?>
-        <div><label>Tanggal Mulai <span style="color:#dc2626">*</span></label><input type="date" name="s_start_date" value="<?= h($src['start_date']) ?>" required <?= $dis ?>></div>
-        <div><label>Tanggal Selesai <span style="color:#dc2626">*</span></label><input type="date" name="s_end_date" value="<?= h($src['end_date']) ?>" required <?= $dis ?>></div>
+        <div><label>Tanggal Mulai <span style="color:#dc2626">*</span></label><input type="date" name="s_start_date" id="s-mulai" value="<?= h($src['start_date']) ?>" required <?= $dis ?>></div>
+        <div><label>Tanggal Selesai <span style="color:#dc2626">*</span></label><input type="date" name="s_end_date" id="s-selesai" value="<?= h($src['end_date']) ?>" required <?= $dis ?>></div>
+        <?php /* Peringatan tabrakan jadwal. Gudang & Media tidak lewat Surat
+                 Penawaran maupun formulir Transaksi — dua tempat yang selama ini
+                 memeriksanya — sehingga satu unit bisa terjual dua kali untuk
+                 tanggal yang bertabrakan tanpa ada yang tahu sampai seseorang
+                 kebetulan membuka Kalender. Endpoint-nya dipakai ulang, bukan
+                 ditulis kedua kalinya. */ ?>
+        <div class="wide" id="s-overlap" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;font-size:12.5px;color:#92400e"></div>
         <?php /* Tarif & Total Nilai Sewa TIDAK di sini — semua yang menyangkut
                  uang dikumpulkan di bagian bawah formulir (skp_blok_harga). */ ?>
     </div>
@@ -1243,6 +1359,7 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
                 setAuto('input[name="d_lokasi_kegiatan"]', it.nama || it.v);
                 hitungTotal();
                 isiBaris();
+                cekOverlap();
             },
         });
 
@@ -1257,8 +1374,42 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
             if (!d1 || !d2 || !d1.value || !d2.value) return;
             setAuto('input[name="d_tanggal_pemakaian"]', tglID(d1.value) + ' – ' + tglID(d2.value));
         }
-        if (d1) d1.addEventListener('change', function () { isiMasa(); isiPemakaian(); });
-        if (d2) d2.addEventListener('change', function () { isiMasa(); isiPemakaian(); });
+        // Peringatan tabrakan jadwal — memakai endpoint yang sama dengan Surat
+        // Penawaran & Transaksi, jadi aturan "overlap" cuma ada satu di aplikasi.
+        var jedaOverlap = null;
+        function cekOverlap() {
+            var kotak = document.getElementById('s-overlap');
+            var unit  = document.getElementById('s-unit');
+            if (!kotak || !unit || !d1 || !d2) return;
+            var kode = unit.value, a = d1.value, b = d2.value;
+            if (!kode || !a || !b) { kotak.style.display = 'none'; return; }
+            clearTimeout(jedaOverlap);
+            jedaOverlap = setTimeout(function () {
+                fetch('?r=transaction_overlap_check&master_code=' + encodeURIComponent(kode)
+                    + '&start_date=' + encodeURIComponent(a) + '&end_date=' + encodeURIComponent(b), { cache: 'no-store' })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (data.overlaps && data.overlaps.length) {
+                            var baris = data.overlaps.map(function (o) {
+                                return '<li><strong>' + esc(o.company_name) + '</strong> &middot; ' + esc(o.start_date)
+                                     + ' s/d ' + esc(o.end_date) + ' &middot; PIC: ' + esc(o.pic_name) + '</li>';
+                            }).join('');
+                            kotak.innerHTML = '&#9888; Unit/titik ini sudah punya <strong>' + data.overlaps.length
+                                + '</strong> kontrak yang tanggalnya bertabrakan. Tetap bisa lanjut bila memang dibagi slot/luasan.'
+                                + '<ul style="margin:6px 0 0 16px">' + baris + '</ul>';
+                            kotak.style.display = '';
+                        } else { kotak.style.display = 'none'; }
+                    }).catch(function () {});
+            }, 400);
+        }
+        function esc(v) {
+            return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+        if (d1) d1.addEventListener('change', function () { isiMasa(); isiPemakaian(); cekOverlap(); });
+        if (d2) d2.addEventListener('change', function () { isiMasa(); isiPemakaian(); cekOverlap(); });
+        cekOverlap();
 
         // Kotak rupiah: angka dirapikan saat diketik (1000 → 1.000).
         // Delegasi: baris tabel gudang yang baru ditambah ikut kebagian format ini.

@@ -722,6 +722,15 @@ function skp_form(PDO $pdo): void
     $src = $standalone
         ? skp_standalone_src($pdo, $pid, $modKind, $skp)
         : ($offerId ? _skp_source_from_offer($pdo, $offerId, $pid) : _skp_source($pdo, $trxId, $pid));
+    // Dokumen Gudang/Media PERIODE BERIKUTNYA: isinya disalin dari dokumen yang
+    // sudah berjalan, tanggalnya sudah dimajukan satu periode. Hanya untuk
+    // dokumen BARU — yang sudah tersimpan memakai datanya sendiri.
+    $lanjutDari = 0;
+    if ($standalone && !$skp && ($lanjutDari = (int) getv('lanjut')) > 0) {
+        $srcLanjut = skp_lanjut_periode($pdo, $pid, $modKind, $lanjutDari);
+        if ($srcLanjut) { $src = $srcLanjut; $isRenew = true; }
+        else { flash('Dokumen asal tidak ditemukan / belum disetujui — formulirnya dibuka kosong.'); $lanjutDari = 0; }
+    }
 
     // SKP BARU hanya boleh lahir dari penawaran yang sudah DITANDATANGANI client.
     //
@@ -1892,6 +1901,15 @@ function skp_form(PDO $pdo): void
         <div class="panel" style="margin-top:12px;background:#f0fdf4;border:1px solid #bbf7d0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <div><strong style="color:#166534">Disetujui</strong> — No. <strong><?= h($skp['skp_no']) ?></strong> oleh <?= h($skp['approved_by']) ?> (<?= h(substr($skp['approved_at'], 0, 16)) ?>).</div>
             <a class="btn" href="?r=skp_print&id=<?= (int)$skp['id'] ?>" target="_blank">🖨 Cetak / Simpan PDF</a>
+            <?php /* Perpanjangan untuk Gudang & Media. Modul ini tidak lewat Surat
+                     Penawaran, jadi "Diakui Recurring" tidak punya arti apa-apa
+                     tanpa tombol yang benar-benar meneruskan kontraknya — dan
+                     periode berikutnya selama ini diketik ulang dari nol. */ ?>
+            <?php if (!empty($skp['module']) && empty($skp['offer_id']) && !empty($skp['recurring_flag']) && can('manage_skp')): ?>
+            <a class="btn light" style="border-color:#0369a1;color:#0369a1"
+               href="?r=skp_form&module=<?= h((string) $skp['module']) ?>&lanjut=<?= (int) $skp['id'] ?>"
+               title="Buat dokumen periode berikutnya — client, unit, tarif, dan pengaturan pengakuan tersalin, tanggalnya sudah dimajukan">🔄 Buat Periode Berikutnya</a>
+            <?php endif; ?>
             <?php if ($skp['status'] === 'signed' && can('manage_skp')): ?>
             <a class="btn" style="background:#7c3aed;margin-left:auto" href="?r=contract_request_form&skp_id=<?= (int)$skp['id'] ?>">→ Ajukan Kontrak ke Legal</a>
             <?php endif; ?>
@@ -2865,6 +2883,9 @@ function skp_save(PDO $pdo): void
             // sekaligus" otomatis mengosongkan simpanan ini — bukan
             // meninggalkan paku lama yang diam-diam masih dipakai.
             'recognition_json'  => _skp_akui_dari_post(),
+            // Prorata bulan kalender — hanya berarti pada kontrak berharga
+            // bulanan (Gudang). Kotaknya memang hanya muncul di sana.
+            'prorata_kalender'  => post('s_prorata_kalender') ? 1 : 0,
         ];
         $src = skp_standalone_src($pdo, $pid, $modKind, array_merge($sFields, ['deposit_amount' => post('deposit_raw', 0)]));
         // Tanggalnya boleh saja baru diubah di pengiriman ini — bulan yang tidak
@@ -3555,6 +3576,41 @@ function skp_approve(PDO $pdo): void
             $tq = $pdo->prepare('SELECT * FROM transactions WHERE id = ? AND property_id = ? AND deleted_at IS NULL');
             $tq->execute([$tid, $pid]);
             $trxLama = $tq->fetch(PDO::FETCH_ASSOC);
+
+            // Dokumen Gudang/Media yang DIREVISI: pengaturan pengakuannya bisa
+            // saja baru diubah, sementara transaksinya sudah ada sejak
+            // persetujuan pertama. Cabang ini dulu hanya menghitung ulang
+            // alokasi dari pengaturan TRANSAKSI, jadi perubahan di dokumen
+            // tersimpan rapi tetapi tidak berpengaruh apa pun — tanpa satu pun
+            // pesan. Di sini pengaturannya disalin turun lebih dulu.
+            //
+            // Penjaganya: hanya dokumen yang memang lahir dari formulir mandiri
+            // (kolom module terisi, tanpa penawaran). Dokumen yang dibuat DARI
+            // transaksi yang sudah ada tidak punya kolom-kolom ini, dan
+            // menyalin nilai kosongnya akan menghapus pengaturan transaksi.
+            if ($trxLama && !empty($skp['module']) && empty($skp['offer_id'])) {
+                $bmDok  = (string) ($skp['billing_method'] ?? '');
+                $sebar  = in_array($bmDok, ['spread', 'anchor_cycle'], true)
+                    ? $bmDok === 'spread'
+                    : ((int) ($trxLama['contract_months'] ?? 1) > 1);
+                $crDok  = ($skp['cycle_recognition'] ?? '') === 'cycle_end' ? 'cycle_end' : 'cycle_start';
+                $pdo->prepare('UPDATE transactions
+                                  SET billing_method = ?, cycle_recognition = ?, recurring_flag = ?,
+                                      prorata_kalender = ?, updated_by = ?, updated_at = NOW()
+                                WHERE id = ? AND property_id = ?')
+                    ->execute([$sebar ? 'spread' : 'anchor_cycle', $crDok,
+                               (int) ($skp['recurring_flag'] ?? 0), (int) ($skp['prorata_kalender'] ?? 0),
+                               clara_pelaku(), $tid, $pid]);
+                // Nominal per bulan ikut diganti seluruhnya: isian dokumen
+                // adalah satu-satunya kebenaran, jadi bulan yang tidak lagi
+                // disebut harus ikut terlepas — bukan tertinggal sebagai paku.
+                $akuiRev = json_decode((string) ($skp['recognition_json'] ?? ''), true);
+                AllocationService::simpanMonthOverrides($pdo, $pid, $tid,
+                    is_array($akuiRev) ? $akuiRev : [], clara_pelaku(), true);
+                $tq->execute([$tid, $pid]);
+                $trxLama = $tq->fetch(PDO::FETCH_ASSOC) ?: $trxLama;
+            }
+
             if ($trxLama && !ttd_wajib_untuk($pdo, (string) ($trxLama['created_at'] ?? ''))) {
                 $cekAlok = $pdo->prepare('SELECT COUNT(*) FROM transaction_allocations WHERE transaction_id = ?');
                 $cekAlok->execute([$tid]);
