@@ -106,6 +106,21 @@ function _pic_fetch_section(PDO $pdo, string $period, int $pid): array
     ];
 }
 
+/**
+ * Batasi satu seksi laporan ke PIC tertentu (lihat pic_scope_names()). Target &
+ * total ikut menjadi milik PIC itu sendiri, supaya kartu ringkasan tidak
+ * membocorkan angka gabungan tim.
+ */
+function _pic_scope_section(array $sec, ?array $names): array
+{
+    if ($names === null) return $sec;
+    $sec['pics']     = array_values(array_filter($sec['pics'], fn($p) => in_array($p['name'], $names, true)));
+    $sec['trxByPic'] = array_intersect_key($sec['trxByPic'], array_flip($names));
+    $sec['target']   = $sec['target'] * array_sum(array_map(fn($p) => (float) $p['target_share'], $sec['pics']));
+    $sec['total']    = array_sum(array_column($sec['pics'], 'actual_total'));
+    return $sec;
+}
+
 function _pic_render_section(array $sec, string $period, array $moduleLabel, string $idPrefix): void
 {
     $pics      = $sec['pics'];
@@ -238,14 +253,15 @@ function pic_report_page(PDO $pdo): void
     $sections = [];
     foreach ($props as $prop) {
         $pid     = (int)$prop['id'];
-        $sec     = ['prop' => $prop] + _pic_fetch_section($pdo, $period, $pid);
+        $sec     = _pic_scope_section(['prop' => $prop] + _pic_fetch_section($pdo, $period, $pid), pic_scope_names($pdo, $pid));
         $sec['streaks'] = ($rewardStart && $rewardStart <= $period)
             ? _pic_streak_map($pdo, $rewardStart, $period, $pid)
             : [];
         $sections[] = $sec;
     }
 
-    layout('Laporan PIC', function () use ($sections, $periods, $period, $moduleLabel) {
+    layout('Pencapaian PIC', function () use ($sections, $periods, $period, $moduleLabel) {
+        _pic_tabs('pic_report');
         ?>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
             <form method="get" style="display:flex;gap:6px;align-items:center">
@@ -334,6 +350,8 @@ function pic_report_print(PDO $pdo): void
     foreach ($trxStmt->fetchAll() as $trx) {
         $trxByPic[$trx['pic_name']][] = $trx;
     }
+    ['pics' => $pics, 'trxByPic' => $trxByPic, 'target' => $target] = _pic_scope_section(
+        ['pics' => $pics, 'trxByPic' => $trxByPic, 'target' => $target, 'total' => 0.0], pic_scope_names($pdo, $pid));
 
     $totalActual    = array_sum(array_column($pics, 'actual_total'));
     $totalRecurring = array_sum(array_column($pics, 'actual_recurring'));

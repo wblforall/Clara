@@ -193,12 +193,12 @@ function _nav_tambah(string $key): ?array
         'offers'                    => ['offer_form', 'manage_offers', 'Surat Penawaran baru'],
         'skp&module=gudang'         => ['skp_pick&module=gudang', 'manage_skp', 'SKS Gudang baru'],
         'skp&module=media'          => ['skp_pick&module=media', 'manage_skp', 'Form Utilities baru'],
-        'prospects'                 => ['prospect_form', 'view_transactions', 'Prospek baru'],
+        'prospects'                 => ['prospect_form', 'manage_prospects', 'Prospek baru'],
         'contract_requests'         => ['contract_request_form', 'manage_skp', 'Permintaan kontrak baru'],
         'transactions&module=cl'    => ['transaction_form&module=cl', 'manage_transactions', 'Transaksi Exhibition baru'],
         'transactions&module=media' => ['transaction_form&module=media', 'manage_transactions', 'Transaksi Media baru'],
         'transactions&module=gudang'=> ['transaction_form&module=gudang', 'manage_transactions', 'Transaksi Gudang baru'],
-        'clients'                   => ['client_form', 'manage_master', 'Client baru'],
+        'clients'                   => ['client_form', 'manage_clients', 'Client baru'],
         'offer_templates'           => ['offer_template_form', 'manage_master', 'Template baru'],
         'users'                     => ['user_form', 'manage_users', 'User baru'],
     ][$key] ?? null;
@@ -216,58 +216,64 @@ function layout(string $title, callable $body, array $opts = []): void
     }
     $appName = $config['app_name'] ?? 'CLARA';
     $flash   = flash();
+    // Kelompok mengikuti alur kerja satu deal: ringkasan → penjualan → kontrak &
+    // tagihan → analisa → tim → master → admin. Segmen selalu berurutan
+    // Exhibition → Media → Gudang. Tiap peran hanya melihat yang izinnya ada.
     $nav     = [
-        ['', 'dashboard', 'Dashboard', 'view_dashboard'],
+        ['Ringkasan', 'dashboard', 'Dashboard', 'view_dashboard'],
         ['', 'exec_dashboard', 'Executive Summary', 'view_exec_summary'],
-        ['', 'trend', 'Trend Revenue', 'view_dashboard'],
         ['', 'performance', 'Performance & Outlook', 'view_exec_summary'],
-        ['', 'unit_analysis', 'Analisa Unit', 'view_dashboard'],
-        ['', 'comparison', 'Perbandingan Periode', 'view_dashboard'],
-        ['Input', 'offers', 'Surat Penawaran', 'manage_offers'],
+        ['Penjualan', 'prospects', 'Prospek', 'view_transactions'],
+        ['', 'offers', 'Surat Penawaran', 'manage_offers'],
         // Satu menu bernama "SKP" dulu memuat tiga jenis dokumen yang alurnya
         // berbeda — Exhibition lewat penawaran, Gudang & Media tidak. Orang yang
         // mau membuat SKS Gudang harus menebak bahwa tempatnya di dalam menu
         // bernama SKP. Dipisah supaya pintu masuknya sejelas isinya; daftarnya
         // tetap satu halaman dengan saringan modul, jadi riwayatnya utuh.
         ['', 'skp&module=cl', 'SKP Exhibition', 'manage_skp'],
-        ['', 'skp&module=gudang', 'SKS Gudang', 'manage_skp'],
         ['', 'skp&module=media', 'Form Utilities (Media)', 'manage_skp'],
-        ['', 'prospects', 'Prospek', 'view_transactions'],
+        ['', 'skp&module=gudang', 'SKS Gudang', 'manage_skp'],
         ['', 'contract_requests', 'Permintaan Kontrak', 'manage_skp'],
-        ['', 'deletion_request', 'Pengajuan Hapus Data', 'request_delete'],
-        ['', 'transactions&module=cl', 'Exhibition', 'view_transactions'],
-        ['', 'transactions&module=media', 'Media', 'view_transactions'],
-        ['', 'transactions&module=gudang', 'Gudang', 'view_transactions'],
-        ['', 'payments', 'Tagihan & Pembayaran', 'manage_payments'],
-        ['Master Data', 'master&type=cl', 'Master Exhibition', 'view_master'],
-        ['', 'master&type=cl_unit_type', 'Master Tipe Unit', 'view_master'],
-        ['', 'offer_templates', 'Template Penawaran', 'manage_master'],
-        ['', 'master&type=media', 'Master Media', 'view_master'],
-        ['', 'master&type=gudang', 'Master Gudang', 'view_master'],
-        ['', 'master&type=pic', 'Master PIC', 'view_master'],
-        ['', 'master&type=target', 'Target', 'view_master'],
-        ['', 'master&type=holiday', 'Hari Libur', 'view_master'],
-        ['', 'clients', 'Master Client', 'view_master'],
-        ['', 'master_referrer', 'Master Referrer', 'view_master'],
-        ['Analisa', 'calendar', 'Kalender Pameran', 'view_transactions'],
-        ['', 'daily_occupancy', 'Occupancy Harian', 'view_dashboard'],
         ['', 'renewals', 'Renewal Kontrak', 'view_renewals'],
+        ['Kontrak & Tagihan', 'transactions&module=cl', 'Transaksi Exhibition', 'view_transactions'],
+        ['', 'transactions&module=media', 'Transaksi Media', 'view_transactions'],
+        ['', 'transactions&module=gudang', 'Transaksi Gudang', 'view_transactions'],
+        ['', 'payments', 'Tagihan & Pembayaran', 'view_payments'],
+        ['', 'deletion_request', 'Pengajuan Hapus Data', 'request_delete'],
+        ['Unit & Pasar', 'calendar', 'Kalender Pameran', 'view_transactions'],
+        ['', 'daily_occupancy', 'Occupancy Harian', 'view_dashboard'],
+        ['', 'unit_analysis', 'Analisa Unit', 'view_dashboard'],
+        ['', 'trend', 'Trend Revenue', 'view_dashboard'],
+        ['', 'comparison', 'Perbandingan Periode', 'view_dashboard'],
         ['', 'client_analysis', 'Analisa Market Client', 'view_master'],
-        ['', 'pic_report', 'Laporan PIC', 'view_pic_report'],
-        ['', 'pic_performance', 'Performa PIC', 'view_pic_report'],
+        // Laporan PIC & Performa PIC = satu menu dengan dua tab (Per Bulan / Per PIC).
+        ['Tim Sales', 'pic_report', 'Pencapaian PIC', 'view_pic_report'],
         ['', 'pic_pipeline', 'Aktivitas & Pipeline PIC', 'view_pic_report'],
         ['', 'pic_reward', 'Rewarding PIC', 'view_pic_report'],
         ['', 'commission_sim', 'Simulasi Komisi', 'view_commission_sim'],
-        ['Admin', 'recurring_candidates', 'Konversi Recurring', 'manage_transactions'],
-        ['', 'lookup_manage', 'Kelola Opsi Dropdown', 'manage_master'],
-        ['', 'users', 'Users & Role', 'manage_users'],
-        ['', 'roles', 'Role & Permission', 'manage_users'],
+        ['Master Data', 'master&type=cl', 'Exhibition', 'view_master'],
+        ['', 'master&type=cl_unit_type', 'Tipe Unit', 'view_master'],
+        ['', 'master&type=media', 'Media', 'view_master'],
+        ['', 'master&type=gudang', 'Gudang', 'view_master'],
+        ['', 'clients', 'Client', 'view_master'],
+        ['', 'master_referrer', 'Referrer', 'view_master'],
+        ['', 'master&type=pic', 'PIC', 'view_master'],
+        ['', 'master&type=target', 'Target', 'view_master'],
+        ['', 'master&type=holiday', 'Hari Libur', 'view_master'],
+        ['', 'offer_templates', 'Template Penawaran', 'view_master'],
+        ['Admin', 'users', 'Pengguna', 'manage_users'],
+        ['', 'roles', 'Hak Akses', 'manage_users'],
         ['', 'approval_flow', 'Alur Approval Dokumen', 'manage_users'],
-        ['', 'audit', 'Activity Log', 'view_logs'],
+        ['', 'lookup_manage', 'Opsi Dropdown', 'manage_master'],
+        // Halamannya sendiri khusus superadmin; manage_users hanya dimiliki admin.
+        ['', 'recurring_candidates', 'Konversi Recurring', 'manage_users'],
         ['', 'deleted_transactions', 'Transaksi Dihapus', 'manage_deleted'],
+        ['', 'audit', 'Activity Log', 'view_logs'],
         ['Akun', 'my_signature', 'Tanda Tangan Saya', 'view_dashboard'],
         ['', 'my_paraf', 'Paraf Saya', 'approve_skp'],
     ];
+    // Menu yang juga menyala saat membuka rute lain (tab di halaman yang sama).
+    $navAlias = ['pic_report' => ['pic_performance']];
 
     // Lencana angka di sidebar: pemutus pengajuan penghapusan perlu tahu ada
     // yang menunggu tanpa harus membuka menunya. Dihitung sekali per halaman.
@@ -499,19 +505,15 @@ function layout(string $title, callable $body, array $opts = []): void
             </div>
             <nav class="nav">
                 <?php
-                // Kelompok yang dilipat diingat di cookie supaya server langsung
-                // merender keadaan yang sama — tanpa kedipan saat halaman dimuat.
-                // Admin terlipat sebagai bawaan; kelompok berisi halaman aktif selalu terbuka.
-                $_navState = [];
-                foreach (explode(',', (string) ($_COOKIE['clara_nav'] ?? '')) as $_kv) {
-                    if (preg_match('/^([a-z_]+)=([01])$/', $_kv, $_m)) $_navState[$_m[1]] = $_m[2] === '1';
-                }
+                // Hanya kelompok berisi halaman aktif yang terbuka; sisanya terlipat
+                // (bisa dibuka dengan klik). Pilihan lipat tidak lagi diingat, supaya
+                // sidebar selalu ringkas di setiap halaman.
                 $_groups = []; $_g = -1;
                 foreach ($nav as [$group, $key, $label, $permission]) {
                     if ($group !== '' || $_g < 0) $_groups[++$_g] = ['label' => $group, 'items' => [], 'active' => false];
                     if (!can($permission)) continue;
                     parse_str('r=' . $key, $_kp);
-                    $_active = ($route === ($_kp['r'] ?? ''));
+                    $_active = ($route === ($_kp['r'] ?? '')) || in_array($route, $navAlias[$_kp['r'] ?? ''] ?? [], true);
                     if ($_active) {
                         foreach ($_kp as $_pk => $_pv) {
                             if ($_pk === 'r') continue;
@@ -522,11 +524,18 @@ function layout(string $title, callable $body, array $opts = []): void
                     if ($_add && !can($_add[1])) $_add = null;
                     $_groups[$_g]['items'][] = [$key, $label, $_active, (int) ($navBadge[$_kp['r'] ?? ''] ?? 0), $_add];
                     if ($_active) $_groups[$_g]['active'] = true;
+                    // Halaman turunan (mis. transaction_form, skp_form, client_form)
+                    // tidak ada di menu; kelompok induknya tetap dibuka.
+                    $_dasar = rtrim($_kp['r'] ?? '', 's');
+                    if ($_dasar !== '' && str_starts_with($route, $_dasar . '_')) $_groups[$_g]['dekat'] = true;
+                }
+                if (!array_filter(array_column($_groups, 'active'))) {
+                    foreach ($_groups as $_i => $_x) if (!empty($_x['dekat'])) { $_groups[$_i]['active'] = true; break; }
                 }
                 foreach ($_groups as $_grp):
                     if (!$_grp['items']) continue;
                     $_slug = strtolower(preg_replace('/[^a-z]+/i', '_', $_grp['label']));
-                    $_open = $_grp['active'] || ($_navState[$_slug] ?? ($_slug !== 'admin'));
+                    $_open = $_grp['active'];
                 ?>
                 <div class="nav-group<?= $_open ? '' : ' tutup' ?>"<?= $_grp['label'] !== '' ? ' data-grup="' . h($_slug) . '"' : '' ?>>
                     <?php if ($_grp['label'] !== ''): ?>
@@ -786,8 +795,6 @@ function layout(string $title, callable $body, array $opts = []): void
             b.addEventListener('click',function(){
                 var g=b.parentElement; g.classList.toggle('tutup');
                 b.setAttribute('aria-expanded',g.classList.contains('tutup')?'false':'true');
-                var st=[]; sb.querySelectorAll('.nav-group[data-grup]').forEach(function(x){st.push(x.dataset.grup+'='+(x.classList.contains('tutup')?0:1));});
-                simpan('clara_nav',st.join(','));
             });
         });
         // Jenis penunjuk terakhir (mouse/touch/pen) — lebih andal daripada

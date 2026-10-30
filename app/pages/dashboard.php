@@ -9,7 +9,7 @@ function dashboard(PDO $pdo): void
     $period = periode_bulan();
     $pid = current_property_id();
     // Hanya yang berhak mengubah master yang perlu tahu — dan yang bisa memperbaikinya.
-    $masterIssues = can('manage_master') ? master_data_issues($pdo, $pid) : [];
+    $masterIssues = can('manage_units') ? master_data_issues($pdo, $pid) : [];
     // Dokumen yang menunggu paraf/persetujuan ORANG INI. Sebelum ada ini,
     // pemeriksa tidak punya cara tahu ada yang menunggunya selain membuka
     // daftar SKP dan menebak — itulah sebab "sering miss".

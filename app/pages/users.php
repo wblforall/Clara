@@ -9,7 +9,7 @@ function users_page(PDO $pdo): void
     foreach ($upRows as $up) {
         $userProps[$up['user_id']][] = $up['name'];
     }
-    layout('Users & Role', function () use ($rows, $userProps) {
+    layout('Pengguna', function () use ($rows, $userProps) {
         ?>
         <div class="toolbar"><a class="btn" href="?r=user_form">Tambah User</a></div>
         <div class="table-wrap">
@@ -323,36 +323,13 @@ function audit_page(PDO $pdo): void
 function roles_page(PDO $pdo): void
 {
     require_permission('manage_users');
-    $allPermissions = [
-        'view_dashboard'      => 'Lihat Dashboard',
-        'view_exec_summary'   => 'Executive Summary',
-        'view_transactions'   => 'Lihat Transaksi',
-        'manage_transactions' => 'Kelola Transaksi',
-        'view_master'         => 'Lihat Master Data',
-        'manage_master'       => 'Kelola Master Data',
-        'import_master'       => 'Import Master',
-        'export_reports'      => 'Export Laporan',
-        'view_pic_report'     => 'Laporan PIC',
-        'view_commission_sim' => 'Simulasi Komisi',
-        'view_renewals'       => 'Lihat Renewal',
-        'manage_renewals'     => 'Kelola Renewal',
-        'manage_offers'       => 'Kelola Surat Penawaran',
-        'manage_skp'          => 'Kelola SKP',
-        'approve_skp'         => 'Approve SKP',
-        'view_logs'           => 'Activity Log',
-        'manage_users'        => 'Kelola Users',
-        'manage_deleted'      => 'Hapus Transaksi',
-        'request_delete'      => 'Ajukan Hapus Data',
-        'view_payments'       => 'Lihat Invoice & Pembayaran',
-        'manage_payments'     => 'Isi Invoice & Pembayaran',
-        'approve_delete'      => 'Putuskan Pengajuan Hapus',
-    ];
-    $editableRoles = ['supervisor', 'sales', 'finance', 'administrasi', 'viewer'];
+    $allPermissions = permission_labels();
+    $editableRoles = editable_roles();
     $current = [];
     foreach ($pdo->query('SELECT role, permission FROM role_permissions')->fetchAll() as $r) {
         $current[$r['role']][$r['permission']] = true;
     }
-    layout('Role & Permission', function () use ($allPermissions, $editableRoles, $current) {
+    layout('Hak Akses', function () use ($allPermissions, $editableRoles, $current) {
         ?>
         <form class="panel" method="post" action="?r=roles_save">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
@@ -406,14 +383,8 @@ function roles_save(PDO $pdo): void
     require_permission('manage_users');
     verify_csrf();
 
-    $editableRoles = ['supervisor', 'sales', 'finance', 'administrasi', 'viewer'];
-    $allPermissions = [
-        'view_dashboard', 'view_exec_summary', 'view_transactions', 'manage_transactions',
-        'view_master', 'manage_master', 'import_master',
-        'export_reports', 'view_pic_report', 'view_commission_sim',
-        'view_renewals', 'manage_renewals', 'manage_offers', 'manage_skp', 'approve_skp', 'view_logs', 'manage_users', 'manage_deleted',
-        'request_delete', 'approve_delete', 'manage_payments',
-    ];
+    $editableRoles  = editable_roles();
+    $allPermissions = array_keys(permission_labels());
 
     $submitted = $_POST['perms'] ?? [];
 

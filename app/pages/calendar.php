@@ -358,7 +358,7 @@ function calendar_page(PDO $pdo): void
     // Forecast boleh dibetulkan langsung di kalender, seperti mengetik di sel
     // spreadsheet. Angka dasarnya datang dari Master (Proyeksi Bulanan);
     // yang diketik di sini hanya berlaku untuk bulan yang sedang dibuka.
-    $bisaUbahFc = can('manage_master');
+    $bisaUbahFc = can('manage_units');
 
     // Proyeksi: potensi penuh seluruh unit bulan ini, memakai rumus yang sama
     // dengan Dashboard (get_projection). Di lembar tim angkanya berdiri di
@@ -1070,7 +1070,7 @@ function calendar_page(PDO $pdo): void
  */
 function calendar_forecast_save(PDO $pdo): void
 {
-    require_permission('manage_master');
+    require_permission('manage_units');
     verify_csrf();
     header('Content-Type: application/json; charset=utf-8');
     $pid  = current_property_id();

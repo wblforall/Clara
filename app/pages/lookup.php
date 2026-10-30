@@ -21,7 +21,7 @@ function lookup_manage_page(PDO $pdo): void
     $rows->execute([$selectedCat, $pid]);
     $rows = $rows->fetchAll();
 
-    layout('Kelola Opsi Dropdown', function () use ($categories, $selectedCat, $rows) { ?>
+    layout('Opsi Dropdown', function () use ($categories, $selectedCat, $rows) { ?>
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
             <h2 style="margin:0">Kelola Opsi Dropdown</h2>
             <a class="btn" href="?r=lookup_manage&cat=<?= h($selectedCat) ?>&action=add">+ Tambah Opsi</a>

@@ -68,7 +68,7 @@ function master_page(PDO $pdo, array $masterConfig): void
         </div>
         <?php endif; endif; ?>
         <div class="toolbar">
-            <?php if (can('manage_master')): ?><a class="btn" href="?r=master_form&type=<?= h($type) ?>">Tambah Data</a><?php endif; ?>
+            <?php if (can_edit_master($type)): ?><a class="btn" href="?r=master_form&type=<?= h($type) ?>">Tambah Data</a><?php endif; ?>
             <?php if ($type === 'target' && can('manage_master')): ?>
                 <form method="post" action="?r=generate_periods" style="display:inline-flex;align-items:center;gap:6px">
                     <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
@@ -114,7 +114,7 @@ function master_page(PDO $pdo, array $masterConfig): void
         <div class="table-wrap">
             <table id="master-table">
                 <thead><tr>
-                    <?php $bolehUrut = !empty($cfg['sortable']) && can('manage_master') && $q === ''; ?>
+                    <?php $bolehUrut = !empty($cfg['sortable']) && can_edit_master($type) && $q === ''; ?>
                     <?php if ($bolehUrut): ?><th style="width:32px"></th><?php endif; ?>
                     <?php foreach ($cfg['columns'] as $col): ?><th><?= h($cfg['column_labels'][$col] ?? $cfg['fields'][$col] ?? $col) ?></th><?php endforeach; ?>
                     <th>Aksi</th>
@@ -152,7 +152,7 @@ function master_page(PDO $pdo, array $masterConfig): void
                                 }
                             ?></td>
                         <?php endforeach; ?>
-                        <td><?php if (can('manage_master')): ?><a class="btn light" href="?r=master_form&type=<?= h($type) ?>&id=<?= h((string) $row['id']) ?>">Edit</a><?php else: ?><span class="muted">Read only</span><?php endif; ?></td>
+                        <td><?php if (can_edit_master($type)): ?><a class="btn light" href="?r=master_form&type=<?= h($type) ?>&id=<?= h((string) $row['id']) ?>">Edit</a><?php else: ?><span class="muted">Read only</span><?php endif; ?></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -614,9 +614,9 @@ function master_form(PDO $pdo, array $masterConfig): void
 
 function master_sort_save(PDO $pdo, array $masterConfig): void
 {
-    require_permission('manage_master');
-    header('Content-Type: application/json');
     $type = getv('type', '');
+    require_permission(master_edit_permission($type));
+    header('Content-Type: application/json');
     $cfg  = $masterConfig[$type] ?? null;
     if (!$cfg || empty($cfg['sortable'])) {
         echo json_encode(['ok' => false, 'error' => 'not sortable']);

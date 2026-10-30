@@ -520,8 +520,103 @@ function roles(): array
         'sales'        => 'Sales',
         'finance'      => 'Finance',
         'administrasi' => 'Administrasi',
+        'asst_manager' => 'Asst. Manager',
         'viewer'       => 'Viewer',
     ];
+}
+
+/**
+ * Semua izin yang bisa diatur di layar Hak Akses, dengan labelnya. SATU daftar
+ * dipakai layar (roles_page) dan penyimpanan (roles_save): dulu keduanya punya
+ * daftar sendiri, dan izin yang hanya ada di salah satunya (view_payments,
+ * manage_prospects) terhapus diam-diam setiap kali tombol Simpan ditekan.
+ */
+function permission_labels(): array
+{
+    return [
+        'view_dashboard'      => 'Lihat Dashboard',
+        'view_exec_summary'   => 'Executive Summary',
+        'view_transactions'   => 'Lihat Transaksi',
+        'manage_transactions' => 'Kelola Transaksi',
+        'manage_prospects'    => 'Kelola Prospek',
+        'view_master'         => 'Lihat Master Data',
+        'manage_clients'      => 'Ubah Client',
+        'manage_units'        => 'Ubah Unit (Exhibition, Tipe Unit, Media, Gudang)',
+        'manage_pic_target'   => 'Ubah PIC & Target Sales',
+        'manage_master'       => 'Kelola Semua Master Data',
+        'import_master'       => 'Import Master',
+        'export_reports'      => 'Export Laporan',
+        'view_pic_report'     => 'Laporan PIC',
+        'view_all_pic'        => 'Laporan PIC: lihat semua PIC',
+        'view_commission_sim' => 'Simulasi Komisi',
+        'view_renewals'       => 'Lihat Renewal',
+        'manage_renewals'     => 'Kelola Renewal',
+        'manage_offers'       => 'Kelola Surat Penawaran',
+        'manage_skp'          => 'Kelola SKP',
+        'approve_skp'         => 'Approve SKP',
+        'view_logs'           => 'Activity Log',
+        'manage_users'        => 'Kelola Users',
+        'manage_deleted'      => 'Hapus Transaksi',
+        'request_delete'      => 'Ajukan Hapus Data',
+        'view_payments'       => 'Lihat Invoice & Pembayaran',
+        'manage_payments'     => 'Isi Invoice & Pembayaran',
+        'approve_delete'      => 'Putuskan Pengajuan Hapus',
+    ];
+}
+
+/** Peran yang izinnya diatur di layar Hak Akses (superadmin/admin selalu penuh). */
+function editable_roles(): array
+{
+    return ['supervisor', 'sales', 'finance', 'administrasi', 'asst_manager', 'viewer'];
+}
+
+/**
+ * Izin untuk MENGUBAH satu jenis master. Sales boleh merawat unit & client yang
+ * memang ia kerjakan sehari-hari, tapi tidak PIC/target (penentu target dirinya
+ * sendiri) maupun master lain.
+ */
+function master_edit_permission(string $type): string
+{
+    return match ($type) {
+        'cl', 'cl_unit_type', 'media', 'gudang' => 'manage_units',
+        'pic', 'target'                         => 'manage_pic_target',
+        default                                 => 'manage_master',
+    };
+}
+
+/** Tab Pencapaian PIC: Per Bulan (semua PIC satu bulan) / Per PIC (satu PIC beberapa bulan). */
+function _pic_tabs(string $aktif): void
+{
+    echo '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">';
+    foreach (['pic_report' => 'Per Bulan', 'pic_performance' => 'Per PIC'] as $r => $lbl) {
+        $on = $r === $aktif;
+        echo '<a href="?r=' . $r . '" style="padding:8px 16px;border-radius:999px;font-weight:700;font-size:13px;border:1px solid '
+           . ($on ? 'var(--primary);background:var(--primary);color:#fff' : 'var(--line);background:#fff;color:var(--ink2)')
+           . '"' . ($on ? ' aria-current="page"' : '') . '>' . $lbl . '</a>';
+    }
+    echo '</div>';
+}
+
+function can_edit_master(string $type): bool
+{
+    return can(master_edit_permission($type));
+}
+
+/**
+ * Nama PIC yang boleh dilihat di laporan PIC. null = semua (pemegang
+ * view_all_pic); selain itu hanya PIC yang tertaut ke akun ini di properti
+ * tsb. — array kosong berarti akun belum tertaut ke PIC mana pun.
+ *
+ * @return string[]|null
+ */
+function pic_scope_names(PDO $pdo, int $pid): ?array
+{
+    if (can('view_all_pic')) return null;
+    $uid = (int) ($_SESSION['user']['id'] ?? 0);
+    if (!$uid) return [];
+    $st = $pdo->prepare("SELECT name FROM master_pic WHERE user_id = ? AND property_id = ? AND status = 'active'");
+    $st->execute([$uid, $pid]);
+    return $st->fetchAll(PDO::FETCH_COLUMN) ?: [];
 }
 
 function current_role(): string
@@ -742,7 +837,8 @@ function permission_for_route(string $route): string
         // berbeda. Rute tanpa daftar jatuh ke default di bawah.
         'transaction_cancel', 'price_step_save', 'pic_split_save' => 'approve_skp',
         'transaction_history', 'calendar' => 'view_transactions',
-        'calendar_forecast_save' => 'manage_master',
+        // Potensi per unit di kalender ikut izin merawat unit.
+        'calendar_forecast_save' => 'manage_units',
         // Rincian "apa saja yang dijual" — gerbangnya sama dengan Laporan PIC,
         // yang memang sudah memperlihatkan angka tiap PIC kepada sales.
         'calendar_detail' => 'view_pic_report',
@@ -756,7 +852,9 @@ function permission_for_route(string $route): string
         'payments', 'payments_csv', 'payments_xlsx', 'payment_form' => 'view_payments',
         'payment_invoice_save', 'payment_add', 'payment_edit', 'payment_delete' => 'manage_payments',
         'master' => 'view_master',
-        'master_form', 'master_save', 'generate_periods' => 'manage_master',
+        // Mengubah master bergantung jenisnya (unit / PIC & target / lainnya).
+        'master_form', 'master_save' => master_edit_permission((string) getv('type', 'media')),
+        'generate_periods' => 'manage_master',
         'import_media', 'import_template' => 'import_master',
         'exec_dashboard', 'exec_narasi_ai', 'print_exec_summary', 'performance' => 'view_exec_summary',
         'export_summary', 'print_dashboard', 'print_exec', 'print_trend', 'print_performance' => 'export_reports',
@@ -764,7 +862,8 @@ function permission_for_route(string $route): string
         'audit' => 'view_logs',
         'users', 'user_form', 'user_save', 'roles', 'roles_save',
         'approval_flow', 'approval_flow_save' => 'manage_users',
-        'clients', 'client_form', 'client_save' => 'manage_master',
+        'clients' => 'view_master',
+        'client_form', 'client_save' => 'manage_clients',
         'client_analysis', 'client_profile' => 'view_master',
         'pic_report', 'pic_report_print' => 'view_pic_report',
         // Rekonsiliasi membaca angka yang sama dengan Laporan PIC, jadi izinnya
@@ -780,7 +879,11 @@ function permission_for_route(string $route): string
         'skp_revision_request' => 'manage_skp',
         'my_paraf', 'my_paraf_save', 'my_paraf_reset' => 'approve_skp',
         'offers', 'offer_view', 'offer_form', 'offer_save', 'offer_status', 'offer_print', 'offer_template_rule' => 'manage_offers',
-        'offer_templates', 'offer_template_form', 'offer_template_save', 'offer_template_preview' => 'manage_master',
+        'offer_templates' => 'view_master',
+        'offer_template_form', 'offer_template_save', 'offer_template_preview' => 'manage_master',
+        // Halamannya memeriksa superadmin sendiri; gerbang rute ini hanya
+        // memastikan peran lain tidak lagi lolos lewat default view_dashboard.
+        'recurring_candidates' => 'manage_users',
         'm_home' => 'view_dashboard',
         'm_transactions' => 'view_transactions',
         'm_exec' => 'view_exec_summary',

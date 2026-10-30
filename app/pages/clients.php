@@ -77,7 +77,7 @@ function clients_page(PDO $pdo): void
     layout('Master Client', function () use ($clients, $opts, $filterType, $filterScale, $q) {
         ?>
         <div class="toolbar" style="flex-wrap:wrap;gap:8px">
-            <?php if (can('manage_master')): ?><a class="btn" href="?r=client_form">Tambah Client</a><?php endif; ?>
+            <?php if (can('manage_clients')): ?><a class="btn" href="?r=client_form">Tambah Client</a><?php endif; ?>
             <form method="get" style="display:flex;gap:6px;align-items:center;margin-left:auto">
                 <input type="hidden" name="r" value="clients">
                 <select name="business_type" onchange="this.form.submit()" style="font-size:12px">
@@ -120,7 +120,7 @@ function clients_page(PDO $pdo): void
                         <td><?= h($row['channel'] ?? '-') ?></td>
                         <td><?= h($row['primary_contact_name'] ?? '-') ?><br><small class="muted"><?= h($row['primary_contact_phone'] ?? '') ?></small></td>
                         <td><?= h($row['status']) ?></td>
-                        <td><?php if (can('manage_master')): ?><a class="btn light" href="?r=client_form&id=<?= h((string) $row['id']) ?>">Edit</a><?php endif; ?></td>
+                        <td><?php if (can('manage_clients')): ?><a class="btn light" href="?r=client_form&id=<?= h((string) $row['id']) ?>">Edit</a><?php endif; ?></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$clients): ?><tr><td colspan="11" class="muted" style="text-align:center">Tidak ada data.</td></tr><?php endif; ?>
@@ -133,7 +133,7 @@ function clients_page(PDO $pdo): void
 
 function client_form(PDO $pdo): void
 {
-    require_permission('manage_master');
+    require_permission('manage_clients');
     $id = getv('id');
     $row = ['status' => 'active'];
     $contacts = [];
@@ -314,7 +314,7 @@ function client_form(PDO $pdo): void
 
 function client_save(PDO $pdo): void
 {
-    require_permission('manage_master');
+    require_permission('manage_clients');
     verify_csrf();
     $id = post('id');
 
@@ -1298,7 +1298,7 @@ function client_profile_page(PDO $pdo): void
 
         <div class="toolbar" style="gap:8px">
             <a class="btn light" href="?r=clients">← Master Client</a>
-            <?php if (can('manage_master')): ?><a class="btn light" href="?r=client_form&id=<?= (int)$client['id'] ?>">Edit Client</a><?php endif; ?>
+            <?php if (can('manage_clients')): ?><a class="btn light" href="?r=client_form&id=<?= (int)$client['id'] ?>">Edit Client</a><?php endif; ?>
         </div>
 
         <div class="panel">

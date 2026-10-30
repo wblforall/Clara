@@ -44,6 +44,8 @@ function pic_reward_page(PDO $pdo): void
         "SELECT id, name, COALESCE(role_name,'-') role_name, COALESCE(target_share,0) target_share
          FROM master_pic WHERE status='active' AND property_id=$pid ORDER BY name"
     )->fetchAll();
+    $lingkup = pic_scope_names($pdo, $pid);
+    if ($lingkup !== null) $pics = array_values(array_filter($pics, fn($p) => in_array($p['name'], $lingkup, true)));
 
     $picData = [];
     $periods = [];

@@ -31,6 +31,8 @@ function pic_pipeline_page(PDO $pdo): void
     );
     $st->execute([$pid, $fromDate, $toDate]);
     $offers = $st->fetchAll();
+    $lingkup = pic_scope_names($pdo, $pid);
+    if ($lingkup !== null) $offers = array_values(array_filter($offers, fn($o) => in_array((string) $o['pic_name'], $lingkup, true)));
 
     // Hitung duplikat: PIC + client + unit + nilai sama.
     $dupGroups = [];
@@ -282,6 +284,12 @@ function pic_performance_page(PDO $pdo): void
     );
     $picList->execute([$pid]);
     $picList = $picList->fetchAll();
+    // Tanpa izin "lihat semua PIC" daftar & pilihan dikunci ke PIC milik akun ini.
+    $lingkup = pic_scope_names($pdo, $pid);
+    if ($lingkup !== null) {
+        $picList = array_values(array_filter($picList, fn($p) => in_array($p['name'], $lingkup, true)));
+        if (!in_array($picName, $lingkup, true)) $picName = $lingkup[0] ?? '';
+    }
 
     $rows    = [];
     $picMeta = null;
@@ -390,10 +398,11 @@ function pic_performance_page(PDO $pdo): void
     $mn = ['01'=>'Jan','02'=>'Feb','03'=>'Mar','04'=>'Apr','05'=>'Mei','06'=>'Jun',
            '07'=>'Jul','08'=>'Ags','09'=>'Sep','10'=>'Okt','11'=>'Nov','12'=>'Des'];
 
-    layout('Performa PIC', function () use (
+    layout('Pencapaian PIC', function () use (
         $picList, $picName, $picMeta, $rows, $summary,
         $fromPeriod, $toPeriod, $mn
     ) {
+        _pic_tabs('pic_performance');
         ?>
 
         <!-- Filter -->

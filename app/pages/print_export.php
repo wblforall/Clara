@@ -1757,9 +1757,11 @@ function export_pic_report_xlsx(PDO $pdo): void
          ORDER BY actual_total DESC"
     );
     $stmt->execute([$period, $pid, $pid]);
+    $lingkup = pic_scope_names($pdo, $pid);
+    $baris   = array_values(array_filter($stmt->fetchAll(), fn($p) => $lingkup === null || in_array($p['name'], $lingkup, true)));
 
     $data = [];
-    foreach ($stmt->fetchAll() as $i => $p) {
+    foreach ($baris as $i => $p) {
         $targetPosisi = (float) $p['target_share'] * $target;
         $achievement  = $targetPosisi > 0 ? round((float) $p['actual_total'] / $targetPosisi * 100, 1) : 0;
         $data[] = [
