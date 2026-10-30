@@ -1180,6 +1180,40 @@ function clara_gabung_lokasi(...$bagian): string
  * Bukan input user (literal konstan), jadi aman diinterpolasi ke SQL. Alias
  * tabelnya: s = skp_documents, t = transactions, o = offers.
  */
+/**
+ * Berkas migrasi yang belum pernah dijalankan di database ini.
+ *
+ * Kode dan skema bisa berangkat sendiri-sendiri: `git pull` memperbarui kode,
+ * sedangkan kolom barunya baru ada setelah `php db_migrate.php`. Di antara dua
+ * langkah itu, setiap penyimpanan yang menyentuh kolom baru gagal dengan
+ * HTTP 500 tanpa keterangan apa pun — dan dari layar tidak ada satu pun petunjuk
+ * bahwa penyebabnya cuma satu perintah yang belum dijalankan.
+ *
+ * Hasilnya dipakai memasang peringatan untuk admin. Gagal membacanya tidak
+ * menjatuhkan halaman: yang kembali daftar kosong, persis seperti sebelum ada
+ * pemeriksaan ini.
+ */
+function clara_migrasi_tertunda(PDO $pdo): array
+{
+    static $sisa = null;
+    if ($sisa !== null) return $sisa;
+    $sisa = [];
+    try {
+        $berkas = glob(dirname(__DIR__) . '/database/migrations/*.php') ?: [];
+        if (!$berkas) return $sisa;
+        $sudah = $pdo->query('SELECT migration FROM schema_migrations')->fetchAll(PDO::FETCH_COLUMN) ?: [];
+        $sudah = array_flip($sudah);
+        foreach ($berkas as $b) {
+            $nama = basename($b);
+            if (!isset($sudah[$nama])) $sisa[] = $nama;
+        }
+        sort($sisa);
+    } catch (Throwable $e) {
+        $sisa = [];   // tabel tracker belum ada / tak terbaca — diam saja
+    }
+    return $sisa;
+}
+
 function clara_nilai_dokumen_sql(string $s = 's', string $t = 't', string $o = 'o'): string
 {
     return "COALESCE($s.total_amount, $t.final_amount, $t.total_calculated,"

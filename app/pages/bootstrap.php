@@ -612,6 +612,25 @@ function layout(string $title, callable $body, array $opts = []): void
                 </div>
             </header>
             <?php if ($flash): ?><div class="flash"><?= h($flash) ?></div><?php endif; ?>
+            <?php
+            /* Kode sudah diperbarui, databasenya belum.
+               Sampai `php db_migrate.php` dijalankan, setiap penyimpanan yang
+               menyentuh kolom baru gagal dengan HTTP 500 tanpa keterangan.
+               Peringatan ini mengubahnya jadi satu kalimat yang bisa ditindak,
+               dan hanya diperlihatkan kepada yang bisa menjalankannya. */
+            $_migrasiSisa = (isset($pdo) && $pdo instanceof PDO && in_array(current_role(), ['superadmin', 'admin'], true))
+                ? clara_migrasi_tertunda($pdo) : [];
+            ?>
+            <?php if ($_migrasiSisa): ?>
+            <div style="margin:0 0 12px;padding:12px 16px;border-radius:10px;border:1px solid #fecaca;background:#fef2f2;color:#991b1b;font-size:13px;line-height:1.55">
+                <strong>&#9888; Database belum diperbarui &mdash; <?= count($_migrasiSisa) ?> migrasi belum dijalankan.</strong><br>
+                Kode di server ini sudah versi baru, tetapi kolom barunya belum ada. Penyimpanan dokumen
+                (terutama Gudang &amp; Media) akan <b>gagal dengan Error 500</b> sampai ini dijalankan.
+                Buka <b>cPanel &rarr; Terminal</b>, lalu:
+                <div style="margin:7px 0 4px;padding:7px 10px;background:#fff;border:1px solid #fecaca;border-radius:7px;font-family:monospace;font-size:12px">cd ~/public_html/clara &amp;&amp; php db_migrate.php</div>
+                <span style="font-size:11.5px;color:#7f1d1d">Belum jalan: <?= h(implode(', ', array_slice($_migrasiSisa, 0, 6))) ?><?= count($_migrasiSisa) > 6 ? ' &hellip;' : '' ?></span>
+            </div>
+            <?php endif; ?>
             <?php $body(); ?>
         </main>
     </div>
