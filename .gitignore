@@ -25,6 +25,11 @@ scripts/userguide_assets/
 # scripts/tutorial_screenshot.js.
 scripts/tutorial_assets/
 
+# Laporan analisa per-PIC: skripnya memuat nama penyewa, nomor dokumen, dan
+# nilai kontrak sungguhan. Repo ini publik — berkasnya tetap ada di komputer
+# supaya laporannya bisa dibangun ulang, tapi tidak pernah ikut di-commit.
+scripts/build_laporan_evan_okt.php
+
 # File kerja lokal (PDF/dokumen contoh, dll)
 *.doc
 *.docx
