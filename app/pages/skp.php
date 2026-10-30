@@ -339,7 +339,14 @@ function skp_list_page(PDO $pdo): void
                 COALESCE(s.start_date, t.start_date, o.start_date)    start_date,
                 COALESCE(s.end_date, t.end_date, o.end_date)          end_date,
                 COALESCE(s.module, t.module, o.module)                module,
-                COALESCE(sc.company_name, tc.company_name, oc.company_name) company_name
+                COALESCE(sc.company_name, tc.company_name, oc.company_name) company_name,
+                -- PIC EFEKTIF, bukan sekadar kolom dokumennya. Dokumen Gudang/
+                -- Media yang dibuat DARI transaksi yang sudah ada tidak mengisi
+                -- skp_documents.pic_name sama sekali — PIC-nya tinggal di
+                -- transaksinya, dan surat pun mencetaknya dari sana. Membaca
+                -- kolom dokumennya saja membuat dokumen yang PIC-nya baik-baik
+                -- saja tertuduh kosong.
+                COALESCE(NULLIF(s.pic_name,\'\'), NULLIF(t.pic_name,\'\'), NULLIF(o.pic_name,\'\')) pic_efektif
          FROM skp_documents s
          LEFT JOIN transactions t ON t.id = s.transaction_id
          LEFT JOIN master_clients tc ON tc.id = t.client_id
@@ -558,7 +565,7 @@ function skp_list_page(PDO $pdo): void
                                 <?php /* Dokumen Gudang/Media tanpa PIC: kolom "Dibuat Oleh" di
                                          suratnya kosong, dan nilainya tidak pernah muncul di
                                          Laporan per PIC. Dulu tidak ada tanda apa pun. */ ?>
-                                <?php if (in_array($r['module'] ?? '', ['gudang', 'media'], true) && trim((string) ($r['pic_name'] ?? '')) === ''): ?>
+                                <?php if (in_array($r['module'] ?? '', ['gudang', 'media'], true) && trim((string) ($r['pic_efektif'] ?? '')) === ''): ?>
                                 <br><span style="color:#b91c1c;font-weight:700">PIC belum diisi</span>
                                 <?php endif; ?></td>
                             <td style="white-space:nowrap">
