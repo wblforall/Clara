@@ -1168,6 +1168,24 @@ function clara_gabung_lokasi(...$bagian): string
     return implode(' - ', $ada);
 }
 
+/**
+ * Nilai sebuah dokumen (SKP/SKS/Form Utilities) sebagai ekspresi SQL.
+ *
+ * Nilainya bisa tinggal di tiga tempat tergantung asal dokumennya: di dokumen
+ * sendiri (Gudang/Media), di transaksinya (Exhibition yang sudah terbit), atau
+ * di penawarannya. Ditulis sekali di sini supaya dua halaman yang menyebut
+ * "dokumen menunggu tanda tangan" tidak pernah menyebut dua angka berbeda
+ * untuk kumpulan dokumen yang sama persis.
+ *
+ * Bukan input user (literal konstan), jadi aman diinterpolasi ke SQL. Alias
+ * tabelnya: s = skp_documents, t = transactions, o = offers.
+ */
+function clara_nilai_dokumen_sql(string $s = 's', string $t = 't', string $o = 'o'): string
+{
+    return "COALESCE($s.total_amount, $t.final_amount, $t.total_calculated,"
+         . " $o.override_amount, $o.total_calculated, 0)";
+}
+
 function clara_nama_lengkap(PDO $pdo, ?string $nama, int $pid = 0): string
 {
     static $memo = [];

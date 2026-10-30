@@ -49,6 +49,24 @@ function master_page(PDO $pdo, array $masterConfig): void
     }
     layout($cfg['title'], function () use ($type, $cfg, $rows, $picStatus, $pdo, $pid, $q) {
         ?>
+        <?php /* Nama lengkap PIC dipakai surat resmi yang keluar ke penyewa. Yang
+                 belum diisi tetap tercetak nama pendeknya — dan tidak ada satu pun
+                 tanda bahwa itu sedang terjadi. Disebut di sini, di tempat
+                 mengisinya, lengkap dengan siapa saja yang masih kosong. */ ?>
+        <?php if ($type === 'pic'):
+            $belumLengkap = [];
+            foreach ($rows as $pr) {
+                if (($pr['status'] ?? '') !== 'active') continue;
+                if (trim((string) ($pr['full_name'] ?? '')) === '') $belumLengkap[] = (string) $pr['name'];
+            }
+            if ($belumLengkap): ?>
+        <div style="margin-bottom:12px;padding:10px 14px;border-radius:8px;border:1px solid #fcd34d;background:#fffbeb;color:#92400e;font-size:12.5px;line-height:1.55">
+            <strong><?= count($belumLengkap) ?> PIC belum punya Nama Lengkap</strong> &mdash; surat resmi untuk penyewa
+            (Penawaran, SKP, SKS, Form Utilities) masih mencetak nama pendeknya di bawah garis tanda tangan.<br>
+            <?= h(implode(', ', $belumLengkap)) ?> &mdash; klik <strong>Edit</strong> pada barisnya lalu isi kotak
+            <strong>Nama Lengkap</strong>.
+        </div>
+        <?php endif; endif; ?>
         <div class="toolbar">
             <?php if (can('manage_master')): ?><a class="btn" href="?r=master_form&type=<?= h($type) ?>">Tambah Data</a><?php endif; ?>
             <?php if ($type === 'target' && can('manage_master')): ?>

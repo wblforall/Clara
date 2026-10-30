@@ -13,6 +13,23 @@ function dashboard(PDO $pdo): void
     // Dokumen yang menunggu paraf/persetujuan ORANG INI. Sebelum ada ini,
     // pemeriksa tidak punya cara tahu ada yang menunggunya selain membuka
     // daftar SKP dan menebak — itulah sebab "sering miss".
+    // Dokumen yang sudah disetujui manager tetapi belum ditandatangani client.
+    // Nilainya BELUM dihitung di mana pun pada halaman ini — jadi tanpa baris
+    // ini Dashboard terlihat lengkap padahal ada kesepakatan yang menggantung.
+    $tungguTtd = ['n' => 0, 'nilai' => 0.0, 'lama' => 0];
+    try {
+        $tq = $pdo->prepare("SELECT COUNT(*) n,
+                                    COALESCE(SUM(" . clara_nilai_dokumen_sql() . "),0) nilai,
+                                    COALESCE(SUM(s.approved_at < DATE_SUB(NOW(), INTERVAL 14 DAY)),0) lama
+                               FROM skp_documents s
+                               LEFT JOIN transactions t ON t.id = s.transaction_id
+                               LEFT JOIN offers o ON o.id = s.offer_id
+                              WHERE s.property_id = ? AND s.deleted_at IS NULL
+                                AND s.status = 'approved' AND s.signed_at IS NULL");
+        $tq->execute([$pid]);
+        $tungguTtd = $tq->fetch(PDO::FETCH_ASSOC) ?: $tungguTtd;
+    } catch (Throwable $e) { /* ringkasan saja */ }
+
     $antreanSaya = count(array_unique(array_merge(
         ApprovalLine::antreanSaya($pdo, $pid),
         ApprovalLine::antreanRevisiSaya($pdo, $pid)
@@ -166,7 +183,7 @@ function dashboard(PDO $pdo): void
         $monthsByYear[$y][] = $m;
     }
 
-    layout('Dashboard Bulanan', function () use ($pdo, $period, $target, $projection, $actual, $capacity, $occupancy, $totalProjection, $totalActual, $totalRecurring, $detail, $detailCl, $detailGudang, $pic, $periodDays, $years, $monthsByYear, $periodYear, $periodMonth, $monthNames, $mediaRates, $totalNewClients, $masterIssues, $antreanSaya) {
+    layout('Dashboard Bulanan', function () use ($pdo, $period, $target, $projection, $actual, $capacity, $occupancy, $totalProjection, $totalActual, $totalRecurring, $detail, $detailCl, $detailGudang, $pic, $periodDays, $years, $monthsByYear, $periodYear, $periodMonth, $monthNames, $mediaRates, $totalNewClients, $masterIssues, $antreanSaya, $tungguTtd) {
         $achPct   = $totalProjection > 0 ? $totalActual / $totalProjection : 0;
         $achClass = $achPct >= 1.0 ? 'kpi-good' : ($achPct >= 0.8 ? 'kpi-warn' : 'kpi-bad');
         $gi       = 0;
@@ -245,6 +262,22 @@ function dashboard(PDO $pdo): void
                 <div style="font-size:12.5px;color:#1e3a8a">Dokumen sudah sampai di tahap Anda dalam alur persetujuan. Selama belum Anda tangani, nomornya belum terbit dan belum bisa diserahkan ke client.</div>
             </div>
             <a class="btn" href="?r=skp&giliran=1" style="background:#1d4ed8">Buka daftarnya →</a>
+        </div>
+        <?php endif; ?>
+        <?php if (!empty($tungguTtd['n'])): ?>
+        <div class="panel" style="margin:12px 0;border:1px solid <?= $tungguTtd['lama'] > 0 ? '#fecaca' : '#fde68a' ?>;background:<?= $tungguTtd['lama'] > 0 ? '#fef2f2' : '#fffbeb' ?>;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <div style="font-size:22px">✍️</div>
+            <div style="flex:1;min-width:220px">
+                <div style="font-weight:700;color:<?= $tungguTtd['lama'] > 0 ? '#991b1b' : '#92400e' ?>">
+                    <?= (int) $tungguTtd['n'] ?> dokumen menunggu tanda tangan client &middot; <?= money((float) $tungguTtd['nilai']) ?>
+                </div>
+                <div style="font-size:12.5px;color:<?= $tungguTtd['lama'] > 0 ? '#7f1d1d' : '#a16207' ?>">
+                    Sudah disetujui manager, tetapi nilainya <strong>belum masuk angka mana pun di halaman ini</strong>
+                    sampai client menandatanganinya.
+                    <?php if ($tungguTtd['lama'] > 0): ?><strong><?= (int) $tungguTtd['lama'] ?></strong> di antaranya sudah lebih dari 14 hari.<?php endif; ?>
+                </div>
+            </div>
+            <a class="btn" href="?r=skp&status=approved" style="background:<?= $tungguTtd['lama'] > 0 ? '#b91c1c' : '#b45309' ?>">Buka daftarnya →</a>
         </div>
         <?php endif; ?>
         <?php if ($masterIssues): $totalIssues = array_sum(array_map(fn($i) => count($i['rows']), $masterIssues)); ?>

@@ -352,6 +352,23 @@ function skp_list_page(PDO $pdo): void
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
 
+    // Dokumen yang sudah disetujui tetapi belum ditandatangani: nilainya belum
+    // dihitung di mana pun. Dihitung lintas saringan (bukan dari $rows) supaya
+    // angkanya tetap benar walau daftarnya sedang disaring.
+    $tungguTtd = ['n' => 0, 'nilai' => 0.0, 'lama' => 0];
+    try {
+        $tq = $pdo->prepare("SELECT COUNT(*) n,
+                                    COALESCE(SUM(" . clara_nilai_dokumen_sql() . "),0) nilai,
+                                    COALESCE(SUM(s.approved_at < DATE_SUB(NOW(), INTERVAL 14 DAY)),0) lama
+                               FROM skp_documents s
+                               LEFT JOIN transactions t ON t.id = s.transaction_id
+                               LEFT JOIN offers o ON o.id = s.offer_id
+                              WHERE s.property_id = ? AND s.deleted_at IS NULL
+                                AND s.status = 'approved' AND s.signed_at IS NULL");
+        $tq->execute([$pid]);
+        $tungguTtd = $tq->fetch() ?: $tungguTtd;
+    } catch (Throwable $e) { /* ringkasan saja — jangan menjatuhkan halaman */ }
+
     // Rantai persetujuan per jenis dokumen — dipakai untuk menunjukkan dokumen
     // ini sedang berhenti di tahap siapa, bukan sekadar "Menunggu Approval".
     require_once dirname(__DIR__) . '/ApprovalLine.php';
@@ -384,7 +401,7 @@ function skp_list_page(PDO $pdo): void
     // daftar yang mana tanpa harus memeriksa saringannya.
     $judulModul = ['cl' => 'SKP Exhibition', 'gudang' => 'SKS Gudang', 'media' => 'Form Utilities (Media)'];
     layout($judulModul[$module] ?? 'Semua Dokumen (SKP / SKS / Form Utilities)',
-        function () use ($rows, $status, $module, $antreanN, $giliran, $q) {
+        function () use ($rows, $status, $module, $antreanN, $giliran, $q, $tungguTtd) {
         $modBadge = [
             'cl'     => ['Exhibition', '#0f766e', '#ccfbf1'],
             'media'  => ['Media', '#0369a1', '#e0f2fe'],
@@ -440,11 +457,27 @@ function skp_list_page(PDO $pdo): void
                              bisa berlawanan dengan isi tabelnya sendiri. */ ?>
                     <a class="btn light" style="<?= $giliran ? 'background:#1d4ed8;color:#fff;border-color:#1d4ed8' : 'background:#eff6ff;color:#1e40af;border:1px solid #93c5fd;font-weight:700' ?>" href="?r=skp&giliran=1">🖊 Giliran Saya (<?= $antreanN ?>)</a>
                 <?php endif; ?>
+                <?php /* Gudang & Media hidup di daftar dokumen ini, bukan di daftar
+                         Transaksi — jadi jalan masuk ke pemeriksaan tabrakan jadwal
+                         harus ada di sini juga, lengkap dengan modulnya. */ ?>
+                <a class="btn light" href="?r=transaction_overlaps<?= $module ? '&module=' . h($module) : '' ?>" style="color:#92400e;border-color:#fcd34d" title="Periksa unit/titik yang terjual dua kali untuk tanggal yang bertabrakan">&#9888; Cek Tabrakan Jadwal</a>
                 <?php foreach (['' => 'Semua', 'draft' => 'Draft', 'submitted' => 'Menunggu', 'approved' => 'Perlu TTD', 'signed' => 'Ditandatangani', 'rejected' => 'Ditolak'] as $k => $lbl): ?>
                     <a class="btn light" style="<?= (!$giliran && $status === $k) ? 'background:var(--primary,#0d9488);color:#fff' : '' ?>" href="?r=skp<?= $k ? '&status=' . $k : '' ?><?= $mq ?>"><?= $lbl ?></a>
                 <?php endforeach; ?>
             </div>
         </div>
+        <?php /* Ringkasan dokumen yang mandek menunggu tanda tangan. Nilainya
+                 sudah disetujui manager tetapi belum masuk Dashboard maupun
+                 Laporan mana pun, dan tanpa baris ini tidak ada satu tempat pun
+                 yang menyebut berapa banyak & berapa nilainya. */ ?>
+        <?php if (!empty($tungguTtd['n'])): ?>
+        <a href="?r=skp&status=approved<?= $mq ?>" style="display:block;text-decoration:none;margin-top:10px;padding:10px 14px;border-radius:8px;border:1px solid <?= $tungguTtd['lama'] > 0 ? '#fecaca' : '#fde68a' ?>;background:<?= $tungguTtd['lama'] > 0 ? '#fef2f2' : '#fffbeb' ?>;color:<?= $tungguTtd['lama'] > 0 ? '#991b1b' : '#92400e' ?>;font-size:12.5px;line-height:1.5">
+            <strong><?= (int) $tungguTtd['n'] ?> dokumen menunggu tanda tangan client</strong>
+            &middot; <strong><?= money((float) $tungguTtd['nilai']) ?></strong> belum masuk Dashboard maupun Laporan
+            <?php if ($tungguTtd['lama'] > 0): ?>&middot; <strong><?= (int) $tungguTtd['lama'] ?></strong> di antaranya sudah lebih dari 14 hari<?php endif; ?>
+            <span style="text-decoration:underline">&nbsp;lihat daftarnya</span>
+        </a>
+        <?php endif; ?>
         <?php /* Kotak cari: daftar ini juga berfungsi sebagai riwayat dokumen,
                  jadi harus bisa dicari — bukan disusuri halaman demi halaman.
                  Saringan modul & status ikut terbawa supaya hasilnya tetap di
@@ -510,8 +543,24 @@ function skp_list_page(PDO $pdo): void
                                 <?php endif; ?>
                                 <?php if ((int) ($r['revisi_ke'] ?? 0) > 0): ?>
                                 <div style="font-size:11px;color:var(--muted);margin-top:2px">revisi ke-<?= (int) $r['revisi_ke'] ?></div>
+                                <?php endif; ?>
+                                <?php /* Umur tunggu tanda tangan. Dokumen yang sudah disetujui
+                                         TIDAK menyumbang apa pun ke Dashboard & Laporan sampai
+                                         client menekennya — dan selama ini tidak ada satu pun
+                                         tanda bahwa sebuah dokumen sedang mandek di sana. */ ?>
+                                <?php if ($r['status'] === 'approved' && empty($r['signed_at']) && !empty($r['approved_at'])):
+                                    $hariTunggu = (int) floor((time() - strtotime((string) $r['approved_at'])) / 86400); ?>
+                                <div style="font-size:11.5px;margin-top:3px;font-weight:700;color:<?= $hariTunggu >= 14 ? '#b91c1c' : '#92400e' ?>">
+                                    menunggu TTD <?= $hariTunggu ?> hari<?= $hariTunggu >= 14 ? ' ⚠' : '' ?>
+                                </div>
                                 <?php endif; ?></td>
-                            <td style="font-size:11.5px;color:var(--muted)"><?= h($r['created_by'] ?? '-') ?><br><?= h(substr($r['created_at'] ?? '', 0, 16)) ?></td>
+                            <td style="font-size:11.5px;color:var(--muted)"><?= h($r['created_by'] ?? '-') ?><br><?= h(substr($r['created_at'] ?? '', 0, 16)) ?>
+                                <?php /* Dokumen Gudang/Media tanpa PIC: kolom "Dibuat Oleh" di
+                                         suratnya kosong, dan nilainya tidak pernah muncul di
+                                         Laporan per PIC. Dulu tidak ada tanda apa pun. */ ?>
+                                <?php if (in_array($r['module'] ?? '', ['gudang', 'media'], true) && trim((string) ($r['pic_name'] ?? '')) === ''): ?>
+                                <br><span style="color:#b91c1c;font-weight:700">PIC belum diisi</span>
+                                <?php endif; ?></td>
                             <td style="white-space:nowrap">
                                 <a class="btn light" href="?r=skp_form&id=<?= (int)$r['id'] ?>"><?= $r['status'] === 'draft' || $r['status'] === 'rejected' ? 'Edit' : 'Lihat' ?></a>
                                 <?php if (in_array($r['status'], ['approved', 'signed'], true)): ?><a class="btn light" href="?r=skp_print&id=<?= (int)$r['id'] ?>" target="_blank">PDF</a><?php endif; ?>
@@ -1804,6 +1853,41 @@ function skp_form(PDO $pdo): void
         </div>
         <?php endif; ?>
 
+        <?php /* Ringkasan pengakuan untuk PEMERIKSA.
+                 Cara nilai dibukukan ke bulan — dibagi rata atau sekaligus, bulan
+                 mana berapa — tidak tercetak di surat mana pun, karena itu memang
+                 urusan internal. Akibatnya yang menyetujui kontrak 3 bulan tidak
+                 punya cara melihatnya tanpa membuka formulirnya baris demi baris.
+                 Hanya untuk dokumen Gudang/Media: di sanalah pengaturannya tinggal. */ ?>
+        <?php if ($skp && $standalone && in_array($skp['status'] ?? '', ['submitted', 'approved', 'signed'], true)):
+            $akuiRingkas = skp_periode_akui($src);
+            $bmR = (string) ($src['billing_method'] ?? '');
+            $sebarR = in_array($bmR, ['spread', 'anchor_cycle'], true) ? $bmR === 'spread' : (count($akuiRingkas) > 1);
+            $simpanR = json_decode((string) ($src['recognition_json'] ?? ''), true);
+            if (is_array($simpanR) && $simpanR) $akuiRingkas = $simpanR + $akuiRingkas;
+            ksort($akuiRingkas);
+        ?>
+        <div class="panel" style="margin-top:12px;border:1px solid #c7d2fe;background:#eef2ff">
+            <h3 style="margin-top:0;color:#3730a3">Pengakuan Nilai <span style="font-weight:400;font-size:12px;color:#4338ca">— tidak tercetak di surat, untuk pemeriksa</span></h3>
+            <p style="margin:0 0 6px;font-size:12.5px;color:#312e81">
+                <strong><?= $sebarR ? 'Dibagi rata ke ' . count($akuiRingkas) . ' bulan' : 'Diakui sekaligus di 1 bulan' ?></strong>
+                <?php if ($sebarR): ?>&middot; tiap siklus di <strong><?= ($src['cycle_recognition'] ?? '') === 'cycle_end' ? 'bulan akhir' : 'bulan awal' ?></strong><?php endif; ?>
+                <?php if (!empty($src['prorata_kalender'])): ?>&middot; <strong>prorata bulan kalender</strong><?php endif; ?>
+                &middot; <?= !empty($src['recurring_flag']) ? '<strong>ditandai Recurring</strong>' : 'bukan recurring' ?>
+            </p>
+            <?php if ($akuiRingkas): ?>
+            <table class="data" style="width:auto;min-width:320px;font-size:12px">
+                <thead><tr><th>Bulan</th><th style="text-align:right">Nominal Diakui</th></tr></thead>
+                <tbody>
+                <?php $jmlR = 0.0; foreach ($akuiRingkas as $pkR => $nR): $jmlR += (float) $nR; ?>
+                    <tr><td><?= h(skp_nama_periode((string) $pkR)) ?></td><td style="text-align:right"><?= money((float) $nR) ?></td></tr>
+                <?php endforeach; ?>
+                </tbody>
+                <tfoot><tr><td style="font-weight:700">Jumlah</td><td style="text-align:right;font-weight:700"><?= money($jmlR) ?></td></tr></tfoot>
+            </table>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
         <?php if ($skp && $skp['status'] === 'submitted' && $alurBoleh): ?>
         <div class="panel" style="margin-top:12px;border:1px solid #bae6fd;background:#f0f9ff">
             <h3 style="margin-top:0;color:#0369a1"><?= $alurAkhir ? 'Persetujuan Akhir' : 'Paraf ' . h($alurTahap['label'] ?? '') ?></h3>
@@ -1932,7 +2016,36 @@ function skp_form(PDO $pdo): void
                     <button type="button" class="btn light" onclick="claraCopyText(document.getElementById('skp-wa-msg').value,this,'Pesan tersalin ✓')">Salin Pesan</button>
                     <a class="btn" style="background:#16a34a" target="_blank" href="https://wa.me/?text=<?= $waText ?>">Kirim via WhatsApp</a>
                 </div>
-                <p style="margin:8px 0 0;font-size:11.5px;color:#64748b">Tautan bersifat rahasia &amp; berlaku sampai dokumen ditandatangani. <strong>Jika lewat WhatsApp Desktop hanya link yang terkirim</strong>, gunakan <strong>Salin Pesan</strong> lalu tempel (paste) di chat — teks lengkap akan ikut.</p>
+                <?php /* Masa berlaku tautan disebut terang-terangan. Sebelumnya
+                         tertulis "berlaku sampai dokumen ditandatangani", padahal
+                         tokennya kedaluwarsa 30 hari — dan client yang mengklik
+                         sesudah itu hanya melihat halaman 410 tanpa ada yang tahu. */ ?>
+                <?php
+                $kadaluarsa = sign_token_expired($skp['sign_token_expires_at'] ?? null);
+                $sampai = !empty($skp['sign_token_expires_at'])
+                    ? date('d/m/Y', strtotime((string) $skp['sign_token_expires_at'])) : '';
+                ?>
+                <?php if ($kadaluarsa): ?>
+                <div style="margin:10px 0 0;padding:10px 14px;border-radius:8px;border:1px solid #fecaca;background:#fef2f2;color:#991b1b;font-size:12.5px;line-height:1.5">
+                    <strong>Tautan ini sudah kedaluwarsa</strong> (<?= h($sampai) ?>). Client yang mengkliknya hanya melihat
+                    halaman &ldquo;tautan tidak berlaku&rdquo;. Terbitkan yang baru, lalu kirim ulang.
+                    <form method="post" action="?r=skp_sign_token_baru" style="display:inline;margin-left:6px"
+                          onsubmit="return confirm('Terbitkan tautan tanda tangan baru? Tautan lama langsung tidak berlaku.')">
+                        <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                        <input type="hidden" name="id" value="<?= (int) $skp['id'] ?>">
+                        <button type="submit" class="btn" style="background:#b91c1c">Terbitkan Ulang Tautan</button>
+                    </form>
+                </div>
+                <?php endif; ?>
+                <p style="margin:8px 0 0;font-size:11.5px;color:#64748b">Tautan bersifat rahasia<?= $sampai !== '' && !$kadaluarsa ? ' &amp; berlaku sampai <strong>' . h($sampai) . '</strong>' : '' ?>. <strong>Jika lewat WhatsApp Desktop hanya link yang terkirim</strong>, gunakan <strong>Salin Pesan</strong> lalu tempel (paste) di chat — teks lengkap akan ikut.
+                <?php if (!$kadaluarsa): ?>
+                    <form method="post" action="?r=skp_sign_token_baru" style="display:inline"
+                          onsubmit="return confirm('Terbitkan tautan tanda tangan baru? Tautan lama langsung tidak berlaku.')">
+                        <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                        <input type="hidden" name="id" value="<?= (int) $skp['id'] ?>">
+                        <button type="submit" class="btn light" style="padding:1px 8px;font-size:11px">Terbitkan ulang</button>
+                    </form>
+                <?php endif; ?></p>
                 <hr style="margin:14px 0;border:none;border-top:1px dashed #bae6fd">
                 <p style="margin:0 0 8px;color:#374151"><strong>Opsi B — unggah dokumen yang sudah ditandatangani.</strong> Kirim/cetak dokumennya, minta customer menandatangani, lalu unggah kembali <strong>PDF</strong> (atau foto/scan) yang sudah ber-TTD di sini. Hasilnya sama dengan Opsi A.</p>
                 <form method="post" action="?r=skp_sign_upload" enctype="multipart/form-data" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end" onsubmit="return confirm('Tandai dokumen ini sudah ditandatangani sesuai berkas yang diunggah? Status menjadi final.')">
@@ -4112,6 +4225,45 @@ function skp_sign_upload(PDO $pdo): void
     audit($pdo, 'customer_sign_wet', 'skp_documents', (string) $id, ['name' => $name, 'file' => $rel, 'alokasi' => $nAlok]);
     flash('Dokumen ditandai sudah ditandatangani sesuai berkas yang diunggah.'
         . ($nAlok ? ' Nilainya sekarang masuk laporan.' : ''));
+    redirect_to('skp_form', ['id' => $id]);
+}
+
+/**
+ * Terbitkan ulang tautan tanda tangan customer.
+ *
+ * Tautannya berlaku 30 hari. Lewat dari itu, halaman tanda tangan menolak
+ * dengan 410 — dan sampai sekarang satu-satunya jalan keluarnya adalah merevisi
+ * dokumen (yang menerbitkan token baru sebagai efek samping) atau meminta
+ * seseorang menyentuh basis data. Dokumen yang sudah disetujui dan menunggu
+ * lama justru yang paling mungkin kedaluwarsa, jadi inilah tombolnya.
+ *
+ * Yang berubah HANYA tokennya. Nomor dokumen, isi, nilai, dan jejak
+ * persetujuannya tidak disentuh sama sekali.
+ */
+function skp_sign_token_baru(PDO $pdo): void
+{
+    require_permission('manage_skp');
+    verify_csrf();
+    $pid = current_property_id();
+    $id  = (int) post('id');
+
+    $st = $pdo->prepare("SELECT id, status, skp_no FROM skp_documents
+                          WHERE id = ? AND property_id = ? AND deleted_at IS NULL");
+    $st->execute([$id, $pid]);
+    $skp = $st->fetch();
+    if (!$skp || $skp['status'] !== 'approved') {
+        flash('Tautan hanya bisa diterbitkan ulang untuk dokumen yang sudah disetujui dan belum ditandatangani.');
+        redirect_to('skp_form', ['id' => $id]);
+    }
+
+    $token = bin2hex(random_bytes(20));
+    $pdo->prepare('UPDATE skp_documents
+                      SET sign_token = ?, sign_token_expires_at = ' . sign_token_expiry_sql() . ',
+                          updated_by = ?, updated_at = NOW()
+                    WHERE id = ? AND property_id = ?')
+        ->execute([$token, clara_pelaku(), $id, $pid]);
+    audit($pdo, 'sign_token_baru', 'skp_documents', (string) $id, ['skp_no' => $skp['skp_no']]);
+    flash('Tautan tanda tangan baru sudah terbit dan berlaku 30 hari ke depan. Tautan lama tidak berlaku lagi — kirim yang baru ke client.');
     redirect_to('skp_form', ['id' => $id]);
 }
 

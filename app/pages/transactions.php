@@ -61,15 +61,27 @@ function transactions_page(PDO $pdo): void
     // sedang dipertanyakan — menahannya tetap di daftar membuat angka yang belum
     // pasti terbaca seperti sudah pasti. Ia muncul lagi begitu dokumennya
     // selesai diperbaiki dan menempuh persetujuan ulang.
-    $where[] = "COALESCE(" . $skpSub('status') . ", '') <> 'rejected'";
-    $where[] = "NOT (COALESCE(" . $skpSub('status') . ", '') = 'draft'
-                     AND COALESCE(" . $skpSub('revisi_ke') . ", 0) > 0)";
+    // Mode "belum masuk laporan": justru menampilkan yang biasanya disembunyikan.
+    //
+    // Saringan di bawah ini menyembunyikan transaksi yang dokumennya ditolak,
+    // sedang direvisi, atau belum diteken — itu benar untuk daftar sehari-hari.
+    // Akibatnya transaksi semacam itu tidak terlihat DI MANA PUN: tidak di
+    // daftar ini, tidak di laporan. Nilainya sudah terlanjur diinput orang,
+    // lalu lenyap tanpa satu tempat pun yang menyebutnya. Mode ini tempat itu.
+    $belum = getv('belum') === '1';
+    if ($belum) {
+        $where[] = "NOT EXISTS (SELECT 1 FROM transaction_allocations a WHERE a.transaction_id = t.id)";
+    } else {
+        $where[] = "COALESCE(" . $skpSub('status') . ", '') <> 'rejected'";
+        $where[] = "NOT (COALESCE(" . $skpSub('status') . ", '') = 'draft'
+                         AND COALESCE(" . $skpSub('revisi_ke') . ", 0) > 0)";
 
-    $ttdMulai = ttd_wajib_mulai($pdo);
-    if ($ttdMulai !== '') {
-        $where[] = "(COALESCE(" . $skpSub('status') . ", '') IN ('', 'signed')
-                     OR DATE(t.created_at) < :ttd_mulai)";
-        $params[':ttd_mulai'] = $ttdMulai;
+        $ttdMulai = ttd_wajib_mulai($pdo);
+        if ($ttdMulai !== '') {
+            $where[] = "(COALESCE(" . $skpSub('status') . ", '') IN ('', 'signed')
+                         OR DATE(t.created_at) < :ttd_mulai)";
+            $params[':ttd_mulai'] = $ttdMulai;
+        }
     }
     // Tanpa batas tanggal, saringan "ditolak / sedang direvisi" di atas sudah
     // cukup — tidak ada aturan tambahan di sini.
@@ -113,7 +125,13 @@ function transactions_page(PDO $pdo): void
                     ' . pembayaran_select_sql('t') . ',
                     ' . $skpSub('id') . ' AS skp_id,
                     ' . $skpSub('skp_no') . ' AS skp_no,
-                    ' . $skpSub('status') . ' AS skp_status
+                    ' . $skpSub('status') . ' AS skp_status,
+                    ' . $skpSub('signed_at') . ' AS skp_signed_at,
+                    -- Ada tidaknya alokasi bulanan. Transaksi tanpa alokasi
+                    -- berdiri di daftar ini lengkap dengan nilainya, tetapi
+                    -- TIDAK menyumbang serupiah pun ke laporan mana pun — dan
+                    -- dari layar tidak ada bedanya dengan yang sudah jalan.
+                    (SELECT COUNT(*) FROM transaction_allocations a WHERE a.transaction_id = t.id) AS alok_n
              FROM transactions t
              LEFT JOIN master_clients c ON c.id = t.client_id
              WHERE ' . $whereStr . '
@@ -128,23 +146,55 @@ function transactions_page(PDO $pdo): void
     $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'];
     $isFiltered  = $search !== '' || $filterPic !== '' || $dateFrom !== '' || $dateTo !== '';
 
+    // Berapa transaksi modul ini yang nilainya tidak masuk laporan mana pun.
+    $belumN = ['n' => 0, 'nilai' => 0.0];
+    try {
+        $bq = $pdo->prepare("SELECT COUNT(*) n, COALESCE(SUM(final_amount),0) nilai
+                               FROM transactions t
+                              WHERE t.module = ? AND t.property_id = ? AND t.deleted_at IS NULL
+                                AND t.status <> 'cancelled'
+                                AND NOT EXISTS (SELECT 1 FROM transaction_allocations a WHERE a.transaction_id = t.id)");
+        $bq->execute([$module, current_property_id()]);
+        $belumN = $bq->fetch(PDO::FETCH_ASSOC) ?: $belumN;
+    } catch (Throwable $e) { /* ringkasan saja */ }
+
     $paginationBase = '?r=transactions&module=' . urlencode($module)
+        . ($belum ? '&belum=1' : '')
         . ($search !== '' ? '&search=' . urlencode($search) : '')
         . ($filterPic !== '' ? '&pic=' . urlencode($filterPic) : '')
         . ($dateFrom !== '' ? '&date_from=' . urlencode($dateFrom) : '')
         . ($dateTo !== '' ? '&date_to=' . urlencode($dateTo) : '');
 
-    layout('Input Transaksi ' . ($moduleLabel[$module] ?? strtoupper($module)), function () use ($module, $rows, $pics, $search, $filterPic, $dateFrom, $dateTo, $isFiltered, $page, $totalPages, $totalRows, $perPage, $paginationBase) {
+    layout('Input Transaksi ' . ($moduleLabel[$module] ?? strtoupper($module)), function () use ($module, $rows, $pics, $search, $filterPic, $dateFrom, $dateTo, $isFiltered, $page, $totalPages, $totalRows, $perPage, $paginationBase, $belum, $belumN) {
         ?>
         <div class="toolbar">
             <?php if (can('manage_transactions')): ?>
                 <a class="btn" href="?r=transaction_form&module=<?= h($module) ?>">+ Tambah Transaksi</a>
             <?php endif; ?>
             <div style="display:flex;gap:8px">
-                <a class="btn light" href="?r=transaction_overlaps" style="color:#92400e;border-color:#fcd34d">⚠ Cek Overlap</a>
+                <?php /* Modul yang sedang dibuka ikut terbawa — kalau tidak, orang
+                         yang sedang menyisir Gudang disodori 500 pasang lintas modul. */ ?>
+                <a class="btn light" href="?r=transaction_overlaps<?= $module ? '&module=' . h($module) : '' ?>" style="color:#92400e;border-color:#fcd34d">⚠ Cek Overlap</a>
                 <a class="btn light" href="?r=export_transactions_xlsx&module=<?= h($module) ?>&search=<?= urlencode($search) ?>&pic=<?= urlencode($filterPic) ?>&date_from=<?= h($dateFrom) ?>&date_to=<?= h($dateTo) ?>">⬇ Export Excel</a>
             </div>
         </div>
+        <?php /* Transaksi yang nilainya tidak masuk laporan mana pun. Sebagian
+                 memang disembunyikan dari daftar ini dengan sengaja (dokumennya
+                 ditolak / sedang direvisi / belum diteken) — dan justru karena itu
+                 tidak ada satu tempat pun yang menyebutkan keberadaannya. */ ?>
+        <?php if ($belum): ?>
+        <div style="margin-top:10px;padding:10px 14px;border-radius:8px;border:1px solid #fecaca;background:#fef2f2;color:#991b1b;font-size:12.5px;line-height:1.5">
+            Menampilkan <strong>hanya transaksi yang nilainya belum masuk laporan</strong> &mdash; termasuk yang biasanya
+            disembunyikan dari daftar ini. Alasannya tertulis di bawah nilai masing-masing.
+            <a href="?r=transactions&module=<?= h($module) ?>" style="color:#991b1b;font-weight:700;text-decoration:underline">kembali ke daftar biasa</a>
+        </div>
+        <?php elseif (!empty($belumN['n'])): ?>
+        <a href="?r=transactions&module=<?= h($module) ?>&belum=1" style="display:block;text-decoration:none;margin-top:10px;padding:10px 14px;border-radius:8px;border:1px solid #fecaca;background:#fef2f2;color:#991b1b;font-size:12.5px;line-height:1.5">
+            <strong><?= (int) $belumN['n'] ?> transaksi &middot; <?= money((float) $belumN['nilai']) ?> belum masuk laporan mana pun</strong>
+            &mdash; sebagian sengaja disembunyikan dari daftar ini karena dokumennya ditolak, sedang direvisi, atau belum diteken client.
+            <span style="text-decoration:underline">&nbsp;lihat daftarnya</span>
+        </a>
+        <?php endif; ?>
 
         <!-- FILTER FORM -->
         <form method="get" style="margin-bottom:14px">
@@ -227,7 +277,26 @@ function transactions_page(PDO $pdo): void
                                 <br><span class="badge" title="Terdeteksi otomatis: pola berulang (unit+klien sama, bulan bersebelahan)" style="font-size:10px;background:#fef3c7;color:#92400e">Recurring otomatis</span>
                             <?php endif; ?>
                         </td>
-                        <td><?= money($row['final_amount']) ?></td>
+                        <td><?= money($row['final_amount']) ?>
+                            <?php /* Transaksi tanpa alokasi bulanan tidak menyumbang serupiah
+                                     pun ke Dashboard maupun Laporan. Nilainya tetap tercetak di
+                                     kolom ini, jadi tanpa penanda ini orang membaca daftarnya
+                                     lalu mengira angkanya sudah masuk. Alasannya ikut disebut,
+                                     karena yang menentukan tindakannya memang alasannya. */ ?>
+                            <?php if ((int) ($row['alok_n'] ?? 0) === 0):
+                                $ds = (string) ($row['skp_status'] ?? '');
+                                $alasan = match (true) {
+                                    $ds === 'draft'     => 'dokumennya masih draft',
+                                    $ds === 'submitted' => 'dokumennya menunggu persetujuan',
+                                    $ds === 'rejected'  => 'dokumennya dikembalikan',
+                                    $ds === 'approved' && empty($row['skp_signed_at']) => 'menunggu TTD client',
+                                    $ds === ''          => 'belum pernah dihitung',
+                                    default             => 'alokasinya belum dibangun',
+                                }; ?>
+                            <br><span class="badge" title="Nilai ini tidak muncul di Dashboard maupun Laporan mana pun" style="font-size:10px;background:#fee2e2;color:#991b1b;font-weight:700">belum masuk laporan</span>
+                            <div style="font-size:10px;color:#b91c1c;line-height:1.3"><?= h($alasan) ?></div>
+                            <?php endif; ?>
+                        </td>
                         <td><?= h($row['pic_name'] ?? '-') ?></td>
                         <td style="font-size:11px;color:var(--muted)">
                             <?= h($row['created_by'] ?? '-') ?>
@@ -3067,7 +3136,10 @@ function transaction_overlaps_page(PDO $pdo): void
                 COALESCE(c1.company_name, '-') client1, COALESCE(t1.pic_name, '-') pic1,
                 t2.id id2,
                 t2.start_date start2, t2.end_date end2,
-                COALESCE(c2.company_name, '-') client2, COALESCE(t2.pic_name, '-') pic2
+                COALESCE(c2.company_name, '-') client2, COALESCE(t2.pic_name, '-') pic2,
+                -- Lama tabrakannya: yang bertabrakan 3 bulan jelas bukan unit
+                -- yang kebetulan dibagi slot, dan harus ditangani lebih dulu.
+                DATEDIFF(LEAST(t1.end_date, t2.end_date), GREATEST(t1.start_date, t2.start_date)) + 1 hari_tabrak
          FROM transactions t1
          JOIN transactions t2 ON t2.master_code = t1.master_code
              AND t2.property_id = t1.property_id
@@ -3080,7 +3152,7 @@ function transaction_overlaps_page(PDO $pdo): void
            AND " . transaksi_sah_sql('t2') . "
            AND t1.property_id = ?
            $extraWhere
-         ORDER BY t1.master_code, t1.start_date
+         ORDER BY hari_tabrak DESC, t1.master_code, t1.start_date
          LIMIT 500"
     );
     $stmt->execute($params);
@@ -3231,6 +3303,7 @@ function transaction_overlaps_page(PDO $pdo): void
                         <tr>
                             <th>Kode Unit</th>
                             <th>Modul</th>
+                            <th style="text-align:right">Tabrakan</th>
                             <th>Transaksi A</th>
                             <th>Periode A</th>
                             <th>PIC A</th>
@@ -3244,6 +3317,8 @@ function transaction_overlaps_page(PDO $pdo): void
                         <tr>
                             <td style="font-weight:600"><?= h($row['master_code']) ?></td>
                             <td><span style="font-size:11px;font-weight:700;text-transform:uppercase"><?= h($row['module']) ?></span></td>
+                            <?php $ht = (int) ($row['hari_tabrak'] ?? 0); ?>
+                            <td style="text-align:right;white-space:nowrap;font-weight:700;color:<?= $ht >= 15 ? '#b91c1c' : ($ht >= 2 ? '#b45309' : '#64748b') ?>"><?= $ht ?> hari</td>
                             <td>
                                 <a href="?r=allocation_detail&id=<?= (int)$row['id1'] ?>">#<?= (int)$row['id1'] ?></a><br>
                                 <span style="color:var(--muted)"><?= h($row['client1']) ?></span>
