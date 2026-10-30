@@ -2682,6 +2682,26 @@ function _skp_akui_dari_post(): ?string
     return $out ? json_encode($out, JSON_UNESCAPED_UNICODE) : null;
 }
 
+/**
+ * Saring nominal per bulan agar hanya memuat bulan yang BENAR-BENAR dicakup
+ * kontraknya sekarang.
+ *
+ * Tanpa ini, mengubah tanggal setelah nominalnya diatur meninggalkan paku bulan
+ * lama di dokumen: tabelnya tidak lagi menampilkannya (daftar bulannya sudah
+ * baru), tetapi pengirimannya masih membawa nama kotak yang lama, dan paku itu
+ * ikut tersimpan lalu terbawa ke transaksinya saat disetujui.
+ */
+function _skp_akui_sesuai_periode(?string $json, array $src): ?string
+{
+    $akui = json_decode((string) $json, true);
+    if (!is_array($akui) || !$akui) return null;
+    $sah = skp_periode_akui($src);
+    if (!$sah) return null;
+    $out = array_intersect_key($akui, $sah);
+    ksort($out);
+    return $out ? json_encode($out, JSON_UNESCAPED_UNICODE) : null;
+}
+
 function _skp_src_dari_post(array $src, bool $standalone): array
 {
     $sah = static function (string $t): bool {
@@ -2847,6 +2867,10 @@ function skp_save(PDO $pdo): void
             'recognition_json'  => _skp_akui_dari_post(),
         ];
         $src = skp_standalone_src($pdo, $pid, $modKind, array_merge($sFields, ['deposit_amount' => post('deposit_raw', 0)]));
+        // Tanggalnya boleh saja baru diubah di pengiriman ini — bulan yang tidak
+        // lagi dicakup dibuang sebelum apa pun menyimpannya.
+        $sFields['recognition_json'] = _skp_akui_sesuai_periode($sFields['recognition_json'] ?? null, $src);
+        $src['recognition_json'] = (string) ($sFields['recognition_json'] ?? '');
     } else {
         $src = $offerId ? _skp_source_from_offer($pdo, $offerId, $pid) : _skp_source($pdo, $trxId, $pid);
     }
@@ -2905,6 +2929,26 @@ function skp_save(PDO $pdo): void
     if ($bagi && !empty($src['is_bundle'])) {
         $bagi = [];
         flash('Pembagian income tidak dipakai pada dokumen Paket — isi di halaman Alokasi tiap komponen.');
+    }
+    // Nominal diakui per bulan WAJIB berjumlah sama dengan nilai kontraknya.
+    //
+    // Kalau meleset, yang terjadi bukan error melainkan sesuatu yang jauh lebih
+    // buruk: saat dokumen ditandatangani, AllocationService menyamakan nilai
+    // kontrak dengan jumlah alokasinya — sehingga angka yang sudah tercetak dan
+    // diteken di surat berubah sendiri sesudahnya. Exhibition sudah dijaga
+    // begini di halaman Transaksi; Gudang/Media dijaga di sini, di satu-satunya
+    // tempat yang bisa mengaturnya.
+    if ($standalone) {
+        $akuiCek = json_decode((string) ($sFields['recognition_json'] ?? ''), true);
+        if (is_array($akuiCek) && $akuiCek) {
+            $jmlAkui  = round(array_sum($akuiCek));
+            $nilaiDoc = round((float) ($sFields['total_amount'] ?? 0));
+            if ($jmlAkui !== $nilaiDoc) {
+                $missNum[] = 'Nominal diakui per bulan berjumlah ' . money($jmlAkui)
+                    . ', tidak sama dengan Total Nilai Sewa ' . money($nilaiDoc)
+                    . ' (selisih ' . money(abs($nilaiDoc - $jmlAkui)) . ')';
+            }
+        }
     }
     if ($bagi) {
         $acuanBagi = round((float) ($src['final_amount'] ?: $src['total_calculated']));
