@@ -47,6 +47,69 @@ function pembayaran_select_sql(string $t = 't'): string
             ($t.invoice_due IS NOT NULL AND $t.invoice_due < CURDATE() AND $bayar < $tagihan - 0.5) AS bayar_lewat";
 }
 
+
+/** "2026-10" → "Okt 2026" (pendek) atau "Oktober 2026" (panjang). */
+function pembayaran_nama_bulan(string $periode, bool $panjang = false): string
+{
+    if (!preg_match('/^(\d{4})-(\d{2})$/', $periode, $m)) return $periode;
+    $pendek = [1=>'Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+    $penuh  = [1=>'Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+    $b = (int) $m[2];
+    return (($panjang ? $penuh[$b] : $pendek[$b]) ?? $m[2]) . ' ' . $m[1];
+}
+
+/**
+ * Porsi nilai kontrak yang diakui pada SATU bulan, untuk tiap baris tagihan.
+ *
+ * Kontrak recurring tidak ditagih sekaligus. McD Rp 763.543.440 berjalan 34
+ * bulan; yang ditagih Oktober cuma porsi Oktobernya. Selama kolom Tagihan
+ * menampilkan nilai kontrak penuh, daftar ini terbaca seolah ada tunggakan
+ * ratusan juta padahal belum jatuh tempo.
+ *
+ * Dasarnya `transaction_allocations` — tabel yang sama yang dipakai Laporan
+ * PIC dan Dashboard, jadi porsi di sini selalu sama dengan income bulan itu.
+ *
+ * Porsi TIDAK dipakai bila jumlah invoice sudah diisi sendiri: begitu invoice
+ * terbit dengan angkanya sendiri, angka itulah tagihannya, bukan hasil bagi.
+ *
+ * Satu kueri untuk seluruh baris di layar, bukan satu kueri per baris.
+ */
+function pembayaran_porsi_bulan(PDO $pdo, array $rows, string $periode): array
+{
+    if (!$rows) return $rows;
+    $ids = array_values(array_filter(array_unique(array_map(fn($r) => (int) ($r['id'] ?? 0), $rows))));
+    $satuBulan = $periode !== '' && $periode !== 'semua';
+    $peta = [];
+    if ($ids) {
+        $tanda = implode(',', array_fill(0, count($ids), '?'));
+        $st = $pdo->prepare(
+            "SELECT transaction_id,
+                    COUNT(DISTINCT CASE WHEN amount > 0 THEN period_key END) AS bln,
+                    COALESCE(SUM(CASE WHEN period_key = ? THEN amount END), 0) AS porsi
+               FROM transaction_allocations
+              WHERE transaction_id IN ($tanda)
+              GROUP BY transaction_id"
+        );
+        // Periode "semua" sengaja dicocokkan dengan nilai yang mustahil ada:
+        // porsinya memang tidak berlaku kalau bulannya tidak dipilih.
+        $st->execute(array_merge([$satuBulan ? $periode : '-'], $ids));
+        foreach ($st->fetchAll() as $a) $peta[(int) $a['transaction_id']] = $a;
+    }
+    foreach ($rows as $i => $r) {
+        $a = $peta[(int) ($r['id'] ?? 0)] ?? null;
+        $bln   = $a ? (int) $a['bln'] : 0;
+        $porsi = $a ? (float) $a['porsi'] : 0.0;
+        $pakai = $satuBulan && $bln > 1 && ($r['invoice_amount'] ?? null) === null;
+        $rows[$i]['bagi_n']     = $bln;
+        $rows[$i]['bagi_porsi'] = $porsi;
+        $rows[$i]['bagi_pakai'] = $pakai;
+        // Angka yang benar-benar ditagihkan bulan ini — dipakai kartu ringkasan
+        // dan ekspor supaya daftar, jumlah, dan unduhan tidak saling berbeda.
+        $rows[$i]['tagihan_bulan'] = $pakai ? $porsi : (float) ($r['tagihan'] ?? 0);
+    }
+    return $rows;
+}
+
 /**
  * Nama unit untuk sekumpulan baris transaksi.
  *
