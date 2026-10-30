@@ -495,6 +495,18 @@ function payment_form(PDO $pdo): void
             $b = [1=>'Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
             return (int) date('j', strtotime($d)) . ' ' . $b[(int) date('n', strtotime($d))] . ' ' . date('Y', strtotime($d));
         };
+        // Di berkas lama tiap pembayaran diberi keterangan singkat (LUNAS,
+        // BUKPOT, ...). Keterangan itulah yang membuat selisih bayar langsung
+        // terbaca sebabnya, jadi disediakan sebagai tombol di form catat MAUPUN
+        // form ubah — tetap boleh diketik bebas.
+        $ketCepat = [
+            'LUNAS'            => 'Dibayar penuh sesuai tagihan',
+            'BUKPOT'           => 'Pajak dipotong client, yang masuk lebih kecil daripada invoice',
+            'TERMASUK LISTRIK' => 'Transfer sudah termasuk biaya listrik',
+            'TERMASUK DEPOSIT' => 'Transfer sudah termasuk security deposit',
+            'DP 50%'           => 'Pembayaran muka',
+            '2 KONTRAK'        => 'Satu transfer untuk dua kontrak sekaligus',
+        ];
         ?>
         <style>
             /* Satu bahasa rupa untuk seluruh halaman ini: kotak putih, garis
@@ -540,6 +552,32 @@ function payment_form(PDO $pdo): void
             .pf-bayar td.n{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
             .pf-kosong{color:var(--muted);font-size:13px;padding:14px 0}
             .pf-tag{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:4px;background:#F1F5F9;color:#475569;margin-right:4px}
+            .pf-aksi{display:flex;gap:6px;justify-content:flex-end}
+            .pf-aksi .btn{padding:3px 10px;font-size:11.5px}
+            /* Baris yang sedang diperbaiki: formnya muncul tepat di bawah
+               barisnya, supaya jelas angka mana yang sedang diubah.
+               app.css memperlakukan setiap sel ber-colspan sebagai judul
+               kelompok (tebal, HURUF BESAR) — di sini perlakuan itu ditolak. */
+            .pf-ubah>td{background:#F8FAFC!important;border-top:0!important;
+                border-bottom:1px solid var(--line)!important;padding:14px 12px!important;
+                font-weight:400!important;font-size:13px!important;letter-spacing:normal!important;
+                text-transform:none!important;color:#1F2937!important}
+            .pf-ubah label{display:block;font-size:12px;font-weight:600;color:#475467;margin:10px 0 5px;
+                text-transform:none;letter-spacing:normal}
+            .pf-ubah .pf-dua>div>label{margin-top:0}
+            .pf-ubah input,.pf-ubah select{width:100%;font-weight:400}
+            .pf-ubah .pf-dua{margin-bottom:10px}
+            .pf-ubah .pf-dua:last-of-type{margin-bottom:0}
+            tr.pf-disorot td{background:#FFFBEB}
+            /* Di layar kecil, mobile-tables.js mengubah tiap baris jadi kartu
+               label-kiri/nilai-kanan. Kolom keterangan isinya bertingkat (cara
+               bayar, nomor bukti, label, catatan perubahan) — dipepet ke kanan,
+               hurufnya jadi menurun satu-satu. Kolom ini dibuat penuh. */
+            @media (max-width: 768px) {
+                .pf-bayar td.pf-ket{display:block;text-align:left}
+                .pf-bayar td.pf-ket::before{display:block;flex:none;margin-bottom:4px}
+                .pf-aksi{justify-content:flex-start}
+            }
         </style>
 
         <div class="pf-top">
@@ -673,20 +711,72 @@ function payment_form(PDO $pdo): void
                         <table class="pf-bayar">
                             <thead><tr><th>Tanggal</th><th>Cara &amp; keterangan</th><th style="text-align:right">Jumlah</th><th></th></tr></thead>
                             <tbody>
-                            <?php foreach ($bayar as $p): ?>
-                                <tr>
+                            <?php foreach ($bayar as $p): $k = (int) $p['id']; ?>
+                                <tr id="bayar-<?= $k ?>">
                                     <td style="white-space:nowrap"><?= h($tglID($p['paid_at'])) ?></td>
-                                    <td><?= h(trim((string) ($p['method'] ?? ''))) ?><?= $p['ref_no'] ? ' <span class="muted">' . h($p['ref_no']) . '</span>' : '' ?>
+                                    <td class="pf-ket"><?= h(trim((string) ($p['method'] ?? ''))) ?><?= $p['ref_no'] ? ' <span class="muted">' . h($p['ref_no']) . '</span>' : '' ?>
                                         <?php if ($p['note']): ?><br><?php foreach (preg_split('/\s*·\s*/', (string) $p['note']) as $bagian):
-                                            if (trim($bagian) === '') continue; ?><span class="pf-tag"><?= h(trim($bagian)) ?></span><?php endforeach; ?><?php endif; ?></td>
+                                            if (trim($bagian) === '') continue; ?><span class="pf-tag"><?= h(trim($bagian)) ?></span><?php endforeach; ?><?php endif; ?>
+                                        <?php /* Baris yang pernah diperbaiki menyebutkannya sendiri —
+                                                 angka yang diam-diam berubah lebih meresahkan daripada
+                                                 angka yang salah. */ ?>
+                                        <?php if (!empty($p['updated_at'])): ?><div class="pf-bantu" style="margin-top:3px">diubah
+                                            <?= h($tglID(substr((string) $p['updated_at'], 0, 10))) ?><?= $p['updated_by'] ? ' oleh ' . h($p['updated_by']) : '' ?></div><?php endif; ?></td>
                                     <td class="n"><?= money($p['amount']) ?></td>
-                                    <td style="text-align:right">
-                                        <?php if ($bisaIsi): ?><form method="post" action="?r=payment_delete" onsubmit="return confirm('Hapus pembayaran ini?')" style="display:inline">
+                                    <td>
+                                        <?php if ($bisaIsi): ?><div class="pf-aksi">
+                                            <button type="button" class="btn light" onclick="ubahBayar(<?= $k ?>)">Ubah</button>
+                                            <form method="post" action="?r=payment_delete" onsubmit="return confirm('Hapus pembayaran ini?')" style="display:inline">
                                             <input type="hidden" name="_csrf" value="<?= h(csrf_token()) ?>"><input type="hidden" name="id" value="<?= (int) $id ?>">
-                                            <input type="hidden" name="pay_id" value="<?= (int) $p['id'] ?>"><input type="hidden" name="back" value="<?= h($back) ?>">
-                                            <button type="submit" class="btn light" style="color:#B91C1C;padding:3px 10px;font-size:11.5px">Hapus</button></form><?php endif; ?>
+                                            <input type="hidden" name="pay_id" value="<?= $k ?>"><input type="hidden" name="back" value="<?= h($back) ?>">
+                                            <button type="submit" class="btn light" style="color:#B91C1C">Hapus</button></form>
+                                        </div><?php endif; ?>
                                     </td>
                                 </tr>
+                                <?php if ($bisaIsi): ?>
+                                <tr class="pf-ubah" id="ubah-<?= $k ?>" style="display:none">
+                                    <td colspan="4">
+                                        <form method="post" action="?r=payment_edit">
+                                            <input type="hidden" name="_csrf" value="<?= h(csrf_token()) ?>">
+                                            <input type="hidden" name="id" value="<?= (int) $id ?>">
+                                            <input type="hidden" name="pay_id" value="<?= $k ?>">
+                                            <input type="hidden" name="back" value="<?= h($back) ?>">
+                                            <div class="pf-dua">
+                                                <div><label>Tanggal bayar</label>
+                                                    <input type="date" name="paid_at" value="<?= h((string) $p['paid_at']) ?>" required></div>
+                                                <div><label>Jumlah dibayar</label>
+                                                    <div class="rp-box"><span>Rp</span>
+                                                        <input type="text" name="amount" class="rp-ketik" inputmode="numeric"
+                                                               value="<?= h(number_format((float) $p['amount'], 0, ',', '.')) ?>" required></div></div>
+                                            </div>
+                                            <div class="pf-dua">
+                                                <div><label>Cara bayar</label>
+                                                    <select name="method">
+                                                        <?php foreach (['Transfer', 'Tunai', 'Giro', 'Lainnya'] as $cara): ?>
+                                                            <option<?= $cara === trim((string) ($p['method'] ?? '')) ? ' selected' : '' ?>><?= h($cara) ?></option>
+                                                        <?php endforeach; ?>
+                                                    </select></div>
+                                                <div><label>No. referensi / bukti <span class="muted" style="font-weight:400">(opsional)</span></label>
+                                                    <input type="text" name="ref_no" maxlength="80" value="<?= h((string) ($p['ref_no'] ?? '')) ?>"></div>
+                                            </div>
+                                            <label>Keterangan</label>
+                                            <input type="text" name="note" id="ket-<?= $k ?>" maxlength="190" value="<?= h((string) ($p['note'] ?? '')) ?>">
+                                            <div class="pf-cepat">
+                                                <?php foreach ($ketCepat as $teks => $arti): ?>
+                                                    <button type="button" class="btn light" title="<?= h($arti) ?>"
+                                                            onclick="tambahKet('<?= h($teks) ?>', 'ket-<?= $k ?>')"><?= h($teks) ?></button>
+                                                <?php endforeach; ?>
+                                                <button type="button" class="btn light" style="color:#B91C1C"
+                                                        onclick="document.getElementById('ket-<?= $k ?>').value=''">Kosongkan</button>
+                                            </div>
+                                            <div style="margin-top:14px;display:flex;gap:8px">
+                                                <button type="submit">Simpan perubahan</button>
+                                                <button type="button" class="btn light" onclick="ubahBayar(<?= $k ?>)">Batal</button>
+                                            </div>
+                                        </form>
+                                    </td>
+                                </tr>
+                                <?php endif; ?>
                             <?php endforeach; ?>
                             </tbody>
                         </table>
@@ -708,19 +798,10 @@ function payment_form(PDO $pdo): void
                             <select name="method"><option>Transfer</option><option>Tunai</option><option>Giro</option><option>Lainnya</option></select>
                             <label>No. referensi / bukti <span class="muted" style="font-weight:400">(opsional)</span></label>
                             <input type="text" name="ref_no" maxlength="80">
-                            <?php /* Di berkas lama tiap pembayaran diberi keterangan singkat
-                                     (LUNAS, BUKPOT, ...). Keterangan itulah yang membuat selisih
-                                     bayar langsung terbaca sebabnya, jadi disediakan sebagai
-                                     tombol — tetap boleh diketik bebas. */ ?>
                             <label>Keterangan <span class="muted" style="font-weight:400">(klik salah satu, atau ketik sendiri)</span></label>
                             <input type="text" name="note" id="pay-note" maxlength="190" placeholder="mis. LUNAS, BUKPOT, DP 50%">
                             <div class="pf-cepat">
-                                <?php foreach (['LUNAS' => 'Dibayar penuh sesuai tagihan',
-                                                'BUKPOT' => 'Pajak dipotong client, yang masuk lebih kecil daripada invoice',
-                                                'TERMASUK LISTRIK' => 'Transfer sudah termasuk biaya listrik',
-                                                'TERMASUK DEPOSIT' => 'Transfer sudah termasuk security deposit',
-                                                'DP 50%' => 'Pembayaran muka',
-                                                '2 KONTRAK' => 'Satu transfer untuk dua kontrak sekaligus'] as $teks => $arti): ?>
+                                <?php foreach ($ketCepat as $teks => $arti): ?>
                                     <button type="button" class="btn light" title="<?= h($arti) ?>"
                                             onclick="tambahKet('<?= h($teks) ?>')"><?= h($teks) ?></button>
                                 <?php endforeach; ?>
@@ -736,20 +817,42 @@ function payment_form(PDO $pdo): void
 
         <script>
         // Ribuan diberi titik sambil diketik, sama seperti kotak rupiah lain.
-        ['inv-amt', 'pay-amt'].forEach(function (id) {
-            var el = document.getElementById(id);
-            if (!el) return;
+        function rapikanRp(el) {
             el.addEventListener('input', function () {
                 var a = this.value.replace(/\D/g, '');
                 this.value = a ? parseInt(a, 10).toLocaleString('id-ID') : '';
             });
+        }
+        ['inv-amt', 'pay-amt'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) rapikanRp(el);
         });
+        Array.prototype.forEach.call(document.querySelectorAll('.rp-ketik'), rapikanRp);
+        // Satu baris diperbaiki pada satu waktu: barisnya disembunyikan, form
+        // ubahnya muncul di tempatnya. Yang lain ikut ditutup supaya tidak ada
+        // dua form terbuka yang isinya mirip.
+        function ubahBayar(k) {
+            var baris = document.getElementById('bayar-' + k), form = document.getElementById('ubah-' + k);
+            if (!baris || !form) return;
+            var buka = form.style.display === 'none';
+            if (buka) {
+                Array.prototype.forEach.call(document.querySelectorAll('tr.pf-ubah'), function (f) {
+                    if (f === form || f.style.display === 'none') return;
+                    f.style.display = 'none';
+                    var b = document.getElementById('bayar-' + f.id.slice(5));
+                    if (b) b.classList.remove('pf-disorot');
+                });
+            }
+            form.style.display = buka ? '' : 'none';
+            baris.classList.toggle('pf-disorot', buka);
+        }
         function isiRp(n) {
             var el = document.getElementById('inv-amt');
             el.value = n === '' ? '' : Number(n).toLocaleString('id-ID');
         }
-        function tambahKet(t) {
-            var n = document.getElementById('pay-note');
+        function tambahKet(t, id) {
+            var n = document.getElementById(id || 'pay-note');
+            if (!n) return;
             n.value = n.value.trim() ? n.value.trim() + ' · ' + t : t;
         }
         </script>
@@ -787,27 +890,68 @@ function payment_invoice_save(PDO $pdo): void
     _pay_kembali($id);
 }
 
+/**
+ * Isian satu baris pembayaran dari form — dipakai saat mencatat maupun saat
+ * memperbaiki. Isian yang tidak masuk akal tidak pernah lolos ke basis data:
+ * pengguna dikembalikan ke halamannya dengan pesan, bukan disimpan diam-diam.
+ */
+function _pay_baris_post(int $id): array
+{
+    $tgl = (string) post('paid_at', '');
+    $jml = parse_rupiah((string) post('amount', ''));
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $tgl) || strtotime($tgl) === false) { flash('Tanggal bayar tidak valid.'); _pay_kembali($id); }
+    if ($jml <= 0) { flash('Jumlah dibayar harus lebih dari nol.'); _pay_kembali($id); }
+    return [
+        'paid_at' => $tgl, 'amount' => $jml,
+        'method'  => in_array(post('method'), ['Transfer', 'Tunai', 'Giro', 'Lainnya'], true) ? (string) post('method') : null,
+        'ref_no'  => mb_substr(trim((string) post('ref_no', '')), 0, 80) ?: null,
+        'note'    => mb_substr(trim((string) post('note', '')), 0, 190) ?: null,
+    ];
+}
+
 function payment_add(PDO $pdo): void
 {
     require_permission('manage_payments');
     verify_csrf();
     $id  = (int) post('id', 0);
     _pay_muat($pdo, $id, true);
-    $tgl = (string) post('paid_at', '');
-    $jml = parse_rupiah((string) post('amount', ''));
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $tgl) || strtotime($tgl) === false) { flash('Tanggal bayar tidak valid.'); _pay_kembali($id); }
-    if ($jml <= 0) { flash('Jumlah dibayar harus lebih dari nol.'); _pay_kembali($id); }
-    $baris = [
-        'paid_at' => $tgl, 'amount' => $jml,
-        'method'  => in_array(post('method'), ['Transfer', 'Tunai', 'Giro', 'Lainnya'], true) ? (string) post('method') : null,
-        'ref_no'  => mb_substr(trim((string) post('ref_no', '')), 0, 80) ?: null,
-        'note'    => mb_substr(trim((string) post('note', '')), 0, 190) ?: null,
-    ];
+    $baris = _pay_baris_post($id);
     $pdo->prepare('INSERT INTO transaction_payments (property_id, transaction_id, paid_at, amount, method, ref_no, note, created_by)
                    VALUES (:pid, :tid, :paid_at, :amount, :method, :ref_no, :note, :by)')
         ->execute($baris + [':pid' => current_property_id(), ':tid' => $id, ':by' => (string) ($_SESSION['user']['name'] ?? '')]);
     audit($pdo, 'create', 'transaction_payments', (string) $pdo->lastInsertId(), $baris + ['transaction_id' => $id], [], 'payments');
     flash('Pembayaran dicatat.');
+    _pay_kembali($id);
+}
+
+/**
+ * Perbaiki pembayaran yang sudah tercatat.
+ *
+ * Sebelum ini satu-satunya jalan membetulkan salah ketik adalah menghapus lalu
+ * mencatat ulang — jejaknya jadi dua baris mati untuk satu pembayaran. Di sini
+ * barisnya diperbaiki di tempat, lengkap dengan catatan siapa yang mengubah dan
+ * kapan, dan perubahannya tetap tercatat utuh di Jejak Audit (nilai lama vs baru).
+ */
+function payment_edit(PDO $pdo): void
+{
+    require_permission('manage_payments');
+    verify_csrf();
+    $id = (int) post('id', 0);
+    _pay_muat($pdo, $id, true);
+    $payId = (int) post('pay_id', 0);
+    // Pembayaran harus milik transaksi yang sedang dibuka — kalau tidak, id
+    // dari halaman lain bisa dipakai menyunting pembayaran orang lain.
+    $st = $pdo->prepare('SELECT * FROM transaction_payments WHERE id = ? AND transaction_id = ? AND deleted_at IS NULL');
+    $st->execute([$payId, $id]);
+    $lama = $st->fetch();
+    if (!$lama) { flash('Pembayaran tidak ditemukan atau sudah dihapus.'); _pay_kembali($id); }
+    $baru = _pay_baris_post($id);
+    $pdo->prepare('UPDATE transaction_payments SET paid_at = :paid_at, amount = :amount, method = :method,
+                          ref_no = :ref_no, note = :note, updated_at = NOW(), updated_by = :by
+                    WHERE id = :payid')
+        ->execute($baru + [':by' => (string) ($_SESSION['user']['name'] ?? ''), ':payid' => $payId]);
+    audit($pdo, 'update', 'transaction_payments', (string) $payId, $baru, array_intersect_key($lama, $baru), 'payments');
+    flash('Pembayaran diperbarui.');
     _pay_kembali($id);
 }
 

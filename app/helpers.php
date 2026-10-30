@@ -754,7 +754,7 @@ function permission_for_route(string $route): string
         // menuntut manage_payments. Pemegang manage_payments diberi
         // view_payments juga (migrasi 082), jadi tidak ada yang terkunci.
         'payments', 'payments_csv', 'payments_xlsx', 'payment_form' => 'view_payments',
-        'payment_invoice_save', 'payment_add', 'payment_delete' => 'manage_payments',
+        'payment_invoice_save', 'payment_add', 'payment_edit', 'payment_delete' => 'manage_payments',
         'master' => 'view_master',
         'master_form', 'master_save', 'generate_periods' => 'manage_master',
         'import_media', 'import_template' => 'import_master',
