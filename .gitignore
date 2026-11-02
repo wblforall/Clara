@@ -108,3 +108,4 @@ docs/banding_*.json
 # Pembangun laporan per-PIC Shinta & Sita: memuat nama penyewa & nilai kontrak asli.
 scripts/build_laporan_shinta_okt.php
 scripts/build_laporan_sita_okt.php
+scripts/build_laporan_pic_okt.php
