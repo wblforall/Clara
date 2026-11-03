@@ -204,9 +204,50 @@ function _nav_tambah(string $key): ?array
     ][$key] ?? null;
 }
 
+/** Skrip bagikan PDF ke WhatsApp/dll — dipakai tampilan mobile lama dan baru. */
+function clara_skrip_bagikan_pdf(): void
+{
+?>
+        <script>
+        /* Bagikan PDF langsung ke WhatsApp/dll via Web Share API (FILE).
+           PENTING: share file butuh secure context (HTTPS / localhost). Di HTTP
+           biasa (mis. diakses via IP LAN) Web Share file TIDAK didukung — jangan
+           dipaksa (akan "membocorkan" blob URL); langsung UNDUH PDF-nya saja. */
+        function _claraPdfDownload(url, filename) {
+            var a = document.createElement('a');
+            a.href = url; a.download = (filename || 'dokumen') + '.pdf';
+            a.target = '_blank'; a.rel = 'noopener';
+            document.body.appendChild(a); a.click(); a.remove();
+        }
+        async function claraSharePdf(url, filename, btn) {
+            var label = btn ? btn.innerHTML : '';
+            // Tanpa secure context atau tanpa dukungan share file → unduh biasa.
+            if (!window.isSecureContext || !navigator.canShare) { _claraPdfDownload(url, filename); return; }
+            try {
+                if (btn) { btn.style.pointerEvents = 'none'; btn.innerHTML = '⏳ Menyiapkan…'; }
+                var res = await fetch(url, { credentials: 'same-origin' });
+                if (!res.ok) throw new Error('http ' + res.status);
+                var blob = await res.blob();
+                var file = new File([blob], (filename || 'dokumen') + '.pdf', { type: 'application/pdf' });
+                if (navigator.canShare({ files: [file] })) {
+                    await navigator.share({ files: [file], title: filename });   // kirim FILE, bukan URL
+                } else {
+                    _claraPdfDownload(url, filename);
+                }
+            } catch (e) {
+                if (!(e && e.name === 'AbortError')) _claraPdfDownload(url, filename);
+            } finally {
+                if (btn) { btn.style.pointerEvents = ''; btn.innerHTML = label; }
+            }
+        }
+        </script>
+<?php
+}
+
 function layout(string $title, callable $body, array $opts = []): void
 {
     global $route, $config, $pdo;
+    if (mobile2_aktif()) require_once __DIR__ . '/mobile2.php';
     // Halaman HTML dimampatkan dari PHP: LiteSpeed di hosting tidak memampatkan
     // keluaran dinamis walau .htaccess memintanya, sehingga Kalender (±570 KB)
     // terkirim utuh. Hanya di sini — unduhan PDF/Excel tidak lewat layout() dan
@@ -293,6 +334,7 @@ function layout(string $title, callable $body, array $opts = []): void
         <link rel="icon" type="image/png" href="assets/clara-logo.png">
         <?php pwa_head(); ?>
         <link rel="stylesheet" href="assets/app.css?v=<?= CSS_VER ?>">
+        <?php if (mobile2_aktif()): ?><link rel="stylesheet" href="assets/mobile2.css?v=<?= (int) @filemtime(__DIR__ . '/../../public/assets/mobile2.css') ?>"><?php endif; ?>
         <link rel="stylesheet" href="assets/flatpickr.min.css">
         <script src="assets/count-up.js?v=<?= (int) @filemtime(__DIR__ . '/../../public/assets/count-up.js') ?>" defer></script>
         <style>
@@ -412,7 +454,16 @@ function layout(string $title, callable $body, array $opts = []): void
     </script>
     <?php ViewAs::banner(); ?>
     <?php $isMobile = mobile_view_active(); ?>
-    <?php if ($isMobile): ?>
+    <?php if (mobile2_aktif()): ?>
+        <script>document.body.classList.add('m2-body-on');</script>
+        <div class="m2-app">
+            <?php if (!empty($opts['m2'])): ?>
+                <?php if ($flash): ?><div class="m2-flash"><?= h($flash) ?></div><?php endif; ?>
+                <?php $body(); ?>
+            <?php else: m2_shell_legacy((string) $title, $body, $flash); endif; ?>
+        </div>
+        <?php clara_skrip_bagikan_pdf(); m2_nav((string) $route, $pdo); ?>
+    <?php elseif ($isMobile): ?>
         <div class="m-shell">
             <div class="m-top">
                 <div style="min-width:0">
@@ -462,39 +513,7 @@ function layout(string $title, callable $body, array $opts = []): void
                 <a href="?r=<?= h($_rt) ?>" class="<?= $_mact === $_k ? 'active' : '' ?>"><?= _m_icon($_ic) ?><span><?= h($_lbl) ?></span></a>
             <?php endforeach; ?>
         </nav>
-        <script>
-        /* Bagikan PDF langsung ke WhatsApp/dll via Web Share API (FILE).
-           PENTING: share file butuh secure context (HTTPS / localhost). Di HTTP
-           biasa (mis. diakses via IP LAN) Web Share file TIDAK didukung — jangan
-           dipaksa (akan "membocorkan" blob URL); langsung UNDUH PDF-nya saja. */
-        function _claraPdfDownload(url, filename) {
-            var a = document.createElement('a');
-            a.href = url; a.download = (filename || 'dokumen') + '.pdf';
-            a.target = '_blank'; a.rel = 'noopener';
-            document.body.appendChild(a); a.click(); a.remove();
-        }
-        async function claraSharePdf(url, filename, btn) {
-            var label = btn ? btn.innerHTML : '';
-            // Tanpa secure context atau tanpa dukungan share file → unduh biasa.
-            if (!window.isSecureContext || !navigator.canShare) { _claraPdfDownload(url, filename); return; }
-            try {
-                if (btn) { btn.style.pointerEvents = 'none'; btn.innerHTML = '⏳ Menyiapkan…'; }
-                var res = await fetch(url, { credentials: 'same-origin' });
-                if (!res.ok) throw new Error('http ' + res.status);
-                var blob = await res.blob();
-                var file = new File([blob], (filename || 'dokumen') + '.pdf', { type: 'application/pdf' });
-                if (navigator.canShare({ files: [file] })) {
-                    await navigator.share({ files: [file], title: filename });   // kirim FILE, bukan URL
-                } else {
-                    _claraPdfDownload(url, filename);
-                }
-            } catch (e) {
-                if (!(e && e.name === 'AbortError')) _claraPdfDownload(url, filename);
-            } finally {
-                if (btn) { btn.style.pointerEvents = ''; btn.innerHTML = label; }
-            }
-        }
-        </script>
+        <?php clara_skrip_bagikan_pdf(); ?>
     <?php else: ?>
     <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
     <div class="app">

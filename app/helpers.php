@@ -455,6 +455,15 @@ function mobile_view_active(): bool
     return is_mobile_device();
 }
 
+/**
+ * Tampilan mobile baru (mobile2.php) khusus Sales & Asst. Manager di HP.
+ * Peran lain tetap memakai tampilan mobile lama.
+ */
+function mobile2_aktif(): bool
+{
+    return mobile_view_active() && in_array(current_role(), ['sales', 'asst_manager'], true);
+}
+
 // ─── Property helpers ────────────────────────────────────────────────────────
 
 function current_property_id(): int
@@ -889,6 +898,12 @@ function permission_for_route(string $route): string
         'm_exec' => 'view_exec_summary',
         'm_offers' => 'manage_offers',
         'm_skp' => 'manage_skp',
+        'm2_unit', 'm2_kalender', 'm2_unit_detail' => 'view_transactions',
+        'm2_profil' => 'view_dashboard',
+        'm2_offers' => 'manage_offers',
+        'm2_skp' => 'manage_skp',
+        'm2_pipeline' => 'view_transactions',
+        'm2_klien' => 'view_transactions',
         'lookup_manage', 'lookup_save', 'lookup_delete' => 'manage_master',
         'trend', 'comparison' => 'view_dashboard',
         'unit_analysis', 'unit_analysis_detail', 'unit_analysis_ai' => 'view_dashboard',

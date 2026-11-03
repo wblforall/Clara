@@ -13,6 +13,8 @@ declare(strict_types=1);
  *  - Properti tunggal     → ringkasan properti (segmen, top PIC, transaksi).
  */
 
+require_once __DIR__ . '/mobile2.php';
+
 // ─── Komponen UI bersama ──────────────────────────────────────────────────────
 
 /** Hero gelap dengan ring achievement + actual/target/gap. */
@@ -224,6 +226,11 @@ function _m_quick_actions(): void
 function mobile_home_page(PDO $pdo): void
 {
     require_permission('view_dashboard');
+    // Sales & Asst. Manager memakai tampilan mobile baru (mobile2.php).
+    if (mobile2_aktif()) {
+        current_role() === 'sales' ? m2_beranda_sales($pdo) : m2_beranda_manager($pdo);
+        return;
+    }
     $period  = periode_bulan();
     $user    = $_SESSION['user'] ?? [];
     $uname   = $user['name'] ?? 'User';

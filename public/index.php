@@ -383,8 +383,18 @@ if (isset($_GET['view'])) {
 if (mobile_view_active()) {
     if ($route === 'dashboard')      redirect_to('m_home');
     if ($route === 'exec_dashboard') redirect_to('m_exec', isset($_GET['period']) ? ['period' => (string) $_GET['period']] : []);
-    if ($route === 'offers')         redirect_to('m_offers');
-    if ($route === 'skp')            redirect_to('m_skp');
+    if (mobile2_aktif()) {
+        // Tampilan mobile baru: daftar-daftar utama punya layar sendiri.
+        $teruskan = array_intersect_key($_GET, array_flip(['giliran', 'status', 'module', 'tab']));
+        if ($route === 'offers' || $route === 'm_offers') redirect_to('m2_offers', $teruskan);
+        if ($route === 'skp' || $route === 'm_skp')       redirect_to('m2_skp', $teruskan);
+        if ($route === 'prospects')                       redirect_to('m2_pipeline');
+        if ($route === 'clients')                         redirect_to('m2_klien', isset($_GET['q']) ? ['q' => (string) $_GET['q']] : []);
+        if ($route === 'calendar')                        redirect_to('m2_kalender');
+    } else {
+        if ($route === 'offers')         redirect_to('m_offers');
+        if ($route === 'skp')            redirect_to('m_skp');
+    }
 }
 
 
@@ -522,6 +532,14 @@ $pageFiles = [
     'm_exec'                      => 'mobile.php',
     'm_offers'                    => 'mobile.php',
     'm_skp'                       => 'mobile.php',
+    'm2_unit'                     => 'mobile2.php',
+    'm2_kalender'                 => 'mobile2.php',
+    'm2_unit_detail'              => 'mobile2.php',
+    'm2_profil'                   => 'mobile2.php',
+    'm2_offers'                   => 'mobile2.php',
+    'm2_skp'                      => 'mobile2.php',
+    'm2_pipeline'                 => 'mobile2.php',
+    'm2_klien'                    => 'mobile2.php',
 ];
 // Gerbang pertama mode lihat-sebagai: apa pun yang bukan permintaan baca
 // ditolak dengan penjelasan, bukan dengan error. Gerbang keduanya ada di
@@ -672,6 +690,14 @@ match ($route) {
     'm_exec'                      => mobile_exec_page($pdo),
     'm_offers'                    => mobile_offers_page($pdo),
     'm_skp'                       => mobile_skp_page($pdo),
+    'm2_unit'                     => m2_unit_page($pdo),
+    'm2_kalender'                 => m2_kalender_page($pdo),
+    'm2_unit_detail'              => m2_unit_detail_page($pdo),
+    'm2_profil'                   => m2_profil_page($pdo),
+    'm2_offers'                   => m2_offers_page($pdo),
+    'm2_skp'                      => m2_skp_page($pdo),
+    'm2_pipeline'                 => m2_pipeline_page($pdo),
+    'm2_klien'                    => m2_klien_page($pdo),
     default                       => dashboard($pdo),
 };
 } catch (ViewAsTulisDitolak $e) {
