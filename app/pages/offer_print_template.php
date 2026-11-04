@@ -267,8 +267,8 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
 .sign td.sigarea{height:20mm}
 .sign td.nama{vertical-align:top}
 .ttd-img{height:58px;width:auto;margin:2px 0}
-.nm{display:block;padding-top:3px;font-size:12px;line-height:1.3}
-.jab{display:block;font-style:italic;font-size:12px;line-height:1.3}
+.nm{display:block;padding-top:3px;font-size:12.5px;line-height:1.3}
+.jab{display:block;font-style:italic;font-size:12.5px;line-height:1.3}
 .ttd-ket{display:block;font-style:normal;color:#6b7280;font-size:8px}
 .qrbox{width:70px;height:70px;margin:6px auto 3px}
 .qrbox img,.qrbox svg{width:70px!important;height:70px!important;display:block}
