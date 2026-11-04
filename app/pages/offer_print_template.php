@@ -258,19 +258,19 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
    (skp_print_body.php) — satu tabel tiga baris supaya sel yang sebaris
    otomatis setinggi sel tertinggi, kolom pertama rata kiri tepat di garis
    kiri paragraf, kolom terakhir rata kanan tepat di garis kanannya. */
-.sign{width:100%;border-collapse:collapse;margin-top:18px;page-break-inside:avoid;table-layout:fixed}
-.sign td.col{width:50%;padding:0;border:none;vertical-align:bottom}
-.kiri{text-align:left}
-.tengah{text-align:center}
-.kanan{text-align:right}
-.sign td.peran{font-size:10.5px;color:#6b7280;line-height:1.3;padding-bottom:1.5mm}
-.sign td.sigarea{height:22mm}
+.sign{width:100%;border-collapse:collapse;margin-top:14px;page-break-inside:avoid;table-layout:fixed}
+/* Isi kedua kolom rata tengah; yang membuat blok kiri & kanan terlihat mepet
+   ke pinggir adalah kolom kosong di tengahnya, bukan perataan isinya. */
+.sign td.col{width:38%;padding:0;border:none;vertical-align:bottom;text-align:center}
+.sign td.antara{width:24%;padding:0;border:none}
+.sign td.peran{font-size:9.5px;color:#6b7280;line-height:1.3;padding-bottom:1.2mm}
+.sign td.sigarea{height:20mm}
 .sign td.nama{vertical-align:top}
 .ttd-img{height:58px;width:auto;margin:2px 0}
-.nm{display:block;padding-top:3px;font-size:12.5px;line-height:1.3}
-.jab{display:block;font-style:italic;font-size:12.5px;line-height:1.3}
+.nm{display:block;padding-top:3px;font-size:11.5px;line-height:1.3}
+.jab{display:block;font-style:italic;font-size:11.5px;line-height:1.3}
 .ttd-ket{display:block;font-style:normal;color:#6b7280;font-size:8px}
-.qrbox{width:70px;height:70px;margin:6px 0 3px}
+.qrbox{width:70px;height:70px;margin:6px auto 3px}
 .qrbox img,.qrbox svg{width:70px!important;height:70px!important;display:block}
 .qrhint{font-size:7.5px;color:#6b7280;margin-bottom:3px}
 .muted{color:#6b7280}
@@ -752,9 +752,9 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     if (!function_exists('skp_jabatan_properti')) require_once __DIR__ . '/skp_modules.php';
     $custSigned = !empty($o['signed_at']);
     $ttdKanan   = array_key_exists('ttd_kanan', $letter) ? trim((string) $letter['ttd_kanan']) : 'Calon Penyewa';
-    $garisKiri  = '<table style="width:34mm;margin:0 auto 0 0;border-collapse:collapse"><tr>'
+    $garisKiri  = '<table style="width:34mm;margin:0 auto;border-collapse:collapse"><tr>'
                 . '<td style="height:18mm;border-bottom:1px solid #111;font-size:1pt;color:#ffffff">&nbsp;</td></tr></table>';
-    $garisKanan = '<table style="width:34mm;margin:0 0 0 auto;border-collapse:collapse"><tr>'
+    $garisKanan = '<table style="width:34mm;margin:0 auto;border-collapse:collapse"><tr>'
                 . '<td style="height:18mm;border-bottom:1px solid #111;font-size:1pt;color:#ffffff">&nbsp;</td></tr></table>';
     $qrKiri = '';
     if ($hasQr) {
@@ -796,9 +796,9 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     ];
     ?>
     <table class="sign">
-        <tr><?php foreach ($kolomTtd as $kol): ?><td class="col peran <?= $kol['rata'] ?>"><?= $kol['peran'] ?></td><?php endforeach; ?></tr>
-        <tr><?php foreach ($kolomTtd as $kol): ?><td class="col sigarea <?= $kol['rata'] ?>"><?= $kol['ttd'] ?></td><?php endforeach; ?></tr>
-        <tr><?php foreach ($kolomTtd as $kol): ?><td class="col nama <?= $kol['rata'] ?>"><div class="nm"><?= $kol['nama'] ?></div><div class="jab"><?= $kol['jab'] ?></div><?= $kol['ket'] ?></td><?php endforeach; ?></tr>
+        <tr><td class="col peran"><?= $kolomTtd[0]['peran'] ?></td><td class="antara"></td><td class="col peran"><?= $kolomTtd[1]['peran'] ?></td></tr>
+        <tr><td class="col sigarea"><?= $kolomTtd[0]['ttd'] ?></td><td class="antara"></td><td class="col sigarea"><?= $kolomTtd[1]['ttd'] ?></td></tr>
+        <tr><?php foreach ([0, 1] as $iKol): $kol = $kolomTtd[$iKol]; ?><?php if ($iKol): ?><td class="antara"></td><?php endif; ?><td class="col nama"><div class="nm"><?= $kol['nama'] ?></div><div class="jab"><?= $kol['jab'] ?></div><?= $kol['ket'] ?></td><?php endforeach; ?></tr>
     </table>
 </div>
 <?php if ($PDF_MODE) { return; } /* mode PDF: berhenti di sini, HTML konten ditangkap offer_print() */ ?>

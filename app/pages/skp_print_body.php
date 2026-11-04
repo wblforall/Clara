@@ -109,30 +109,30 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc table.notes tr { page-break-inside: avoid; }
 .skpdoc table.notes td.nn { width: 20px; vertical-align: top; font-weight: bold; font-size: 11px; color: #374151; }
 .skpdoc table.notes td.nt { font-size: 11px; color: #374151; line-height: 1.45; padding-bottom: 3px; text-align: justify; }
-.skpdoc table.sign { width: 100%; border-collapse: collapse; margin-top: 18px; page-break-inside: avoid; table-layout: fixed; }
-.skpdoc table.sign td.col { width: 33.33%; padding: 0; border: none; vertical-align: bottom; }
-/* Kolom pertama RATA KIRI tepat di garis kiri paragraf, kolom terakhir RATA
-   KANAN tepat di garis kanannya — bukan menjorok ke dalam. */
-.skpdoc .kiri { text-align: left; }
-.skpdoc .tengah { text-align: center; }
-.skpdoc .kanan { text-align: right; }
+.skpdoc table.sign { width: 100%; border-collapse: collapse; margin-top: 14px; page-break-inside: avoid; table-layout: fixed; }
+/* Isi SEMUA kolom rata tengah. Kolom tepi dibuat lebih sempit daripada kolom
+   tengah supaya titik tengahnya bergeser ke luar — blok pertama duduk lebih
+   mepet ke garis kiri dan blok terakhir lebih mepet ke garis kanan, tanpa
+   ada yang jadi rata kiri/rata kanan. */
+.skpdoc table.sign td.col { width: 30%; padding: 0; border: none; vertical-align: bottom; text-align: center; }
+.skpdoc table.sign td.tengah { width: 40%; }
 .skpdoc table.sign td.col img { max-width: 100%; height: auto; }
 /* Baris jabatan kolom ("Hormat Kami," + nama PT) menempel ke DASAR barisnya,
    jadi berapa pun barisnya, ruang tanda tangan di bawahnya tetap mulai pada
    ketinggian yang sama di ketiga kolom. */
-.skpdoc table.sign td.peran { font-size: 10.5px; color: #6b7280; line-height: 1.3; padding-bottom: 1.5mm; }
+.skpdoc table.sign td.peran { font-size: 9.5px; color: #6b7280; line-height: 1.3; padding-bottom: 1.2mm; }
 /* Ruang tanda tangan: tingginya dikunci supaya muat QR / coretan / ruang
    kosong bergaris, dan isinya menempel ke dasar — itulah yang membuat nama
    ketiga penanda tangan sejajar, apa pun isinya. */
-.skpdoc table.sign td.sigarea { height: 22mm; }
+.skpdoc table.sign td.sigarea { height: 20mm; }
 /* Baris nama menempel ke ATAS: kolom penyewa bisa punya satu baris tambahan
    ("Ditandatangani elektronik ..."), dan kalau barisnya rata bawah justru
    namanya yang terangkat sendiri. */
 .skpdoc table.sign td.nama { vertical-align: top; }
-/* Nama & jabatan LEBIH BESAR daripada paragraf surat, tidak ditebalkan;
-   jabatan dimiringkan. */
-.skpdoc .name { display: block; padding-top: 3px; font-size: 12.5px; line-height: 1.3; }
-.skpdoc .jab { display: block; font-style: italic; font-size: 12.5px; line-height: 1.3; }
+/* Nama & jabatan sedikit lebih besar daripada paragraf surat, tidak
+   ditebalkan; jabatan dimiringkan. */
+.skpdoc .name { display: block; padding-top: 3px; font-size: 11.5px; line-height: 1.3; }
+.skpdoc .jab { display: block; font-style: italic; font-size: 11.5px; line-height: 1.3; }
 .skpdoc .ttd-ket { display: block; font-style: normal; color: #6b7280; font-size: 8px; }
 .skpdoc .qrbox { width: 70px; height: 70px; margin: 0 auto 3px; }
 .skpdoc .qrbox img, .skpdoc .qrbox svg { width: 70px !important; height: 70px !important; display: block; }
@@ -169,9 +169,9 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
    px di atas akan terbaca jauh lebih kecil daripada badan suratnya. Angkanya
    sama, satuannya mengikuti surat — perbandingannya dengan isi surat jadi
    persis sama seperti di SKP. */
-.skpdoc.kertas table.sign td.peran { color: #000; font-size: 10.5pt; }
-.skpdoc.kertas .name { color: #000; font-size: 12.5pt; }
-.skpdoc.kertas .jab  { color: #000; font-size: 12.5pt; }
+.skpdoc.kertas table.sign td.peran { color: #000; font-size: 9.5pt; }
+.skpdoc.kertas .name { color: #000; font-size: 11.5pt; }
+.skpdoc.kertas .jab  { color: #000; font-size: 11.5pt; }
 </style>
 <?php /* Lapisan pemadatan OTOMATIS. Kosong pada keadaan biasa; hanya terisi
          kalau penyesuai halaman di skp.php memutuskan surat ini "nanggung".
@@ -505,9 +505,10 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
     $skpModePdf = !empty($PDF_MODE);
     // Margin kotak mengikuti perataan kolomnya: kiri menempel garis kiri,
     // tengah betul-betul di tengah, kanan menempel garis kanan.
-    $skpMargin = static fn(string $rata, string $bawah): string => $rata === 'kiri'
-        ? '0 auto ' . $bawah . ' 0'
-        : ($rata === 'kanan' ? '0 0 ' . $bawah . ' auto' : '0 auto ' . $bawah);
+    // Kotak QR / garis tanda tangan selalu di TENGAH kolomnya; yang membuat
+    // blok tepi terlihat mepet ke pinggir adalah lebar kolomnya, bukan
+    // perataan isinya.
+    $skpMargin = static fn(string $rata, string $bawah): string => '0 auto ' . $bawah;
     $skpKotakQr = static function (string $rata) use ($skp, $skpVerifyUrl, $h, $skpModePdf, $skpMargin): string {
         $m = $skpMargin($rata, '3px');
         // Pratinjau: kotaknya ada supaya letaknya persis seperti surat asli,
