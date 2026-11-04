@@ -402,9 +402,10 @@ function m2_alokasi_page(PDO $pdo): void
     layout('Alokasi #' . $id, function () use ($t, $id, $nama, $nilai, $fmt, $tipe, $bayarL, $mdl, $mdlC, $mdlB, $lokasi, $luasMaster, $perBulan, $back) {
         m2_top((string) $nama, $back, 'Alokasi #' . $id);
         $qty = (float) $t['quantity'];
-        // Banyak transaksi menyimpan luas 0; luas unit di master dipakai sebagai gantinya.
-        $luasTrx = (float) $t['area_sqm'];
-        $luas = $luasTrx > 0 ? $luasTrx : $luasMaster;
+        // Luas unit = master (tetap). Luas sewa = yang tersimpan di transaksi dan dipakai
+        // menghitung harga; bisa beda dari unit (sewa sebagian / lebih luas), jadi tidak ditimpa.
+        $luasSewa = (float) $t['area_sqm'];
+        $luasUnit = $luasMaster;
         $by = $bayarL[$t['bayar_status']] ?? ['—', ''];
         ?>
         <main class="m2-wrap" style="padding-bottom:24px">
@@ -414,9 +415,9 @@ function m2_alokasi_page(PDO $pdo): void
                     <span class="m2-st" style="background:<?= $mdlB ?>;color:<?= $mdlC ?>"><?= h($mdl) ?></span>
                 </div>
                 <div class="m2-stats" style="margin-top:10px">
-                    <div><small><?= $luasTrx > 0 || $luas <= 0 ? 'Luas' : 'Luas unit' ?></small><b><?= $luas > 0 ? h($fmt($luas)) . ' m²' : '—' ?></b></div>
-                    <div><small>Jumlah</small><b><?= $qty > 0 ? h($fmt($qty)) : '—' ?></b></div>
-                    <div><small>Slot</small><b><?= (float) $t['slots'] > 0 ? h($fmt($t['slots'])) : '—' ?></b></div>
+                    <div><small>Luas unit</small><b><?= $luasUnit > 0 ? h($fmt($luasUnit)) . ' m²' : '—' ?></b></div>
+                    <div><small>Luas sewa</small><b><?= $luasSewa > 0 ? h($fmt($luasSewa)) . ' m²' : '—' ?></b></div>
+                    <div><small>Jumlah</small><b><?= $qty > 0 ? h($fmt($qty)) : '—' ?><?= (float) $t['slots'] > 1 ? ' · ' . h($fmt($t['slots'])) . ' slot' : '' ?></b></div>
                 </div>
                 <div class="m2-prior"><span>Periode</span><span><?= h(m2_tgl_pendek((string) $t['start_date']) . ' ' . substr((string) $t['start_date'], 0, 4) . ' – ' . m2_tgl_pendek((string) $t['end_date']) . ' ' . substr((string) $t['end_date'], 0, 4)) ?><?= (int) $t['contract_months'] > 0 ? ' · ' . (int) $t['contract_months'] . ' bln' : '' ?></span></div>
                 <div class="m2-prior"><span>Skema harga</span><span><?= h($tipe[$t['pricing_type']] ?? $t['pricing_type']) ?><?= (float) $t['unit_rate'] > 0 ? ' · ' . m2_rp((float) $t['unit_rate']) : '' ?></span></div>
