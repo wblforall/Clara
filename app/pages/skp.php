@@ -782,7 +782,9 @@ function skp_form(PDO $pdo): void
     // sudah berjalan, tanggalnya sudah dimajukan satu periode. Hanya untuk
     // dokumen BARU — yang sudah tersimpan memakai datanya sendiri.
     $lanjutDari = 0;
+    $detailLanjut = [];
     if ($standalone && !$skp && ($lanjutDari = (int) getv('lanjut')) > 0) {
+        $detailLanjut = skp_detail_lanjut($pdo, $pid, $modKind, $lanjutDari);
         $srcLanjut = skp_lanjut_periode($pdo, $pid, $modKind, $lanjutDari);
         if ($srcLanjut) { $src = $srcLanjut; $isRenew = true; }
         else { flash('Dokumen asal tidak ditemukan / belum disetujui — formulirnya dibuka kosong.'); $lanjutDari = 0; }
@@ -879,7 +881,7 @@ function skp_form(PDO $pdo): void
             'sign_token' => null, 'signature_data' => null, 'signed_at' => null,
             'revisi_ke' => 0, 'approval_level' => 0,
         ], _skp_fields_dari_post($docType));
-        $src = _skp_src_dari_post($src, $standalone);
+        $src = _skp_src_dari_post($pdo, $src, $standalone);
     }
 
     $days     = _skp_days($src['start_date'], $src['end_date']);
@@ -925,6 +927,23 @@ function skp_form(PDO $pdo): void
     // di draft yang sudah terlanjur dibuat. Dokumen terkunci tetap memakai
     // salinannya sendiri supaya yang tercetak tidak pernah berubah belakangan.
     if ($docType === 'fu' && $editable) $detail = skp_fu_sinkron_tpl($detail, $tplDoc);
+    // Perpanjangan: Nama Toko, Lokasi Tenant, Jenis Usaha, dan Lokasi Gudang
+    // diambil dari dokumen yang diperpanjang. Nilai dari dokumen lama MENANG
+    // atas bawaan umum (mis. merek dari Master Client) — pada perpanjangan,
+    // yang sudah pernah diketik untuk penyewa ini lebih tepat daripada tebakan.
+    //
+    // Aman ditimpa: baris ini hanya dilewati saat formulir perpanjangan baru
+    // dibuka, ketika isinya masih murni nilai bawaan dan belum ada yang diketik.
+    foreach ($detailLanjut as $k => $v) $detail[$k] = $v;
+    // Draft yang tersimpan ikut menyimpan kolom kosongnya, dan kolom itu tidak
+    // pernah terisi lagi walau datanya tersedia. Selama dokumennya masih bisa
+    // diedit, kekosongan itu diisikan kembali dari master unit / transaksi.
+    //
+    // Tidak dijalankan pada pratinjau LIVE: isinya datang dari formulir, dan
+    // kolom yang baru sengaja dikosongkan orang tidak boleh terisi sendiri.
+    if ($editable && !$pratinjauLive) {
+        $detail = skp_detail_lengkapi($docType, $detail, skp_detail_defaults($tplDoc, $docType, $src, $amt));
+    }
     // ─── Pratinjau surat (?pratinjau=1) ──────────────────────────────────────
     //
     // Aturan aplikasi: surat tidak boleh keluar sebelum seluruh persetujuan
@@ -2840,8 +2859,18 @@ function _skp_akui_sesuai_periode(?string $json, array $src): ?string
     return $out ? json_encode($out, JSON_UNESCAPED_UNICODE) : null;
 }
 
-function _skp_src_dari_post(array $src, bool $standalone): array
+function _skp_src_dari_post(PDO $pdo, array $src, bool $standalone): array
 {
+    // Client & kontak yang SEDANG dipilih di formulir. Tanpa ini pratinjau
+    // memakai client yang tersimpan — dan pada dokumen baru belum ada yang
+    // tersimpan, sehingga "Nama Perusahaan/Pribadi" dan "Alamat" di contoh
+    // surat tercetak "-" meski di Master Client datanya lengkap.
+    if ($standalone) {
+        foreach (['client_id' => 's_client_id', 'contact_id' => 's_contact_id'] as $kol => $kirim) {
+            if (isset($_POST[$kirim])) $src[$kol] = ((int) post($kirim, 0)) ?: null;
+        }
+        $src = skp_isi_identitas_client($pdo, $src);
+    }
     $sah = static function (string $t): bool {
         $d = DateTimeImmutable::createFromFormat('Y-m-d', $t);
         return $d instanceof DateTimeImmutable && $d->format('Y-m-d') === $t;

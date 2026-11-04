@@ -73,12 +73,27 @@ function skp_template(PDO $pdo, int $pid, string $module): array
     $st->execute([$pid, $module]);
     $t = $st->fetch() ?: [];
     $arr = fn(string $k) => json_decode((string) ($t[$k] ?? '[]'), true) ?: [];
+    // Judul kolom tabel diambil dari Template Dokumen yang sama dengan yang
+    // dipakai Surat Penawaran. Sebelumnya Surat Konfirmasi Sewa Gudang menulis
+    // judul kolomnya sendiri di dalam kode, sehingga apa pun yang disetel di
+    // Master Template tidak pernah terpakai di suratnya.
+    // Bawaannya disalin di sini, bukan dengan memuat offers.php — berkas itu
+    // sendiri memuat berkas ini, dan memuatnya balik hanya untuk satu daftar
+    // judul membuat lingkaran yang tidak perlu.
+    $judulBawaan = function_exists('offer_judul_bawaan') ? offer_judul_bawaan() : [
+        'kolom_lokasi' => 'Lokasi / Titik',
+        'kolom_luas'   => 'Luasan',
+        'kolom_harga'  => 'Harga Sewa / Periode',
+        'kolom_ket'    => 'Keterangan',
+    ];
+    $judul = array_merge($judulBawaan, json_decode((string) ($t['judul_json'] ?? '{}'), true) ?: []);
     return [
         'name'    => (string) ($t['name'] ?? ''),
         'perihal' => (string) ($t['perihal'] ?? ''),
         'intro'   => (string) ($t['intro'] ?? ''),
         'terms'   => $arr('terms_json'),
         'notes'   => $arr('notes_json'),
+        'judul'   => $judul,
         'extra'   => json_decode((string) ($t['extra_json'] ?? '{}'), true) ?: [],
     ];
 }
@@ -116,6 +131,16 @@ function skp_fill(string $text, array $v): string
 // ─── Isi awal formulir (dari template + data sumber) ─────────────────────────
 
 /** Struktur detail kosong/berisi default utk dokumen baru. */
+/** Nilai pertama yang benar-benar berisi — '' dan null sama-sama dianggap kosong. */
+function skp_pilih_isi(...$nilai): string
+{
+    foreach ($nilai as $v) {
+        $v = trim((string) ($v ?? ''));
+        if ($v !== '') return $v;
+    }
+    return '';
+}
+
 function skp_detail_defaults(array $tpl, string $docType, array $src, array $amt = []): array
 {
     if ($docType === 'sks') {
@@ -132,15 +157,18 @@ function skp_detail_defaults(array $tpl, string $docType, array $src, array $amt
             $tpl['extra']['keterangan_default'] ?? []
         );
         return [
-            'nama_toko'     => '',
+            // Nama toko hampir selalu sama dengan merek yang terdaftar di
+            // Master Client — diisikan sebagai bawaan supaya tidak perlu
+            // diketik ulang, dan tetap bisa diganti.
+            'nama_toko'     => (string) ($src['brand_name'] ?? ''),
             'lokasi_tenant' => '',
             'jenis_usaha'   => (string) ($src['business_type'] ?? ''),
-            'lokasi_gudang' => (string) ($src['floor'] ?: ($src['location_name'] ?? $src['master_code'] ?? '')),
+            'lokasi_gudang' => skp_pilih_isi($src['floor'] ?? '', $src['location_name'] ?? '', $src['master_code'] ?? ''),
             // Bullet keterangan mentah (masih ber-placeholder) supaya bisa disusun
             // ulang di layar begitu tanggalnya diisi.
             'ket_tpl'       => array_values($tpl['extra']['keterangan_default'] ?? []),
             'rows'          => [[
-                'lokasi'      => (string) ($src['floor'] ?: ($src['location_name'] ?? $src['master_code'] ?? '')),
+                'lokasi'      => skp_pilih_isi($src['floor'] ?? '', $src['location_name'] ?? '', $src['master_code'] ?? ''),
                 'luas'        => ((float) ($src['area_sqm'] ?? $src['unit_area'] ?? 0)) ?: '',
                 'harga_m2'    => '',
                 'harga_bulan' => '',
@@ -531,11 +559,23 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
             $hb = (float) ($r['harga_bulan'] ?? 0);
             if ($hb > 0 && round($hb) !== round((float) ($r['total'] ?? 0))) { $adaKolomBulan = true; break; }
         }
+        // Judul kolom mengikuti Template Dokumen (Master Template Penawaran).
+        // Kolom "per m²" dan "Total" khusus milik surat gudang, jadi judulnya
+        // dirangkai dari judul harga yang disetel di template.
+        // Judul kolom Lokasi, Luasan, dan Keterangan mengikuti Template Dokumen
+        // (Master Template Penawaran). Kolom harga TIDAK: surat gudang punya
+        // tiga kolom harga (per m², per bulan, total) sedangkan template hanya
+        // menyediakan satu judul harga — memaksakannya ke tiga kolom hanya
+        // menghasilkan judul yang janggal seperti "Total Harga Sewa / Periode".
+        $jd = (array) ($tpl['judul'] ?? []);
+        $jdl = fn(string $k, string $bawaan) => skp_pilih_isi($jd[$k] ?? '', $bawaan);
         $o .= '<table class="harga"><tr>'
-            . '<th style="width:28mm">Lokasi</th><th style="width:13mm">Luasan (m2)</th>'
-            . '<th style="width:23mm">Harga Sewa /m²/Bulan</th>'
+            . '<th style="width:28mm">' . $h($jdl('kolom_lokasi', 'Lokasi')) . '</th>'
+            . '<th style="width:13mm">' . $h($jdl('kolom_luas', 'Luasan')) . ' (m2)</th>'
+            . '<th style="width:23mm">Harga Sewa /m&sup2;/Bulan</th>'
             . ($adaKolomBulan ? '<th style="width:25mm">Harga Sewa /Bulan</th>' : '')
-            . '<th style="width:25mm">Total Harga Sewa</th><th>Keterangan</th></tr>';
+            . '<th style="width:25mm">Total Harga Sewa</th>'
+            . '<th>' . $h($jdl('kolom_ket', 'Keterangan')) . '</th></tr>';
         foreach ($barisGdg as $r) {
             $ket = '';
             foreach (preg_split('/\R/', (string) ($r['keterangan'] ?? '')) as $b) {
@@ -752,16 +792,7 @@ function skp_standalone_src(PDO $pdo, int $pid, string $module, ?array $skp): ar
         $src['pic_name'] = (string) ($st->fetchColumn() ?: '');
     }
 
-    if ($src['client_id']) {
-        $st = $pdo->prepare('SELECT company_name, brand_name, npwp, ktp AS client_ktp, siup, address, business_type FROM master_clients WHERE id=? LIMIT 1');
-        $st->execute([$src['client_id']]);
-        if ($c = $st->fetch()) $src = array_merge($src, $c);
-    }
-    if ($src['contact_id']) {
-        $st = $pdo->prepare('SELECT name, phone FROM master_client_contacts WHERE id=? LIMIT 1');
-        $st->execute([$src['contact_id']]);
-        if ($k = $st->fetch()) { $src['cp_name'] = $k['name']; $src['cp_phone'] = $k['phone']; }
-    }
+    $src = skp_isi_identitas_client($pdo, $src);
     if ($src['master_code'] !== '') {
         if ($module === 'gudang') {
             $st = $pdo->prepare('SELECT name AS location_name, location AS floor, area_sqm, ROUND(monthly_rate * area_sqm) AS monthly_rate FROM master_gudang WHERE code=? AND property_id=? LIMIT 1');
@@ -825,6 +856,114 @@ function skp_standalone_src(PDO $pdo, int $pid, string $module, ?array $skp): ar
  * seluruh isian dokumen (nomor, tanda tangan, lampiran), karena ini dokumen
  * baru yang masih harus diperiksa dan disetujui seperti biasa.
  */
+/**
+ * Isi nama perusahaan, alamat, NPWP, dan kontak dari Master Client.
+ *
+ * Dipisah supaya pratinjau surat memakai sumber yang SAMA dengan penyimpanan.
+ * Sebelumnya pratinjau tidak pernah membaca client yang sedang dipilih di
+ * formulir, sehingga "Nama Perusahaan/Pribadi" dan "Alamat" di contoh Surat
+ * Konfirmasi Sewa Gudang selalu tercetak "-" meski datanya sudah lengkap di
+ * Master Client.
+ */
+function skp_isi_identitas_client(PDO $pdo, array $src): array
+{
+    if (!empty($src['client_id'])) {
+        $st = $pdo->prepare('SELECT company_name, brand_name, npwp, ktp AS client_ktp, siup, address, business_type
+                               FROM master_clients WHERE id = ? LIMIT 1');
+        $st->execute([(int) $src['client_id']]);
+        if ($c = $st->fetch(PDO::FETCH_ASSOC)) {
+            // Isian yang sudah ada di formulir tidak ditimpa nilai kosong dari
+            // master — yang diketik orang selalu menang atas kolom yang kosong.
+            foreach ($c as $k => $v) {
+                if ((string) $v !== '' || (string) ($src[$k] ?? '') === '') $src[$k] = $v;
+            }
+        }
+    }
+    if (!empty($src['contact_id'])) {
+        $st = $pdo->prepare('SELECT name, phone FROM master_client_contacts WHERE id = ? LIMIT 1');
+        $st->execute([(int) $src['contact_id']]);
+        if ($k = $st->fetch(PDO::FETCH_ASSOC)) {
+            if ((string) $k['name']  !== '') $src['cp_name']  = $k['name'];
+            if ((string) $k['phone'] !== '') $src['cp_phone'] = $k['phone'];
+        }
+    }
+    return $src;
+}
+
+/**
+ * Isian identitas dari dokumen yang DIPERPANJANG.
+ *
+ * Nama Toko, Lokasi Tenant, dan Jenis Usaha diketik tangan dan tidak ada di
+ * master mana pun — pada perpanjangan, mengetiknya ulang berarti mengetik
+ * ulang data yang sudah dimiliki sistem, dan satu huruf beda membuat dua
+ * dokumen untuk penyewa yang sama terlihat seperti dua penyewa berbeda.
+ *
+ * Hanya kolom identitas yang dibawa. Tabel harga, keterangan periode, dan
+ * daftar centang TIDAK ikut — semuanya bergantung pada tanggal dan nilai yang
+ * baru.
+ */
+/**
+ * Isi kolom yang masih KOSONG dengan nilai bawaan yang bisa diturunkan dari
+ * data yang sudah ada (master unit, transaksi, atau hitungan sederhana).
+ *
+ * Dokumen yang disimpan sebagai draft ikut menyimpan kolom kosongnya. Begitu
+ * tersimpan, kolom itu tidak pernah diisi ulang walau datanya sebenarnya
+ * tersedia — Surat Konfirmasi Sewa Gudang karena itu bisa tercetak dengan
+ * Lokasi Gudang, kolom Lokasi, dan Total Harga Sewa yang kosong, padahal unit
+ * dan nilainya jelas. Selama dokumennya masih bisa diedit, kekosongan itu
+ * diisikan lagi di sini.
+ *
+ * Yang sudah berisi TIDAK PERNAH ditimpa — apa pun yang diketik orang menang.
+ */
+function skp_detail_lengkapi(string $docType, array $detail, array $bawaan): array
+{
+    if ($docType !== 'sks') return $detail;
+    $kosong = static fn($v) => $v === null || $v === '' || $v === '0' || (is_numeric($v) && (float) $v == 0.0);
+
+    foreach (['nama_toko', 'lokasi_tenant', 'jenis_usaha', 'lokasi_gudang'] as $k) {
+        if ($kosong($detail[$k] ?? '') && !$kosong($bawaan[$k] ?? '')) $detail[$k] = $bawaan[$k];
+    }
+    if (empty($detail['rows']) || !is_array($detail['rows'])) return $detail;
+
+    $b0 = $bawaan['rows'][0] ?? [];
+    foreach ($detail['rows'] as $i => $r) {
+        if (!is_array($r)) continue;
+        // Hanya baris pertama yang punya pembanding; baris tambahan diisi sendiri.
+        if ($i === 0) {
+            foreach (['lokasi', 'luas', 'total'] as $k) {
+                if ($kosong($r[$k] ?? '') && !$kosong($b0[$k] ?? '')) $detail['rows'][$i][$k] = $b0[$k];
+            }
+        }
+        $hb = (float) ($detail['rows'][$i]['harga_bulan'] ?? 0);
+        $ls = (float) ($detail['rows'][$i]['luas'] ?? 0);
+        // Harga per m² per bulan tidak perlu diketik: ia hasil bagi harga per
+        // bulan dengan luasnya.
+        if ($kosong($detail['rows'][$i]['harga_m2'] ?? '') && $hb > 0 && $ls > 0) {
+            $detail['rows'][$i]['harga_m2'] = round($hb / $ls);
+        }
+        // Total masih kosong sementara harga per bulannya ada → pakai itu.
+        if ($kosong($detail['rows'][$i]['total'] ?? '') && $hb > 0) {
+            $detail['rows'][$i]['total'] = $hb;
+        }
+    }
+    return $detail;
+}
+
+function skp_detail_lanjut(PDO $pdo, int $pid, string $module, int $dariId): array
+{
+    $st = $pdo->prepare('SELECT detail_json FROM skp_documents
+                          WHERE id = ? AND property_id = ? AND module = ? AND deleted_at IS NULL');
+    $st->execute([$dariId, $pid, $module]);
+    $lama = json_decode((string) ($st->fetchColumn() ?: ''), true);
+    if (!is_array($lama)) return [];
+    $bawa = ['nama_toko', 'lokasi_tenant', 'jenis_usaha', 'lokasi_gudang'];
+    $out = [];
+    foreach ($bawa as $k) {
+        if (isset($lama[$k]) && is_scalar($lama[$k]) && (string) $lama[$k] !== '') $out[$k] = (string) $lama[$k];
+    }
+    return $out;
+}
+
 function skp_lanjut_periode(PDO $pdo, int $pid, string $module, int $dariId): ?array
 {
     $st = $pdo->prepare("SELECT * FROM skp_documents
