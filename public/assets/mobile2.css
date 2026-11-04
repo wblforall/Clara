@@ -272,3 +272,6 @@ body.m2-body-on { background: var(--m2-bg); font-family: Inter, system-ui, -appl
 .m2-app .m2-nav .cols a[aria-current="page"] { color: var(--m2-teal); }
 .m2-app .m2-chipline a.on { color: #115E59; }
 .m2-app .m2-seg a { color: var(--m2-mute); }
+
+.m2-prop { margin-top: 10px; display: flex; }
+.m2-prop .m2-tabs a { height: 30px; font-size: 12.5px; }

@@ -125,6 +125,21 @@ function m2_head_beranda(): void
     <?php
 }
 
+/** Pemilih properti untuk header halaman utama; kosong bila akun hanya punya satu properti. Kembali ke halaman yang sama. */
+function m2_prop_tabs(): string
+{
+    $props = allowed_properties();
+    if (count($props) < 2) return '';
+    $cur  = current_property_id();
+    $back = urlencode('?' . ($_SERVER['QUERY_STRING'] ?? ''));
+    $o = '<div class="m2-prop"><div class="m2-tabs" role="tablist" aria-label="Properti">';
+    foreach ($props as $p) {
+        $o .= '<a role="tab" href="?r=switch_property&to=' . (int) $p['id'] . '&back=' . $back . '" aria-selected="'
+            . ((int) $p['id'] === $cur ? 'true' : 'false') . '">' . h(explode(' ', trim((string) $p['name']))[0]) . '</a>';
+    }
+    return $o . '</div></div>';
+}
+
 /** Header halaman turunan: tombol kembali + judul. */
 function m2_top(string $judul, string $kembali = '?r=m_home', string $sub = ''): void
 {
@@ -449,6 +464,7 @@ function _m2_header_unit(string $aktif, string $isi = ''): void
     ?>
     <header class="m2-head-unit">
         <div class="ttl"><h1>Ketersediaan unit</h1><span>Exhibition</span></div>
+        <?= m2_prop_tabs() ?>
         <nav class="m2-seg" aria-label="Tampilan">
             <?php if ($aktif === 'daftar'): ?><span aria-current="page">Daftar</span><a href="?r=m2_kalender">Kalender</a>
             <?php else: ?><a href="?r=m2_unit">Daftar</a><span aria-current="page">Kalender</span><?php endif; ?>

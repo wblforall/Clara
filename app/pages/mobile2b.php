@@ -14,7 +14,8 @@ function _m2_head(string $judul, string $kanan = '', array $seg = [], string $is
 {
     ?>
     <header class="m2-head-unit">
-        <div class="ttl"><h1><?= h($judul) ?></h1><?php if ($kanan !== ''): ?><span><?= h($kanan) ?></span><?php endif; ?></div>
+        <div class="ttl"><h1><?= h($judul) ?></h1><?php if ($kanan !== '' && !m2_prop_tabs()): ?><span><?= h($kanan) ?></span><?php endif; ?></div>
+        <?= m2_prop_tabs() ?>
         <?php if ($seg): ?>
         <nav class="m2-seg" style="grid-template-columns:repeat(<?= count($seg) ?>,1fr)">
             <?php foreach ($seg as [$href, $lbl, $on]): echo $on ? '<span aria-current="page">' . h($lbl) . '</span>' : '<a href="' . h($href) . '">' . h($lbl) . '</a>'; endforeach; ?>
@@ -400,7 +401,7 @@ function m2_alokasi_page(PDO $pdo): void
     $back = $dari !== '' ? $dari : ($t['client_id'] ? '?r=client_profile&id=' . (int) $t['client_id'] : '?r=m2_klien');
 
     layout('Alokasi #' . $id, function () use ($t, $id, $nama, $nilai, $fmt, $tipe, $bayarL, $mdl, $mdlC, $mdlB, $lokasi, $luasMaster, $perBulan, $back) {
-        m2_top((string) $nama, $back, 'Alokasi #' . $id);
+        m2_top((string) $nama, $back, 'Alokasi #' . $id . ' · ' . (current_property()['name'] ?? ''));
         $qty = (float) $t['quantity'];
         // Luas unit = master (tetap). Luas sewa = yang tersimpan di transaksi dan dipakai
         // menghitung harga; bisa beda dari unit (sewa sebagian / lebih luas), jadi tidak ditimpa.
