@@ -552,6 +552,7 @@ function permission_labels(): array
         'manage_units'        => 'Ubah Unit (Exhibition, Tipe Unit, Media, Gudang)',
         'manage_pic_target'   => 'Ubah PIC & Target Sales',
         'manage_master'       => 'Kelola Semua Master Data',
+        'manage_offer_templates' => 'Kelola Template Penawaran',
         'import_master'       => 'Import Master',
         'export_reports'      => 'Export Laporan',
         'view_pic_report'     => 'Laporan PIC',
@@ -765,13 +766,31 @@ function permission_matrix(?array $set = null): array
     return $matrix;
 }
 
+/**
+ * Izin tambahan milik SATU ORANG, di luar izin perannya.
+ *
+ * Ada kebutuhan yang tidak pas diwakili peran: satu sales dipercaya mengubah
+ * template surat penawaran, sementara tujuh sales lain tidak. Menaikkan izin
+ * perannya akan memberi wewenang itu ke semua sales; menaikkan perannya akan
+ * melepas pembatasan "sales hanya melihat datanya sendiri". Jadi izinnya
+ * dititipkan ke orangnya, dan HANYA bisa menambah — tidak pernah mencabut apa
+ * yang sudah diberikan perannya.
+ */
+function user_permissions_extra(?array $set = null): array
+{
+    static $extra = [];
+    if ($set !== null) $extra = $set;
+    return $extra;
+}
+
 function can(string $permission): bool
 {
     $role = current_role();
     if ($role === 'superadmin' || $role === 'admin') {
         return true;
     }
-    return in_array($permission, permission_matrix()[$role] ?? [], true);
+    if (in_array($permission, permission_matrix()[$role] ?? [], true)) return true;
+    return in_array($permission, user_permissions_extra(), true);
 }
 
 function require_permission(string $permission): void
@@ -888,7 +907,10 @@ function permission_for_route(string $route): string
         'my_paraf', 'my_paraf_save', 'my_paraf_reset' => 'approve_skp',
         'offers', 'offer_view', 'offer_form', 'offer_save', 'offer_status', 'offer_print', 'offer_template_rule' => 'manage_offers',
         'offer_templates' => 'view_master',
-        'offer_template_form', 'offer_template_save', 'offer_template_preview' => 'manage_master',
+        // Template surat penawaran punya izinnya SENDIRI, bukan manage_master.
+        // Yang perlu mengubah isi surat belum tentu boleh menyentuh unit, PIC,
+        // target, atau client — dan sebaliknya.
+        'offer_template_form', 'offer_template_save', 'offer_template_preview' => 'manage_offer_templates',
         // Halamannya memeriksa superadmin sendiri; gerbang rute ini hanya
         // memastikan peran lain tidak lagi lolos lewat default view_dashboard.
         'recurring_candidates' => 'manage_users',

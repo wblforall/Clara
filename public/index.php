@@ -359,6 +359,16 @@ if (!isset($_SESSION['_perm_matrix']) || (time() - ($_SESSION['_perm_cache_at'] 
             $_permMatrix[$_r['role']][] = $_r['permission'];
         }
         $_SESSION['_perm_matrix']   = $_permMatrix;
+        // Izin tambahan milik orang ini sendiri, di luar izin perannya.
+        // Dibungkus sendiri: kalau tabelnya belum ada (migrasi belum jalan),
+        // izin peran tetap terpasang dan halaman tidak ikut jatuh.
+        $_SESSION['_perm_user'] = [];
+        try {
+            $_permUser = $pdo->prepare('SELECT permission FROM user_permissions WHERE user_id = ?');
+            $_permUser->execute([(int) ($_SESSION['user']['id'] ?? 0)]);
+            $_SESSION['_perm_user'] = $_permUser->fetchAll(PDO::FETCH_COLUMN) ?: [];
+            unset($_permUser);
+        } catch (Throwable $e) {}
         $_SESSION['_perm_cache_at'] = time();
         unset($_permRows, $_permMatrix, $_r);
     } catch (Throwable $e) {}
@@ -366,6 +376,7 @@ if (!isset($_SESSION['_perm_matrix']) || (time() - ($_SESSION['_perm_cache_at'] 
 if (!empty($_SESSION['_perm_matrix'])) {
     permission_matrix($_SESSION['_perm_matrix']);
 }
+user_permissions_extra($_SESSION['_perm_user'] ?? []);
 
 $permission = permission_for_route($route);
 if (!can($permission)) {

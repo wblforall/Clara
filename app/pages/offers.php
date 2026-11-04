@@ -4443,7 +4443,7 @@ function offer_templates_page(PDO $pdo): void
 
 function offer_template_form(PDO $pdo): void
 {
-    require_permission('manage_master');
+    require_permission('manage_offer_templates');
     $pid = current_property_id();
     $id  = (int) getv('id');
     $t = null;
@@ -4907,7 +4907,7 @@ function _offer_template_dari_post(int $pid, string $module, string $unitType, s
  */
 function offer_template_preview(PDO $pdo): void
 {
-    require_permission('manage_master');
+    require_permission('manage_offer_templates');
     verify_csrf();
     $pid    = current_property_id();
     $module = _tpl_module((string) post('module', 'cl'));
@@ -4990,7 +4990,7 @@ function offer_template_preview(PDO $pdo): void
 
 function offer_template_save(PDO $pdo): void
 {
-    require_permission('manage_master');
+    require_permission('manage_offer_templates');
     verify_csrf();
     $pid = current_property_id();
     $id  = (int) post('id');

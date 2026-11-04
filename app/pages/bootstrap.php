@@ -199,7 +199,7 @@ function _nav_tambah(string $key): ?array
         'transactions&module=media' => ['transaction_form&module=media', 'manage_transactions', 'Transaksi Media baru'],
         'transactions&module=gudang'=> ['transaction_form&module=gudang', 'manage_transactions', 'Transaksi Gudang baru'],
         'clients'                   => ['client_form', 'manage_clients', 'Client baru'],
-        'offer_templates'           => ['offer_template_form', 'manage_master', 'Template baru'],
+        'offer_templates'           => ['offer_template_form', 'manage_offer_templates', 'Template baru'],
         'users'                     => ['user_form', 'manage_users', 'User baru'],
     ][$key] ?? null;
 }

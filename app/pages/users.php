@@ -62,12 +62,23 @@ function user_form(PDO $pdo): void
     }
     $allProperties = $pdo->query('SELECT id, name FROM properties WHERE status=\'active\' ORDER BY name')->fetchAll();
     $assignedPropIds = [];
+    $izinTambahan = [];
     if ($id) {
         $apStmt = $pdo->prepare('SELECT property_id FROM user_properties WHERE user_id = ?');
         $apStmt->execute([$id]);
         $assignedPropIds = $apStmt->fetchAll(PDO::FETCH_COLUMN);
+        $ipStmt = $pdo->prepare('SELECT permission FROM user_permissions WHERE user_id = ?');
+        $ipStmt->execute([$id]);
+        $izinTambahan = $ipStmt->fetchAll(PDO::FETCH_COLUMN);
     }
-    layout(($id ? 'Edit' : 'Tambah') . ' User', function () use ($row, $id, $allProperties, $assignedPropIds) {
+    // Izin yang SUDAH dimiliki perannya tidak perlu dicentang lagi di sini —
+    // kotak ini khusus untuk kelebihan yang diberikan ke orangnya saja.
+    $izinPeran = [];
+    foreach ($pdo->query('SELECT role, permission FROM role_permissions')->fetchAll() as $rp) {
+        $izinPeran[$rp['role']][] = $rp['permission'];
+    }
+    $izinPeranIni = $izinPeran[$row['role'] ?? ''] ?? [];
+    layout(($id ? 'Edit' : 'Tambah') . ' User', function () use ($row, $id, $allProperties, $assignedPropIds, $izinTambahan, $izinPeranIni) {
         ?>
         <form method="post" action="?r=user_save">
             <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
@@ -140,6 +151,26 @@ function user_form(PDO $pdo): void
             </div>
             <?php endif; ?>
 
+            <?php /* ── Izin Tambahan (per orang, bukan per peran) ── */ ?>
+            <div class="panel" style="margin-bottom:16px">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:14px">Izin Tambahan</div>
+                <div style="display:flex;flex-wrap:wrap;gap:10px">
+                    <?php foreach (permission_labels() as $kode => $label): ?>
+                    <?php $sudahDariPeran = in_array($kode, $izinPeranIni, true); ?>
+                    <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:<?= $sudahDariPeran ? 'default' : 'pointer' ?>;background:var(--surface,#fff);border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:8px 14px;font-size:13px;opacity:<?= $sudahDariPeran ? '.5' : '1' ?>">
+                        <input type="checkbox" name="extra_permissions[]" value="<?= h($kode) ?>"
+                            <?= $sudahDariPeran ? 'checked disabled' : (in_array($kode, $izinTambahan, true) ? 'checked' : '') ?>>
+                        <?= h($label) ?>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+                <div class="help" style="margin-top:8px">
+                    Hanya MENAMBAH izin untuk orang ini saja &mdash; tidak pernah mencabut apa yang sudah
+                    diberikan perannya di halaman <strong>Hak Akses</strong>. Yang sudah menyala dari peran
+                    ditampilkan abu-abu dan tidak bisa dimatikan di sini.
+                </div>
+            </div>
+
             <div style="display:flex;gap:10px">
                 <button type="submit">Simpan User</button>
                 <a class="btn secondary" href="?r=users">Kembali</a>
@@ -147,6 +178,25 @@ function user_form(PDO $pdo): void
         </form>
         <?php
     });
+}
+
+/**
+ * Simpan izin tambahan milik satu orang.
+ *
+ * Hanya kode izin yang memang dikenal yang disimpan — kiriman formulir tidak
+ * boleh membuat nama izin baru. Cache izin di sesi dibuang supaya perubahannya
+ * langsung terasa, tanpa menunggu 5 menit.
+ */
+function _simpan_izin_tambahan(PDO $pdo, int $userId): void
+{
+    $dikenal = array_keys(permission_labels());
+    $dipilih = array_values(array_intersect((array) (post('extra_permissions') ?: []), $dikenal));
+    $pdo->prepare('DELETE FROM user_permissions WHERE user_id = ?')->execute([$userId]);
+    if ($dipilih) {
+        $ins = $pdo->prepare('INSERT INTO user_permissions (user_id, permission) VALUES (?, ?)');
+        foreach ($dipilih as $kode) $ins->execute([$userId, $kode]);
+    }
+    unset($_SESSION['_perm_matrix'], $_SESSION['_perm_user'], $_SESSION['_perm_cache_at']);
 }
 
 function user_save(PDO $pdo): void
@@ -193,6 +243,7 @@ function user_save(PDO $pdo): void
         foreach ($submittedPropIds as $propId) {
             if ($propId > 0) { $upStmt->execute([$id, $propId]); }
         }
+        _simpan_izin_tambahan($pdo, $id);
     } else {
         $data['password_hash']        = password_hash('123456', PASSWORD_DEFAULT);
         $data['must_change_password'] = 1;
@@ -207,6 +258,7 @@ function user_save(PDO $pdo): void
         foreach ($submittedPropIds as $propId) {
             if ($propId > 0) { $upStmt->execute([$newUserId, $propId]); }
         }
+        _simpan_izin_tambahan($pdo, $newUserId);
         redirect_to('user_created', ['id' => $newUserId]);
     }
     flash('User tersimpan.');
