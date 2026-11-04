@@ -391,6 +391,7 @@ if (mobile_view_active()) {
         if ($route === 'prospects')                       redirect_to('m2_pipeline');
         if ($route === 'clients')                         redirect_to('m2_klien', isset($_GET['q']) ? ['q' => (string) $_GET['q']] : []);
         if ($route === 'calendar')                        redirect_to('m2_kalender');
+        if ($route === 'allocation_detail' && $_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['full'])) redirect_to('m2_alokasi', ['id' => (int) ($_GET['id'] ?? 0)]);
     } else {
         if ($route === 'offers')         redirect_to('m_offers');
         if ($route === 'skp')            redirect_to('m_skp');
@@ -535,6 +536,7 @@ $pageFiles = [
     'm2_unit'                     => 'mobile2.php',
     'm2_kalender'                 => 'mobile2.php',
     'm2_unit_detail'              => 'mobile2.php',
+    'm2_alokasi'                  => 'mobile2b.php',
     'm2_profil'                   => 'mobile2.php',
     'm2_offers'                   => 'mobile2.php',
     'm2_skp'                      => 'mobile2.php',
@@ -693,6 +695,7 @@ match ($route) {
     'm2_unit'                     => m2_unit_page($pdo),
     'm2_kalender'                 => m2_kalender_page($pdo),
     'm2_unit_detail'              => m2_unit_detail_page($pdo),
+    'm2_alokasi'                  => m2_alokasi_page($pdo),
     'm2_profil'                   => m2_profil_page($pdo),
     'm2_offers'                   => m2_offers_page($pdo),
     'm2_skp'                      => m2_skp_page($pdo),

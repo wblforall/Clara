@@ -140,7 +140,7 @@ function m2_top(string $judul, string $kembali = '?r=m_home', string $sub = ''):
 function m2_nav(string $route, PDO $pdo): void
 {
     // Layar turunan (detail unit, profil) tidak memakai menu bawah, seperti prototipe.
-    if (in_array($route, ['m2_unit_detail', 'm2_profil'], true)) return;
+    if (in_array($route, ['m2_unit_detail', 'm2_profil', 'm2_alokasi'], true)) return;
     $manager = current_role() !== 'sales' && can('manage_skp');
     $aktif = match (true) {
         $route === 'm_home'                                   => 'home',
@@ -691,7 +691,7 @@ function m2_kalender_page(PDO $pdo): void
                     var a = document.getElementById('m2dact'); a.textContent = '';
                     if (j.pros) { a.appendChild(aksi('Ubah prospek', '?r=prospect_form&id=' + j.id)); }
                     else if (j.milik) {
-                        a.appendChild(aksi('Rincian', '?r=allocation_detail&id=' + j.id));
+                        a.appendChild(aksi('Rincian', '?r=m2_alokasi&id=' + j.id));
                         <?php if ($bisaBayar): ?>a.appendChild(aksi('Tagihan', '?r=payment_form&id=' + j.id));<?php endif; ?>
                         if (BISA_OFFER) a.appendChild(aksi('Perpanjang', '?r=offer_form&renew_from=' + j.id, true));
                     }

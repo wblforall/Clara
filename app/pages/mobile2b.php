@@ -338,3 +338,125 @@ function m2_klien_page(PDO $pdo): void
         <?php
     }, ['m2' => true]);
 }
+
+/** Detail alokasi transaksi di HP: unit & luasan, nilai, pembayaran, alokasi per bulan. */
+function m2_alokasi_page(PDO $pdo): void
+{
+    $id  = (int) getv('id');
+    $pid = current_property_id();
+    [$sc, $sp] = current_sales_scope_sql($pdo, $pid, 't.pic_name', 't.created_by');
+    $st = $pdo->prepare("SELECT t.*, c.company_name, c.brand_name, cc.name cp_name, cc.phone cp_phone, " . pembayaran_select_sql('t') . "
+                           FROM transactions t
+                           LEFT JOIN master_clients c ON c.id = t.client_id
+                           LEFT JOIN master_client_contacts cc ON cc.id = t.contact_id
+                          WHERE t.id = ? AND t.property_id = ? $sc");
+    $st->execute(array_merge([$id, $pid], $sp));
+    $t = $st->fetch();
+    if (!$t) { flash('Transaksi tidak ditemukan.'); redirect_to('m2_klien'); }
+
+    // Lokasi unit dari master sesuai modul; transaksi sendiri menyimpan luas & jumlahnya.
+    $lokasi = '';
+    try {
+        if ($t['module'] === 'cl') {
+            $q = $pdo->prepare('SELECT floor, location_name, unit_type FROM master_cl_units WHERE property_id = ? AND code = ?');
+            $q->execute([$pid, $t['master_code']]);
+            if ($u = $q->fetch()) $lokasi = trim(($u['floor'] ? $u['floor'] . ' · ' : '') . ($u['location_name'] ?: $u['unit_type']));
+        } elseif ($t['module'] === 'gudang') {
+            $q = $pdo->prepare('SELECT location, name FROM master_gudang WHERE property_id = ? AND code = ?');
+            $q->execute([$pid, $t['master_code']]);
+            if ($u = $q->fetch()) $lokasi = trim(($u['location'] ?: '') . ($u['name'] ? ' · ' . $u['name'] : ''), ' ·');
+        } elseif ($t['module'] === 'media') {
+            $q = $pdo->prepare('SELECT media_type, location, point, size FROM master_media WHERE property_id = ? AND code = ?');
+            $q->execute([$pid, $t['master_code']]);
+            if ($u = $q->fetch()) $lokasi = trim(implode(' · ', array_filter([$u['media_type'], $u['location'], $u['point'], $u['size']])));
+        }
+    } catch (Throwable $e) {}
+
+    $al = $pdo->prepare('SELECT period_key, pic_name, allocated_days, capacity_days, amount, allocation_start, allocation_end
+                           FROM transaction_allocations WHERE transaction_id = ? AND property_id = ?
+                          ORDER BY allocation_start, period_key, id');
+    $al->execute([$id, $pid]);
+    $perBulan = [];
+    foreach ($al->fetchAll() as $a) {
+        $b = &$perBulan[$a['period_key']];
+        $b['jumlah'] = ($b['jumlah'] ?? 0) + (float) $a['amount'];
+        $b['hari']   = ($b['hari'] ?? 0) + (float) $a['allocated_days'];
+        $b['baris'][] = $a;
+        unset($b);
+    }
+    $perBulan = array_map(function ($b) {
+        $b['bagi'] = count(array_unique(array_column($b['baris'], 'pic_name'))) > 1;
+        return $b;
+    }, $perBulan);
+
+    $nama   = $t['brand_name'] ?: ($t['company_name'] ?: 'Transaksi #' . $id);
+    $nilai  = (float) ($t['final_amount'] ?: $t['total_calculated']);
+    $fmt    = fn($v) => rtrim(rtrim(number_format((float) $v, 2, ',', '.'), '0'), ',');
+    $tipe   = ['monthly' => 'Bulanan', 'monthly_area' => 'Bulanan per m²', 'daily_area' => 'Harian per m²', 'daily_point' => 'Harian per titik', 'daily_slot' => 'Harian per slot', 'fixed' => 'Paket tetap'];
+    $bayarL = ['lunas' => ['Lunas', 'hj'], 'sebagian' => ['Sebagian', ''], 'belum_bayar' => ['Belum dibayar', 'ab'], 'belum_invoice' => ['Belum ada invoice', ''], 'tanpa_tagihan' => ['Tanpa tagihan', '']];
+    [$mdl, $mdlC, $mdlB] = _m2_modul((string) $t['module']);
+    $dari = (string) getv('dari', '');
+    $back = $dari !== '' ? $dari : ($t['client_id'] ? '?r=client_profile&id=' . (int) $t['client_id'] : '?r=m2_klien');
+
+    layout('Alokasi #' . $id, function () use ($t, $id, $nama, $nilai, $fmt, $tipe, $bayarL, $mdl, $mdlC, $mdlB, $lokasi, $perBulan, $back) {
+        m2_top((string) $nama, $back, 'Alokasi #' . $id);
+        $qty = (float) $t['quantity'];
+        $luas = (float) $t['area_sqm'];
+        $by = $bayarL[$t['bayar_status']] ?? ['—', ''];
+        ?>
+        <main class="m2-wrap" style="padding-bottom:24px">
+            <section class="m2-card">
+                <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+                    <div><b style="font-size:16px"><?= h($t['master_code']) ?></b><?php if ($lokasi !== ''): ?><br><small style="color:var(--m2-mute)"><?= h($lokasi) ?></small><?php endif; ?></div>
+                    <span class="m2-st" style="background:<?= $mdlB ?>;color:<?= $mdlC ?>"><?= h($mdl) ?></span>
+                </div>
+                <div class="m2-stats" style="margin-top:10px">
+                    <div><small>Luas</small><b><?= $luas > 0 ? h($fmt($luas)) . ' m²' : '—' ?></b></div>
+                    <div><small>Jumlah</small><b><?= $qty > 0 ? h($fmt($qty)) : '—' ?></b></div>
+                    <div><small>Slot</small><b><?= (float) $t['slots'] > 0 ? h($fmt($t['slots'])) : '—' ?></b></div>
+                </div>
+                <div class="m2-prior"><span>Periode</span><span><?= h(m2_tgl_pendek((string) $t['start_date']) . ' ' . substr((string) $t['start_date'], 0, 4) . ' – ' . m2_tgl_pendek((string) $t['end_date']) . ' ' . substr((string) $t['end_date'], 0, 4)) ?><?= (int) $t['contract_months'] > 0 ? ' · ' . (int) $t['contract_months'] . ' bln' : '' ?></span></div>
+                <div class="m2-prior"><span>Skema harga</span><span><?= h($tipe[$t['pricing_type']] ?? $t['pricing_type']) ?><?= (float) $t['unit_rate'] > 0 ? ' · ' . m2_rp((float) $t['unit_rate']) : '' ?></span></div>
+                <div class="m2-prior"><span>Pengakuan</span><span><?= $t['billing_method'] === 'spread' ? 'Dibagi per bulan' : 'Sekaligus' ?></span></div>
+                <div class="m2-prior"><span>PIC</span><span><?= h($t['pic_name'] ?: '—') ?></span></div>
+                <?php if (!empty($t['cp_name'])): ?>
+                <div class="m2-prior"><span>Kontak</span><span><?= h($t['cp_name']) ?><?php if ($t['cp_phone']): ?> · <a href="tel:<?= h($t['cp_phone']) ?>"><?= h($t['cp_phone']) ?></a><?php endif; ?></span></div>
+                <?php endif; ?>
+            </section>
+
+            <section class="m2-card">
+                <h2>Nilai &amp; pembayaran</h2>
+                <div class="m2-prior"><span>Total hitung</span><span><?= m2_rp((float) $t['total_calculated']) ?></span></div>
+                <div class="m2-prior"><span>Nilai final</span><span><b style="color:var(--m2-ink,#0F1623)"><?= m2_rp($nilai) ?></b></span></div>
+                <?php if ($t['invoice_no']): ?><div class="m2-prior"><span>No. invoice</span><span><?= h($t['invoice_no']) ?></span></div><?php endif; ?>
+                <div class="m2-prior"><span>Terbayar</span><span><?= m2_rp((float) $t['terbayar']) ?> dari <?= m2_rp((float) $t['tagihan']) ?></span></div>
+                <div class="m2-prior"><span>Status</span><span class="m2-st <?= $by[1] ?>"><?= h($by[0]) ?><?= (int) $t['bayar_lewat'] ? ' · lewat tempo' : '' ?></span></div>
+            </section>
+
+            <section class="m2-card">
+                <h2>Alokasi per bulan</h2>
+                <?php if (!$perBulan): ?><div class="m2-empty" style="padding:12px 0 4px">Belum ada alokasi untuk transaksi ini.</div>
+                <?php else: foreach ($perBulan as $pk => $b): ?>
+                <div class="m2-prior"><span><b><?= h(pembayaran_nama_bulan((string) $pk)) ?></b><br><small><?= h($fmt($b['hari'])) ?> hari</small></span><span><b style="color:var(--m2-ink,#0F1623)"><?= m2_rp($b['jumlah']) ?></b></span></div>
+                <?php if ($b['bagi']): foreach ($b['baris'] as $r): ?>
+                <div class="m2-prior" style="padding-left:12px;font-size:12.5px"><span><?= h($r['pic_name'] ?: '—') ?></span><span><?= m2_rp((float) $r['amount']) ?></span></div>
+                <?php endforeach; endif; endforeach; ?>
+                <div class="m2-prior"><span><b>Total</b></span><span><b style="color:var(--m2-ink,#0F1623)"><?= m2_rp(array_sum(array_column($perBulan, 'jumlah'))) ?></b></span></div>
+                <?php endif; ?>
+            </section>
+
+            <section class="m2-card">
+                <h2>Tindakan</h2>
+                <?php if (($t['module'] ?? '') === 'cl' && can('manage_skp')): ?>
+                <a class="m2-row" href="?r=skp_form&transaction_id=<?= $id ?>"><span class="ri"><?= m2_ic('surat') ?></span><span class="t">Buat / lihat SKP</span><?= m2_ic('kanan') ?></a>
+                <?php endif; ?>
+                <?php if (can('manage_transactions')): ?>
+                <a class="m2-row" href="?r=transaction_edit&id=<?= $id ?>"><span class="ri"><?= m2_ic('surat') ?></span><span class="t">Edit transaksi</span><?= m2_ic('kanan') ?></a>
+                <?php endif; ?>
+                <a class="m2-row" href="?r=transaction_history&id=<?= $id ?>"><span class="ri"><?= m2_ic('surat') ?></span><span class="t">Riwayat perubahan</span><?= m2_ic('kanan') ?></a>
+                <a class="m2-row" href="?r=allocation_detail&id=<?= $id ?>&full=1"><span class="ri"><?= m2_ic('surat') ?></span><span class="t">Pengaturan lengkap (harga bertahap, bagi PIC)</span><?= m2_ic('kanan') ?></a>
+            </section>
+        </main>
+        <?php
+    }, ['m2' => true]);
+}

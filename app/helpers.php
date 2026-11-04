@@ -897,7 +897,7 @@ function permission_for_route(string $route): string
         'm_exec' => 'view_exec_summary',
         'm_offers' => 'manage_offers',
         'm_skp' => 'manage_skp',
-        'm2_unit', 'm2_kalender', 'm2_unit_detail' => 'view_transactions',
+        'm2_unit', 'm2_kalender', 'm2_unit_detail', 'm2_alokasi' => 'view_transactions',
         'm2_profil' => 'view_dashboard',
         'm2_offers' => 'manage_offers',
         'm2_skp' => 'manage_skp',
