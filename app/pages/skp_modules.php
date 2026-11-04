@@ -130,11 +130,32 @@ function skp_css_rapat(int $tingkat): string
  * Dipanggil dengan $ulang = true di awal tiap kali surat dirender, supaya
  * penomorannya selalu mulai dari 1.
  */
-function skp_potong_kelas(bool $ulang = false): string
+function skp_potong_nomor(bool $ulang = false): int
 {
     static $n = 0;
-    if ($ulang) { $n = 0; return ''; }
-    return ' potong-' . (++$n);
+    if ($ulang) { $n = 0; return 0; }
+    return ++$n;
+}
+
+function skp_potong_kelas(bool $ulang = false): string
+{
+    if ($ulang) { skp_potong_nomor(true); return ''; }
+    return ' potong-' . skp_potong_nomor();
+}
+
+/**
+ * Titik potong yang SEDANG dipilih penyesuai halaman (0 = tidak dibagi).
+ *
+ * Dibutuhkan bagian yang tidak bisa dipotong lewat CSS saja — daftar bernomor
+ * peraturan gudang. mPDF mengulang penomoran dari 1 kalau satu <ol> dipotong
+ * di tengah, jadi daftarnya harus dipecah jadi dua <ol> dengan start= yang
+ * benar, dan itu hanya bisa dilakukan saat HTML-nya dibangun.
+ */
+function skp_potong_dipilih(?int $ke = null): int
+{
+    static $pilih = 0;
+    if ($ke !== null) $pilih = $ke;
+    return $pilih;
 }
 
 /** Gaya yang memaksa bagian ke-$ke mulai di halaman baru. 0 = tidak dibagi. */
@@ -711,9 +732,33 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
             // surat gudang tidak muat satu halaman, di sinilah batas yang
             // masuk akal untuk membaginya.
             $o .= '<p class="judul-aturan' . skp_potong_kelas() . '"><strong>Peraturan Sewa Gudang :</strong></p><ol class="aturan">';
-            foreach ($tpl['terms'] as $t) {
+            // Tiap poin peraturan jadi titik potong halaman. Kalau suratnya
+            // tidak muat satu halaman, dibagi DI ANTARA POIN — halaman pertama
+            // tetap terisi penuh sampai poin terakhir yang muat. Memotong di
+            // judulnya saja membuat halaman pertama tinggal separuh.
+            // Poin pertama sengaja dilewati: memotong di situ meninggalkan
+            // judul "Peraturan Sewa Gudang :" sendirian di kaki halaman.
+            foreach ($tpl['terms'] as $iTerm => $t) {
                 $t = skp_fill((string) $t, ['deposit' => $rp($d['deposit_amount'] ?? ($amt['deposit'] ?? 0))]);
-                $o .= '<li>' . $h($t) . '</li>';
+                $kelas = '';
+                if ($iTerm > 0) {
+                    $nomor = skp_potong_nomor();
+                    if ($nomor === skp_potong_dipilih()) {
+                        // Daftarnya DIPECAH, bukan sekadar diberi page-break:
+                        // mPDF memulai ulang penomoran dari 1 kalau satu <ol>
+                        // terpotong di tengah. <ol start="..."> menyambungnya
+                        // dengan benar, dan nomor poin di surat tidak boleh
+                        // salah walau sehalaman pun.
+                        $o .= '</ol><ol class="aturan" start="' . ($iTerm + 1)
+                            . '" style="page-break-before:always;margin-top:0">';
+                    } else {
+                        // Kelas "poin" hanya penanda; spasi sebelum "potong-"
+                        // itulah yang dihitung pemanggil sebagai calon titik
+                        // potong (lihat _skp_kirim_pdf di skp.php).
+                        $kelas = ' class="poin potong-' . $nomor . '"';
+                    }
+                }
+                $o .= '<li' . $kelas . '>' . $h($t) . '</li>';
             }
             $o .= '</ol>';
         }

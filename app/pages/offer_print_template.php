@@ -245,19 +245,21 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
 .rek{background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;margin-top:6px;font-size:11px;line-height:1.7}
 .tnc li{font-size:11px;color:#374151;page-break-inside:avoid}
 .sign{width:100%;border-collapse:collapse;margin-top:22px;page-break-inside:avoid;table-layout:fixed}
-.sign td.col{width:50%;vertical-align:top;padding:0 6px}
+.sign td.col{width:50%;vertical-align:top;padding:0 6px;text-align:center;font-size:10.5px}
 /* Ruang tanda tangan: SATU tinggi untuk kedua kolom, isinya menempel ke
    dasar, supaya nama penanda tangan kiri & kanan sejajar apa pun isinya
    (QR, coretan tanda tangan, atau ruang kosong bergaris). Dibuat sebagai
    sel tabel karena mPDF mengabaikan height pada div. Selektornya sengaja
    satu tingkat: mPDF tidak mencocokkan ".sign .x" untuk isi di dalam sel. */
 table.sigarea{width:100%;border-collapse:collapse;margin:0}
-table.sigarea td{height:22mm;vertical-align:bottom;text-align:left;padding:0;border:none}
+table.sigarea td{height:22mm;vertical-align:bottom;text-align:center;padding:0;border:none}
 .ttd-img{height:58px;width:auto;margin:2px 0}
-.nm{font-weight:bold;display:block;padding-top:3px}
-.jab{font-weight:bold;font-style:italic;color:#111}
+/* Ukurannya disamakan dengan blok tanda tangan SKP/Gudang (skp_print_body.php)
+   supaya semua surat yang keluar dari CLARA berbentuk sama. */
+.nm{font-weight:bold;display:block;padding-top:3px;font-size:12.5px}
+.jab{font-weight:bold;font-style:italic;color:#111;font-size:10.5px}
 .ttd-ket{font-weight:normal;font-style:normal;color:#6b7280;font-size:8px}
-.qrbox{width:70px;height:70px;margin:6px 0 3px}
+.qrbox{width:70px;height:70px;margin:6px auto 3px}
 .qrbox img,.qrbox svg{width:70px!important;height:70px!important;display:block}
 .qrhint{font-size:7.5px;color:#6b7280;margin-bottom:3px}
 .muted{color:#6b7280}
@@ -726,7 +728,7 @@ table.sigarea td{height:22mm;vertical-align:bottom;text-align:left;padding:0;bor
     }
     // Ruang kosong bergaris untuk tanda tangan saat dicetak. mPDF mengabaikan
     // height pada div tapi menghormatinya pada sel tabel.
-    $garisTtd = '<table style="width:26mm;border-collapse:collapse"><tr>'
+    $garisTtd = '<table style="width:26mm;margin:0 auto;border-collapse:collapse"><tr>'
               . '<td style="height:18mm;border-bottom:1px solid #111;font-size:1pt;color:#ffffff">&nbsp;</td>'
               . '</tr></table>';
     $namaKanan = $custSigned ? ($o['sign_name'] ?: ($o['cp_name'] ?? '-')) : (string) ($o['cp_name'] ?? '');

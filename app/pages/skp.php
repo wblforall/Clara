@@ -4475,7 +4475,11 @@ function _skp_kirim_pdf(array $ctx, string $docType, string $namaBerkas, string 
     //    lebih baik halaman terakhir agak kosong daripada halaman pertama.
     $terbaik = $skor($isi);
     $pilih   = $pdf;
-    for ($ke = 1; $ke <= $jumlahPotong; $ke++) {
+    // Dikunci dari render pertama: bagian yang memotong dirinya sendiri tidak
+    // ikut menghitung dirinya saat sedang terpilih, jadi angkanya bisa
+    // berkurang satu di tengah penelusuran.
+    $totalPotong = $jumlahPotong;
+    for ($ke = 1; $ke <= $totalPotong; $ke++) {
         [$coba, $halCoba, $isiCoba] = $buat(0, $ke);
         if ($halCoba !== $halaman) continue;   // pembagian tidak boleh menambah halaman
         if (!$wajar($isiCoba)) continue;

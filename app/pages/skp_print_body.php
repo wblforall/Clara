@@ -50,8 +50,11 @@ foreach (($d['paraf'] ?? []) as $iPf => $pf) {
         'w'    => (float) $set['lebar'],
     ];
 }
-// Penomoran titik potong halaman dimulai dari nol tiap kali surat dirender.
+// Penomoran titik potong halaman dimulai dari nol tiap kali surat dirender,
+// dan bagian yang memotong dirinya sendiri (daftar bernomor) diberi tahu titik
+// mana yang sedang dipilih.
 skp_potong_kelas(true);
+skp_potong_dipilih((int) ($POTONG ?? 0));
 $skpNotes = skp_terms();
 // Nama di blok "Mengetahui": manajer yang tercatat di pengaturan
 // (doc_manager_name). Tanpa itu, dipakai nama yang menekan tombol Setujui —
@@ -112,16 +115,20 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 /* Selektor blok tanda tangan sengaja cuma DUA tingkat (.skpdoc .x).
    mPDF tidak mencocokkan selektor tiga tingkat untuk isi di dalam sel tabel,
    jadi ".skpdoc .sign .role" dulu tidak pernah terpakai sama sekali. */
-.skpdoc .role { color: #6b7280; margin-bottom: 4px; }
+.skpdoc .role { color: #6b7280; margin-bottom: 4px; font-size: 10.5px; }
 /* Ruang tanda tangan: SATU tinggi untuk ketiga kolom, isinya menempel ke
    dasar. Dibuat sebagai sel tabel karena mPDF mengabaikan height pada div.
    Inilah yang membuat nama ketiga penanda tangan sejajar, apa pun isinya —
    QR, coretan tanda tangan, atau ruang kosong bergaris. */
 .skpdoc table.sigarea { width: 100%; border-collapse: collapse; margin: 0; }
 .skpdoc table.sigarea td { height: 22mm; vertical-align: bottom; text-align: center; padding: 0; border: none; }
-.skpdoc .name { font-weight: bold; display: block; padding-top: 3px; }
+/* Nama penanda tangan sengaja lebih besar daripada baris lain di blok ini —
+   itulah yang dibaca orang lebih dulu. Ukurannya ditulis tegas (bukan
+   diwariskan) supaya SAMA PERSIS di semua jenis surat: SKP, Gudang, Form
+   Utilities, dan Surat Penawaran. */
+.skpdoc .name { font-weight: bold; display: block; padding-top: 3px; font-size: 12.5px; }
 /* Jabatan: TEBAL MIRING di semua jenis surat, sama untuk ketiga kolom. */
-.skpdoc .jab { font-weight: bold; font-style: italic; color: #111; }
+.skpdoc .jab { font-weight: bold; font-style: italic; color: #111; font-size: 10.5px; }
 .skpdoc .ttd-ket { font-weight: normal; font-style: normal; color: #6b7280; font-size: 8px; }
 .skpdoc .qrbox { width: 70px; height: 70px; margin: 0 auto 3px; }
 .skpdoc .qrbox img, .skpdoc .qrbox svg { width: 70px !important; height: 70px !important; display: block; }
@@ -156,6 +163,13 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc.kertas ol.aturan li { text-align: justify; margin-bottom: 2px; }
 .skpdoc.kertas .role { color: #000; }
 .skpdoc.kertas .name { font-weight: bold; color: #000; }
+/* Surat kertas (Gudang/Media) memakai satuan pt dengan isi 11pt, jadi angka
+   px di atas akan terbaca jauh lebih kecil daripada badan suratnya. Angkanya
+   sama, satuannya mengikuti surat — perbandingannya dengan isi surat jadi
+   persis sama seperti di SKP. */
+.skpdoc.kertas .role { font-size: 10.5pt; }
+.skpdoc.kertas .name { font-size: 12.5pt; }
+.skpdoc.kertas .jab  { font-size: 10.5pt; }
 </style>
 <?php /* Lapisan pemadatan OTOMATIS. Kosong pada keadaan biasa; hanya terisi
          kalau penyesuai halaman di skp.php memutuskan surat ini "nanggung".
