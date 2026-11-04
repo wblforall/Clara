@@ -4413,7 +4413,7 @@ function offer_templates_page(PDO $pdo): void
             <?php foreach (_tpl_modules() as $mk => $ml): ?>
             <a class="btn light" style="<?= $mk === $module ? 'background:#0d9488;color:#fff;font-weight:700;border-color:#0d9488' : '' ?>" href="?r=offer_templates&module=<?= h($mk) ?>"><?= h($ml) ?></a>
             <?php endforeach; ?>
-            <?php if (can('manage_master')): ?><a class="btn" style="margin-left:auto" href="?r=offer_template_form&module=<?= h($module) ?>">+ Tambah Template</a><?php endif; ?>
+            <?php if (can('manage_offer_templates')): ?><a class="btn" style="margin-left:auto" href="?r=offer_template_form&module=<?= h($module) ?>">+ Tambah Template</a><?php endif; ?>
         </div>
         <div class="panel" style="margin-top:12px">
             <p class="muted" style="margin-top:0"><?= _tpl_module_help($module) ?></p>
@@ -4430,7 +4430,7 @@ function offer_templates_page(PDO $pdo): void
                         <td><?= $t['dp_required'] ? 'Wajib · ' . h(rtrim(rtrim(number_format((float)$t['dp_months_default'],1,',',''),'0'),',')) . ' bln' : '<span class="muted">Tanpa DP</span>' ?></td>
                         <td class="muted"><?= $n($t['fasilitas_json']) ?> / <?= $n($t['media_json'] ?? '[]') ?> / <?= $n($t['payment_json']) ?> / <?= $n($t['terms_json']) ?></td>
                         <td><?= $t['status'] === 'active' ? '<span style="color:#16a34a">Aktif</span>' : '<span class="muted">Nonaktif</span>' ?></td>
-                        <td><?php if (can('manage_master')): ?><a class="btn light" href="?r=offer_template_form&id=<?= (int)$t['id'] ?>">Edit</a><?php endif; ?></td>
+                        <td><?php if (can('manage_offer_templates')): ?><a class="btn light" href="?r=offer_template_form&id=<?= (int)$t['id'] ?>">Edit</a><?php endif; ?></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$tpls): ?><tr><td colspan="8" class="muted">Belum ada template untuk modul ini.</td></tr><?php endif; ?>
