@@ -3130,6 +3130,16 @@ function transaction_overlaps_page(PDO $pdo): void
         $params[] = $periodFilter . '-01';
     }
 
+    // Saringan versi satu-tabel, dipakai kueri kelompok "kembar persis".
+    $grupWhere = ''; $grupParams = [$pid];
+    if ($moduleFilter)     { $grupWhere .= ' AND t.module = ?';   $grupParams[] = $moduleFilter; }
+    if ($picFilter !== '') { $grupWhere .= ' AND t.pic_name = ?'; $grupParams[] = $picFilter; }
+    if ($periodFilter) {
+        $grupWhere .= ' AND t.start_date <= LAST_DAY(?) AND t.end_date >= ?';
+        $grupParams[] = $periodFilter . '-01';
+        $grupParams[] = $periodFilter . '-01';
+    }
+
     $stmt = $pdo->prepare(
         "SELECT t1.id id1, t1.module, t1.master_code,
                 t1.start_date start1, t1.end_date end1,
@@ -3139,7 +3149,9 @@ function transaction_overlaps_page(PDO $pdo): void
                 COALESCE(c2.company_name, '-') client2, COALESCE(t2.pic_name, '-') pic2,
                 -- Lama tabrakannya: yang bertabrakan 3 bulan jelas bukan unit
                 -- yang kebetulan dibagi slot, dan harus ditangani lebih dulu.
-                DATEDIFF(LEAST(t1.end_date, t2.end_date), GREATEST(t1.start_date, t2.start_date)) + 1 hari_tabrak
+                DATEDIFF(LEAST(t1.end_date, t2.end_date), GREATEST(t1.start_date, t2.start_date)) + 1 hari_tabrak,
+                GREATEST(t1.start_date, t2.start_date) tabrak_mulai,
+                LEAST(t1.end_date, t2.end_date)        tabrak_akhir
          FROM transactions t1
          JOIN transactions t2 ON t2.master_code = t1.master_code
              AND t2.property_id = t1.property_id
@@ -3158,46 +3170,72 @@ function transaction_overlaps_page(PDO $pdo): void
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
 
-    // ── Kembar persis ────────────────────────────────────────────────────────
+    // ── Sewa yang tercatat lebih dari sekali ─────────────────────────────────
     // Unit sama, client sama, tanggal mulai DAN selesai sama, nilai sama. Unit
     // yang dibagi per slot tidak pernah berbentuk begitu: slot yang berbeda
     // dijual ke client yang berbeda. Jadi bentuk ini hampir selalu satu
-    // kesepakatan yang terinput dua kali — dan incomenya ikut dihitung dua
-    // kali. Okt 2026: Toshiko di 16/GF ISLAND Rp 50 juta dan Fitril Akbar di
-    // 05/LG Fashion Booth Rp 7,5 juta, keduanya dobel.
-    $kembarSql = "SELECT t1.id id1, t1.module, t1.master_code,
-                         t1.start_date start1, t1.end_date end1,
-                         COALESCE(c1.brand_name, c1.company_name, '-') client1,
-                         COALESCE(t1.pic_name, '-') pic1,
-                         COALESCE(t1.final_amount, t1.total_calculated) nilai,
-                         t2.id id2, COALESCE(t2.pic_name, '-') pic2,
-                         (SELECT s.skp_no FROM skp_documents s
-                           WHERE s.transaction_id = t1.id AND s.deleted_at IS NULL
-                           ORDER BY s.id DESC LIMIT 1) skp1,
-                         (SELECT s.skp_no FROM skp_documents s
-                           WHERE s.transaction_id = t2.id AND s.deleted_at IS NULL
-                           ORDER BY s.id DESC LIMIT 1) skp2
-                    FROM transactions t1
-                    JOIN transactions t2 ON t2.master_code = t1.master_code
-                        AND t2.property_id = t1.property_id
-                        AND t2.id > t1.id
-                        AND t2.start_date = t1.start_date
-                        AND t2.end_date   = t1.end_date
-                        AND t1.client_id IS NOT NULL AND t2.client_id = t1.client_id
-                        AND ABS(COALESCE(t2.final_amount, t2.total_calculated)
-                              - COALESCE(t1.final_amount, t1.total_calculated)) < 1
-                    LEFT JOIN master_clients c1 ON c1.id = t1.client_id
-                   WHERE " . transaksi_sah_sql('t1') . "
-                     AND " . transaksi_sah_sql('t2') . "
-                     AND t1.property_id = ?
-                     $extraWhere
-                   ORDER BY nilai DESC, t1.master_code
-                   LIMIT 200";
-    $kembarSt = $pdo->prepare($kembarSql);
-    $kembarSt->execute($params);
-    $kembar = $kembarSt->fetchAll();
+    // kesepakatan yang terinput berulang — dan incomenya ikut terhitung ulang.
+    //
+    // Dikelompokkan, BUKAN dipasang-pasangkan. Satu sewa yang terinput tiga
+    // kali menghasilkan tiga pasang (A-B, A-C, B-C): terbaca seperti tiga
+    // masalah berbeda, dan kelebihannya ikut terhitung tiga kali padahal yang
+    // berlebih hanya dua baris. Satu kelompok = satu kasus = satu kotak.
+    $grupSql = "SELECT t.master_code, t.module, t.client_id, t.start_date, t.end_date,
+                       ROUND(COALESCE(t.final_amount, t.total_calculated)) nilai,
+                       COUNT(*) n, GROUP_CONCAT(t.id ORDER BY t.id) ids
+                  FROM transactions t
+                 WHERE " . transaksi_sah_sql('t') . "
+                   AND t.property_id = ? AND t.client_id IS NOT NULL
+                   $grupWhere
+                 GROUP BY t.master_code, t.module, t.client_id, t.start_date, t.end_date, nilai
+                HAVING n > 1
+                 ORDER BY (COUNT(*) - 1) * ROUND(COALESCE(t.final_amount, t.total_calculated)) DESC
+                 LIMIT 100";
+    $grupSt = $pdo->prepare($grupSql);
+    $grupSt->execute($grupParams);
+    $grup = $grupSt->fetchAll();
 
-    layout('Cek Overlap Transaksi', function () use ($rows, $kembar, $moduleFilter, $periodFilter, $picFilter, $moduleLabel) {
+    // Anggota tiap kelompok — PIC, dokumen, dan kapan diinput. Diambil sekali
+    // untuk seluruh kelompok, bukan satu kueri per kelompok.
+    $semuaId = [];
+    foreach ($grup as $g) foreach (explode(',', (string) $g['ids']) as $x) $semuaId[] = (int) $x;
+    $anggota = [];
+    if ($semuaId) {
+        $tanda = implode(',', array_fill(0, count($semuaId), '?'));
+        $aSt = $pdo->prepare("SELECT t.id, COALESCE(t.pic_name, '—') pic, t.created_at,
+                                     COALESCE(t.created_by, '—') oleh,
+                                     (SELECT s.skp_no FROM skp_documents s
+                                       WHERE s.transaction_id = t.id AND s.deleted_at IS NULL
+                                       ORDER BY s.id DESC LIMIT 1) skp_no,
+                                     (SELECT s.id FROM skp_documents s
+                                       WHERE s.transaction_id = t.id AND s.deleted_at IS NULL
+                                       ORDER BY s.id DESC LIMIT 1) skp_id
+                                FROM transactions t WHERE t.id IN ($tanda) ORDER BY t.id");
+        $aSt->execute($semuaId);
+        foreach ($aSt->fetchAll() as $a) $anggota[(int) $a['id']] = $a;
+    }
+
+    // Nama unit & client, supaya kartunya terbaca tanpa harus hafal kode.
+    $namaUnit = []; $namaClient = [];
+    if ($grup) {
+        foreach ([['cl', 'master_cl_units', 'location_name'], ['gudang', 'master_gudang', 'name']] as [$mod, $tbl, $kol]) {
+            $kode = array_values(array_unique(array_map(fn($g) => (string) $g['master_code'],
+                array_filter($grup, fn($g) => $g['module'] === $mod))));
+            if (!$kode) continue;
+            $st = $pdo->prepare("SELECT code, $kol nm FROM $tbl WHERE property_id = ? AND code IN ("
+                . implode(',', array_fill(0, count($kode), '?')) . ")");
+            $st->execute(array_merge([$pid], $kode));
+            foreach ($st->fetchAll() as $u) $namaUnit[$mod . '|' . $u['code']] = (string) $u['nm'];
+        }
+        $cid = array_values(array_unique(array_map(fn($g) => (int) $g['client_id'], $grup)));
+        $st = $pdo->prepare("SELECT id, company_name, COALESCE(brand_name,'') brand FROM master_clients WHERE id IN ("
+            . implode(',', array_fill(0, count($cid), '?')) . ")");
+        $st->execute($cid);
+        foreach ($st->fetchAll() as $c) $namaClient[(int) $c['id']] = $c;
+    }
+
+    layout('Cek Overlap Transaksi', function () use ($rows, $grup, $anggota, $namaUnit, $namaClient,
+                                                    $moduleFilter, $periodFilter, $picFilter, $moduleLabel) {
         ?>
         <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:14px">
             <a class="btn secondary" href="?r=transactions">← Kembali</a>
@@ -3229,54 +3267,111 @@ function transaction_overlaps_page(PDO $pdo): void
             </form>
         </div>
 
-        <?php if ($kembar): ?>
-            <?php $totalKembar = array_sum(array_map(fn($k) => (float) $k['nilai'], $kembar)); ?>
-            <div class="panel" style="border-color:#DC2626;margin-bottom:16px">
+        <?php
+        // Tanggal gaya Indonesia, supaya kartunya terbaca seperti kalimat.
+        $tglID = function (?string $d): string {
+            $t = strtotime((string) $d);
+            if (!$t) return '—';
+            $b = [1=>'Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+            return (int) date('j', $t) . ' ' . $b[(int) date('n', $t)] . ' ' . date('Y', $t);
+        };
+        ?>
+        <?php if ($grup): ?>
+            <?php $totalLebih = array_sum(array_map(fn($g) => ((int) $g['n'] - 1) * (float) $g['nilai'], $grup)); ?>
+            <div class="panel" style="border-color:#DC2626;margin-bottom:18px">
                 <div style="background:#FEE2E2;margin:-16px -16px 14px;padding:12px 16px;border-radius:8px 8px 0 0">
-                    <div style="font-weight:700;color:#991B1B;font-size:14px">
-                        <?= count($kembar) ?> pasang baris KEMBAR PERSIS &mdash; income terhitung dua kali
+                    <div style="font-weight:700;color:#991B1B;font-size:14.5px">
+                        <?= count($grup) ?> sewa tercatat lebih dari sekali &mdash; income terhitung berulang
                         <?= $periodFilter ? ' di ' . h(period_label($periodFilter)) : '' ?>
                     </div>
                     <div style="font-size:12.5px;color:#7F1D1D;margin-top:4px">
-                        Unit, client, tanggal, dan nilainya sama persis. Unit yang dibagi per slot tidak pernah
-                        begini &mdash; slot berbeda dijual ke client berbeda. Kelebihan hitungnya
-                        <strong>Rp <?= number_format($totalKembar, 0, ',', '.') ?></strong>.
-                        Pastikan dulu mana SKP yang benar-benar dipegang client, lalu ajukan
-                        <a href="?r=deletion_request" style="color:#991B1B;font-weight:700">Pengajuan Hapus Data</a>
-                        untuk yang satunya &mdash; jangan diubah nilainya jadi nol.
+                        Kelebihan hitungnya <strong>Rp <?= number_format($totalLebih, 0, ',', '.') ?></strong>.
+                        Tiap kotak di bawah adalah <strong>satu sewa</strong> &mdash; lengkap dengan semua
+                        barisnya, siapa PIC-nya, dan siapa yang menginput. Tidak perlu bolak-balik.
                     </div>
                 </div>
-                <div class="table-wrap">
-                    <table style="font-size:12px">
-                        <thead>
-                            <tr>
-                                <th>Kode Unit</th><th>Client</th><th>Periode</th>
-                                <th style="text-align:right">Nilai (per baris)</th>
-                                <th>Baris pertama</th><th>Baris kedua</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        <?php foreach ($kembar as $k): ?>
-                            <tr>
-                                <td style="font-weight:600"><?= h($k['master_code']) ?></td>
-                                <td><?= h($k['client1']) ?></td>
-                                <td style="white-space:nowrap"><?= h($k['start1']) ?><br><?= h($k['end1']) ?></td>
-                                <td style="text-align:right;font-weight:700;white-space:nowrap">Rp <?= number_format((float) $k['nilai'], 0, ',', '.') ?></td>
-                                <td>
-                                    <a href="?r=allocation_detail&id=<?= (int) $k['id1'] ?>">#<?= (int) $k['id1'] ?></a>
-                                    <?= $k['skp1'] ? ' · ' . h($k['skp1']) : '' ?><br>
-                                    <span style="color:var(--muted)"><?= h($k['pic1']) ?></span>
-                                </td>
-                                <td>
-                                    <a href="?r=allocation_detail&id=<?= (int) $k['id2'] ?>">#<?= (int) $k['id2'] ?></a>
-                                    <?= $k['skp2'] ? ' · ' . h($k['skp2']) : '' ?><br>
-                                    <span style="color:var(--muted)"><?= h($k['pic2']) ?></span>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                        </tbody>
-                    </table>
+
+                <?php foreach ($grup as $g):
+                    $n     = (int) $g['n'];
+                    $nilai = (float) $g['nilai'];
+                    $lebih = ($n - 1) * $nilai;
+                    $unit  = $namaUnit[$g['module'] . '|' . $g['master_code']] ?? '';
+                    $cl    = $namaClient[(int) $g['client_id']] ?? [];
+                    $ids   = array_map('intval', explode(',', (string) $g['ids']));
+                    // Siapa saja yang terlibat — inilah "antara siapa dengan siapa".
+                    $pics  = [];
+                    foreach ($ids as $tid) { $pp = $anggota[$tid]['pic'] ?? ''; if ($pp !== '' && !in_array($pp, $pics, true)) $pics[] = $pp; }
+                    ?>
+                <div style="border:1px solid #FCA5A5;border-radius:10px;padding:13px 15px;margin-bottom:12px;background:#FFFBFB">
+                    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;justify-content:space-between">
+                        <div style="font-size:14px;font-weight:700;color:#0F2A3F">
+                            <?= h($cl['company_name'] ?? '—') ?><?= !empty($cl['brand']) ? ' <span style="font-weight:400;color:var(--muted)">· ' . h($cl['brand']) . '</span>' : '' ?>
+                        </div>
+                        <div style="font-size:12.5px;font-weight:800;color:#991B1B;white-space:nowrap">
+                            tercatat <?= $n ?>&times; &middot; kelebihan Rp <?= number_format($lebih, 0, ',', '.') ?>
+                        </div>
+                    </div>
+                    <div style="font-size:12.5px;color:#475569;margin-top:3px">
+                        <strong><?= h($g['master_code']) ?></strong><?= $unit !== '' ? ' &middot; ' . h($unit) : '' ?>
+                        &middot; <?= h($moduleLabel[$g['module']] ?? $g['module']) ?>
+                        &middot; <?= h($tglID($g['start_date'])) ?> &ndash; <?= h($tglID($g['end_date'])) ?>
+                        &middot; Rp <?= number_format($nilai, 0, ',', '.') ?> per baris
+                    </div>
+                    <?php if (count($pics) > 1): ?>
+                    <div style="font-size:12.5px;margin-top:6px;color:#92400E;background:#FEF3C7;border-radius:6px;padding:5px 9px;display:inline-block">
+                        <?php // "A dan B", atau "A, B, dan C" — jumlahnya ikut isinya.
+                        $nama = array_map('h', $pics);
+                        $akhir = array_pop($nama);
+                        $gabung = $nama ? implode('</strong>, <strong>', $nama) . '</strong> dan <strong>' . $akhir : $akhir; ?>
+                        Antara <strong><?= $gabung ?></strong>
+                        &mdash; <?= count($pics) ?> PIC menginput sewa yang sama.
+                    </div>
+                    <?php else: ?>
+                    <div style="font-size:12.5px;margin-top:6px;color:#92400E;background:#FEF3C7;border-radius:6px;padding:5px 9px;display:inline-block">
+                        Semuanya atas nama <strong><?= h($pics[0] ?? '—') ?></strong> &mdash; satu orang menginput <?= $n ?> kali.
+                    </div>
+                    <?php endif; ?>
+
+                    <div class="table-wrap" style="margin-top:9px">
+                        <table style="font-size:12px;background:#fff">
+                            <thead><tr>
+                                <th style="width:12%">Transaksi</th><th style="width:16%">PIC</th>
+                                <th style="width:22%">Dokumen SKP</th><th style="width:24%">Diinput</th>
+                                <th style="width:26%">Buka</th>
+                            </tr></thead>
+                            <tbody>
+                            <?php foreach ($ids as $i => $tid): $a = $anggota[$tid] ?? null; if (!$a) continue; ?>
+                                <tr>
+                                    <td style="font-weight:700">#<?= $tid ?>
+                                        <?php if ($i === 0): ?><br><span style="font-size:10.5px;color:#047857;font-weight:600">paling awal</span><?php endif; ?></td>
+                                    <td><?= h($a['pic']) ?></td>
+                                    <td><?= $a['skp_no'] ? h($a['skp_no']) : '<span style="color:var(--muted)">belum ada</span>' ?></td>
+                                    <td style="white-space:nowrap"><?= h($tglID(substr((string) $a['created_at'], 0, 10))) ?>
+                                        <br><span style="color:var(--muted);font-size:11px">oleh <?= h($a['oleh']) ?></span></td>
+                                    <td style="white-space:nowrap">
+                                        <a class="btn light" style="padding:3px 9px;font-size:11.5px" href="?r=allocation_detail&amp;id=<?= $tid ?>">Transaksi</a>
+                                        <?php if ($a['skp_id']): ?>
+                                        <a class="btn light" style="padding:3px 9px;font-size:11.5px" href="?r=skp_form&amp;id=<?= (int) $a['skp_id'] ?>">Dokumen</a>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style="font-size:11.5px;color:#7F1D1D;margin-top:8px;line-height:1.55">
+                        <strong>Kenapa ditandai:</strong> <?= $n ?> baris di atas sama persis pada
+                        <strong>unit, client, tanggal mulai, tanggal selesai, dan nilainya</strong>.
+                        Satu penyewa tidak mungkin menyewa unit yang sama untuk tanggal yang sama lebih dari sekali.<br>
+                        <strong>Langkah:</strong> buka tiap barisnya lewat tombol di atas &rarr; pastikan dokumen mana
+                        yang benar-benar dipegang client &rarr; ajukan
+                        <a href="?r=deletion_request" style="color:#991B1B;font-weight:700">Pengajuan Hapus Data</a>
+                        untuk sisanya. <strong>Jangan</strong> diubah nilainya jadi nol &mdash; barisnya tetap ada
+                        dan tetap mengganggu laporan.
+                    </div>
                 </div>
+                <?php endforeach; ?>
             </div>
         <?php endif; ?>
 
@@ -3301,36 +3396,34 @@ function transaction_overlaps_page(PDO $pdo): void
                 <table style="font-size:12px">
                     <thead>
                         <tr>
-                            <th>Kode Unit</th>
-                            <th>Modul</th>
-                            <th style="text-align:right">Tabrakan</th>
-                            <th>Transaksi A</th>
-                            <th>Periode A</th>
-                            <th>PIC A</th>
-                            <th>Transaksi B</th>
-                            <th>Periode B</th>
-                            <th>PIC B</th>
+                            <th style="width:16%">Unit</th>
+                            <th style="width:19%">Bentrok pada</th>
+                            <th style="width:32%">Pihak pertama</th>
+                            <th style="width:33%">Pihak kedua</th>
                         </tr>
                     </thead>
                     <tbody>
-                    <?php foreach ($rows as $row): ?>
+                    <?php foreach ($rows as $row): $ht = (int) ($row['hari_tabrak'] ?? 0); ?>
                         <tr>
-                            <td style="font-weight:600"><?= h($row['master_code']) ?></td>
-                            <td><span style="font-size:11px;font-weight:700;text-transform:uppercase"><?= h($row['module']) ?></span></td>
-                            <?php $ht = (int) ($row['hari_tabrak'] ?? 0); ?>
-                            <td style="text-align:right;white-space:nowrap;font-weight:700;color:<?= $ht >= 15 ? '#b91c1c' : ($ht >= 2 ? '#b45309' : '#64748b') ?>"><?= $ht ?> hari</td>
                             <td>
-                                <a href="?r=allocation_detail&id=<?= (int)$row['id1'] ?>">#<?= (int)$row['id1'] ?></a><br>
-                                <span style="color:var(--muted)"><?= h($row['client1']) ?></span>
+                                <span style="font-weight:700"><?= h($row['master_code']) ?></span><br>
+                                <span style="font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600"><?= h($moduleLabel[$row['module']] ?? $row['module']) ?></span>
                             </td>
-                            <td style="white-space:nowrap"><?= h($row['start1']) ?><br><?= h($row['end1']) ?></td>
-                            <td><?= h($row['pic1']) ?></td>
+                            <?php /* Yang dicari orang bukan "berapa hari", tapi "tanggal berapa
+                                     saja yang bentrok" — itulah yang dipakai memutuskan. */ ?>
+                            <td style="white-space:nowrap">
+                                <span style="font-weight:700;color:<?= $ht >= 15 ? '#b91c1c' : ($ht >= 2 ? '#b45309' : '#64748b') ?>"><?= $ht ?> hari</span><br>
+                                <span style="font-size:11.5px;color:#475569"><?= h($tglID($row['tabrak_mulai'] ?? '')) ?> &ndash; <?= h($tglID($row['tabrak_akhir'] ?? '')) ?></span>
+                            </td>
+                            <?php foreach ([['id1','client1','pic1','start1','end1'], ['id2','client2','pic2','start2','end2']] as [$ki,$kc,$kp,$ks,$ke]): ?>
                             <td>
-                                <a href="?r=allocation_detail&id=<?= (int)$row['id2'] ?>">#<?= (int)$row['id2'] ?></a><br>
-                                <span style="color:var(--muted)"><?= h($row['client2']) ?></span>
+                                <div><strong><?= h($row[$kc]) ?></strong></div>
+                                <div style="font-size:11.5px;color:#475569">PIC <strong><?= h($row[$kp]) ?></strong>
+                                    &middot; <?= h($tglID($row[$ks])) ?> &ndash; <?= h($tglID($row[$ke])) ?></div>
+                                <a class="btn light" style="padding:2px 8px;font-size:11px;margin-top:4px;display:inline-block"
+                                   href="?r=allocation_detail&amp;id=<?= (int) $row[$ki] ?>">Buka #<?= (int) $row[$ki] ?></a>
                             </td>
-                            <td style="white-space:nowrap"><?= h($row['start2']) ?><br><?= h($row['end2']) ?></td>
-                            <td><?= h($row['pic2']) ?></td>
+                            <?php endforeach; ?>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>
