@@ -4386,16 +4386,28 @@ function _skp_lengkapi_komponen(PDO $pdo, array $skp, array $d, int $pid): array
  *
  * Yang diperbaiki: surat yang isinya cuma lewat sedikit dari satu halaman
  * menyisakan halaman terakhir berisi blok tanda tangan saja — nanggung dilihat
- * dan boros kertas. Urutan penyesuaiannya:
+ * dan boros kertas.
  *
- *   - sudah satu halaman, atau memang panjang (lebih dari dua halaman), atau
- *     halaman terakhirnya sudah lumayan terisi → dibiarkan apa adanya;
+ * Ukuran kerapian yang dipakai: SEBERAPA PENUH HALAMAN YANG PALING KOSONG.
+ * Satu angka itu menangkap kedua bentuk jelek sekaligus — halaman terakhir
+ * yang cuma berisi tanda tangan, maupun halaman pertama yang tinggal separuh
+ * karena dipotong terlalu awal. Urutan penyesuaiannya:
+ *
+ *   - sudah satu halaman, atau halaman terkosongnya sudah lumayan terisi →
+ *     dibiarkan apa adanya;
  *   - nanggung → dicoba dirapatkan. Jaraknya dulu (tingkat 1); baru kalau
  *     belum cukup, hurufnya turun ke 10,5pt lalu 10pt (tingkat 2 & 3). Yang
- *     dipakai bentuk PERTAMA yang muat satu halaman, jadi suratnya tidak
+ *     dipakai bentuk PERTAMA yang halamannya berkurang, jadi suratnya tidak
  *     pernah dimampatkan lebih dari yang perlu;
- *   - tetap tidak muat → dipotong di batas bagian (tingkat 4) supaya kedua
- *     halamannya sama-sama berisi, bukan halaman kedua yang cuma tanda tangan.
+ *   - tetap tidak berkurang → DIBAGI di batas bagian. Semua batas yang masuk
+ *     akal dicoba dan yang dipakai adalah pembagian yang paling seimbang.
+ *     Dulu titik potongnya dipaku satu ("Rincian Pembayaran Sewa"), sehingga
+ *     surat yang titik seimbangnya di bagian lain terbelah di tempat yang
+ *     salah: halaman kedua jadi penuh, halaman pertamanya tinggal separuh.
+ *
+ * Pembagian baru dipakai kalau memenuhi SEMUANYA: tidak menambah halaman,
+ * halaman terkosongnya lebih berisi daripada bentuk aslinya, dan bentuknya
+ * wajar — tidak ada halaman yang lebih kosong daripada halaman sesudahnya.
  *
  * Surat yang memuat paraf mode MANUAL tidak pernah disesuaikan: paraf itu
  * ditempel pada koordinat halaman yang dipilih pemaraf, jadi isinya tidak
@@ -4412,10 +4424,12 @@ function _skp_kirim_pdf(array $ctx, string $docType, string $namaBerkas, string 
     require_once dirname(__DIR__) . '/pdf.php';
     $ukuran = skp_ukuran_kertas($docType);
     $parafManual = false;
-    $buat = static function (int $rapat) use ($ctx, $ukuran, $cap, &$parafManual): array {
+    $jumlahPotong = 0;
+    $buat = static function (int $rapat, int $potong = 0) use ($ctx, $ukuran, $cap, &$parafManual, &$jumlahPotong): array {
         extract($ctx, EXTR_SKIP);
         $PDF_MODE = true;
-        $RAPAT = $rapat;
+        $RAPAT  = $rapat;
+        $POTONG = $potong;
         $PARAF_OVERLAY = [];
         ob_start();
         include __DIR__ . '/skp_print_body.php';
@@ -4423,27 +4437,52 @@ function _skp_kirim_pdf(array $ctx, string $docType, string $namaBerkas, string 
         // Paraf mode manual dipasang pada koordinat halaman yang dipilih
         // pemaraf sendiri; isinya tidak boleh digeser-geser setelah itu.
         $parafManual = !empty($PARAF_OVERLAY);
+        // Berapa batas bagian yang ditawarkan templat sebagai titik potong.
+        $jumlahPotong = substr_count($html, ' potong-');
         return clara_pdf_buat($html, $PARAF_OVERLAY, $cap, $ukuran);
     };
+    /** Nilai kerapian: isi halaman yang paling kosong. */
+    $skor = static fn(array $isi): float => $isi ? (float) min($isi) : 1.0;
+    /**
+     * Bentuk surat yang wajar: tiap halaman TIDAK boleh lebih kosong daripada
+     * halaman sesudahnya. Halaman terakhir yang lebih pendek itu biasa;
+     * halaman PERTAMA yang tinggal separuh sementara halaman kedua penuh
+     * justru bentuk yang dikeluhkan. Pembagian seperti itu ditolak walau
+     * angka halaman terkosongnya kebetulan lebih besar.
+     */
+    $wajar = static function (array $isi): bool {
+        $nilai = array_values($isi);
+        for ($i = 1; $i < count($nilai); $i++) if ($nilai[$i] > $nilai[$i - 1]) return false;
+        return true;
+    };
 
-    // Halaman terakhir yang terpakai sampai 45% masih terbaca sebagai "cuma
+    // Halaman terkosong yang terisi sampai 45% masih terbaca sebagai "cuma
     // sisa" — blok tanda tangan sendirian kira-kira seperempat halaman.
     $AMBANG = 0.45;
-    [$pdf, $halaman, $terpakai] = $buat(0);
-    if ($halaman === 2 && $terpakai <= $AMBANG && !$parafManual) {
-        $muat = false;
-        foreach ([1, 2, 3] as $tingkat) {
-            [$coba, $halCoba] = $buat($tingkat);
-            if ($halCoba === 1) { $pdf = $coba; $muat = true; break; }
-        }
-        if (!$muat) {
-            [$coba, $halCoba, $isiCoba] = $buat(4);
-            // Dipakai hanya bila pembagiannya memang membuat halaman kedua
-            // lebih berisi daripada bentuk aslinya.
-            if ($halCoba === 2 && $isiCoba > $terpakai) $pdf = $coba;
-        }
+    [$pdf, $halaman, $isi] = $buat(0);
+    if ($halaman < 2 || $parafManual || $skor($isi) > $AMBANG) clara_kirim_pdf($pdf, $namaBerkas);
+
+    // 1) Dirapatkan: kalau halamannya jadi berkurang, itu hasil terbaik.
+    foreach ([1, 2, 3] as $tingkat) {
+        [$coba, $halCoba] = $buat($tingkat);
+        if ($halCoba < $halaman) clara_kirim_pdf($coba, $namaBerkas);
     }
-    clara_kirim_pdf($pdf, $namaBerkas);
+
+    // 2) Tidak bisa dirapatkan → dibagi di batas bagian yang paling seimbang.
+    //    Semua batas dicoba; yang dipakai hanya pembagian yang bentuknya wajar
+    //    DAN halaman terkosongnya lebih berisi daripada bentuk aslinya. Kalau
+    //    tidak ada yang memenuhi keduanya, suratnya dibiarkan apa adanya —
+    //    lebih baik halaman terakhir agak kosong daripada halaman pertama.
+    $terbaik = $skor($isi);
+    $pilih   = $pdf;
+    for ($ke = 1; $ke <= $jumlahPotong; $ke++) {
+        [$coba, $halCoba, $isiCoba] = $buat(0, $ke);
+        if ($halCoba !== $halaman) continue;   // pembagian tidak boleh menambah halaman
+        if (!$wajar($isiCoba)) continue;
+        $nilai = $skor($isiCoba);
+        if ($nilai > $terbaik + 0.01) { $terbaik = $nilai; $pilih = $coba; }
+    }
+    clara_kirim_pdf($pilih, $namaBerkas);
 }
 
 function skp_print(PDO $pdo): void

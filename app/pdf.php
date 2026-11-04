@@ -87,13 +87,15 @@ function clara_letterhead_mpdf(string $ukuran = 'A4'): \Mpdf\Mpdf
 {
     [$fmtKertas, $lebarKertas] = clara_pdf_ukuran($ukuran);
     require_once dirname(__DIR__) . '/vendor/autoload.php';
+    // Turunan mPDF yang mencatat keterpakaian TIAP halaman (lihat berkasnya).
+    require_once __DIR__ . '/ClaraMpdf.php';
     [$head, $foot] = _clara_pdf_strips();
     // Carlito = pengganti Calibri (metrik sama persis, lisensi OFL). Dipakai
     // cetakan Gudang/Media agar bentuknya sama dengan dokumen kertas yang
     // selama ini dipakai. Font bawaan (DejaVu) tetap default utk dokumen lain.
     $dv = (new \Mpdf\Config\ConfigVariables())->getDefaults()['fontDir'];
     $fd = (new \Mpdf\Config\FontVariables())->getDefaults()['fontdata'];
-    $mpdf = new \Mpdf\Mpdf([
+    $mpdf = new ClaraMpdf([
         'tempDir'       => _clara_pdf_tempdir(),
         'fontDir'       => array_merge($dv, [dirname(__DIR__) . '/app/fonts']),
         'fontdata'      => $fd + ['carlito' => [
@@ -122,10 +124,11 @@ function clara_letterhead_mpdf(string $ukuran = 'A4'): \Mpdf\Mpdf
 /**
  * Render HTML jadi PDF ber-kop, TANPA mengirimkannya.
  *
- * Mengembalikan [isi PDF, jumlah halaman, keterpakaian halaman terakhir 0..1].
- * Dua angka terakhir dipakai pemanggil untuk menilai hasilnya sendiri — mis.
+ * Mengembalikan [isi PDF, jumlah halaman, keterpakaian TIAP halaman 0..1].
+ * Dua yang terakhir dipakai pemanggil untuk menilai hasilnya sendiri — mis.
  * mendeteksi surat "nanggung" yang halaman terakhirnya cuma berisi tanda
- * tangan — lalu mencoba bentuk lain tanpa perlu merender dua kali.
+ * tangan, atau pembagian halaman yang berat sebelah — lalu mencoba bentuk
+ * lain tanpa perlu merender dua kali.
  */
 function clara_pdf_buat(string $html, array $overlay = [], string $cap = '', string $ukuran = 'A4'): array
 {
@@ -160,9 +163,17 @@ function clara_pdf_buat(string $html, array $overlay = [], string $cap = '', str
     // Dibaca SEBELUM Output() — sesudahnya dokumennya sudah ditutup.
     $halaman = max(1, (int) $mpdf->page);
     $tinggi  = clara_pdf_tinggi_isi($ukuran);
-    $terpakai = $tinggi > 0
-        ? max(0.0, min(1.0, ((float) $mpdf->y - CLARA_PDF_MARGIN_ATAS) / $tinggi))
-        : 1.0;
+    // Halaman yang sudah ditutup dicatat saat pergantian halaman; halaman
+    // terakhir belum, jadi diambil dari posisi tulis sekarang.
+    $batas = $mpdf instanceof ClaraMpdf ? $mpdf->isiHalaman : [];
+    $batas[$halaman] = (float) $mpdf->y;
+    $terpakai = [];
+    for ($p = 1; $p <= $halaman; $p++) {
+        $y = (float) ($batas[$p] ?? CLARA_PDF_MARGIN_ATAS + $tinggi);
+        $terpakai[$p] = $tinggi > 0
+            ? max(0.0, min(1.0, ($y - CLARA_PDF_MARGIN_ATAS) / $tinggi))
+            : 1.0;
+    }
     return [$mpdf->Output('', \Mpdf\Output\Destination::STRING_RETURN), $halaman, $terpakai];
 }
 

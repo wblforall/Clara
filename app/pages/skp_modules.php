@@ -63,24 +63,14 @@ function skp_ukuran_kertas(string $docType): string
  *       client tidak terlihat dimampatkan.
  *   3 = tingkat 1 + huruf 10pt. Masih ukuran surat resmi yang lazim; di
  *       bawah ini tidak pernah dilakukan.
- *   4 = tidak dimampatkan sama sekali, hanya dipotong di batas bagian
- *       ("Peraturan Sewa Gudang" pada SKS, "Rincian Pembayaran Sewa" pada
- *       SKP). Dipakai kalau tetap tidak muat satu halaman: lebih baik dua
- *       halaman yang terbagi wajar — dan tetap ukuran huruf asli — daripada
- *       satu halaman penuh lalu satu halaman berisi tanda tangan saja.
+ *
+ * Kalau dirapatkan pun tetap tidak muat, suratnya DIBAGI — lihat
+ * skp_css_potong(); pembagian tidak pernah digabung dengan pemampatan, sebab
+ * kalau toh jadi dua halaman tidak ada gunanya ada yang disempitkan.
  */
 function skp_css_rapat(int $tingkat): string
 {
     if ($tingkat < 1) return '';
-    // Tingkat 3 TIDAK memampatkan apa pun: kalau suratnya toh dibagi dua,
-    // tidak ada gunanya ada yang disempitkan. Yang dilakukan cuma memindahkan
-    // titik potongnya ke batas bagian.
-    if ($tingkat >= 4) {
-        return '<style>
-.skpdoc.kertas p.judul-aturan { page-break-before: always; margin-top: 0; }
-.skpdoc .sec.potong { page-break-before: always; margin-top: 0; }
-</style>';
-    }
     $css = '
 .skpdoc .doc-no { margin-bottom: 8px; }
 .skpdoc .sec { margin: 9px 0 5px; }
@@ -104,7 +94,7 @@ function skp_css_rapat(int $tingkat): string
 .skpdoc table.kv td, .skpdoc table.pay td, .skpdoc table.notes td.nt { font-size: 10.5px; }
 .skpdoc .sec { margin: 7px 0 4px; }
 .skpdoc table.sign { margin-top: 8px; }
-.skpdoc .sign .sigarea { height: 74px; }
+.skpdoc table.sigarea td { height: 21mm; }
 ';
     }
     if ($tingkat === 3) {
@@ -119,12 +109,39 @@ function skp_css_rapat(int $tingkat): string
 .skpdoc table.kv td, .skpdoc table.pay td, .skpdoc table.notes td.nt { font-size: 10px; }
 .skpdoc .sec { margin: 6px 0 4px; }
 .skpdoc table.sign { margin-top: 6px; }
-.skpdoc .sign .sigarea { height: 72px; }
+.skpdoc table.sigarea td { height: 20mm; }
 .skpdoc .qrbox { width: 64px; height: 64px; }
 .skpdoc .qrbox img, .skpdoc .qrbox svg { width: 64px !important; height: 64px !important; }
 ';
     }
     return '<style>' . $css . '</style>';
+}
+
+/**
+ * Nomor urut titik potong halaman.
+ *
+ * Tiap bagian surat yang MASUK AKAL dijadikan awal halaman baru memanggil ini
+ * sekali, berurutan dari atas. Penyesuai halaman di skp.php lalu memilih
+ * SALAH SATU nomornya — yang pembagiannya paling seimbang — lewat
+ * skp_css_potong(). Dulu titik potongnya dipaku satu ("Rincian Pembayaran
+ * Sewa"), sehingga surat yang titik seimbangnya di bagian lain terbelah di
+ * tempat yang salah dan halaman pertamanya tinggal separuh.
+ *
+ * Dipanggil dengan $ulang = true di awal tiap kali surat dirender, supaya
+ * penomorannya selalu mulai dari 1.
+ */
+function skp_potong_kelas(bool $ulang = false): string
+{
+    static $n = 0;
+    if ($ulang) { $n = 0; return ''; }
+    return ' potong-' . (++$n);
+}
+
+/** Gaya yang memaksa bagian ke-$ke mulai di halaman baru. 0 = tidak dibagi. */
+function skp_css_potong(int $ke): string
+{
+    if ($ke < 1) return '';
+    return '<style>.skpdoc .potong-' . $ke . ' { page-break-before: always; margin-top: 0; }</style>';
 }
 
 /** Judul baku di kepala cetakan (bisa ditimpa "Perihal" template). */
@@ -690,10 +707,10 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
         }
 
         if (!empty($tpl['terms'])) {
-            // Kelas judul-aturan dipakai penyesuai halaman: kalau suratnya
-            // tidak muat satu halaman, potongnya di sini — bukan di tempat
-            // yang menyisakan halaman berisi tanda tangan saja.
-            $o .= '<p class="judul-aturan"><strong>Peraturan Sewa Gudang :</strong></p><ol class="aturan">';
+            // Judul peraturan ditawarkan sebagai titik potong halaman: kalau
+            // surat gudang tidak muat satu halaman, di sinilah batas yang
+            // masuk akal untuk membaginya.
+            $o .= '<p class="judul-aturan' . skp_potong_kelas() . '"><strong>Peraturan Sewa Gudang :</strong></p><ol class="aturan">';
             foreach ($tpl['terms'] as $t) {
                 $t = skp_fill((string) $t, ['deposit' => $rp($d['deposit_amount'] ?? ($amt['deposit'] ?? 0))]);
                 $o .= '<li>' . $h($t) . '</li>';
