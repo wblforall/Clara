@@ -1026,20 +1026,15 @@ function skp_form(PDO $pdo): void
         // Pratinjau memperlihatkan surat APA ADANYA — paraf dan tanda tangan ikut,
         // supaya yang dilihat memang hasil jadinya. Yang membedakannya dari surat
         // sungguhan cuma capnya dan nomor dokumen yang belum terbit.
-        $PDF_MODE = true;
-        // Penanda pratinjau: dipakai templat cetak untuk tetap menggambar kotak
-        // QR walau tokennya belum terbit, supaya tata letaknya sama dengan surat
+        // PRATINJAU: dipakai templat cetak untuk tetap menggambar kotak QR
+        // walau tokennya belum terbit, supaya tata letaknya sama dengan surat
         // asli dan paraf tidak terbaca sebagai tanda tangan Manager.
-        $PRATINJAU = true;
-        $PARAF_OVERLAY = [];
-        ob_start();
-        include __DIR__ . '/skp_print_body.php';
-        $isiHtml = (string) ob_get_clean();
-        clara_render_letterhead_pdf($isiHtml,
+        _skp_kirim_pdf(
+            ['skp' => $skp, 'd' => $d, 'a' => $a, 'rp' => $rp, 'chk' => $chk, 'PRATINJAU' => true],
+            $docType,
             'PRATINJAU - ' . skp_doc_title($docType),
-            $PARAF_OVERLAY,
-            'CONTOH — BELUM SAH',
-            skp_ukuran_kertas($docType));
+            'CONTOH — BELUM SAH'
+        );
         return;
     }
 
@@ -4386,6 +4381,71 @@ function _skp_lengkapi_komponen(PDO $pdo, array $skp, array $d, int $pid): array
     return $d;
 }
 
+/**
+ * Cetak surat ke PDF dengan PENYESUAIAN HALAMAN otomatis.
+ *
+ * Yang diperbaiki: surat yang isinya cuma lewat sedikit dari satu halaman
+ * menyisakan halaman terakhir berisi blok tanda tangan saja — nanggung dilihat
+ * dan boros kertas. Urutan penyesuaiannya:
+ *
+ *   - sudah satu halaman, atau memang panjang (lebih dari dua halaman), atau
+ *     halaman terakhirnya sudah lumayan terisi → dibiarkan apa adanya;
+ *   - nanggung → dicoba dirapatkan. Jaraknya dulu (tingkat 1); baru kalau
+ *     belum cukup, hurufnya turun ke 10,5pt lalu 10pt (tingkat 2 & 3). Yang
+ *     dipakai bentuk PERTAMA yang muat satu halaman, jadi suratnya tidak
+ *     pernah dimampatkan lebih dari yang perlu;
+ *   - tetap tidak muat → dipotong di batas bagian (tingkat 4) supaya kedua
+ *     halamannya sama-sama berisi, bukan halaman kedua yang cuma tanda tangan.
+ *
+ * Surat yang memuat paraf mode MANUAL tidak pernah disesuaikan: paraf itu
+ * ditempel pada koordinat halaman yang dipilih pemaraf, jadi isinya tidak
+ * boleh bergeser. Paraf mode otomatis ikut mengalir bersama isi, jadi aman.
+ *
+ * Tidak ada render yang terbuang: tiap percobaan sudah berupa PDF jadi dan
+ * yang terpilih langsung dikirim. Surat yang normal tetap dirender sekali.
+ *
+ * $ctx = variabel yang dibutuhkan templat cetak: skp, d, a, rp, chk, dan
+ * opsional h / PRATINJAU.
+ */
+function _skp_kirim_pdf(array $ctx, string $docType, string $namaBerkas, string $cap = ''): void
+{
+    require_once dirname(__DIR__) . '/pdf.php';
+    $ukuran = skp_ukuran_kertas($docType);
+    $parafManual = false;
+    $buat = static function (int $rapat) use ($ctx, $ukuran, $cap, &$parafManual): array {
+        extract($ctx, EXTR_SKIP);
+        $PDF_MODE = true;
+        $RAPAT = $rapat;
+        $PARAF_OVERLAY = [];
+        ob_start();
+        include __DIR__ . '/skp_print_body.php';
+        $html = (string) ob_get_clean();
+        // Paraf mode manual dipasang pada koordinat halaman yang dipilih
+        // pemaraf sendiri; isinya tidak boleh digeser-geser setelah itu.
+        $parafManual = !empty($PARAF_OVERLAY);
+        return clara_pdf_buat($html, $PARAF_OVERLAY, $cap, $ukuran);
+    };
+
+    // Halaman terakhir yang terpakai sampai 45% masih terbaca sebagai "cuma
+    // sisa" — blok tanda tangan sendirian kira-kira seperempat halaman.
+    $AMBANG = 0.45;
+    [$pdf, $halaman, $terpakai] = $buat(0);
+    if ($halaman === 2 && $terpakai <= $AMBANG && !$parafManual) {
+        $muat = false;
+        foreach ([1, 2, 3] as $tingkat) {
+            [$coba, $halCoba] = $buat($tingkat);
+            if ($halCoba === 1) { $pdf = $coba; $muat = true; break; }
+        }
+        if (!$muat) {
+            [$coba, $halCoba, $isiCoba] = $buat(4);
+            // Dipakai hanya bila pembagiannya memang membuat halaman kedua
+            // lebih berisi daripada bentuk aslinya.
+            if ($halCoba === 2 && $isiCoba > $terpakai) $pdf = $coba;
+        }
+    }
+    clara_kirim_pdf($pdf, $namaBerkas);
+}
+
 function skp_print(PDO $pdo): void
 {
     require_permission('manage_skp');
@@ -4411,13 +4471,11 @@ function skp_print(PDO $pdo): void
     }
     require_once dirname(__DIR__) . '/pdf.php';
     $docTitle = skp_doc_title((string) ($skp['doc_type'] ?? 'skp'));
-    $PDF_MODE = true;
-    $PARAF_OVERLAY = [];
-    ob_start();
-    include __DIR__ . '/skp_print_body.php';
-    $html = ob_get_clean();
-    clara_render_letterhead_pdf($html, ($skp['skp_no'] ?: 'SKP') . ' - ' . $docTitle, $PARAF_OVERLAY, '',
-        skp_ukuran_kertas((string) ($skp['doc_type'] ?? 'skp')));
+    _skp_kirim_pdf(
+        ['skp' => $skp, 'd' => $d, 'a' => $a, 'rp' => $rp, 'chk' => $chk, 'h' => $h],
+        (string) ($skp['doc_type'] ?? 'skp'),
+        ($skp['skp_no'] ?: 'SKP') . ' - ' . $docTitle
+    );
 }
 
 // ─── Tanda tangan customer (PUBLIK, tanpa login — akses via sign_token) ───────

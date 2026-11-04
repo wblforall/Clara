@@ -12,6 +12,11 @@
  * Strip kop dibuat dari `public/assets/letterhead-a4.jpg` (lihat _clara_pdf_strips).
  */
 
+// Margin konten; dipakai bersama oleh renderer DAN penghitung tinggi isi,
+// supaya keduanya tidak pernah memakai angka yang berbeda.
+const CLARA_PDF_MARGIN_ATAS  = 34;
+const CLARA_PDF_MARGIN_BAWAH = 40;
+
 function _clara_pdf_tempdir(): string
 {
     // sys_get_temp_dir() sering TIDAK writable oleh user web server (mis. macOS
@@ -68,7 +73,13 @@ function _clara_pdf_strips(): array
  */
 function clara_pdf_ukuran(string $ukuran): array
 {
-    return strtoupper(trim($ukuran)) === 'F4' ? [[215, 330], 215] : ['A4', 210];
+    return strtoupper(trim($ukuran)) === 'F4' ? [[215, 330], 215, 330] : ['A4', 210, 297];
+}
+
+/** Tinggi area isi (mm): tinggi kertas dikurangi margin atas & bawah. */
+function clara_pdf_tinggi_isi(string $ukuran): float
+{
+    return (float) clara_pdf_ukuran($ukuran)[2] - CLARA_PDF_MARGIN_ATAS - CLARA_PDF_MARGIN_BAWAH;
 }
 
 /** Bangun instance mPDF ber-kop letterhead berulang + margin konten. */
@@ -92,7 +103,7 @@ function clara_letterhead_mpdf(string $ukuran = 'A4'): \Mpdf\Mpdf
             'BI' => 'Carlito-BoldItalic.ttf',
         ]],
         'format'        => $fmtKertas,
-        'margin_top'    => 34, 'margin_bottom' => 40,
+        'margin_top'    => CLARA_PDF_MARGIN_ATAS, 'margin_bottom' => CLARA_PDF_MARGIN_BAWAH,
         'margin_left'   => 16, 'margin_right'  => 16,
         'margin_header' => 0,  'margin_footer' => 0,
     ]);
@@ -109,11 +120,14 @@ function clara_letterhead_mpdf(string $ukuran = 'A4'): \Mpdf\Mpdf
 }
 
 /**
- * Render HTML (boleh memuat <style>) menjadi PDF ber-kop lalu kirim ke browser.
- * INLINE → tampil di viewer PDF (preview + bisa simpan/bagikan) di HP & PC.
- * Memanggil exit().
+ * Render HTML jadi PDF ber-kop, TANPA mengirimkannya.
+ *
+ * Mengembalikan [isi PDF, jumlah halaman, keterpakaian halaman terakhir 0..1].
+ * Dua angka terakhir dipakai pemanggil untuk menilai hasilnya sendiri — mis.
+ * mendeteksi surat "nanggung" yang halaman terakhirnya cuma berisi tanda
+ * tangan — lalu mencoba bentuk lain tanpa perlu merender dua kali.
  */
-function clara_render_letterhead_pdf(string $html, string $filename, array $overlay = [], string $cap = '', string $ukuran = 'A4'): void
+function clara_pdf_buat(string $html, array $overlay = [], string $cap = '', string $ukuran = 'A4'): array
 {
     $mpdf = clara_letterhead_mpdf($ukuran);
     // Cap melintang untuk dokumen yang BELUM sah (mis. pratinjau sebelum
@@ -143,7 +157,21 @@ function clara_render_letterhead_pdf(string $html, string $filename, array $over
             error_log('paraf gagal ditempel di PDF: ' . $e->getMessage());
         }
     }
-    $pdf  = $mpdf->Output('', \Mpdf\Output\Destination::STRING_RETURN);
+    // Dibaca SEBELUM Output() — sesudahnya dokumennya sudah ditutup.
+    $halaman = max(1, (int) $mpdf->page);
+    $tinggi  = clara_pdf_tinggi_isi($ukuran);
+    $terpakai = $tinggi > 0
+        ? max(0.0, min(1.0, ((float) $mpdf->y - CLARA_PDF_MARGIN_ATAS) / $tinggi))
+        : 1.0;
+    return [$mpdf->Output('', \Mpdf\Output\Destination::STRING_RETURN), $halaman, $terpakai];
+}
+
+/**
+ * Kirim isi PDF ke browser. INLINE → tampil di viewer PDF (preview + bisa
+ * simpan/bagikan) di HP & PC. Memanggil exit().
+ */
+function clara_kirim_pdf(string $pdf, string $filename): void
+{
     $safe = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $filename) ?: 'dokumen';
     while (ob_get_level() > 0) ob_end_clean();
     // Header sendiri (bukan dari mPDF) → ANTI-CACHE. mPDF default kirim
@@ -157,6 +185,16 @@ function clara_render_letterhead_pdf(string $html, string $filename, array $over
     header('Content-Length: ' . strlen($pdf));
     echo $pdf;
     exit;
+}
+
+/**
+ * Render HTML (boleh memuat <style>) menjadi PDF ber-kop lalu kirim ke browser.
+ * Bentuk ringkas dari clara_pdf_buat() + clara_kirim_pdf(). Memanggil exit().
+ */
+function clara_render_letterhead_pdf(string $html, string $filename, array $overlay = [], string $cap = '', string $ukuran = 'A4'): void
+{
+    [$pdf] = clara_pdf_buat($html, $overlay, $cap, $ukuran);
+    clara_kirim_pdf($pdf, $filename);
 }
 
 /**

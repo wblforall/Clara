@@ -50,6 +50,83 @@ function skp_ukuran_kertas(string $docType): string
     return $docType === 'sks' ? 'F4' : 'A4';
 }
 
+/**
+ * CSS pemadatan bertingkat untuk surat yang "nanggung".
+ *
+ * Dipakai penyesuai halaman di skp.php: surat dirender apa adanya dulu, dan
+ * hanya kalau hasilnya dua halaman dengan halaman terakhir nyaris kosong
+ * (lazimnya cuma blok tanda tangan) bentuk yang lebih rapat dicoba.
+ *
+ *   1 = jarak antar bagian dirapatkan. Ukuran huruf TIDAK disentuh.
+ *   2 = tingkat 1 + huruf turun setengah poin (11pt -> 10.5pt). Masih ukuran
+ *       surat resmi yang wajar; di bawah itu tidak dilakukan supaya surat ke
+ *       client tidak terlihat dimampatkan.
+ *   3 = tingkat 1 + huruf 10pt. Masih ukuran surat resmi yang lazim; di
+ *       bawah ini tidak pernah dilakukan.
+ *   4 = tidak dimampatkan sama sekali, hanya dipotong di batas bagian
+ *       ("Peraturan Sewa Gudang" pada SKS, "Rincian Pembayaran Sewa" pada
+ *       SKP). Dipakai kalau tetap tidak muat satu halaman: lebih baik dua
+ *       halaman yang terbagi wajar — dan tetap ukuran huruf asli — daripada
+ *       satu halaman penuh lalu satu halaman berisi tanda tangan saja.
+ */
+function skp_css_rapat(int $tingkat): string
+{
+    if ($tingkat < 1) return '';
+    // Tingkat 3 TIDAK memampatkan apa pun: kalau suratnya toh dibagi dua,
+    // tidak ada gunanya ada yang disempitkan. Yang dilakukan cuma memindahkan
+    // titik potongnya ke batas bagian.
+    if ($tingkat >= 4) {
+        return '<style>
+.skpdoc.kertas p.judul-aturan { page-break-before: always; margin-top: 0; }
+.skpdoc .sec.potong { page-break-before: always; margin-top: 0; }
+</style>';
+    }
+    $css = '
+.skpdoc .doc-no { margin-bottom: 8px; }
+.skpdoc .sec { margin: 9px 0 5px; }
+.skpdoc table.kv td { padding: 1.5px 0; }
+.skpdoc table.notes td.nt { padding-bottom: 2px; }
+.skpdoc .tgl-surat { margin-top: 9px; }
+.skpdoc table.sign { margin-top: 12px; }
+.skpdoc.kertas { line-height: 1.24; }
+.skpdoc.kertas .doc-sub { margin-bottom: 5px; }
+.skpdoc.kertas .just { margin: 4px 0; }
+.skpdoc.kertas .kaki { margin: 3px 0 6px; }
+.skpdoc.kertas table.harga td { padding: 4px 7px; line-height: 1.32; }
+.skpdoc.kertas p.judul-aturan { margin-top: 8px; }
+.skpdoc.kertas ol.aturan li { margin-bottom: 0; }
+';
+    if ($tingkat === 2) {
+        $css .= '
+.skpdoc.kertas { font-size: 10.5pt; line-height: 1.18; }
+.skpdoc.kertas table.idn td { font-size: 10.5pt; }
+.skpdoc.kertas .doc-sub { font-size: 11.5pt; }
+.skpdoc table.kv td, .skpdoc table.pay td, .skpdoc table.notes td.nt { font-size: 10.5px; }
+.skpdoc .sec { margin: 7px 0 4px; }
+.skpdoc table.sign { margin-top: 8px; }
+.skpdoc .sign .sigarea { height: 74px; }
+';
+    }
+    if ($tingkat === 3) {
+        // 10pt masih ukuran surat resmi yang lazim (Calibri 10–11pt). Di bawah
+        // ini tidak pernah dilakukan — lebih baik suratnya dibagi dua.
+        $css .= '
+.skpdoc.kertas { font-size: 10pt; line-height: 1.16; }
+.skpdoc.kertas table.idn td { font-size: 10pt; }
+.skpdoc.kertas .doc-sub { font-size: 11pt; }
+.skpdoc.kertas .kaki { font-size: 9pt; margin: 2px 0 5px; }
+.skpdoc.kertas table.harga th, .skpdoc.kertas table.harga td { font-size: 9pt; padding: 3px 6px; line-height: 1.25; }
+.skpdoc table.kv td, .skpdoc table.pay td, .skpdoc table.notes td.nt { font-size: 10px; }
+.skpdoc .sec { margin: 6px 0 4px; }
+.skpdoc table.sign { margin-top: 6px; }
+.skpdoc .sign .sigarea { height: 72px; }
+.skpdoc .qrbox { width: 64px; height: 64px; }
+.skpdoc .qrbox img, .skpdoc .qrbox svg { width: 64px !important; height: 64px !important; }
+';
+    }
+    return '<style>' . $css . '</style>';
+}
+
 /** Judul baku di kepala cetakan (bisa ditimpa "Perihal" template). */
 function skp_doc_title(string $docType): string
 {
@@ -613,7 +690,10 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
         }
 
         if (!empty($tpl['terms'])) {
-            $o .= '<p style="margin-top:16px"><strong>Peraturan Sewa Gudang :</strong></p><ol class="aturan">';
+            // Kelas judul-aturan dipakai penyesuai halaman: kalau suratnya
+            // tidak muat satu halaman, potongnya di sini — bukan di tempat
+            // yang menyisakan halaman berisi tanda tangan saja.
+            $o .= '<p class="judul-aturan"><strong>Peraturan Sewa Gudang :</strong></p><ol class="aturan">';
             foreach ($tpl['terms'] as $t) {
                 $t = skp_fill((string) $t, ['deposit' => $rp($d['deposit_amount'] ?? ($amt['deposit'] ?? 0))]);
                 $o .= '<li>' . $h($t) . '</li>';

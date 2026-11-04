@@ -97,6 +97,10 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 <style>
 .skpdoc .doc-title { text-align: center; font-size: 16px; font-weight: bold; letter-spacing: .5px; margin: 0 0 2px; text-transform: uppercase; color: #111; }
 .skpdoc .doc-no { text-align: center; font-size: 11px; color: #555; margin-bottom: 14px; }
+/* Kota & tanggal: RATA KIRI di semua jenis surat, sejajar kolom tanda tangan
+   pertama di bawahnya. Dibuat sebagai kelas (bukan gaya sebaris) supaya
+   penyesuai halaman bisa merapatkannya. */
+.skpdoc .tgl-surat { text-align: left; margin-top: 16px; font-size: 10.5px; }
 .skpdoc .sec { font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: .04em; color: #0D9488; border-bottom: 1px solid #d1d5db; padding-bottom: 3px; margin: 14px 0 7px; page-break-after: avoid; }
 .skpdoc table.kv { width: 100%; border-collapse: collapse; }
 .skpdoc table.kv td { padding: 2.5px 0; vertical-align: top; border: none; font-size: 11px; }
@@ -148,12 +152,17 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc.kertas table.harga td.ket { text-align: left; }
 .skpdoc.kertas .kaki { font-style: italic; font-weight: bold; font-size: 10pt; margin: 4px 0 12px; }
 .skpdoc.kertas .bayar { font-weight: bold; margin: 8px 0 0; }
+.skpdoc.kertas p.judul-aturan { margin-top: 16px; }
 .skpdoc.kertas ol.aturan { margin: 2px 0 0 6mm; padding: 0; }
 .skpdoc.kertas ol.aturan li { text-align: justify; margin-bottom: 2px; }
 .skpdoc.kertas .sign .role { color: #000; }
 .skpdoc.kertas .sign .name { font-weight: 400; text-decoration: underline; border-top: none; padding-top: 0; }
 .skpdoc.kertas .sign .name .muted { color: #000; font-style: italic; font-weight: bold; font-size: 10pt; }
 </style>
+<?php /* Lapisan pemadatan OTOMATIS. Kosong pada keadaan biasa; hanya terisi
+         kalau penyesuai halaman di skp.php memutuskan surat ini "nanggung".
+         Ditaruh SESUDAH gaya utama supaya menimpanya. */ ?>
+<?= skp_css_rapat((int) ($RAPAT ?? 0)) ?>
 <div class="skpdoc<?= $skpDocType === 'sks' ? ' kertas' : '' ?>">
     <div class="doc-title"<?= $skpDocType === 'sks' ? ' style="font-weight:bold;text-decoration:underline"' : '' ?>><?= $h(skp_doc_heading($skpDocType, $skpTpl)) ?></div>
     <?php if ($skpDocType === 'sks'): ?>
@@ -312,7 +321,9 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
         ];
     };
     ?>
-    <div class="sec">Rincian Pembayaran Sewa</div>
+    <?php /* Kelas potong = titik pemisah halaman yang masuk akal, dipakai
+             penyesuai halaman kalau suratnya tidak muat satu halaman. */ ?>
+    <div class="sec potong">Rincian Pembayaran Sewa</div>
     <table class="pay">
         <tr><td class="lbl">A. Biaya Sewa Area</td><td class="amt"></td></tr>
         <?php
@@ -461,7 +472,7 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
              Form Utilities, di kedua properti. Sejajar dengan kolom tanda
              tangan pertama di bawahnya, dan sama dengan Surat Penawaran yang
              memang sudah rata kiri sejak awal. */ ?>
-    <div style="text-align:left;margin-top:16px;font-size:10.5px">Balikpapan, <?= $h($skpToday) ?></div>
+    <div class="tgl-surat">Balikpapan, <?= $h($skpToday) ?></div>
     <table class="sign"><tr>
         <td class="col"><div class="role"><?= $skpDocType === 'sks' ? 'Hormat Kami,<br><strong>PT. Wulandari Bangun Laksana, Tbk.</strong>' : 'Dibuat Oleh,' ?></div>
             <div class="sigarea"><?php if ($skpHasQr): ?><?php if (empty($skp['sign_token'])): ?><?php /* Pratinjau: kotaknya ada supaya letaknya persis seperti surat asli, tetapi TIDAK memuat QR sungguhan — tokennya memang belum terbit, dan QR yang dipindai lalu gagal lebih buruk daripada tidak ada QR sama sekali. */ ?><table style="width:70px;margin:0 auto 3px;border-collapse:collapse"><tr><td style="width:70px;height:70px;border:1px dashed #cbd5e1;text-align:center;vertical-align:middle;font-size:6.5px;color:#94a3b8;line-height:1.4">QR validasi<br>terbit saat<br>disetujui</td></tr></table><?php elseif (!empty($PDF_MODE)): ?><div class="qrbox"><?= clara_qr_img($skpVerifyUrl, 18) ?></div><?php else: ?><div class="qrbox" data-qr="<?= $h($skpVerifyUrl) ?>"></div><?php endif; ?><div class="qrhint">Scan untuk validasi</div><?php endif; ?></div>
