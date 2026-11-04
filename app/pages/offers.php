@@ -4045,13 +4045,27 @@ function offer_print(PDO $pdo): void
         return;
     }
     require_once dirname(__DIR__) . '/pdf.php';
-    $PDF_MODE = true;
-    ob_start();
-    include __DIR__ . '/offer_print_template.php';
-    $html = ob_get_clean();
     // Penawaran gudang ikut F4, sama seperti surat konfirmasinya.
-    clara_render_letterhead_pdf($html, ($o['offer_no'] ?: 'Penawaran') . ' - Surat Penawaran', [], '',
-        ($o['module'] ?? '') === 'gudang' ? 'F4' : 'A4');
+    $ukuran = ($o['module'] ?? '') === 'gudang' ? 'F4' : 'A4';
+    // Penyesuaian halaman otomatis — mesin yang sama dengan SKP/Gudang, jadi
+    // Surat Penawaran pun tidak pernah menyisakan halaman berisi tanda tangan
+    // saja. Tidak ada tingkat pemampatan untuk surat ini; yang dilakukan cuma
+    // memilih titik bagi terbaik di antara judul bagian & poin ketentuan.
+    $ctx = compact('o', 'prop', 'letter', 'items', 'tahapHarga', 'tierHarga', 'rp', 'h', 'pdo');
+    clara_kirim_pdf_rapi(
+        static function (int $rapat, int $potong) use ($ctx, $ukuran): array {
+            extract($ctx, EXTR_SKIP);
+            $PDF_MODE = true;
+            $POTONG = $potong;
+            ob_start();
+            include __DIR__ . '/offer_print_template.php';
+            $html = (string) ob_get_clean();
+            [$pdf, $halaman, $isi] = clara_pdf_buat($html, [], '', $ukuran);
+            return [$pdf, $halaman, $isi, substr_count($html, ' potong-'), true];
+        },
+        ($o['offer_no'] ?: 'Penawaran') . ' - Surat Penawaran',
+        []
+    );
 }
 
 // ─── Verifikasi penawaran via QR (publik, read-only, akses via sign_token) ────
@@ -4941,26 +4955,28 @@ function offer_template_preview(PDO $pdo): void
     // seperti nanti dicetak (versi HTML menyambung ke bawah tanpa batas kertas),
     // dan yang terlihat benar-benar berkas yang akan diterima client.
     require_once dirname(__DIR__) . '/pdf.php';
-    $PDF_MODE = true;
-    ob_start();
-    include __DIR__ . '/offer_print_template.php';
-    $html = ob_get_clean();
     try {
-        // Zoom ditanam juga di dalam berkas PDF-nya sebagai cadangan. Chrome
-        // mengabaikan ini dan memakai pecahan alamat (#zoom=) yang dipasang di
-        // sisi halaman; penampil lain yang membaca /OpenAction tetap kebagian.
         $z = (string) post('zoom', 'fullwidth');
         $zoom = is_numeric($z) ? max(25, min(400, (int) $z)) : 'fullwidth';
-        $mpdf = clara_letterhead_mpdf($module === 'gudang' ? 'F4' : 'A4');
-        $mpdf->SetDisplayMode($zoom, 'continuous');
-        $mpdf->WriteHTML($html);
-        $pdf = $mpdf->Output('', \Mpdf\Output\Destination::STRING_RETURN);
-        while (ob_get_level() > 0) ob_end_clean();
-        header('Content-Type: application/pdf');
-        header('Content-Disposition: inline; filename="pratinjau-template.pdf"');
-        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-        header('Content-Length: ' . strlen($pdf));
-        echo $pdf;
+        $ukuran = $module === 'gudang' ? 'F4' : 'A4';
+        // Contoh template ikut penyesuai halaman yang sama dengan surat
+        // jadinya — percuma mencontohkan template kalau pembagian halamannya
+        // berbeda dengan yang nanti diterima client.
+        $ctx = compact('o', 'prop', 'letter', 'items', 'tahapHarga', 'tierHarga', 'rp', 'h', 'pdo', 'PRATINJAU');
+        clara_kirim_pdf_rapi(
+            static function (int $rapat, int $potong) use ($ctx, $ukuran, $zoom): array {
+                extract($ctx, EXTR_SKIP);
+                $PDF_MODE = true;
+                $POTONG = $potong;
+                ob_start();
+                include __DIR__ . '/offer_print_template.php';
+                $html = (string) ob_get_clean();
+                [$pdf, $halaman, $isi] = clara_pdf_buat($html, [], '', $ukuran, $zoom);
+                return [$pdf, $halaman, $isi, substr_count($html, ' potong-'), true];
+            },
+            'pratinjau-template',
+            []
+        );
     } catch (Throwable $e) {
         // Pratinjau tidak boleh menjatuhkan halaman pengaturan — tampilkan sebabnya.
         while (ob_get_level() > 0) ob_end_clean();

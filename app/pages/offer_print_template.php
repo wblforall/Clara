@@ -1,6 +1,12 @@
 <?php
 /** Template cetak Surat Penawaran. Vars: $o (offer+join), $prop, $rp, $h, $letter. */
 if (!isset($o)) { http_response_code(400); exit('Konteks tidak valid.'); }
+// Penomoran titik potong halaman dimulai dari nol tiap kali surat dirender,
+// dan bagian yang memotong dirinya sendiri (daftar ketentuan bernomor) diberi
+// tahu titik mana yang sedang dipilih. Lihat clara_kirim_pdf_rapi().
+if (!function_exists('skp_potong_kelas')) require_once __DIR__ . '/skp_modules.php';
+skp_potong_kelas(true);
+skp_potong_dipilih((int) ($POTONG ?? 0));
 $letter = $letter ?? [];
 $letter += function_exists('offer_letter_bawaan') ? offer_letter_bawaan() : ['perihal' => '', 'intro' => '', 'fasilitas' => [], 'payment' => [], 'terms' => []];
 $OFFICE_PHONE = '0542-8520555';   // nomor kantor (satu untuk semua properti)
@@ -35,11 +41,15 @@ $ROMAWI = function (int $n): string {
 };
 /** Satu judul bagian, menurut gaya yang dipilih template. */
 $JUDUL_BAGIAN = function (string $teks) use (&$_romawiN, $GAYA_JUDUL, $ROMAWI, $h): string {
-    if ($GAYA_JUDUL !== 'romawi') return '<div class="sec">' . $h($teks) . '</div>';
+    // Tiap judul bagian ditawarkan sebagai titik potong halaman — berlaku
+    // untuk SEMUA template penawaran, apa pun bagian yang dipasang di
+    // dalamnya, tanpa perlu didaftar satu per satu.
+    $potong = function_exists('skp_potong_kelas') ? skp_potong_kelas() : '';
+    if ($GAYA_JUDUL !== 'romawi') return '<div class="sec' . $potong . '">' . $h($teks) . '</div>';
     $_romawiN++;
     // Sengaja DIV biasa, bukan tabel: tabel membuat mPDF memutus halaman tepat
     // sesudah judul, sehingga sisa halamannya kosong melompong.
-    return '<div class="secrom">' . $ROMAWI($_romawiN) . '.&nbsp;&nbsp;&nbsp;&nbsp;' . $h($teks) . '</div>';
+    return '<div class="secrom' . $potong . '">' . $ROMAWI($_romawiN) . '.&nbsp;&nbsp;&nbsp;&nbsp;' . $h($teks) . '</div>';
 };
 // Tarif efektif. 12% dengan rumus PMK 131/2024 = 11% polos — angkanya memang
 // sama; yang berbeda cuma kalimat di surat.
@@ -244,26 +254,32 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
 .pay li{font-size:11px}
 .rek{background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;margin-top:6px;font-size:11px;line-height:1.7}
 .tnc li{font-size:11px;color:#374151;page-break-inside:avoid}
-.sign{width:100%;border-collapse:collapse;margin-top:22px;page-break-inside:avoid;table-layout:fixed}
-.sign td.col{width:50%;vertical-align:top;padding:0 6px;text-align:center;font-size:10.5px}
-/* Ruang tanda tangan: SATU tinggi untuk kedua kolom, isinya menempel ke
-   dasar, supaya nama penanda tangan kiri & kanan sejajar apa pun isinya
-   (QR, coretan tanda tangan, atau ruang kosong bergaris). Dibuat sebagai
-   sel tabel karena mPDF mengabaikan height pada div. Selektornya sengaja
-   satu tingkat: mPDF tidak mencocokkan ".sign .x" untuk isi di dalam sel. */
-table.sigarea{width:100%;border-collapse:collapse;margin:0}
-table.sigarea td{height:22mm;vertical-align:bottom;text-align:center;padding:0;border:none}
+/* Blok tanda tangan: bentuknya SAMA PERSIS dengan SKP/Gudang
+   (skp_print_body.php) — satu tabel tiga baris supaya sel yang sebaris
+   otomatis setinggi sel tertinggi, kolom pertama rata kiri tepat di garis
+   kiri paragraf, kolom terakhir rata kanan tepat di garis kanannya. */
+.sign{width:100%;border-collapse:collapse;margin-top:18px;page-break-inside:avoid;table-layout:fixed}
+.sign td.col{width:50%;padding:0;border:none;vertical-align:bottom}
+.kiri{text-align:left}
+.tengah{text-align:center}
+.kanan{text-align:right}
+.sign td.peran{font-size:10.5px;color:#6b7280;line-height:1.3;padding-bottom:1.5mm}
+.sign td.sigarea{height:22mm}
+.sign td.nama{vertical-align:top}
 .ttd-img{height:58px;width:auto;margin:2px 0}
-/* Ukurannya disamakan dengan blok tanda tangan SKP/Gudang (skp_print_body.php)
-   supaya semua surat yang keluar dari CLARA berbentuk sama. */
-.nm{font-weight:bold;display:block;padding-top:3px;font-size:12.5px}
-.jab{font-weight:bold;font-style:italic;color:#111;font-size:10.5px}
-.ttd-ket{font-weight:normal;font-style:normal;color:#6b7280;font-size:8px}
-.qrbox{width:70px;height:70px;margin:6px auto 3px}
+.nm{display:block;padding-top:3px;font-size:12.5px;line-height:1.3}
+.jab{display:block;font-style:italic;font-size:12.5px;line-height:1.3}
+.ttd-ket{display:block;font-style:normal;color:#6b7280;font-size:8px}
+.qrbox{width:70px;height:70px;margin:6px 0 3px}
 .qrbox img,.qrbox svg{width:70px!important;height:70px!important;display:block}
 .qrhint{font-size:7.5px;color:#6b7280;margin-bottom:3px}
 .muted{color:#6b7280}
 </style>
+<?php /* Lapisan pembagi halaman OTOMATIS. Kosong pada keadaan biasa; hanya
+         terisi kalau penyesuai halaman memutuskan surat ini "nanggung".
+         Ditaruh SESUDAH gaya utama supaya menimpanya. */ ?>
+<?php if (!function_exists('skp_css_potong')) require_once __DIR__ . '/skp_modules.php'; ?>
+<?= skp_css_potong((int) ($POTONG ?? 0)) ?>
 <?php if (!$PDF_MODE): ?>
 </head>
 <body>
@@ -688,7 +704,21 @@ table.sigarea td{height:22mm;vertical-align:bottom;text-align:center;padding:0;b
 
     <?php if ($ketentuan): ?>
     <?= $JUDUL_BAGIAN($JUDUL['ketentuan']) ?>
-    <<?= $TAG_LIST ?> class="tnc"><?php foreach ($ketentuan as $t): ?><li><?= clara_format_bold(offer_letter_fill((string) $t, $amts + $isiKet)) ?></li><?php endforeach; ?></<?= $TAG_LIST ?>>
+    <?php /* Tiap poin ketentuan jadi titik potong halaman. Daftarnya DIPECAH
+             (bukan sekadar diberi page-break) karena mPDF mengulang penomoran
+             dari 1 kalau satu <ol> terpotong di tengah — nomor ketentuan di
+             surat tidak boleh salah. Poin pertama dilewati: memotong di situ
+             meninggalkan judul bagiannya sendirian di kaki halaman. */ ?>
+    <<?= $TAG_LIST ?> class="tnc"><?php foreach ($ketentuan as $iKet => $t): $kls = '';
+        if ($iKet > 0 && function_exists('skp_potong_nomor')) {
+            $nomor = skp_potong_nomor();
+            if ($nomor === skp_potong_dipilih()) {
+                echo '</' . $TAG_LIST . '><' . $TAG_LIST . ' class="tnc" start="' . ($iKet + 1)
+                   . '" style="page-break-before:always;margin-top:0">';
+            } else {
+                $kls = ' class="poin potong-' . $nomor . '"';
+            }
+        } ?><li<?= $kls ?>><?= clara_format_bold(offer_letter_fill((string) $t, $amts + $isiKet)) ?></li><?php endforeach; ?></<?= $TAG_LIST ?>>
     <?php endif; ?>
     <?php if (!isset($letter['tampil_berlaku']) || !empty($letter['tampil_berlaku'])): ?>
     <div class="validbox" style="margin-top:8px">Penawaran ini berlaku s/d <?= $h($berlaku) ?></div>
@@ -712,13 +742,20 @@ table.sigarea td{height:22mm;vertical-align:bottom;text-align:center;padding:0;b
     $hasQr = !empty($o['sign_token']) && (!isset($letter['tampil_qr']) || !empty($letter['tampil_qr']));
     ?>
     <?php
-    /* Kedua kolom tanda tangan dibangun dari SATU cetakan yang sama supaya
-       sejajar — sebelumnya kolom kiri (judul dua baris + kotak QR) dan kolom
-       kanan (judul yang bisa satu baris + gambar tanda tangan) menaruh nama
-       di ketinggian yang berbeda. Bentuknya sama dengan blok tanda tangan
-       SKP/SKS di skp_print_body.php. */
+    /* ------------------------------------------------------------------
+       Blok tanda tangan — bentuknya SAMA dengan SKP/Gudang: satu tabel tiga
+       baris (jabatan kolom, ruang tanda tangan, nama & jabatan). Sel yang
+       sebaris otomatis setinggi sel tertinggi, jadi kalau nama PT pecah jadi
+       dua baris kedua kolom ikut turun bersama. Kolom kiri rata kiri tepat
+       di garis paragraf, kolom kanan rata kanan tepat di garis kanannya.
+       ------------------------------------------------------------------ */
+    if (!function_exists('skp_jabatan_properti')) require_once __DIR__ . '/skp_modules.php';
     $custSigned = !empty($o['signed_at']);
     $ttdKanan   = array_key_exists('ttd_kanan', $letter) ? trim((string) $letter['ttd_kanan']) : 'Calon Penyewa';
+    $garisKiri  = '<table style="width:34mm;margin:0 auto 0 0;border-collapse:collapse"><tr>'
+                . '<td style="height:18mm;border-bottom:1px solid #111;font-size:1pt;color:#ffffff">&nbsp;</td></tr></table>';
+    $garisKanan = '<table style="width:34mm;margin:0 0 0 auto;border-collapse:collapse"><tr>'
+                . '<td style="height:18mm;border-bottom:1px solid #111;font-size:1pt;color:#ffffff">&nbsp;</td></tr></table>';
     $qrKiri = '';
     if ($hasQr) {
         $qrKiri = ($PDF_MODE
@@ -726,52 +763,42 @@ table.sigarea td{height:22mm;vertical-align:bottom;text-align:center;padding:0;b
                 : '<div class="qrbox" data-qr="' . $h($verifyUrl) . '"></div>')
             . '<div class="qrhint">Scan untuk validasi</div>';
     }
-    // Ruang kosong bergaris untuk tanda tangan saat dicetak. mPDF mengabaikan
-    // height pada div tapi menghormatinya pada sel tabel.
-    $garisTtd = '<table style="width:26mm;margin:0 auto;border-collapse:collapse"><tr>'
-              . '<td style="height:18mm;border-bottom:1px solid #111;font-size:1pt;color:#ffffff">&nbsp;</td>'
-              . '</tr></table>';
     $namaKanan = $custSigned ? ($o['sign_name'] ?: ($o['cp_name'] ?? '-')) : (string) ($o['cp_name'] ?? '');
     $ketKanan  = '';
     if ($custSigned && ($o['sign_method'] ?? 'online') === 'wet') {
-        $ketKanan = '<br><span class="ttd-ket"><span style="color:#16a34a">&#9632;</span> Ditandatangani '
+        $ketKanan = '<span class="ttd-ket"><span style="color:#16a34a">&#9632;</span> Ditandatangani '
                   . $h(substr((string) $o['signed_at'], 0, 16)) . ' &middot; dokumen ber-TTD tersimpan</span>';
     } elseif ($custSigned) {
-        $ketKanan = '<br><span class="ttd-ket"><span style="color:#16a34a">&#9632;</span> Ditandatangani elektronik '
+        $ketKanan = '<span class="ttd-ket"><span style="color:#16a34a">&#9632;</span> Ditandatangani elektronik '
                   . $h(substr((string) $o['signed_at'], 0, 16)) . '</span>';
     }
     $kolomTtd = [
         [
+            'rata'  => 'kiri',
             'peran' => 'Hormat kami,<br><strong>PT. Wulandari Bangun Laksana, Tbk.</strong>',
-            'ttd'   => $hasQr ? $qrKiri : $garisTtd,
+            'ttd'   => $hasQr ? $qrKiri : $garisKiri,
             'nama'  => $h($picNama ?: '-'),
-            'jab'   => $h(trim((string) ($o['pic_role'] ?? '')) !== '' ? $o['pic_role'] : 'Sales ' . $propShort),
+            // Jabatan sales selalu menyebut propertinya — aturan yang sama
+            // dengan SKP/Gudang (lihat skp_jabatan_properti).
+            'jab'   => $h(skp_jabatan_properti((string) ($o['pic_role'] ?? ''), $propShort)),
             'ket'   => '',
         ],
         [
+            'rata'  => 'kanan',
             'peran' => 'Menyetujui,' . ($ttdKanan !== '' ? '<br><strong>' . $h($ttdKanan) . '</strong>' : ''),
             'ttd'   => ($custSigned && !empty($o['signature_data']))
                 ? '<img class="ttd-img" height="58" src="' . $h($o['signature_data']) . '" alt="TTD">'
-                : $garisTtd,
+                : $garisKanan,
             'nama'  => $namaKanan !== '' ? $h($namaKanan) : '&nbsp;',
             'jab'   => 'Penanggung Jawab',
             'ket'   => $ketKanan,
         ],
     ];
-    // Judul kolom disamakan jumlah barisnya dengan baris kosong.
-    $barisPeran = 1;
-    foreach ($kolomTtd as $kol) $barisPeran = max($barisPeran, substr_count($kol['peran'], '<br>') + 1);
     ?>
     <table class="sign">
-    <tr>
-        <?php foreach ($kolomTtd as $kol): ?>
-        <td class="col">
-            <div><?= $kol['peran'] . str_repeat('<br>&nbsp;', $barisPeran - substr_count($kol['peran'], '<br>') - 1) ?></div>
-            <table class="sigarea"><tr><td><?= $kol['ttd'] ?></td></tr></table>
-            <div class="nm"><?= $kol['nama'] ?><br><span class="jab"><?= $kol['jab'] ?></span><?= $kol['ket'] ?></div>
-        </td>
-        <?php endforeach; ?>
-    </tr>
+        <tr><?php foreach ($kolomTtd as $kol): ?><td class="col peran <?= $kol['rata'] ?>"><?= $kol['peran'] ?></td><?php endforeach; ?></tr>
+        <tr><?php foreach ($kolomTtd as $kol): ?><td class="col sigarea <?= $kol['rata'] ?>"><?= $kol['ttd'] ?></td><?php endforeach; ?></tr>
+        <tr><?php foreach ($kolomTtd as $kol): ?><td class="col nama <?= $kol['rata'] ?>"><div class="nm"><?= $kol['nama'] ?></div><div class="jab"><?= $kol['jab'] ?></div><?= $kol['ket'] ?></td><?php endforeach; ?></tr>
     </table>
 </div>
 <?php if ($PDF_MODE) { return; } /* mode PDF: berhenti di sini, HTML konten ditangkap offer_print() */ ?>

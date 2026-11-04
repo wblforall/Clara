@@ -165,6 +165,22 @@ function skp_css_potong(int $ke): string
     return '<style>.skpdoc .potong-' . $ke . ' { page-break-before: always; margin-top: 0; }</style>';
 }
 
+/**
+ * Jabatan penanda tangan dari pihak mal, LENGKAP dengan nama propertinya:
+ * "Sales e-Walk", "Sales Executive Pentacity", dan seterusnya.
+ *
+ * Orang yang sama memegang surat dari kedua properti, jadi jabatan tanpa nama
+ * mal membuat pembaca surat tidak tahu sales itu mewakili mal yang mana.
+ * Kalau jabatan di Master PIC sudah menyebut propertinya, tidak ditambah dua
+ * kali.
+ */
+function skp_jabatan_properti(string $jabatan, string $namaProperti): string
+{
+    $jabatan = trim($jabatan) ?: 'Sales';
+    $pendek  = stripos($namaProperti, 'pentacity') !== false ? 'Pentacity' : 'e-Walk';
+    return stripos($jabatan, $pendek) !== false ? $jabatan : $jabatan . ' ' . $pendek;
+}
+
 /** Judul baku di kepala cetakan (bisa ditimpa "Perihal" template). */
 function skp_doc_title(string $docType): string
 {

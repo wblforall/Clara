@@ -109,27 +109,31 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc table.notes tr { page-break-inside: avoid; }
 .skpdoc table.notes td.nn { width: 20px; vertical-align: top; font-weight: bold; font-size: 11px; color: #374151; }
 .skpdoc table.notes td.nt { font-size: 11px; color: #374151; line-height: 1.45; padding-bottom: 3px; text-align: justify; }
-.skpdoc table.sign { width: 100%; border-collapse: collapse; margin-top: 22px; page-break-inside: avoid; table-layout: fixed; }
-.skpdoc table.sign td.col { width: 33.33%; font-size: 10.5px; text-align: center; vertical-align: top; padding: 0 6px; }
+.skpdoc table.sign { width: 100%; border-collapse: collapse; margin-top: 18px; page-break-inside: avoid; table-layout: fixed; }
+.skpdoc table.sign td.col { width: 33.33%; padding: 0; border: none; vertical-align: bottom; }
+/* Kolom pertama RATA KIRI tepat di garis kiri paragraf, kolom terakhir RATA
+   KANAN tepat di garis kanannya — bukan menjorok ke dalam. */
+.skpdoc .kiri { text-align: left; }
+.skpdoc .tengah { text-align: center; }
+.skpdoc .kanan { text-align: right; }
 .skpdoc table.sign td.col img { max-width: 100%; height: auto; }
-/* Selektor blok tanda tangan sengaja cuma DUA tingkat (.skpdoc .x).
-   mPDF tidak mencocokkan selektor tiga tingkat untuk isi di dalam sel tabel,
-   jadi ".skpdoc .sign .role" dulu tidak pernah terpakai sama sekali. */
-.skpdoc .role { color: #6b7280; margin-bottom: 4px; font-size: 10.5px; }
-/* Ruang tanda tangan: SATU tinggi untuk ketiga kolom, isinya menempel ke
-   dasar. Dibuat sebagai sel tabel karena mPDF mengabaikan height pada div.
-   Inilah yang membuat nama ketiga penanda tangan sejajar, apa pun isinya —
-   QR, coretan tanda tangan, atau ruang kosong bergaris. */
-.skpdoc table.sigarea { width: 100%; border-collapse: collapse; margin: 0; }
-.skpdoc table.sigarea td { height: 22mm; vertical-align: bottom; text-align: center; padding: 0; border: none; }
-/* Nama penanda tangan sengaja lebih besar daripada baris lain di blok ini —
-   itulah yang dibaca orang lebih dulu. Ukurannya ditulis tegas (bukan
-   diwariskan) supaya SAMA PERSIS di semua jenis surat: SKP, Gudang, Form
-   Utilities, dan Surat Penawaran. */
-.skpdoc .name { font-weight: bold; display: block; padding-top: 3px; font-size: 12.5px; }
-/* Jabatan: TEBAL MIRING di semua jenis surat, sama untuk ketiga kolom. */
-.skpdoc .jab { font-weight: bold; font-style: italic; color: #111; font-size: 10.5px; }
-.skpdoc .ttd-ket { font-weight: normal; font-style: normal; color: #6b7280; font-size: 8px; }
+/* Baris jabatan kolom ("Hormat Kami," + nama PT) menempel ke DASAR barisnya,
+   jadi berapa pun barisnya, ruang tanda tangan di bawahnya tetap mulai pada
+   ketinggian yang sama di ketiga kolom. */
+.skpdoc table.sign td.peran { font-size: 10.5px; color: #6b7280; line-height: 1.3; padding-bottom: 1.5mm; }
+/* Ruang tanda tangan: tingginya dikunci supaya muat QR / coretan / ruang
+   kosong bergaris, dan isinya menempel ke dasar — itulah yang membuat nama
+   ketiga penanda tangan sejajar, apa pun isinya. */
+.skpdoc table.sign td.sigarea { height: 22mm; }
+/* Baris nama menempel ke ATAS: kolom penyewa bisa punya satu baris tambahan
+   ("Ditandatangani elektronik ..."), dan kalau barisnya rata bawah justru
+   namanya yang terangkat sendiri. */
+.skpdoc table.sign td.nama { vertical-align: top; }
+/* Nama & jabatan LEBIH BESAR daripada paragraf surat, tidak ditebalkan;
+   jabatan dimiringkan. */
+.skpdoc .name { display: block; padding-top: 3px; font-size: 12.5px; line-height: 1.3; }
+.skpdoc .jab { display: block; font-style: italic; font-size: 12.5px; line-height: 1.3; }
+.skpdoc .ttd-ket { display: block; font-style: normal; color: #6b7280; font-size: 8px; }
 .skpdoc .qrbox { width: 70px; height: 70px; margin: 0 auto 3px; }
 .skpdoc .qrbox img, .skpdoc .qrbox svg { width: 70px !important; height: 70px !important; display: block; }
 .skpdoc .qrhint { font-size: 7.5px; color: #6b7280; margin-bottom: 3px; }
@@ -161,15 +165,13 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc.kertas p.judul-aturan { margin-top: 16px; }
 .skpdoc.kertas ol.aturan { margin: 2px 0 0 6mm; padding: 0; }
 .skpdoc.kertas ol.aturan li { text-align: justify; margin-bottom: 2px; }
-.skpdoc.kertas .role { color: #000; }
-.skpdoc.kertas .name { font-weight: bold; color: #000; }
 /* Surat kertas (Gudang/Media) memakai satuan pt dengan isi 11pt, jadi angka
    px di atas akan terbaca jauh lebih kecil daripada badan suratnya. Angkanya
    sama, satuannya mengikuti surat — perbandingannya dengan isi surat jadi
    persis sama seperti di SKP. */
-.skpdoc.kertas .role { font-size: 10.5pt; }
-.skpdoc.kertas .name { font-size: 12.5pt; }
-.skpdoc.kertas .jab  { font-size: 10.5pt; }
+.skpdoc.kertas table.sign td.peran { color: #000; font-size: 10.5pt; }
+.skpdoc.kertas .name { color: #000; font-size: 12.5pt; }
+.skpdoc.kertas .jab  { color: #000; font-size: 12.5pt; }
 </style>
 <?php /* Lapisan pemadatan OTOMATIS. Kosong pada keadaan biasa; hanya terisi
          kalau penyesuai halaman di skp.php memutuskan surat ini "nanggung".
@@ -501,58 +503,77 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
     // dibaca lewat empty() dulu — "use" pada closure akan memperingatkan
     // variabel yang belum ada.
     $skpModePdf = !empty($PDF_MODE);
-    $skpKotakQr = static function () use ($skp, $skpVerifyUrl, $h, $skpModePdf): string {
+    // Margin kotak mengikuti perataan kolomnya: kiri menempel garis kiri,
+    // tengah betul-betul di tengah, kanan menempel garis kanan.
+    $skpMargin = static fn(string $rata, string $bawah): string => $rata === 'kiri'
+        ? '0 auto ' . $bawah . ' 0'
+        : ($rata === 'kanan' ? '0 0 ' . $bawah . ' auto' : '0 auto ' . $bawah);
+    $skpKotakQr = static function (string $rata) use ($skp, $skpVerifyUrl, $h, $skpModePdf, $skpMargin): string {
+        $m = $skpMargin($rata, '3px');
         // Pratinjau: kotaknya ada supaya letaknya persis seperti surat asli,
         // tetapi TIDAK memuat QR sungguhan — tokennya memang belum terbit, dan
         // QR yang dipindai lalu gagal lebih buruk daripada tidak ada QR.
         if (empty($skp['sign_token'])) {
-            return '<table style="width:70px;margin:0 auto 3px;border-collapse:collapse"><tr>'
+            return '<table style="width:70px;margin:' . $m . ';border-collapse:collapse"><tr>'
                  . '<td style="width:70px;height:70px;border:1px dashed #cbd5e1;text-align:center;'
                  . 'vertical-align:middle;font-size:6.5px;color:#94a3b8;line-height:1.4">'
                  . 'QR validasi<br>terbit saat<br>disetujui</td></tr></table>'
-                 . '<div class="qrhint">Scan untuk validasi</div>';
+                 . '<div class="qrhint ' . $rata . '">Scan untuk validasi</div>';
         }
         $kotak = $skpModePdf
-            ? '<div class="qrbox">' . clara_qr_img($skpVerifyUrl, 18) . '</div>'
-            : '<div class="qrbox" data-qr="' . $h($skpVerifyUrl) . '"></div>';
-        return $kotak . '<div class="qrhint">Scan untuk validasi</div>';
+            ? '<div class="qrbox" style="margin:' . $m . '">' . clara_qr_img($skpVerifyUrl, 18) . '</div>'
+            : '<div class="qrbox" style="margin:' . $m . '" data-qr="' . $h($skpVerifyUrl) . '"></div>';
+        return $kotak . '<div class="qrhint ' . $rata . '">Scan untuk validasi</div>';
     };
     // Ruang bergaris untuk tanda tangan basah. mPDF mengabaikan height pada
     // div tapi menghormatinya pada sel tabel, jadi dipakai tabel 1 sel —
     // sama seperti di Surat Penawaran (offer_print_template.php).
-    $skpGarisTtd = '<table style="width:26mm;margin:0 auto;border-collapse:collapse"><tr>'
-                 . '<td style="height:18mm;border-bottom:1px solid #111;font-size:1pt;color:#ffffff">&nbsp;</td>'
-                 . '</tr></table>';
+    $skpGarisTtd = static fn(string $rata): string =>
+        '<table style="width:34mm;margin:' . $skpMargin($rata, '0') . ';border-collapse:collapse"><tr>'
+        . '<td style="height:18mm;border-bottom:1px solid #111;font-size:1pt;color:#ffffff">&nbsp;</td>'
+        . '</tr></table>';
 
     $skpSudahTtd = ($skp['status'] ?? '') === 'signed';
+    $skpKetPenyewa = '';
     if ($skpSudahTtd && !empty($skp['signature_data'])) {
         $skpTtdPenyewa = '<img src="' . $h($skp['signature_data']) . '" alt="TTD" style="max-height:60px;max-width:100%">';
-        $skpKetPenyewa = '<br><span class="ttd-ket"><span style="color:#16a34a">&#9632;</span> Ditandatangani elektronik '
+        $skpKetPenyewa = '<span class="ttd-ket"><span style="color:#16a34a">&#9632;</span> Ditandatangani elektronik '
                        . $h(substr($skp['signed_at'] ?? '', 0, 16)) . '</span>';
     } elseif ($skpSudahTtd && ($skp['sign_method'] ?? '') === 'wet') {
-        $skpTtdPenyewa = $skpGarisTtd;
-        $skpKetPenyewa = '<br><span class="ttd-ket"><span style="color:#16a34a">&#9632;</span> Ditandatangani basah (scan terlampir)</span>';
+        $skpTtdPenyewa = $skpGarisTtd('kanan');
+        $skpKetPenyewa = '<span class="ttd-ket"><span style="color:#16a34a">&#9632;</span> Ditandatangani basah (scan terlampir)</span>';
     } else {
-        $skpTtdPenyewa = $skpGarisTtd;
-        $skpKetPenyewa = '';
+        $skpTtdPenyewa = $skpGarisTtd('kanan');
     }
+
+    // Jabatan sales menyebut propertinya: "Sales e-Walk", "Sales Executive
+    // Pentacity", dan seterusnya. Surat dari kedua properti dipegang orang
+    // yang sama, jadi tanpa nama properti pembacanya tidak tahu sales itu
+    // mewakili mal yang mana.
+    $skpJabSales = skp_jabatan_properti(
+        (string) ($d['sales_jabatan'] ?? ''),
+        (string) ($d['property_name'] ?? '')
+    );
 
     $skpKolomTtd = [
         [
+            'rata'  => 'kiri',
             'peran' => $skpDocType === 'sks' ? 'Hormat Kami,<br><strong>PT. Wulandari Bangun Laksana, Tbk.</strong>' : 'Dibuat Oleh,',
-            'ttd'   => $skpHasQr ? $skpKotakQr() : $skpGarisTtd,
+            'ttd'   => $skpHasQr ? $skpKotakQr('kiri') : $skpGarisTtd('kiri'),
             'nama'  => $h(trim((string) ($d['sales_nama'] ?? $d['sales'] ?? '')) ?: '-'),
-            'jab'   => $h(trim((string) ($d['sales_jabatan'] ?? '')) ?: 'Sales Executive'),
+            'jab'   => $h($skpJabSales),
             'ket'   => '',
         ],
         [
+            'rata'  => 'tengah',
             'peran' => $skpDocType === 'sks' ? 'Menyetujui,' : 'Mengetahui,',
-            'ttd'   => $skpHasQr ? $skpKotakQr() : $skpGarisTtd,
+            'ttd'   => $skpHasQr ? $skpKotakQr('tengah') : $skpGarisTtd('tengah'),
             'nama'  => $h($skpManager),
             'jab'   => 'Casual Leasing Manager',
             'ket'   => '',
         ],
         [
+            'rata'  => 'kanan',
             'peran' => $skpDocType === 'sks' ? 'Pihak Penyewa,' : ($skpDocType === 'fu' ? 'Pemohon,' : 'Menyetujui,'),
             'ttd'   => $skpTtdPenyewa,
             'nama'  => $h(($skpSudahTtd && ($skp['sign_name'] ?? '') !== '') ? $skp['sign_name'] : ($d['cp_name'] ?? '-')),
@@ -560,20 +581,17 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
             'ket'   => $skpKetPenyewa,
         ],
     ];
-    // Judul kolom disamakan jumlah barisnya dengan baris kosong, supaya ruang
-    // tanda tangan ketiga kolom mulai pada ketinggian yang sama.
-    $skpBarisPeran = 1;
-    foreach ($skpKolomTtd as $kol) $skpBarisPeran = max($skpBarisPeran, substr_count($kol['peran'], '<br>') + 1);
     ?>
-    <table class="sign"><tr>
-        <?php foreach ($skpKolomTtd as $kol): ?>
-        <td class="col">
-            <div class="role"><?= $kol['peran'] . str_repeat('<br>&nbsp;', $skpBarisPeran - substr_count($kol['peran'], '<br>') - 1) ?></div>
-            <table class="sigarea"><tr><td><?= $kol['ttd'] ?></td></tr></table>
-            <div class="name"><?= $kol['nama'] ?><br><span class="jab"><?= $kol['jab'] ?></span><?= $kol['ket'] ?></div>
-        </td>
-        <?php endforeach; ?>
-    </tr></table>
+    <?php /* Satu tabel TIGA BARIS, bukan tiga kolom yang masing-masing
+             menyusun isinya sendiri. Sel pada baris yang sama otomatis
+             setinggi sel tertinggi, jadi kalau nama PT pecah jadi dua baris
+             ketiga kolom ikut turun bersama — tidak ada lagi kolom yang
+             bergeser sendiri. */ ?>
+    <table class="sign">
+        <tr><?php foreach ($skpKolomTtd as $kol): ?><td class="col peran <?= $kol['rata'] ?>"><?= $kol['peran'] ?></td><?php endforeach; ?></tr>
+        <tr><?php foreach ($skpKolomTtd as $kol): ?><td class="col sigarea <?= $kol['rata'] ?>"><?= $kol['ttd'] ?></td><?php endforeach; ?></tr>
+        <tr><?php foreach ($skpKolomTtd as $kol): ?><td class="col nama <?= $kol['rata'] ?>"><div class="name"><?= $kol['nama'] ?></div><div class="jab"><?= $kol['jab'] ?></div><?= $kol['ket'] ?></td><?php endforeach; ?></tr>
+    </table>
 
     <?php /* Form Utilities: blok CATATAN berada di bawah tanda tangan, mengikuti
              susunan formulir kertasnya. */ ?>

@@ -189,11 +189,24 @@ function offer_preview(PDO $pdo): void
     $h  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
     require_once dirname(__DIR__) . '/pdf.php';
-    $PDF_MODE = true;
-    ob_start();
-    include __DIR__ . '/offer_print_template.php';
-    $html = (string) ob_get_clean();
     // Ukuran kertas pratinjau = ukuran surat jadinya: penawaran gudang F4.
-    clara_render_letterhead_pdf($html, 'PRATINJAU - Surat Penawaran', [], 'CONTOH — BELUM SAH',
-        ($o['module'] ?? $module) === 'gudang' ? 'F4' : 'A4');
+    $ukuran = ($o['module'] ?? $module) === 'gudang' ? 'F4' : 'A4';
+    // Pratinjau memakai penyesuai halaman yang SAMA dengan surat jadinya —
+    // kalau tidak, contohnya terbagi berbeda dengan berkas yang akhirnya
+    // diterima client.
+    $ctx = compact('o', 'prop', 'letter', 'items', 'tahapHarga', 'tierHarga', 'rp', 'h', 'pdo');
+    clara_kirim_pdf_rapi(
+        static function (int $rapat, int $potong) use ($ctx, $ukuran): array {
+            extract($ctx, EXTR_SKIP);
+            $PDF_MODE = true;
+            $POTONG = $potong;
+            ob_start();
+            include __DIR__ . '/offer_print_template.php';
+            $html = (string) ob_get_clean();
+            [$pdf, $halaman, $isi] = clara_pdf_buat($html, [], 'CONTOH — BELUM SAH', $ukuran);
+            return [$pdf, $halaman, $isi, substr_count($html, ' potong-'), true];
+        },
+        'PRATINJAU - Surat Penawaran',
+        []
+    );
 }

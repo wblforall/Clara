@@ -130,9 +130,13 @@ function clara_letterhead_mpdf(string $ukuran = 'A4'): \Mpdf\Mpdf
  * tangan, atau pembagian halaman yang berat sebelah — lalu mencoba bentuk
  * lain tanpa perlu merender dua kali.
  */
-function clara_pdf_buat(string $html, array $overlay = [], string $cap = '', string $ukuran = 'A4'): array
+function clara_pdf_buat(string $html, array $overlay = [], string $cap = '', string $ukuran = 'A4', $zoom = null): array
 {
     $mpdf = clara_letterhead_mpdf($ukuran);
+    // Zoom ditanam di dalam berkas PDF-nya (OpenAction) untuk pratinjau yang
+    // dibuka di penampil PDF lain; Chrome mengabaikannya dan memakai pecahan
+    // alamat (#zoom=).
+    if ($zoom !== null) $mpdf->SetDisplayMode($zoom, 'continuous');
     // Cap melintang untuk dokumen yang BELUM sah (mis. pratinjau sebelum
     // persetujuan selesai). Dibuat cukup pudar supaya isinya tetap terbaca,
     // tetapi cukup jelas supaya cetakannya tidak pernah bisa disodorkan
@@ -175,6 +179,85 @@ function clara_pdf_buat(string $html, array $overlay = [], string $cap = '', str
             : 1.0;
     }
     return [$mpdf->Output('', \Mpdf\Output\Destination::STRING_RETURN), $halaman, $terpakai];
+}
+
+/**
+ * Kirim PDF surat dengan PENYESUAIAN HALAMAN otomatis, lalu exit().
+ *
+ * Dipakai BERSAMA oleh semua surat CLARA — SKP, Gudang, Form Utilities, dan
+ * Surat Penawaran — supaya aturannya cuma ada di satu tempat dan tidak ada
+ * jenis surat yang ketinggalan.
+ *
+ * Yang diperbaiki: surat yang isinya cuma lewat sedikit dari satu halaman
+ * menyisakan halaman terakhir berisi blok tanda tangan saja — nanggung
+ * dilihat dan boros kertas.
+ *
+ * Ukuran kerapian yang dipakai: SEBERAPA PENUH HALAMAN YANG PALING KOSONG.
+ * Satu angka itu menangkap kedua bentuk jelek sekaligus — halaman terakhir
+ * yang cuma berisi tanda tangan, maupun halaman pertama yang tinggal separuh
+ * karena dipotong terlalu awal. Urutannya:
+ *
+ *   - sudah satu halaman, atau halaman terkosongnya sudah lumayan terisi →
+ *     dibiarkan apa adanya;
+ *   - nanggung → dicoba dirapatkan lebih dulu ($tingkatRapat). Yang dipakai
+ *     bentuk PERTAMA yang halamannya berkurang, jadi surat tidak pernah
+ *     dimampatkan lebih dari yang perlu;
+ *   - tetap tidak berkurang → DIBAGI di batas bagian / di antara poin. Semua
+ *     titik dicoba, yang dipakai yang paling seimbang.
+ *
+ * Pembagian baru dipakai kalau memenuhi SEMUANYA: tidak menambah halaman,
+ * halaman terkosongnya lebih berisi daripada bentuk aslinya, dan bentuknya
+ * wajar — tidak ada halaman yang lebih kosong daripada halaman sesudahnya.
+ *
+ * Tidak ada render yang terbuang: tiap percobaan sudah berupa PDF jadi dan
+ * yang terpilih langsung dikirim. Surat yang normal tetap dirender sekali.
+ *
+ * @param callable $render fn(int $rapat, int $potong): array — mengembalikan
+ *        [isi PDF, jumlah halaman, keterpakaian tiap halaman, jumlah titik
+ *        potong yang ditawarkan templat, boleh disesuaikan atau tidak].
+ * @param int[] $tingkatRapat Tingkat pemampatan yang dicoba sebelum membagi.
+ *        Kosongkan untuk surat yang memang tidak punya aturan pemampatan.
+ */
+function clara_kirim_pdf_rapi(callable $render, string $namaBerkas, array $tingkatRapat = [1, 2, 3]): void
+{
+    /** Nilai kerapian: isi halaman yang paling kosong. */
+    $skor = static fn(array $isi): float => $isi ? (float) min($isi) : 1.0;
+    /**
+     * Bentuk surat yang wajar: tiap halaman TIDAK boleh lebih kosong daripada
+     * halaman sesudahnya. Halaman terakhir yang lebih pendek itu biasa;
+     * halaman PERTAMA yang tinggal separuh sementara halaman kedua penuh
+     * justru bentuk yang dikeluhkan.
+     */
+    $wajar = static function (array $isi): bool {
+        $nilai = array_values($isi);
+        for ($i = 1; $i < count($nilai); $i++) if ($nilai[$i] > $nilai[$i - 1]) return false;
+        return true;
+    };
+
+    // Halaman terkosong yang terisi sampai 45% masih terbaca sebagai "cuma
+    // sisa" — blok tanda tangan sendirian kira-kira seperempat halaman.
+    $AMBANG = 0.45;
+    [$pdf, $halaman, $isi, $jumlahPotong, $boleh] = $render(0, 0);
+    if ($halaman < 2 || !$boleh || $skor($isi) > $AMBANG) clara_kirim_pdf($pdf, $namaBerkas);
+
+    foreach ($tingkatRapat as $tingkat) {
+        [$coba, $halCoba] = $render($tingkat, 0);
+        if ($halCoba < $halaman) clara_kirim_pdf($coba, $namaBerkas);
+    }
+
+    $terbaik = $skor($isi);
+    $pilih   = $pdf;
+    // Dikunci dari render pertama: bagian yang memotong dirinya sendiri tidak
+    // ikut menghitung dirinya saat sedang terpilih.
+    $totalPotong = $jumlahPotong;
+    for ($ke = 1; $ke <= $totalPotong; $ke++) {
+        [$coba, $halCoba, $isiCoba] = $render(0, $ke);
+        if ($halCoba !== $halaman) continue;   // pembagian tidak boleh menambah halaman
+        if (!$wajar($isiCoba)) continue;
+        $nilai = $skor($isiCoba);
+        if ($nilai > $terbaik + 0.01) { $terbaik = $nilai; $pilih = $coba; }
+    }
+    clara_kirim_pdf($pilih, $namaBerkas);
 }
 
 /**
