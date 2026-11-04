@@ -79,8 +79,8 @@ function m2_peran_label(): string
 {
     return match (current_role()) {
         'asst_manager' => 'Asst. Manager',
-        'superadmin'   => 'Super Admin',
-        default        => 'Sales',
+        'sales'        => 'Sales',
+        default        => roles()[current_role()] ?? 'Pengguna',
     };
 }
 
@@ -141,7 +141,7 @@ function m2_nav(string $route, PDO $pdo): void
 {
     // Layar turunan (detail unit, profil) tidak memakai menu bawah, seperti prototipe.
     if (in_array($route, ['m2_unit_detail', 'm2_profil'], true)) return;
-    $manager = current_role() !== 'sales';
+    $manager = current_role() !== 'sales' && can('manage_skp');
     $aktif = match (true) {
         $route === 'm_home'                                   => 'home',
         str_starts_with($route, 'm2_unit'), $route === 'm2_kalender' => 'unit',

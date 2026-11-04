@@ -456,12 +456,11 @@ function mobile_view_active(): bool
 }
 
 /**
- * Tampilan mobile baru (mobile2.php) khusus Sales & Asst. Manager di HP.
- * Peran lain tetap memakai tampilan mobile lama.
+ * Tampilan mobile baru (mobile2.php) untuk semua peran di HP.
  */
 function mobile2_aktif(): bool
 {
-    return mobile_view_active() && in_array(current_role(), ['sales', 'asst_manager', 'superadmin'], true);
+    return mobile_view_active();
 }
 
 // ─── Property helpers ────────────────────────────────────────────────────────
