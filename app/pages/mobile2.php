@@ -77,7 +77,11 @@ function m2_sapaan(): string
 
 function m2_peran_label(): string
 {
-    return current_role() === 'asst_manager' ? 'Asst. Manager' : 'Sales';
+    return match (current_role()) {
+        'asst_manager' => 'Asst. Manager',
+        'superadmin'   => 'Super Admin',
+        default        => 'Sales',
+    };
 }
 
 /** Kuncinya: berapa hari lagi bulan ini berakhir. */
@@ -137,7 +141,7 @@ function m2_nav(string $route, PDO $pdo): void
 {
     // Layar turunan (detail unit, profil) tidak memakai menu bawah, seperti prototipe.
     if (in_array($route, ['m2_unit_detail', 'm2_profil'], true)) return;
-    $manager = current_role() === 'asst_manager';
+    $manager = current_role() !== 'sales';
     $aktif = match (true) {
         $route === 'm_home'                                   => 'home',
         str_starts_with($route, 'm2_unit'), $route === 'm2_kalender' => 'unit',

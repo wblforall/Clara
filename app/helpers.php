@@ -461,7 +461,7 @@ function mobile_view_active(): bool
  */
 function mobile2_aktif(): bool
 {
-    return mobile_view_active() && in_array(current_role(), ['sales', 'asst_manager'], true);
+    return mobile_view_active() && in_array(current_role(), ['sales', 'asst_manager', 'superadmin'], true);
 }
 
 // ─── Property helpers ────────────────────────────────────────────────────────
