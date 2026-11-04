@@ -356,15 +356,16 @@ function m2_alokasi_page(PDO $pdo): void
 
     // Lokasi unit dari master sesuai modul; transaksi sendiri menyimpan luas & jumlahnya.
     $lokasi = '';
+    $luasMaster = 0.0;
     try {
         if ($t['module'] === 'cl') {
-            $q = $pdo->prepare('SELECT floor, location_name, unit_type FROM master_cl_units WHERE property_id = ? AND code = ?');
+            $q = $pdo->prepare('SELECT floor, location_name, unit_type, area_sqm FROM master_cl_units WHERE property_id = ? AND code = ?');
             $q->execute([$pid, $t['master_code']]);
-            if ($u = $q->fetch()) $lokasi = trim(($u['floor'] ? $u['floor'] . ' · ' : '') . ($u['location_name'] ?: $u['unit_type']));
+            if ($u = $q->fetch()) { $lokasi = trim(($u['floor'] ? $u['floor'] . ' · ' : '') . ($u['location_name'] ?: $u['unit_type'])); $luasMaster = (float) $u['area_sqm']; }
         } elseif ($t['module'] === 'gudang') {
-            $q = $pdo->prepare('SELECT location, name FROM master_gudang WHERE property_id = ? AND code = ?');
+            $q = $pdo->prepare('SELECT location, name, area_sqm FROM master_gudang WHERE property_id = ? AND code = ?');
             $q->execute([$pid, $t['master_code']]);
-            if ($u = $q->fetch()) $lokasi = trim(($u['location'] ?: '') . ($u['name'] ? ' · ' . $u['name'] : ''), ' ·');
+            if ($u = $q->fetch()) { $lokasi = trim(($u['location'] ?: '') . ($u['name'] ? ' · ' . $u['name'] : ''), ' ·'); $luasMaster = (float) $u['area_sqm']; }
         } elseif ($t['module'] === 'media') {
             $q = $pdo->prepare('SELECT media_type, location, point, size FROM master_media WHERE property_id = ? AND code = ?');
             $q->execute([$pid, $t['master_code']]);
@@ -398,10 +399,12 @@ function m2_alokasi_page(PDO $pdo): void
     $dari = (string) getv('dari', '');
     $back = $dari !== '' ? $dari : ($t['client_id'] ? '?r=client_profile&id=' . (int) $t['client_id'] : '?r=m2_klien');
 
-    layout('Alokasi #' . $id, function () use ($t, $id, $nama, $nilai, $fmt, $tipe, $bayarL, $mdl, $mdlC, $mdlB, $lokasi, $perBulan, $back) {
+    layout('Alokasi #' . $id, function () use ($t, $id, $nama, $nilai, $fmt, $tipe, $bayarL, $mdl, $mdlC, $mdlB, $lokasi, $luasMaster, $perBulan, $back) {
         m2_top((string) $nama, $back, 'Alokasi #' . $id);
         $qty = (float) $t['quantity'];
-        $luas = (float) $t['area_sqm'];
+        // Banyak transaksi menyimpan luas 0; luas unit di master dipakai sebagai gantinya.
+        $luasTrx = (float) $t['area_sqm'];
+        $luas = $luasTrx > 0 ? $luasTrx : $luasMaster;
         $by = $bayarL[$t['bayar_status']] ?? ['—', ''];
         ?>
         <main class="m2-wrap" style="padding-bottom:24px">
@@ -411,7 +414,7 @@ function m2_alokasi_page(PDO $pdo): void
                     <span class="m2-st" style="background:<?= $mdlB ?>;color:<?= $mdlC ?>"><?= h($mdl) ?></span>
                 </div>
                 <div class="m2-stats" style="margin-top:10px">
-                    <div><small>Luas</small><b><?= $luas > 0 ? h($fmt($luas)) . ' m²' : '—' ?></b></div>
+                    <div><small><?= $luasTrx > 0 || $luas <= 0 ? 'Luas' : 'Luas unit' ?></small><b><?= $luas > 0 ? h($fmt($luas)) . ' m²' : '—' ?></b></div>
                     <div><small>Jumlah</small><b><?= $qty > 0 ? h($fmt($qty)) : '—' ?></b></div>
                     <div><small>Slot</small><b><?= (float) $t['slots'] > 0 ? h($fmt($t['slots'])) : '—' ?></b></div>
                 </div>
