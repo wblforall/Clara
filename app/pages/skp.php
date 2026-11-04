@@ -81,12 +81,17 @@ function _skp_source_from_offer(PDO $pdo, int $offerId, int $pid): ?array
     $o['renewal_status'] = null;
     // Lewat skp_doc_type() supaya Media menjadi 'fu', bukan ikut jatuh ke 'sks'.
     $o['doc_type'] = skp_doc_type((string) $o['module']);
-    // Biaya listrik yang dicentang di penawaran ikut terbawa: nilainya masuk ke
-    // total yang nanti jadi nilai transaksi & alokasi bulanan, dan rinciannya
-    // tetap ditampilkan terpisah di SKP.
+    // Biaya listrik yang dicentang di penawaran dibawa sebagai KOMPONEN
+    // TERSENDIRI, tidak dilebur ke nilai transaksi.
+    //
+    // Dulu nilainya dijumlahkan ke final_amount, dan final_amount itulah yang
+    // jadi income bulanan — sehingga listrik ikut terhitung sebagai pendapatan
+    // sewa. Padahal listrik adalah biaya yang ditalangi, bukan income: halaman
+    // Tagihan pun menyebutnya "tidak termasuk nilai transaksi". Surat dan
+    // tagihan ke client tidak berubah karena keduanya menambahkan listrik
+    // kembali sebagai baris sendiri.
     if (!function_exists('offer_listrik')) require_once __DIR__ . '/offers.php';
     $o['electricity'] = offer_listrik($o);
-    $o['final_amount'] = (float) $o['final_amount'] + $o['electricity'];
     return $o;
 }
 
@@ -905,13 +910,15 @@ function skp_form(PDO $pdo): void
         : (!empty($src['deposit_paid'])                      // ikut dari Surat Penawaran
             || ($defDeposit > 0 && _skp_deposit_pernah($pdo, (int) ($src['client_id'] ?? 0))));
     // Listrik: dari penawaran (bila ada) atau yang dicatat di dokumen ini.
+    // Satu sumber saja: dokumen tersimpan memakai catatannya sendiri, dokumen
+    // baru memakai angka dari penawarannya. Dijumlahkan akan dobel.
     $listrikSkp = $skp ? skp_listrik($skp, (string) $src['start_date'], (string) $src['end_date']) : 0.0;
-    $listrikAll = (float) ($src['electricity'] ?? 0) + $listrikSkp;
+    $listrikAll = $skp ? $listrikSkp : (float) ($src['electricity'] ?? 0);
     // Harga publish: dokumen lama pakai nilainya sendiri, dokumen baru ikut
     // penawarannya (bila ada) — pola yang sama dengan PPN dan Service Charge.
     $defDiskon = $skp ? !empty($skp['diskon_aktif']) : !empty($src['diskon_aktif']);
     $defPublish = (float) ($skp['tarif_publish'] ?? $src['tarif_publish'] ?? 0);
-    $amt      = _skp_amounts($total + $listrikSkp, (float) $src['unit_rate'], $defDeposit, $listrikAll, $defDepPaid, $defPpn,
+    $amt      = _skp_amounts($total + $listrikAll, (float) $src['unit_rate'], $defDeposit, $listrikAll, $defDepPaid, $defPpn,
         $defSc ? $defScRp : 0.0, $scBulan, $defDiskon ? $defPublish : 0.0, $defDiskon,
         clara_pengali_harga($src));
     $area     = (float) ($src['area_sqm'] ?: $src['unit_area']);
@@ -1603,13 +1610,17 @@ function skp_form(PDO $pdo): void
                 /* Biaya listrik milik dokumen ini. Untuk SKP dari Surat Penawaran
                    listriknya sudah ikut dari sana (ditampilkan di atas, read-only);
                    blok ini untuk SKP perpanjangan yang tidak lewat penawaran. */
+                // Dokumen BARU dari Surat Penawaran: kotak listriknya langsung
+                // terisi dari penawaran itu. Dulu blok ini disembunyikan karena
+                // listriknya sudah dilebur ke nilai transaksi — justru itu yang
+                // membuat listrik terhitung sebagai income.
                 $lDari  = (float) ($src['electricity'] ?? 0);
-                $lOn    = $skp ? !empty($skp['electricity_flag']) : false;
+                $lOn    = $skp ? !empty($skp['electricity_flag']) : ($lDari > 0);
                 $lTarif = (float) ($skp['electricity_monthly'] ?? 0) ?: 150000;
                 $lUnit  = (int) ($skp['electricity_units'] ?? 0);
-                $lTotal = (float) ($skp['electricity_amount'] ?? 0);
+                $lTotal = $skp ? (float) ($skp['electricity_amount'] ?? 0) : $lDari;
                 ?>
-                <?php if ($lDari <= 0): ?>
+                <?php if (true): ?>
                 <div class="wide" style="border-top:1px dashed var(--border,#e2e8f0);padding-top:10px;margin-top:2px">
                     <label style="display:flex;align-items:center;gap:7px;cursor:pointer">
                         <input type="checkbox" name="electricity_flag" id="skp_listrik_on" value="1" style="width:16px;height:16px;flex:none;margin:0" <?= $lOn ? 'checked' : '' ?> <?= $editable ? '' : 'disabled' ?>>
@@ -2922,17 +2933,11 @@ function _skp_src_dari_post(PDO $pdo, array $src, bool $standalone): array
     $ketik  = (float) parse_rupiah((string) post($standalone ? 's_total_amount' : 'p_total', '0'));
     $hitung = 0.0;
     try { $hitung = (float) AllocationService::totalCalculated($src); } catch (Throwable $e) { $hitung = 0.0; }
-    // final_amount dari sumbernya SUDAH memuat biaya listrik — lihat
-    // _skp_source_from_offer(), yang menambahkannya tepat setelah membaca
-    // penawaran. Hitungan di sini hanya menghasilkan nilai SEWA, jadi
-    // listriknya ditambahkan kembali.
-    //
-    // Tanpa ini pratinjau kehilangan satu biaya listrik beserta PPN-nya,
-    // sehingga Grand Total di surat contoh berbeda dari yang tertera di
-    // formulir — padahal keduanya menggambarkan dokumen yang sama persis.
-    $listrik = (float) ($src['electricity'] ?? 0);
+    // Nilai transaksi = nilai SEWA saja. Biaya listrik tidak ikut dijumlahkan
+    // di sini: ia komponen tersendiri yang ditambahkan lagi oleh surat dan
+    // tagihan, dan kalau ikut di sini ia akan terhitung sebagai income.
     $src['total_calculated'] = $hitung;
-    $src['final_amount']     = ($ketik > 0 ? $ketik : $hitung) + $listrik;
+    $src['final_amount']     = $ketik > 0 ? $ketik : $hitung;
     return $src;
 }
 
@@ -3510,7 +3515,7 @@ function skp_approve(PDO $pdo): void
     $total = (float) ($src['final_amount'] ?: $src['total_calculated']);
     $listrikSkp = skp_listrik($skp, (string) $src['start_date'], (string) $src['end_date']);
     $amt   = _skp_amounts($total + $listrikSkp, (float) $src['unit_rate'], (float) $skp['deposit_amount'],
-        (float) ($src['electricity'] ?? 0) + $listrikSkp, !empty($skp['deposit_paid']), !empty($skp['ppn_flag']),
+        $listrikSkp, !empty($skp['deposit_paid']), !empty($skp['ppn_flag']),
         !empty($skp['sc_flag']) ? (float) $skp['sc_monthly'] : 0.0,
         _skp_bulan($src['start_date'] ?? null, $src['end_date'] ?? null),
         // Diambil dari KOLOM DOKUMEN, bukan dari penawaran: inilah angka yang
