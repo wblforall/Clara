@@ -39,6 +39,17 @@ function skp_doc_label(string $docType): string
     };
 }
 
+/**
+ * Ukuran kertas cetak per jenis surat.
+ *
+ * Surat Gudang (sks) dicetak di F4/folio — itu kertas yang dipakai di kantor;
+ * di A4 tata letaknya nanggung. Pameran (skp) & Form Utilities (fu) tetap A4.
+ */
+function skp_ukuran_kertas(string $docType): string
+{
+    return $docType === 'sks' ? 'F4' : 'A4';
+}
+
 /** Judul baku di kepala cetakan (bisa ditimpa "Perihal" template). */
 function skp_doc_title(string $docType): string
 {

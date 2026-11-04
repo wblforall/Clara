@@ -1038,7 +1038,8 @@ function skp_form(PDO $pdo): void
         clara_render_letterhead_pdf($isiHtml,
             'PRATINJAU - ' . skp_doc_title($docType),
             $PARAF_OVERLAY,
-            'CONTOH — BELUM SAH');
+            'CONTOH — BELUM SAH',
+            skp_ukuran_kertas($docType));
         return;
     }
 
@@ -1754,12 +1755,16 @@ function skp_form(PDO $pdo): void
                 <?php $bolehBuang = $skp && ($skp['status'] ?? '') === 'draft'
                         && empty($skp['skp_no']) && (int) ($skp['revisi_ke'] ?? 0) === 0; ?>
                 <?php if ($bolehBuang): ?>
-                <form method="post" action="?r=skp_discard" style="display:inline"
-                      onsubmit="return confirm('Buang draft ini beserta transaksinya? Tidak ada nilai yang terhitung dari dokumen ini.')">
-                    <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
-                    <input type="hidden" name="id" value="<?= (int) $skp['id'] ?>">
-                    <button class="btn light" style="background:#fef2f2;color:#991b1b;border-color:#fecaca">Buang Draft</button>
-                </form>
+                <?php /* Tombol milik formulir INI, bukan <form> sendiri.
+                         HTML tidak mengizinkan form di dalam form: browser membuang
+                         tag form bagian dalam, dan tombolnya ikut terkirim ke
+                         ?r=skp_save — draft yang dibuang justru tersimpan.
+                         formaction mengarahkannya ke rute yang benar; _csrf dan id
+                         sudah dibawa formulir ini. formnovalidate supaya draft yang
+                         isiannya belum lengkap tetap bisa dibuang. */ ?>
+                <button type="submit" formaction="?r=skp_discard" formnovalidate
+                        class="btn light" style="background:#fef2f2;color:#991b1b;border-color:#fecaca"
+                        onclick="return confirm('Buang draft ini beserta transaksinya? Tidak ada nilai yang terhitung dari dokumen ini.')">Buang Draft</button>
                 <?php endif; ?>
             </p>
         </form>
@@ -4411,7 +4416,8 @@ function skp_print(PDO $pdo): void
     ob_start();
     include __DIR__ . '/skp_print_body.php';
     $html = ob_get_clean();
-    clara_render_letterhead_pdf($html, ($skp['skp_no'] ?: 'SKP') . ' - ' . $docTitle, $PARAF_OVERLAY);
+    clara_render_letterhead_pdf($html, ($skp['skp_no'] ?: 'SKP') . ' - ' . $docTitle, $PARAF_OVERLAY, '',
+        skp_ukuran_kertas((string) ($skp['doc_type'] ?? 'skp')));
 }
 
 // ─── Tanda tangan customer (PUBLIK, tanpa login — akses via sign_token) ───────

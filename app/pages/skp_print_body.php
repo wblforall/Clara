@@ -158,7 +158,11 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
     <div class="doc-title"<?= $skpDocType === 'sks' ? ' style="font-weight:bold;text-decoration:underline"' : '' ?>><?= $h(skp_doc_heading($skpDocType, $skpTpl)) ?></div>
     <?php if ($skpDocType === 'sks'): ?>
     <div class="doc-sub" style="font-weight:bold"><?= $h($d['property_name'] ?? '') ?></div>
-    <div class="doc-no" style="text-align:right;margin-top:-6px">No. <?= $h($skp['skp_no']) ?></div>
+    <?php /* Nomor surat RATA TENGAH, satu sumbu dengan judul & nama properti —
+             persis Surat Konfirmasi Pameran. Sebelumnya rata kanan sehingga
+             kepala suratnya terlihat tidak sejajar. Berlaku untuk pratinjau
+             maupun surat jadi, karena keduanya memakai berkas ini. */ ?>
+    <div class="doc-no" style="margin-top:-6px">No. <?= $h($skp['skp_no']) ?></div>
     <?php else: ?>
     <div class="doc-no">No. <?= $h($skp['skp_no']) ?></div>
     <?php endif; ?>
@@ -453,10 +457,11 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 
     <?php endif; ?>
 
-    <?php /* Form Utilities menaruh kota & tanggal di KIRI, sejajar dengan
-             kolom "Dibuat Oleh" di bawahnya. SKP & SKS tetap di kanan seperti
-             bentuk kertasnya masing-masing. */ ?>
-    <div style="text-align:<?= $skpDocType === 'fu' ? 'left' : 'right' ?>;margin-top:16px;font-size:10.5px">Balikpapan, <?= $h($skpToday) ?></div>
+    <?php /* Kota & tanggal RATA KIRI pada semua dokumen — SKP, SKS, maupun
+             Form Utilities, di kedua properti. Sejajar dengan kolom tanda
+             tangan pertama di bawahnya, dan sama dengan Surat Penawaran yang
+             memang sudah rata kiri sejak awal. */ ?>
+    <div style="text-align:left;margin-top:16px;font-size:10.5px">Balikpapan, <?= $h($skpToday) ?></div>
     <table class="sign"><tr>
         <td class="col"><div class="role"><?= $skpDocType === 'sks' ? 'Hormat Kami,<br><strong>PT. Wulandari Bangun Laksana, Tbk.</strong>' : 'Dibuat Oleh,' ?></div>
             <div class="sigarea"><?php if ($skpHasQr): ?><?php if (empty($skp['sign_token'])): ?><?php /* Pratinjau: kotaknya ada supaya letaknya persis seperti surat asli, tetapi TIDAK memuat QR sungguhan — tokennya memang belum terbit, dan QR yang dipindai lalu gagal lebih buruk daripada tidak ada QR sama sekali. */ ?><table style="width:70px;margin:0 auto 3px;border-collapse:collapse"><tr><td style="width:70px;height:70px;border:1px dashed #cbd5e1;text-align:center;vertical-align:middle;font-size:6.5px;color:#94a3b8;line-height:1.4">QR validasi<br>terbit saat<br>disetujui</td></tr></table><?php elseif (!empty($PDF_MODE)): ?><div class="qrbox"><?= clara_qr_img($skpVerifyUrl, 18) ?></div><?php else: ?><div class="qrbox" data-qr="<?= $h($skpVerifyUrl) ?>"></div><?php endif; ?><div class="qrhint">Scan untuk validasi</div><?php endif; ?></div>

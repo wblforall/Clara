@@ -58,9 +58,23 @@ function _clara_pdf_strips(): array
     return [$head, $foot];
 }
 
-/** Bangun instance mPDF A4 dengan kop letterhead berulang + margin konten. */
-function clara_letterhead_mpdf(): \Mpdf\Mpdf
+/**
+ * Ukuran kertas renderer: [format mPDF, lebar halaman dalam mm].
+ *
+ * 'F4' (folio, 215 x 330 mm) dipakai SURAT GUDANG — kertas itulah yang dipakai
+ * mencetaknya, sementara A4 membuat tata letaknya nanggung. Nama lain apa pun
+ * tetap A4 supaya pemanggil yang tidak menyebut ukuran menghasilkan dokumen
+ * yang sama persis seperti sebelumnya.
+ */
+function clara_pdf_ukuran(string $ukuran): array
 {
+    return strtoupper(trim($ukuran)) === 'F4' ? [[215, 330], 215] : ['A4', 210];
+}
+
+/** Bangun instance mPDF ber-kop letterhead berulang + margin konten. */
+function clara_letterhead_mpdf(string $ukuran = 'A4'): \Mpdf\Mpdf
+{
+    [$fmtKertas, $lebarKertas] = clara_pdf_ukuran($ukuran);
     require_once dirname(__DIR__) . '/vendor/autoload.php';
     [$head, $foot] = _clara_pdf_strips();
     // Carlito = pengganti Calibri (metrik sama persis, lisensi OFL). Dipakai
@@ -77,16 +91,20 @@ function clara_letterhead_mpdf(): \Mpdf\Mpdf
             'I'  => 'Carlito-Italic.ttf',
             'BI' => 'Carlito-BoldItalic.ttf',
         ]],
-        'format'        => 'A4',
+        'format'        => $fmtKertas,
         'margin_top'    => 34, 'margin_bottom' => 40,
         'margin_left'   => 16, 'margin_right'  => 16,
         'margin_header' => 0,  'margin_footer' => 0,
     ]);
-    // Kop FULL-BLEED (tembus tepi A4): header/footer di mPDF default ikut margin
-    // kiri/kanan konten (16mm) → ada border putih. Margin negatif -16mm + lebar
-    // 210mm membuat gambar kop menutup penuh lebar halaman, konten tetap inset.
-    if (is_file($head)) $mpdf->SetHTMLHeader('<div style="margin:0 -16mm"><img src="' . $head . '" style="width:210mm;display:block"></div>');
-    if (is_file($foot)) $mpdf->SetHTMLFooter('<div style="margin:0 -16mm"><img src="' . $foot . '" style="width:210mm;display:block"></div>');
+    // Kop FULL-BLEED (tembus tepi kertas): header/footer di mPDF default ikut
+    // margin kiri/kanan konten (16mm) → ada border putih. Margin negatif -16mm
+    // + lebar gambar = lebar kertas membuat kop menutup penuh, konten tetap inset.
+    // Gambar kopnya seproporsi A4; di F4 ia melebar 2,4% sehingga strip jadi
+    // ~33,8mm (atas) dan ~38,9mm (bawah) — masih di dalam margin 34mm & 40mm,
+    // jadi kop tidak pernah menabrak isi surat.
+    $wKop = 'width:' . $lebarKertas . 'mm;display:block';
+    if (is_file($head)) $mpdf->SetHTMLHeader('<div style="margin:0 -16mm"><img src="' . $head . '" style="' . $wKop . '"></div>');
+    if (is_file($foot)) $mpdf->SetHTMLFooter('<div style="margin:0 -16mm"><img src="' . $foot . '" style="' . $wKop . '"></div>');
     return $mpdf;
 }
 
@@ -95,9 +113,9 @@ function clara_letterhead_mpdf(): \Mpdf\Mpdf
  * INLINE → tampil di viewer PDF (preview + bisa simpan/bagikan) di HP & PC.
  * Memanggil exit().
  */
-function clara_render_letterhead_pdf(string $html, string $filename, array $overlay = [], string $cap = ''): void
+function clara_render_letterhead_pdf(string $html, string $filename, array $overlay = [], string $cap = '', string $ukuran = 'A4'): void
 {
-    $mpdf = clara_letterhead_mpdf();
+    $mpdf = clara_letterhead_mpdf($ukuran);
     // Cap melintang untuk dokumen yang BELUM sah (mis. pratinjau sebelum
     // persetujuan selesai). Dibuat cukup pudar supaya isinya tetap terbaca,
     // tetapi cukup jelas supaya cetakannya tidak pernah bisa disodorkan

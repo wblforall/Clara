@@ -193,5 +193,7 @@ function offer_preview(PDO $pdo): void
     ob_start();
     include __DIR__ . '/offer_print_template.php';
     $html = (string) ob_get_clean();
-    clara_render_letterhead_pdf($html, 'PRATINJAU - Surat Penawaran', [], 'CONTOH — BELUM SAH');
+    // Ukuran kertas pratinjau = ukuran surat jadinya: penawaran gudang F4.
+    clara_render_letterhead_pdf($html, 'PRATINJAU - Surat Penawaran', [], 'CONTOH — BELUM SAH',
+        ($o['module'] ?? $module) === 'gudang' ? 'F4' : 'A4');
 }

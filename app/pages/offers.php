@@ -4049,7 +4049,9 @@ function offer_print(PDO $pdo): void
     ob_start();
     include __DIR__ . '/offer_print_template.php';
     $html = ob_get_clean();
-    clara_render_letterhead_pdf($html, ($o['offer_no'] ?: 'Penawaran') . ' - Surat Penawaran');
+    // Penawaran gudang ikut F4, sama seperti surat konfirmasinya.
+    clara_render_letterhead_pdf($html, ($o['offer_no'] ?: 'Penawaran') . ' - Surat Penawaran', [], '',
+        ($o['module'] ?? '') === 'gudang' ? 'F4' : 'A4');
 }
 
 // ─── Verifikasi penawaran via QR (publik, read-only, akses via sign_token) ────
@@ -4949,7 +4951,7 @@ function offer_template_preview(PDO $pdo): void
         // sisi halaman; penampil lain yang membaca /OpenAction tetap kebagian.
         $z = (string) post('zoom', 'fullwidth');
         $zoom = is_numeric($z) ? max(25, min(400, (int) $z)) : 'fullwidth';
-        $mpdf = clara_letterhead_mpdf();
+        $mpdf = clara_letterhead_mpdf($module === 'gudang' ? 'F4' : 'A4');
         $mpdf->SetDisplayMode($zoom, 'continuous');
         $mpdf->WriteHTML($html);
         $pdf = $mpdf->Output('', \Mpdf\Output\Destination::STRING_RETURN);
