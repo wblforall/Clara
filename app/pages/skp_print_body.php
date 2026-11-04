@@ -114,8 +114,8 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
    tengah supaya titik tengahnya bergeser ke luar — blok pertama duduk lebih
    mepet ke garis kiri dan blok terakhir lebih mepet ke garis kanan, tanpa
    ada yang jadi rata kiri/rata kanan. */
-.skpdoc table.sign td.col { width: 30%; padding: 0; border: none; vertical-align: bottom; text-align: center; }
-.skpdoc table.sign td.tengah { width: 40%; }
+.skpdoc table.sign td.col { width: 22%; padding: 0; border: none; vertical-align: bottom; text-align: center; }
+.skpdoc table.sign td.tengah { width: 56%; }
 .skpdoc table.sign td.col img { max-width: 100%; height: auto; }
 /* Baris jabatan kolom ("Hormat Kami," + nama PT) menempel ke DASAR barisnya,
    jadi berapa pun barisnya, ruang tanda tangan di bawahnya tetap mulai pada
@@ -131,8 +131,8 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc table.sign td.nama { vertical-align: top; }
 /* Nama & jabatan sedikit lebih besar daripada paragraf surat, tidak
    ditebalkan; jabatan dimiringkan. */
-.skpdoc .name { display: block; padding-top: 3px; font-size: 11.5px; line-height: 1.3; }
-.skpdoc .jab { display: block; font-style: italic; font-size: 11.5px; line-height: 1.3; }
+.skpdoc .name { display: block; padding-top: 3px; font-size: 12px; line-height: 1.3; }
+.skpdoc .jab { display: block; font-style: italic; font-size: 12px; line-height: 1.3; }
 .skpdoc .ttd-ket { display: block; font-style: normal; color: #6b7280; font-size: 8px; }
 .skpdoc .qrbox { width: 70px; height: 70px; margin: 0 auto 3px; }
 .skpdoc .qrbox img, .skpdoc .qrbox svg { width: 70px !important; height: 70px !important; display: block; }
@@ -170,8 +170,13 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
    sama, satuannya mengikuti surat — perbandingannya dengan isi surat jadi
    persis sama seperti di SKP. */
 .skpdoc.kertas table.sign td.peran { color: #000; font-size: 9.5pt; }
-.skpdoc.kertas .name { color: #000; font-size: 11.5pt; }
-.skpdoc.kertas .jab  { color: #000; font-size: 11.5pt; }
+.skpdoc.kertas .name { color: #000; font-size: 12pt; }
+.skpdoc.kertas .jab  { color: #000; font-size: 12pt; }
+/* Surat kertas memakai nama PT di kolom pertama — barisnya lebih panjang,
+   jadi kolom tepinya tidak bisa sesempit surat lain tanpa membuatnya pecah
+   dua baris. Tetap sesempit mungkin supaya bloknya mepet ke pinggir. */
+.skpdoc.kertas table.sign td.col { width: 30%; }
+.skpdoc.kertas table.sign td.tengah { width: 40%; }
 </style>
 <?php /* Lapisan pemadatan OTOMATIS. Kosong pada keadaan biasa; hanya terisi
          kalau penyesuai halaman di skp.php memutuskan surat ini "nanggung".

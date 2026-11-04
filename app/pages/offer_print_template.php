@@ -261,14 +261,14 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
 .sign{width:100%;border-collapse:collapse;margin-top:14px;page-break-inside:avoid;table-layout:fixed}
 /* Isi kedua kolom rata tengah; yang membuat blok kiri & kanan terlihat mepet
    ke pinggir adalah kolom kosong di tengahnya, bukan perataan isinya. */
-.sign td.col{width:38%;padding:0;border:none;vertical-align:bottom;text-align:center}
-.sign td.antara{width:24%;padding:0;border:none}
+.sign td.col{width:22%;padding:0;border:none;vertical-align:bottom;text-align:center}
+.sign td.antara{width:56%;padding:0;border:none}
 .sign td.peran{font-size:9.5px;color:#6b7280;line-height:1.3;padding-bottom:1.2mm}
 .sign td.sigarea{height:20mm}
 .sign td.nama{vertical-align:top}
 .ttd-img{height:58px;width:auto;margin:2px 0}
-.nm{display:block;padding-top:3px;font-size:11.5px;line-height:1.3}
-.jab{display:block;font-style:italic;font-size:11.5px;line-height:1.3}
+.nm{display:block;padding-top:3px;font-size:12px;line-height:1.3}
+.jab{display:block;font-style:italic;font-size:12px;line-height:1.3}
 .ttd-ket{display:block;font-style:normal;color:#6b7280;font-size:8px}
 .qrbox{width:70px;height:70px;margin:6px auto 3px}
 .qrbox img,.qrbox svg{width:70px!important;height:70px!important;display:block}
