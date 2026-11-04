@@ -1293,8 +1293,16 @@ function skp_form(PDO $pdo): void
                 <div><label>Lokasi</label><input id="spec-lokasi" value="Paket — <?= count($komponenPaket) ?> lokasi" disabled></div>
                 <div><label>Lantai</label><input id="spec-lantai" value="<?= h(implode(', ', array_values(array_unique(array_filter(array_column($komponenPaket, 'lantai'), fn($x) => $x !== '-'))) ?: ['-'])) ?>" disabled></div>
                 <?php else: ?>
-                <div><label>Lokasi</label><input id="spec-lokasi" value="<?= h($src['location_name'] ?? $src['master_code']) ?>" disabled></div>
-                <div><label>Lantai</label><input id="spec-lantai" value="<?= h($src['floor'] ?? '-') ?>" disabled></div>
+                <?php /* Cermin dari Master Unit. Dulu kosong melompong bila unitnya
+                         belum terdaftar — 'location_name' berisi string kosong, bukan
+                         null, sehingga ?? tidak pernah jatuh ke kode unitnya. */ ?>
+                <div><label>Lokasi</label>
+                    <input id="spec-lokasi" value="<?= h(skp_pilih_isi($src['location_name'] ?? '', $src['master_code'] ?? '', '-')) ?>" disabled>
+                    <?php if (skp_pilih_isi($src['location_name'] ?? '') === '' && ($src['master_code'] ?? '') !== ''): ?>
+                        <div class="help">Unit <b><?= h($src['master_code']) ?></b> belum terdaftar di Master Gudang, jadi nama &amp; luasnya belum bisa diambil otomatis. Lokasi yang tercetak di surat diisi di <b>Lokasi Gudang Yang Akan Disewa</b> di bawah.</div>
+                    <?php endif; ?>
+                </div>
+                <div><label>Lantai</label><input id="spec-lantai" value="<?= h(skp_pilih_isi($src['floor'] ?? '', '-')) ?>" disabled></div>
                 <?php endif; ?>
                 <?php /* Titik media dijual per hari/titik — luas area & seating
                          tidak dipakai, jadi kolomnya tidak ditampilkan di Media. */ ?>
