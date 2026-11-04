@@ -246,9 +246,17 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
 .tnc li{font-size:11px;color:#374151;page-break-inside:avoid}
 .sign{width:100%;border-collapse:collapse;margin-top:22px;page-break-inside:avoid;table-layout:fixed}
 .sign td.col{width:50%;vertical-align:top;padding:0 6px}
-.sign .sigarea{height:78px}
-.sign .ttd-img{height:58px;width:auto;margin:2px 0}
-.sign .nm{font-weight:700;border-top:1px solid #111;display:inline-block;padding-top:3px;min-width:170px}
+/* Ruang tanda tangan: SATU tinggi untuk kedua kolom, isinya menempel ke
+   dasar, supaya nama penanda tangan kiri & kanan sejajar apa pun isinya
+   (QR, coretan tanda tangan, atau ruang kosong bergaris). Dibuat sebagai
+   sel tabel karena mPDF mengabaikan height pada div. Selektornya sengaja
+   satu tingkat: mPDF tidak mencocokkan ".sign .x" untuk isi di dalam sel. */
+table.sigarea{width:100%;border-collapse:collapse;margin:0}
+table.sigarea td{height:22mm;vertical-align:bottom;text-align:left;padding:0;border:none}
+.ttd-img{height:58px;width:auto;margin:2px 0}
+.nm{font-weight:bold;display:block;padding-top:3px}
+.jab{font-weight:bold;font-style:italic;color:#111}
+.ttd-ket{font-weight:normal;font-style:normal;color:#6b7280;font-size:8px}
 .qrbox{width:70px;height:70px;margin:6px 0 3px}
 .qrbox img,.qrbox svg{width:70px!important;height:70px!important;display:block}
 .qrhint{font-size:7.5px;color:#6b7280;margin-bottom:3px}
@@ -701,45 +709,66 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     // mematikannya. Bawaannya menyala.
     $hasQr = !empty($o['sign_token']) && (!isset($letter['tampil_qr']) || !empty($letter['tampil_qr']));
     ?>
-    <?php $custSigned = !empty($o['signed_at']); ?>
+    <?php
+    /* Kedua kolom tanda tangan dibangun dari SATU cetakan yang sama supaya
+       sejajar — sebelumnya kolom kiri (judul dua baris + kotak QR) dan kolom
+       kanan (judul yang bisa satu baris + gambar tanda tangan) menaruh nama
+       di ketinggian yang berbeda. Bentuknya sama dengan blok tanda tangan
+       SKP/SKS di skp_print_body.php. */
+    $custSigned = !empty($o['signed_at']);
+    $ttdKanan   = array_key_exists('ttd_kanan', $letter) ? trim((string) $letter['ttd_kanan']) : 'Calon Penyewa';
+    $qrKiri = '';
+    if ($hasQr) {
+        $qrKiri = ($PDF_MODE
+                ? '<div class="qrbox">' . clara_qr_img($verifyUrl, 18) . '</div>'
+                : '<div class="qrbox" data-qr="' . $h($verifyUrl) . '"></div>')
+            . '<div class="qrhint">Scan untuk validasi</div>';
+    }
+    // Ruang kosong bergaris untuk tanda tangan saat dicetak. mPDF mengabaikan
+    // height pada div tapi menghormatinya pada sel tabel.
+    $garisTtd = '<table style="width:26mm;border-collapse:collapse"><tr>'
+              . '<td style="height:18mm;border-bottom:1px solid #111;font-size:1pt;color:#ffffff">&nbsp;</td>'
+              . '</tr></table>';
+    $namaKanan = $custSigned ? ($o['sign_name'] ?: ($o['cp_name'] ?? '-')) : (string) ($o['cp_name'] ?? '');
+    $ketKanan  = '';
+    if ($custSigned && ($o['sign_method'] ?? 'online') === 'wet') {
+        $ketKanan = '<br><span class="ttd-ket"><span style="color:#16a34a">&#9632;</span> Ditandatangani '
+                  . $h(substr((string) $o['signed_at'], 0, 16)) . ' &middot; dokumen ber-TTD tersimpan</span>';
+    } elseif ($custSigned) {
+        $ketKanan = '<br><span class="ttd-ket"><span style="color:#16a34a">&#9632;</span> Ditandatangani elektronik '
+                  . $h(substr((string) $o['signed_at'], 0, 16)) . '</span>';
+    }
+    $kolomTtd = [
+        [
+            'peran' => 'Hormat kami,<br><strong>PT. Wulandari Bangun Laksana, Tbk.</strong>',
+            'ttd'   => $hasQr ? $qrKiri : $garisTtd,
+            'nama'  => $h($picNama ?: '-'),
+            'jab'   => $h(trim((string) ($o['pic_role'] ?? '')) !== '' ? $o['pic_role'] : 'Sales ' . $propShort),
+            'ket'   => '',
+        ],
+        [
+            'peran' => 'Menyetujui,' . ($ttdKanan !== '' ? '<br><strong>' . $h($ttdKanan) . '</strong>' : ''),
+            'ttd'   => ($custSigned && !empty($o['signature_data']))
+                ? '<img class="ttd-img" height="58" src="' . $h($o['signature_data']) . '" alt="TTD">'
+                : $garisTtd,
+            'nama'  => $namaKanan !== '' ? $h($namaKanan) : '&nbsp;',
+            'jab'   => 'Penanggung Jawab',
+            'ket'   => $ketKanan,
+        ],
+    ];
+    // Judul kolom disamakan jumlah barisnya dengan baris kosong.
+    $barisPeran = 1;
+    foreach ($kolomTtd as $kol) $barisPeran = max($barisPeran, substr_count($kol['peran'], '<br>') + 1);
+    ?>
     <table class="sign">
     <tr>
+        <?php foreach ($kolomTtd as $kol): ?>
         <td class="col">
-            <div>Hormat kami,</div>
-            <div style="font-weight:600">PT. Wulandari Bangun Laksana, Tbk.</div>
-            <div class="sigarea">
-                <?php if ($hasQr): ?>
-                    <?php if ($PDF_MODE): ?>
-                    <div class="qrbox"><?= clara_qr_img($verifyUrl, 18) ?></div><div class="qrhint">Scan untuk validasi</div>
-                    <?php else: ?>
-                    <div class="qrbox" data-qr="<?= $h($verifyUrl) ?>"></div><div class="qrhint">Scan untuk validasi</div>
-                    <?php endif; ?>
-                <?php endif; ?>
-            </div>
-            <div class="nm"<?= $hasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($picNama ?: '-') ?><br><span class="muted" style="font-weight:400"><?= $h(trim((string) ($o['pic_role'] ?? '')) !== '' ? $o['pic_role'] : 'Sales ' . $propShort) ?></span></div>
+            <div><?= $kol['peran'] . str_repeat('<br>&nbsp;', $barisPeran - substr_count($kol['peran'], '<br>') - 1) ?></div>
+            <table class="sigarea"><tr><td><?= $kol['ttd'] ?></td></tr></table>
+            <div class="nm"><?= $kol['nama'] ?><br><span class="jab"><?= $kol['jab'] ?></span><?= $kol['ket'] ?></div>
         </td>
-        <td class="col">
-            <div>Menyetujui,</div>
-            <?php $ttdKanan = array_key_exists('ttd_kanan', $letter) ? trim((string) $letter['ttd_kanan']) : 'Calon Penyewa'; ?>
-            <?php if ($ttdKanan !== ''): ?><div style="font-weight:600"><?= $h($ttdKanan) ?></div><?php endif; ?>
-            <?php if ($custSigned && !empty($o['signature_data'])): ?>
-            <div class="sigarea"><img class="ttd-img" height="58" src="<?= $h($o['signature_data']) ?>" alt="TTD"></div>
-            <?php else: ?>
-            <?php /* Ruang kosong untuk tanda tangan saat dicetak. mPDF mengabaikan height pada div,
-                       tapi menghormatinya pada sel tabel — jadi dipakai tabel 1 sel
-                       dengan garis bawah sebagai tempat membubuhkan tanda tangan. */ ?>
-            <table style="width:26mm;border-collapse:collapse;margin-bottom:2mm"><tr>
-                <td style="height:20mm;border-bottom:1px solid #111;font-size:1pt;color:#ffffff">&nbsp;</td>
-            </tr></table>
-            <?php endif; ?>
-            <?php if ($custSigned && ($o['sign_method'] ?? 'online') === 'wet'): ?>
-            <div class="nm"><?= $h($o['sign_name'] ?: ($o['cp_name'] ?? '-')) ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span><br><span class="muted" style="font-weight:400;font-size:8px"><span style="color:#16a34a">■</span> Ditandatangani <?= $h(substr((string) $o['signed_at'], 0, 16)) ?> &middot; dokumen ber-TTD tersimpan</span></div>
-            <?php elseif ($custSigned): ?>
-            <div class="nm" style="border-top:none;padding-top:0"><?= $h($o['sign_name'] ?: ($o['cp_name'] ?? '-')) ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span><br><span class="muted" style="font-weight:400;font-size:8px"><span style="color:#16a34a">■</span> Ditandatangani elektronik <?= $h(substr($o['signed_at'], 0, 16)) ?></span></div>
-            <?php else: ?>
-            <div class="nm" style="border-top:none;padding-top:0"><?= $h($o['cp_name'] ?? '') ?: '&nbsp;' ?><br><span class="muted" style="font-weight:400">Penanggung Jawab</span></div>
-            <?php endif; ?>
-        </td>
+        <?php endforeach; ?>
     </tr>
     </table>
 </div>

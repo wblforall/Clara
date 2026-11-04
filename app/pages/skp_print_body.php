@@ -60,6 +60,8 @@ foreach (($d['paraf'] ?? []) as $iPf => $pf) {
         'w'    => (float) $set['lebar'],
     ];
 }
+// Penomoran titik potong halaman dimulai dari nol tiap kali surat dirender.
+skp_potong_kelas(true);
 $skpNotes = skp_terms();
 // Nama di blok "Mengetahui": manajer yang tercatat di pengaturan
 // (doc_manager_name). Tanpa itu, dipakai nama yang menekan tombol Setujui —
@@ -80,10 +82,6 @@ if ($skpManager !== '' && $skpManager !== '-' && function_exists('clara_nama_len
 // template yang terkunci saat approve.
 $skpDocType = (string) ($skp['doc_type'] ?? 'skp');
 $skpTpl     = $d['tpl'] ?? [];
-// Jabatan di blok TTD: dokumen gudang memakai gaya kertas (tebal miring, hitam).
-$skpJab = $skpDocType === 'sks'
-    ? 'style="font-weight:bold;font-style:italic;color:#000"'
-    : 'class="muted" style="font-weight:normal"';
 $skpToday = date('d') . ' ' . ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'][(int) date('n')] . ' ' . date('Y');
 $skpScheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 $skpDir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
@@ -121,9 +119,20 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc table.sign { width: 100%; border-collapse: collapse; margin-top: 22px; page-break-inside: avoid; table-layout: fixed; }
 .skpdoc table.sign td.col { width: 33.33%; font-size: 10.5px; text-align: center; vertical-align: top; padding: 0 6px; }
 .skpdoc table.sign td.col img { max-width: 100%; height: auto; }
-.skpdoc .sign .role { color: #6b7280; margin-bottom: 4px; }
-.skpdoc .sign .sigarea { height: 78px; }  /* tinggi seragam (muat QR/coretan) → nama SEJAJAR tiap kolom */
-.skpdoc .sign .name { font-weight: bold; border-top: 1px solid #111; padding-top: 3px; display: inline-block; min-width: 150px; }
+/* Selektor blok tanda tangan sengaja cuma DUA tingkat (.skpdoc .x).
+   mPDF tidak mencocokkan selektor tiga tingkat untuk isi di dalam sel tabel,
+   jadi ".skpdoc .sign .role" dulu tidak pernah terpakai sama sekali. */
+.skpdoc .role { color: #6b7280; margin-bottom: 4px; }
+/* Ruang tanda tangan: SATU tinggi untuk ketiga kolom, isinya menempel ke
+   dasar. Dibuat sebagai sel tabel karena mPDF mengabaikan height pada div.
+   Inilah yang membuat nama ketiga penanda tangan sejajar, apa pun isinya —
+   QR, coretan tanda tangan, atau ruang kosong bergaris. */
+.skpdoc table.sigarea { width: 100%; border-collapse: collapse; margin: 0; }
+.skpdoc table.sigarea td { height: 22mm; vertical-align: bottom; text-align: center; padding: 0; border: none; }
+.skpdoc .name { font-weight: bold; display: block; padding-top: 3px; }
+/* Jabatan: TEBAL MIRING di semua jenis surat, sama untuk ketiga kolom. */
+.skpdoc .jab { font-weight: bold; font-style: italic; color: #111; }
+.skpdoc .ttd-ket { font-weight: normal; font-style: normal; color: #6b7280; font-size: 8px; }
 .skpdoc .qrbox { width: 70px; height: 70px; margin: 0 auto 3px; }
 .skpdoc .qrbox img, .skpdoc .qrbox svg { width: 70px !important; height: 70px !important; display: block; }
 .skpdoc .qrhint { font-size: 7.5px; color: #6b7280; margin-bottom: 3px; }
@@ -155,14 +164,15 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc.kertas p.judul-aturan { margin-top: 16px; }
 .skpdoc.kertas ol.aturan { margin: 2px 0 0 6mm; padding: 0; }
 .skpdoc.kertas ol.aturan li { text-align: justify; margin-bottom: 2px; }
-.skpdoc.kertas .sign .role { color: #000; }
-.skpdoc.kertas .sign .name { font-weight: 400; text-decoration: underline; border-top: none; padding-top: 0; }
-.skpdoc.kertas .sign .name .muted { color: #000; font-style: italic; font-weight: bold; font-size: 10pt; }
+.skpdoc.kertas .role { color: #000; }
+.skpdoc.kertas .name { font-weight: bold; color: #000; }
+.skpdoc.kertas .jab { font-size: 10pt; }
 </style>
 <?php /* Lapisan pemadatan OTOMATIS. Kosong pada keadaan biasa; hanya terisi
          kalau penyesuai halaman di skp.php memutuskan surat ini "nanggung".
          Ditaruh SESUDAH gaya utama supaya menimpanya. */ ?>
 <?= skp_css_rapat((int) ($RAPAT ?? 0)) ?>
+<?= skp_css_potong((int) ($POTONG ?? 0)) ?>
 <div class="skpdoc<?= $skpDocType === 'sks' ? ' kertas' : '' ?>">
     <div class="doc-title"<?= $skpDocType === 'sks' ? ' style="font-weight:bold;text-decoration:underline"' : '' ?>><?= $h(skp_doc_heading($skpDocType, $skpTpl)) ?></div>
     <?php if ($skpDocType === 'sks'): ?>
@@ -201,7 +211,7 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
     if ($hasOffer || $att):
         $fn = fn($k) => isset($att[$k]) ? ' <span class="muted" style="font-weight:normal">(' . $h($att[$k]) . ')</span>' : '';
     ?>
-    <div class="sec">Lampiran Dokumen</div>
+    <div class="sec<?= skp_potong_kelas() ?>">Lampiran Dokumen</div>
     <table class="kv">
         <?php if ($hasOffer): ?><tr><td class="l">Surat Penawaran Final</td><td class="c">:</td><td class="v chk"><span style="color:#0D9488">■</span> <span class="muted" style="font-weight:normal">No. <?= $h($d['offer_no']) ?></span></td></tr><?php endif; ?>
         <tr><td class="l">Copy KTP Penanggung Jawab</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['ktp']) || ($d['admin_ktp'] ?? 0)) ?> <span class="muted" style="font-weight:normal"><?= !empty($d['ktp_pj']) ? 'No. ' . $h($d['ktp_pj']) : '' ?></span><?= $fn('ktp') ?></td></tr>
@@ -226,7 +236,7 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
         fn($x) => $x !== '' && $x !== '-'))));
     $lokSkp = $adaKmp ? 'Paket — ' . count($kmpSkp) . ' lokasi' : (string) ($d['location'] ?? '-');
     ?>
-    <div class="sec">Spesifikasi Tempat &amp; Periode Sewa</div>
+    <div class="sec<?= skp_potong_kelas() ?>">Spesifikasi Tempat &amp; Periode Sewa</div>
     <table class="kv">
         <tr><td class="l">Lokasi</td><td class="c">:</td><td class="v"><?= $h($lokSkp) ?></td></tr>
         <tr><td class="l">Lantai</td><td class="c">:</td><td class="v"><?= $h($adaKmp && $lantaiKmp !== '' ? $lantaiKmp : ($d['floor'] ?? '-')) ?></td></tr>
@@ -241,7 +251,7 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
     <?php /* Patokannya ada tidaknya komponen, bukan penanda is_bundle: ada
              dokumen paket yang penandanya tidak tersimpan. */ ?>
     <?php if ($adaKmp): $segL = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang']; ?>
-    <div class="sec">Komponen Paket &mdash; <?= count($kmpSkp) ?> lokasi</div>
+    <div class="sec<?= skp_potong_kelas() ?>">Komponen Paket &mdash; <?= count($kmpSkp) ?> lokasi</div>
     <table class="pay">
         <tr>
             <td style="width:10%"><strong>Kode</strong></td>
@@ -321,9 +331,7 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
         ];
     };
     ?>
-    <?php /* Kelas potong = titik pemisah halaman yang masuk akal, dipakai
-             penyesuai halaman kalau suratnya tidak muat satu halaman. */ ?>
-    <div class="sec potong">Rincian Pembayaran Sewa</div>
+    <div class="sec<?= skp_potong_kelas() ?>">Rincian Pembayaran Sewa</div>
     <table class="pay">
         <tr><td class="lbl">A. Biaya Sewa Area</td><td class="amt"></td></tr>
         <?php
@@ -461,7 +469,7 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
     </table>
     <?php if ($kenaPpn): ?><div class="muted" style="font-size:9px;margin-top:3px">*PPN 12% sesuai PMK Nomor 131 Tahun 2024.</div><?php endif; ?>
 
-    <div class="sec">Note</div>
+    <div class="sec<?= skp_potong_kelas() ?>">Note</div>
     <table class="notes">
         <?php foreach ($skpNotes as $i => $n): ?><tr><td class="nn"><?= $i + 1 ?>.</td><td class="nt"><?= $h($n) ?></td></tr><?php endforeach; ?>
     </table>
@@ -473,35 +481,95 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
              tangan pertama di bawahnya, dan sama dengan Surat Penawaran yang
              memang sudah rata kiri sejak awal. */ ?>
     <div class="tgl-surat">Balikpapan, <?= $h($skpToday) ?></div>
+    <?php
+    /* ------------------------------------------------------------------
+       Blok tanda tangan. Ketiga kolom dibangun dari SATU cetakan yang sama
+       supaya sejajar. Dulu tiap kolom ditulis sendiri-sendiri, sehingga:
+         - kolom yang judulnya dua baris ("Hormat Kami," + nama PT) mendorong
+           nama di bawahnya turun satu baris, dan
+         - kolom penyewa yang berisi gambar tanda tangan (bukan QR) menaikkan
+           namanya, karena gambarnya lebih pendek daripada kotak QR.
+       Sekarang jumlah baris judul disamakan dan ruang tanda tangan ketiganya
+       setinggi sel tabel yang sama (mPDF mengabaikan height pada div, tetapi
+       menghormatinya pada sel tabel), isinya menempel ke DASAR ruang — jadi
+       nama & jabatan ketiga kolom selalu duduk di garis yang sama.
+       ------------------------------------------------------------------ */
+    // Halaman HTML surat tidak menyetel $PDF_MODE sama sekali, jadi nilainya
+    // dibaca lewat empty() dulu — "use" pada closure akan memperingatkan
+    // variabel yang belum ada.
+    $skpModePdf = !empty($PDF_MODE);
+    $skpKotakQr = static function () use ($skp, $skpVerifyUrl, $h, $skpModePdf): string {
+        // Pratinjau: kotaknya ada supaya letaknya persis seperti surat asli,
+        // tetapi TIDAK memuat QR sungguhan — tokennya memang belum terbit, dan
+        // QR yang dipindai lalu gagal lebih buruk daripada tidak ada QR.
+        if (empty($skp['sign_token'])) {
+            return '<table style="width:70px;margin:0 auto 3px;border-collapse:collapse"><tr>'
+                 . '<td style="width:70px;height:70px;border:1px dashed #cbd5e1;text-align:center;'
+                 . 'vertical-align:middle;font-size:6.5px;color:#94a3b8;line-height:1.4">'
+                 . 'QR validasi<br>terbit saat<br>disetujui</td></tr></table>'
+                 . '<div class="qrhint">Scan untuk validasi</div>';
+        }
+        $kotak = $skpModePdf
+            ? '<div class="qrbox">' . clara_qr_img($skpVerifyUrl, 18) . '</div>'
+            : '<div class="qrbox" data-qr="' . $h($skpVerifyUrl) . '"></div>';
+        return $kotak . '<div class="qrhint">Scan untuk validasi</div>';
+    };
+    // Ruang bergaris untuk tanda tangan basah. mPDF mengabaikan height pada
+    // div tapi menghormatinya pada sel tabel, jadi dipakai tabel 1 sel —
+    // sama seperti di Surat Penawaran (offer_print_template.php).
+    $skpGarisTtd = '<table style="width:26mm;margin:0 auto;border-collapse:collapse"><tr>'
+                 . '<td style="height:18mm;border-bottom:1px solid #111;font-size:1pt;color:#ffffff">&nbsp;</td>'
+                 . '</tr></table>';
+
+    $skpSudahTtd = ($skp['status'] ?? '') === 'signed';
+    if ($skpSudahTtd && !empty($skp['signature_data'])) {
+        $skpTtdPenyewa = '<img src="' . $h($skp['signature_data']) . '" alt="TTD" style="max-height:60px;max-width:100%">';
+        $skpKetPenyewa = '<br><span class="ttd-ket"><span style="color:#16a34a">&#9632;</span> Ditandatangani elektronik '
+                       . $h(substr($skp['signed_at'] ?? '', 0, 16)) . '</span>';
+    } elseif ($skpSudahTtd && ($skp['sign_method'] ?? '') === 'wet') {
+        $skpTtdPenyewa = $skpGarisTtd;
+        $skpKetPenyewa = '<br><span class="ttd-ket"><span style="color:#16a34a">&#9632;</span> Ditandatangani basah (scan terlampir)</span>';
+    } else {
+        $skpTtdPenyewa = $skpGarisTtd;
+        $skpKetPenyewa = '';
+    }
+
+    $skpKolomTtd = [
+        [
+            'peran' => $skpDocType === 'sks' ? 'Hormat Kami,<br><strong>PT. Wulandari Bangun Laksana, Tbk.</strong>' : 'Dibuat Oleh,',
+            'ttd'   => $skpHasQr ? $skpKotakQr() : $skpGarisTtd,
+            'nama'  => $h(trim((string) ($d['sales_nama'] ?? $d['sales'] ?? '')) ?: '-'),
+            'jab'   => $h(trim((string) ($d['sales_jabatan'] ?? '')) ?: 'Sales Executive'),
+            'ket'   => '',
+        ],
+        [
+            'peran' => $skpDocType === 'sks' ? 'Menyetujui,' : 'Mengetahui,',
+            'ttd'   => $skpHasQr ? $skpKotakQr() : $skpGarisTtd,
+            'nama'  => $h($skpManager),
+            'jab'   => 'Casual Leasing Manager',
+            'ket'   => '',
+        ],
+        [
+            'peran' => $skpDocType === 'sks' ? 'Pihak Penyewa,' : ($skpDocType === 'fu' ? 'Pemohon,' : 'Menyetujui,'),
+            'ttd'   => $skpTtdPenyewa,
+            'nama'  => $h(($skpSudahTtd && ($skp['sign_name'] ?? '') !== '') ? $skp['sign_name'] : ($d['cp_name'] ?? '-')),
+            'jab'   => 'Penanggung Jawab',
+            'ket'   => $skpKetPenyewa,
+        ],
+    ];
+    // Judul kolom disamakan jumlah barisnya dengan baris kosong, supaya ruang
+    // tanda tangan ketiga kolom mulai pada ketinggian yang sama.
+    $skpBarisPeran = 1;
+    foreach ($skpKolomTtd as $kol) $skpBarisPeran = max($skpBarisPeran, substr_count($kol['peran'], '<br>') + 1);
+    ?>
     <table class="sign"><tr>
-        <td class="col"><div class="role"><?= $skpDocType === 'sks' ? 'Hormat Kami,<br><strong>PT. Wulandari Bangun Laksana, Tbk.</strong>' : 'Dibuat Oleh,' ?></div>
-            <div class="sigarea"><?php if ($skpHasQr): ?><?php if (empty($skp['sign_token'])): ?><?php /* Pratinjau: kotaknya ada supaya letaknya persis seperti surat asli, tetapi TIDAK memuat QR sungguhan — tokennya memang belum terbit, dan QR yang dipindai lalu gagal lebih buruk daripada tidak ada QR sama sekali. */ ?><table style="width:70px;margin:0 auto 3px;border-collapse:collapse"><tr><td style="width:70px;height:70px;border:1px dashed #cbd5e1;text-align:center;vertical-align:middle;font-size:6.5px;color:#94a3b8;line-height:1.4">QR validasi<br>terbit saat<br>disetujui</td></tr></table><?php elseif (!empty($PDF_MODE)): ?><div class="qrbox"><?= clara_qr_img($skpVerifyUrl, 18) ?></div><?php else: ?><div class="qrbox" data-qr="<?= $h($skpVerifyUrl) ?>"></div><?php endif; ?><div class="qrhint">Scan untuk validasi</div><?php endif; ?></div>
-            <div class="name"<?= $skpHasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h(trim((string) ($d['sales_nama'] ?? $d['sales'] ?? '')) ?: '-') ?><br><span <?= $skpJab ?>><?= $h(trim((string) ($d['sales_jabatan'] ?? '')) ?: 'Sales Executive') ?></span></div>
+        <?php foreach ($skpKolomTtd as $kol): ?>
+        <td class="col">
+            <div class="role"><?= $kol['peran'] . str_repeat('<br>&nbsp;', $skpBarisPeran - substr_count($kol['peran'], '<br>') - 1) ?></div>
+            <table class="sigarea"><tr><td><?= $kol['ttd'] ?></td></tr></table>
+            <div class="name"><?= $kol['nama'] ?><br><span class="jab"><?= $kol['jab'] ?></span><?= $kol['ket'] ?></div>
         </td>
-        <td class="col"><div class="role"><?= $skpDocType === 'sks' ? 'Menyetujui,' : 'Mengetahui,' ?></div>
-            <div class="sigarea"><?php if ($skpHasQr): ?><?php if (empty($skp['sign_token'])): ?><?php /* Pratinjau: kotaknya ada supaya letaknya persis seperti surat asli, tetapi TIDAK memuat QR sungguhan — tokennya memang belum terbit, dan QR yang dipindai lalu gagal lebih buruk daripada tidak ada QR sama sekali. */ ?><table style="width:70px;margin:0 auto 3px;border-collapse:collapse"><tr><td style="width:70px;height:70px;border:1px dashed #cbd5e1;text-align:center;vertical-align:middle;font-size:6.5px;color:#94a3b8;line-height:1.4">QR validasi<br>terbit saat<br>disetujui</td></tr></table><?php elseif (!empty($PDF_MODE)): ?><div class="qrbox"><?= clara_qr_img($skpVerifyUrl, 18) ?></div><?php else: ?><div class="qrbox" data-qr="<?= $h($skpVerifyUrl) ?>"></div><?php endif; ?><div class="qrhint">Scan untuk validasi</div><?php endif; ?></div>
-            <div class="name"<?= $skpHasQr ? ' style="border-top:none;padding-top:0"' : '' ?>><?= $h($skpManager) ?><br><span <?= $skpJab ?>>Casual Leasing Manager</span></div>
-        </td>
-        <td class="col"><div class="role"><?= $skpDocType === 'sks' ? 'Pihak Penyewa,' : ($skpDocType === 'fu' ? 'Pemohon,' : 'Menyetujui,') ?></div>
-            <?php if (($skp['status'] ?? '') === 'signed' && !empty($skp['signature_data'])): ?>
-            <div class="sigarea"><img src="<?= $h($skp['signature_data']) ?>" alt="TTD" style="max-height:60px;max-width:100%"></div>
-            <?php else: ?>
-            <?php /* Ruang kosong untuk tanda tangan saat dicetak. mPDF mengabaikan
-                     height pada div tapi menghormatinya pada sel tabel, jadi
-                     dipakai tabel 1 sel bergaris bawah. Sama seperti di Surat
-                     Penawaran (offer_print_template.php). */ ?>
-            <table style="width:26mm;border-collapse:collapse;margin-bottom:2mm"><tr>
-                <td style="height:20mm;border-bottom:1px solid #111;font-size:1pt;color:#ffffff">&nbsp;</td>
-            </tr></table>
-            <?php endif; ?>
-            <?php if (($skp['status'] ?? '') === 'signed' && !empty($skp['signature_data'])): ?>
-                <div class="name"<?= ' style="border-top:none;padding-top:0"' ?>><?= $h($skp['sign_name'] ?: ($d['cp_name'] ?? '-')) ?><br><span <?= $skpJab ?>>Penanggung Jawab</span><br><span class="muted" style="font-weight:normal;font-size:8px"><span style="color:#16a34a">■</span> Ditandatangani elektronik <?= $h(substr($skp['signed_at'] ?? '', 0, 16)) ?></span></div>
-            <?php elseif (($skp['sign_method'] ?? '') === 'wet' && ($skp['status'] ?? '') === 'signed'): ?>
-                <div class="name"><?= $h($skp['sign_name'] ?: ($d['cp_name'] ?? '-')) ?><br><span <?= $skpJab ?>>Penanggung Jawab</span><br><span class="muted" style="font-weight:normal;font-size:8px"><span style="color:#16a34a">■</span> Ditandatangani basah (scan terlampir)</span></div>
-            <?php else: ?>
-                <div class="name"><?= $h($d['cp_name'] ?? '-') ?><br><span <?= $skpJab ?>>Penanggung Jawab</span></div>
-            <?php endif; ?>
-        </td>
+        <?php endforeach; ?>
     </tr></table>
 
     <?php /* Jejak pemeriksaan berjenjang: siapa memaraf sebelum disetujui.

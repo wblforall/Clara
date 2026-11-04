@@ -13,7 +13,7 @@
 
 $nama = [
     'Sita'   => 'Rosita',
-    'Tengku' => 'Tengku Fadjirina',
+    'Tengku' => 'Tengku Fadjrina',
 ];
 
 $st  = $pdo->prepare("SELECT id, property_id, name FROM master_pic
