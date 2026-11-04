@@ -915,6 +915,33 @@ function skp_isi_identitas_client(PDO $pdo, array $src): array
  *
  * Yang sudah berisi TIDAK PERNAH ditimpa — apa pun yang diketik orang menang.
  */
+/**
+ * Unit/outlet tenant di mal — untuk kolom "Lokasi (Unit/Outlet)" di Surat
+ * Konfirmasi Sewa Gudang.
+ *
+ * Dokumen gudang tidak menyimpannya: transaksinya tentang gudang, bukan
+ * outletnya. Tapi CLARA sebenarnya tahu — client yang sama punya transaksi
+ * Exhibition di unit outletnya. Diambil dari kontrak non-gudang terakhir
+ * milik client tersebut, bukan diketik ulang.
+ */
+function skp_outlet_tenant(PDO $pdo, int $pid, int $clientId): string
+{
+    if ($clientId <= 0) return '';
+    try {
+        $st = $pdo->prepare("SELECT COALESCE(u.location_name, t.master_code) unit
+                               FROM transactions t
+                               LEFT JOIN master_cl_units u
+                                      ON u.property_id = t.property_id AND u.code = t.master_code
+                              WHERE t.deleted_at IS NULL AND t.property_id = ? AND t.client_id = ?
+                                AND t.module <> 'gudang' AND COALESCE(t.master_code,'') <> ''
+                              ORDER BY t.start_date DESC, t.id DESC LIMIT 1");
+        $st->execute([$pid, $clientId]);
+        return trim((string) ($st->fetchColumn() ?: ''));
+    } catch (Throwable $e) {
+        return '';
+    }
+}
+
 function skp_detail_lengkapi(string $docType, array $detail, array $bawaan): array
 {
     if ($docType !== 'sks') return $detail;

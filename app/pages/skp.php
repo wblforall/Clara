@@ -943,6 +943,11 @@ function skp_form(PDO $pdo): void
     // kolom yang baru sengaja dikosongkan orang tidak boleh terisi sendiri.
     if ($editable && !$pratinjauLive) {
         $detail = skp_detail_lengkapi($docType, $detail, skp_detail_defaults($tplDoc, $docType, $src, $amt));
+        // Unit/outlet tenant tidak ada di dokumen gudang maupun di master mana
+        // pun — tapi client yang sama punya kontrak Exhibition di outletnya.
+        if ($docType === 'sks' && trim((string) ($detail['lokasi_tenant'] ?? '')) === '') {
+            $detail['lokasi_tenant'] = skp_outlet_tenant($pdo, $pid, (int) ($src['client_id'] ?? 0));
+        }
     }
     // ─── Pratinjau surat (?pratinjau=1) ──────────────────────────────────────
     //
@@ -1720,7 +1725,7 @@ function skp_form(PDO $pdo): void
                          belum pernah disimpan. formnovalidate supaya pratinjau tetap
                          bisa dibuka walau ada isian wajib yang belum lengkap. */ ?>
                 <?php if ($editable): ?>
-                <button type="submit" formaction="?r=skp_form&<?= $prevQ ?>&pratinjau=1" formtarget="_blank"
+                <button type="submit" formaction="?r=skp_form&<?= $prevQ ?>&pratinjau=1" formtarget="pratinjau-surat"
                         formnovalidate class="btn light"
                         style="background:#ecfdf5;color:#065f46;border-color:#a7f3d0"
                         title="Surat contoh bercap &quot;CONTOH — BELUM SAH&quot;, dari isian yang sedang diketik">👁 Lihat Contoh Surat</button>

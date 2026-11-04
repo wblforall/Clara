@@ -2528,7 +2528,7 @@ function offer_form(PDO $pdo): void
                          baru; tidak ada satu pun baris yang ditulis ke basis data.
                          formaction/formtarget dipakai supaya nilainya ikut apa adanya,
                          termasuk yang baru diketik dan belum pernah tersimpan. */ ?>
-                <button type="submit" formaction="?r=offer_preview" formtarget="_blank"
+                <button type="submit" formaction="?r=offer_preview" formtarget="pratinjau-surat"
                         formnovalidate class="btn light"
                         style="background:#ecfdf5;color:#065f46;border-color:#a7f3d0"
                         title="Surat contoh bercap &quot;CONTOH — BELUM SAH&quot;, tanpa nomor penawaran">👁 Lihat Contoh Surat</button>
