@@ -849,7 +849,7 @@ function permission_for_route(string $route): string
     return match ($route) {
         'dashboard' => 'view_dashboard',
         'transactions', 'transaction_form', 'transaction_edit', 'allocation_detail' => 'view_transactions',
-        'transaction_save', 'transaction_update' => 'manage_transactions',
+        'transaction_save', 'transaction_update', 'transaction_renew_group' => 'manage_transactions',
         'transaction_delete', 'deleted_transactions' => 'manage_deleted',
         // Halaman pengajuan dibuka dengan request_delete; tiap tindakan di
         // dalamnya memeriksa izinnya sendiri (approve_delete / manage_deleted).

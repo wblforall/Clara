@@ -712,6 +712,46 @@ function _skp_komponen_tunggal(PDO $pdo, int $pid, ?array $skp, int $trxId): boo
  *
  * @return array<int,array{segment:string,kode:string,nama:string,lantai:string,luas:float,nilai:float}>
  */
+/**
+ * Daftar lokasi sebuah dokumen dari ROMBONGAN TRANSAKSINYA, bukan dari
+ * penawaran.
+ *
+ * Dipakai dokumen perpanjangan: satu kesepakatan beberapa lokasi diperpanjang
+ * sekaligus tanpa menerbitkan Surat Penawaran baru, jadi satu-satunya sumber
+ * daftar lokasinya adalah transaksi-transaksi yang seikat (bundle_id sama).
+ * Bentuk kembaliannya sama persis dengan _skp_komponen_paket().
+ */
+function _skp_komponen_dari_transaksi(PDO $pdo, int $trxId, int $pid): array
+{
+    if ($trxId <= 0) return [];
+    $st = $pdo->prepare('SELECT bundle_id, module FROM transactions
+                          WHERE id = ? AND property_id = ? AND deleted_at IS NULL LIMIT 1');
+    $st->execute([$trxId, $pid]);
+    $induk = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$induk || trim((string) ($induk['bundle_id'] ?? '')) === '') return [];
+
+    $st = $pdo->prepare('SELECT master_code, content_note, area_sqm, final_amount
+                           FROM transactions
+                          WHERE property_id = ? AND bundle_id = ? AND deleted_at IS NULL
+                          ORDER BY master_code, id');
+    $st->execute([$pid, $induk['bundle_id']]);
+    $baris = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    if (count($baris) < 2) return [];
+
+    if (!function_exists('masterOptions')) require_once __DIR__ . '/bootstrap.php';
+    $nama = array_column(masterOptions($pdo, (string) ($induk['module'] ?? 'cl')), 'label', 'code');
+    $segmen = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang'][$induk['module'] ?? 'cl'] ?? 'Exhibition';
+    return array_map(fn($b) => [
+        'segment'     => $segmen,
+        'master_code' => (string) $b['master_code'],
+        'name'        => (string) ($nama[$b['master_code']] ?? ($b['content_note'] ?: $b['master_code'])),
+        // Lantai diambil dari dua huruf pertama kode unit (LG/GF/UG/FF/SF).
+        'lantai'      => strtoupper(substr((string) $b['master_code'], 0, 2)),
+        'luas'        => (float) ($b['area_sqm'] ?? 0),
+        'total'       => (float) ($b['final_amount'] ?? 0),
+    ], $baris);
+}
+
 function _skp_komponen_paket(PDO $pdo, int $offerId, int $pid): array
 {
     // Satu pemuat dipakai bersama halaman Penawaran — kalau tiap halaman punya
@@ -4370,7 +4410,18 @@ function _skp_lengkapi_komponen(PDO $pdo, array $skp, array $d, int $pid): array
     foreach (($d['paraf'] ?? []) as $i => $pf) {
         $d['paraf'][$i]['nama'] = clara_nama_lengkap($pdo, (string) ($pf['nama'] ?? ''), $pid);
     }
-    if (count($d['bundle_items'] ?? []) >= 2 || empty($skp['offer_id'])) return $d;
+    if (count($d['bundle_items'] ?? []) >= 2) return $d;
+    // Dokumen perpanjangan TIDAK punya penawaran — lokasinya dibaca langsung
+    // dari rombongan transaksinya. Tanpa ini, perpanjangan paket empat lokasi
+    // hanya menampilkan satu lokasi di suratnya.
+    if (empty($skp['offer_id'])) {
+        $kmpTrx = _skp_komponen_dari_transaksi($pdo, (int) ($skp['transaction_id'] ?? 0), $pid);
+        if (count($kmpTrx) >= 2) {
+            $d['bundle_items'] = $kmpTrx;
+            return $d;
+        }
+        return $d;
+    }
     $kmp = _skp_komponen_paket($pdo, (int) $skp['offer_id'], $pid);
     if (count($kmp) < 2) return $d;
     $d['bundle_items'] = array_map(fn($k) => [

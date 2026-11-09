@@ -165,7 +165,23 @@ function transactions_page(PDO $pdo): void
         . ($dateFrom !== '' ? '&date_from=' . urlencode($dateFrom) : '')
         . ($dateTo !== '' ? '&date_to=' . urlencode($dateTo) : '');
 
-    layout('Input Transaksi ' . ($moduleLabel[$module] ?? strtoupper($module)), function () use ($module, $rows, $pics, $search, $filterPic, $dateFrom, $dateTo, $isFiltered, $page, $totalPages, $totalRows, $perPage, $paginationBase, $belum, $belumN) {
+    /* Rombongan perpanjangan dihitung SEKALI di sini, bukan di dalam tabel:
+       baris yang satu rombongan memakai hasil yang sama, jadi satu penawaran
+       empat lokasi cukup satu kueri, bukan empat. */
+    $grupPerpanjangan = [];
+    $memoGrup = [];
+    foreach ($rows as $r) {
+        $kunci = trim((string) ($r['bundle_id'] ?? '')) !== ''
+            ? 'b:' . $r['bundle_id']
+            : 'k:' . ($r['client_id'] ?? '') . '|' . ($r['module'] ?? '') . '|'
+                . ($r['start_date'] ?? '') . '|' . ($r['end_date'] ?? '') . '|' . ($r['pic_name'] ?? '');
+        if (!array_key_exists($kunci, $memoGrup)) {
+            $memoGrup[$kunci] = array_column(trx_grup_perpanjangan($pdo, $r, current_property_id()), 'master_code');
+        }
+        $grupPerpanjangan[(int) $r['id']] = $memoGrup[$kunci];
+    }
+
+    layout('Input Transaksi ' . ($moduleLabel[$module] ?? strtoupper($module)), function () use ($module, $rows, $pics, $search, $filterPic, $dateFrom, $dateTo, $isFiltered, $page, $totalPages, $totalRows, $perPage, $paginationBase, $belum, $belumN, $grupPerpanjangan) {
         ?>
         <div class="toolbar">
             <?php if (can('manage_transactions')): ?>
@@ -311,9 +327,20 @@ function transactions_page(PDO $pdo): void
                                      Semua data tersalin dari kontrak ini — sales tinggal
                                      memeriksa tanggalnya. */ ?>
                             <?php if (can('manage_transactions') && can('manage_skp')): ?>
+                            <?php /* Satu penawaran bisa menjual beberapa lokasi sekaligus. Kalau
+                                     baris ini satu rombongan dengan yang lain, tombolnya
+                                     memperpanjang SEMUANYA sekali klik dan menyebut jumlahnya. */ ?>
+                            <?php $grupRow = $grupPerpanjangan[(int) $row['id']] ?? []; ?>
+                            <?php if (count($grupRow) >= 2): ?>
+                            <a class="btn light" style="border-color:#99f6e4;color:#0f766e"
+                               title="Perpanjang <?= count($grupRow) ?> lokasi sekaligus (<?= h(implode(', ', $grupRow)) ?>) — satu dokumen konfirmasi untuk semuanya"
+                               href="?r=transaction_renew_group&id=<?= (int) $row['id'] ?>">Perpanjang
+                               <span style="font-size:10px;opacity:.85">&middot; <?= count($grupRow) ?> lokasi</span></a>
+                            <?php else: ?>
                             <a class="btn light" style="border-color:#99f6e4;color:#0f766e"
                                title="Perpanjang kontrak ini — data tersalin, tinggal sesuaikan tanggal, lalu langsung ke dokumen konfirmasi (tanpa Surat Penawaran)"
                                href="?r=transaction_form&module=<?= h($module) ?>&renew_from=<?= (int) $row['id'] ?>&to_skp=1">Perpanjang</a>
+                            <?php endif; ?>
                             <?php endif; ?>
                             <?php
                             /* Dokumen konfirmasi transaksi ini. Kalau belum ada → tombol Buat,
@@ -513,6 +540,233 @@ function deleted_transactions_page(PDO $pdo): void
         </div>
         <?php
     });
+}
+
+/**
+ * Transaksi lain yang HARUS diperpanjang bersama baris ini.
+ *
+ * Satu penawaran bisa menjual beberapa lokasi sekaligus (mis. satu client
+ * memegang GF-005 s.d GF-008 pada periode yang sama). Memperpanjangnya satu
+ * per satu berarti empat kali mengisi formulir yang sama dan empat dokumen
+ * terpisah — padahal bagi client itu satu kesepakatan.
+ *
+ * Dua cara mengenali satu rombongan:
+ *   1. bundle_id sama — ikatan yang dibuat saat penawaran paket diterbitkan;
+ *   2. tanpa bundle_id: client, modul, PIC, dan PERIODE persis sama, dengan
+ *      kode lokasi yang berbeda-beda. Ini untuk transaksi yang diketik
+ *      langsung, tanpa penawaran.
+ *
+ * Baris berkode SAMA yang berulang sengaja TIDAK digabungkan: itu pola atrium
+ * yang dijual beberapa PIC untuk satu acara, bukan paket beberapa lokasi.
+ *
+ * Mengembalikan daftar transaksi (termasuk baris ini sendiri), terurut kode.
+ */
+/**
+ * Periode berikutnya untuk sebuah kontrak: [mulai, akhir].
+ *
+ * Panjangnya mengikuti pola kontrak lama —
+ *   1–31 Jan (bulan kalender penuh) → 1–28 Feb
+ *   15 Jan–14 Feb (pas sebulan)     → 15 Feb–14 Mar
+ *   25 Sep–4 Okt (tidak bulanan)    → 5–14 Okt (jumlah hari sama)
+ */
+function trx_periode_berikutnya(string $mulai, string $akhir): array
+{
+    if ($mulai === '' || $akhir === '') return ['', ''];
+    $s0 = new DateTimeImmutable($mulai);
+    $e0 = new DateTimeImmutable($akhir);
+    $ns = $e0->modify('+1 day');
+    $penuh = $s0->format('j') === '1'
+        && $e0->format('Y-m-d') === $e0->modify('last day of this month')->format('Y-m-d');
+    $bulanPas = 0;
+    for ($i = 1; $i <= 24; $i++) {
+        if ($s0->modify('+' . $i . ' month')->format('Y-m-d') === $ns->format('Y-m-d')) { $bulanPas = $i; break; }
+    }
+    if ($penuh) {
+        $bulan = max(1, ((int) $e0->format('Y') - (int) $s0->format('Y')) * 12
+            + ((int) $e0->format('n') - (int) $s0->format('n')) + 1);
+        $ne = $ns->modify('+' . ($bulan - 1) . ' month')->modify('last day of this month');
+    } elseif ($bulanPas > 0) {
+        $ne = $ns->modify('+' . $bulanPas . ' month')->modify('-1 day');
+    } else {
+        $ne = $ns->modify('+' . max(0, (int) $s0->diff($e0)->days) . ' day');
+    }
+    return [$ns->format('Y-m-d'), $ne->format('Y-m-d')];
+}
+
+/**
+ * Perpanjang SATU ROMBONGAN transaksi sekaligus.
+ *
+ * Satu penawaran bisa menjual beberapa lokasi; bagi client itu satu
+ * kesepakatan, jadi perpanjangannya pun satu kali isi dan SATU dokumen
+ * konfirmasi untuk semua lokasinya — tidak perlu kembali membuat Surat
+ * Penawaran.
+ *
+ * Halaman ini memperlihatkan dulu apa saja yang akan ikut diperpanjang dan
+ * periode barunya; baru setelah dikirim transaksinya dibuat.
+ */
+function transaction_renew_group(PDO $pdo): void
+{
+    require_permission('manage_transactions');
+    if (!can('manage_skp')) { flash('Perpanjangan butuh izin Kelola SKP.'); redirect_to('transactions'); }
+    $pid = current_property_id();
+    $id  = (int) getv('id', post('id'));
+    $st = $pdo->prepare('SELECT * FROM transactions WHERE id = ? AND property_id = ? AND deleted_at IS NULL');
+    $st->execute([$id, $pid]);
+    $asal = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$asal) { flash('Transaksi tidak ditemukan.'); redirect_to('transactions'); }
+
+    $grup = trx_grup_perpanjangan($pdo, $asal, $pid);
+    [$mulaiBaru, $akhirBaru] = trx_periode_berikutnya((string) $asal['start_date'], (string) $asal['end_date']);
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        verify_csrf();
+        $mulai = (string) post('start_date', $mulaiBaru);
+        $akhir = (string) post('end_date', $akhirBaru);
+        if ($mulai === '' || $akhir === '' || $akhir < $mulai) {
+            flash('Periode baru belum benar — tanggal akhir tidak boleh mendahului tanggal mulai.');
+            redirect_to('transaction_renew_group', ['id' => $id]);
+        }
+        // Ikatan baru untuk rombongan ini. Dipakai juga oleh dokumen
+        // konfirmasinya untuk menyusun daftar lokasinya.
+        $bundleBaru = (int) ($pdo->query('SELECT COALESCE(MAX(bundle_id),0)+1 FROM transactions')->fetchColumn() ?: 1);
+        $idBaru = [];
+        $pdo->beginTransaction();
+        try {
+            foreach ($grup as $src) {
+                $baris = $src;
+                // Yang TIDAK ikut tersalin: identitas baris, ikatan dokumen &
+                // penawaran lama, nomor/ tanggal invoice & kontrak, serta jejak
+                // perubahan. Semuanya milik periode yang lama.
+                foreach (['id', 'skp_id', 'offer_item_id', 'invoice_no', 'invoice_date', 'invoice_due',
+                          'invoice_amount', 'contract_no', 'contract_date', 'renewal_status', 'renewal_note',
+                          'renewal_updated_at', 'renewal_updated_by', 'created_at', 'updated_at', 'updated_by',
+                          'deleted_at', 'deleted_by', 'cancel_reason'] as $k) unset($baris[$k]);
+                $baris['bundle_id']  = $bundleBaru;
+                $baris['start_date'] = $mulai;
+                $baris['end_date']   = $akhir;
+                $baris['period_key'] = substr($mulai, 0, 7);
+                $baris['status']     = 'posted';
+                $baris['created_by'] = clara_pelaku();
+                $kolom = array_keys($baris);
+                $pdo->prepare('INSERT INTO transactions (' . implode(', ', $kolom) . ') VALUES ('
+                    . implode(', ', array_map(fn($k) => ':' . $k, $kolom)) . ')')->execute($baris);
+                $baru = (int) $pdo->lastInsertId();
+                $idBaru[] = $baru;
+                audit($pdo, 'create', 'transactions', (string) $baru,
+                    ['perpanjangan_dari' => (int) $src['id'], 'rombongan' => $bundleBaru]);
+            }
+            $pdo->commit();
+        } catch (Throwable $e) {
+            $pdo->rollBack();
+            flash('Perpanjangan gagal disimpan: ' . $e->getMessage());
+            redirect_to('transaction_renew_group', ['id' => $id]);
+        }
+
+        // Alokasi bulanan belum dihitung: periode baru masih harus lewat paraf,
+        // persetujuan Manager, dan tanda tangan client. Dibangun saat dokumennya
+        // diteken — sama seperti perpanjangan satu lokasi.
+        $in = implode(',', array_fill(0, count($idBaru), '?'));
+        $pdo->prepare("DELETE FROM transaction_allocations WHERE property_id = ? AND transaction_id IN ($in)")
+            ->execute(array_merge([$pid], $idBaru));
+
+        require_once __DIR__ . '/skp_modules.php';
+        $docType = match ($asal['module'] ?? 'cl') { 'gudang' => 'sks', 'media' => 'fu', default => 'skp' };
+        $nilai = 0.0;
+        foreach ($grup as $src) $nilai += (float) ($src['final_amount'] ?? 0);
+        $pdo->prepare(
+            'INSERT INTO skp_documents (property_id, doc_type, module, client_id, contact_id, master_code,
+                 start_date, end_date, unit_rate, total_amount, pic_name, transaction_id, status,
+                 status_sewa, created_by)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,\'draft\',\'Perpanjangan\',?)'
+        )->execute([
+            $pid, $docType, $asal['module'] ?? 'cl',
+            $asal['client_id'] ?: null, $asal['contact_id'] ?: null, $asal['master_code'] ?? null,
+            $mulai, $akhir, (float) ($asal['unit_rate'] ?? 0), $nilai,
+            $asal['pic_name'] ?? null, $idBaru[0], clara_pelaku(),
+        ]);
+        $skpId = (int) $pdo->lastInsertId();
+        // SEMUA transaksi rombongan ini menunjuk ke dokumen yang sama.
+        $pdo->prepare("UPDATE transactions SET skp_id = ? WHERE property_id = ? AND id IN ($in)")
+            ->execute(array_merge([$skpId, $pid], $idBaru));
+        audit($pdo, 'create', 'skp_documents', (string) $skpId,
+            ['perpanjangan_rombongan' => $bundleBaru, 'lokasi' => count($idBaru)]);
+
+        flash(count($idBaru) . ' lokasi diperpanjang ke periode ' . $mulai . ' s/d ' . $akhir
+            . ' dan tercatat dalam SATU dokumen ' . skp_doc_short($docType)
+            . '. Lengkapi isinya di bawah ini.');
+        redirect_to('skp_form', ['id' => $skpId, 'renew' => 1]);
+    }
+
+    $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
+    layout('Perpanjang ' . count($grup) . ' Lokasi', function () use ($grup, $asal, $mulaiBaru, $akhirBaru, $id, $rp) {
+        ?>
+        <form class="panel" method="post" action="?r=transaction_renew_group">
+            <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+            <input type="hidden" name="id" value="<?= (int) $id ?>">
+            <p style="margin-top:0">
+                <strong><?= h($asal['client_id'] ? ('Client #' . $asal['client_id']) : 'Client') ?></strong> &mdash;
+                <?= count($grup) ?> lokasi berikut diperpanjang <strong>sekaligus</strong> dan masuk ke
+                <strong>satu dokumen konfirmasi</strong>. Periode lama:
+                <?= h((string) $asal['start_date']) ?> s/d <?= h((string) $asal['end_date']) ?>.
+            </p>
+            <div class="table-wrap">
+                <table class="data" style="width:100%">
+                    <thead><tr><th>Kode</th><th>Keterangan</th><th>Luas</th><th style="text-align:right">Nilai</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($grup as $g): ?>
+                        <tr>
+                            <td><strong><?= h((string) $g['master_code']) ?></strong></td>
+                            <td><?= h((string) ($g['content_note'] ?? '-')) ?></td>
+                            <td><?= h((string) ($g['area_sqm'] ?? '-')) ?></td>
+                            <td style="text-align:right"><?= $rp($g['final_amount'] ?? 0) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px">
+                <div><label>Mulai periode baru</label><input type="date" name="start_date" required value="<?= h($mulaiBaru) ?>"></div>
+                <div><label>Akhir periode baru</label><input type="date" name="end_date" required value="<?= h($akhirBaru) ?>"></div>
+            </div>
+            <div class="help" style="margin-top:8px">
+                Tanggalnya sudah dimajukan mengikuti pola kontrak lama &mdash; <strong>periksa dulu</strong>,
+                baru simpan. Nilainya masuk laporan setelah client menandatangani dokumennya.
+            </div>
+            <div style="display:flex;gap:10px;margin-top:14px">
+                <button type="submit">Perpanjang <?= count($grup) ?> lokasi</button>
+                <a class="btn secondary" href="?r=transactions&module=<?= h((string) $asal['module']) ?>">Batal</a>
+            </div>
+        </form>
+        <?php
+    });
+}
+
+function trx_grup_perpanjangan(PDO $pdo, array $row, int $pid): array
+{
+    $bundle = trim((string) ($row['bundle_id'] ?? ''));
+    if ($bundle !== '') {
+        $st = $pdo->prepare(
+            'SELECT * FROM transactions
+              WHERE property_id = ? AND bundle_id = ? AND deleted_at IS NULL
+              ORDER BY master_code, id'
+        );
+        $st->execute([$pid, $bundle]);
+        $grup = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        if (count($grup) >= 2) return $grup;
+    }
+    if (empty($row['client_id']) || empty($row['start_date']) || empty($row['end_date'])) return [$row];
+    $st = $pdo->prepare(
+        'SELECT * FROM transactions
+          WHERE property_id = ? AND deleted_at IS NULL AND client_id = ? AND module = ?
+            AND start_date = ? AND end_date = ? AND COALESCE(pic_name,\'\') = ?
+          ORDER BY master_code, id'
+    );
+    $st->execute([$pid, (int) $row['client_id'], (string) $row['module'],
+        (string) $row['start_date'], (string) $row['end_date'], (string) ($row['pic_name'] ?? '')]);
+    $grup = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    // Harus benar-benar beberapa LOKASI, bukan satu lokasi yang terulang.
+    $kode = array_unique(array_map(fn($t) => (string) $t['master_code'], $grup));
+    return count($grup) >= 2 && count($kode) === count($grup) ? $grup : [$row];
 }
 
 function transaction_form(PDO $pdo): void
