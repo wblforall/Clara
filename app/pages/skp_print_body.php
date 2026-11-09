@@ -91,7 +91,7 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 /* Kota & tanggal: RATA KIRI di semua jenis surat, sejajar kolom tanda tangan
    pertama di bawahnya. Dibuat sebagai kelas (bukan gaya sebaris) supaya
    penyesuai halaman bisa merapatkannya. */
-.skpdoc .tgl-surat { text-align: left; margin-top: 16px; font-size: 10.5px; }
+.skpdoc .tgl-surat { text-align: left; margin-top: 16px; }
 /* Bagian yang SELALU mulai di halaman baru, bukan sekadar ditawarkan sebagai
    titik potong kepada penyesuai halaman. */
 /* Bagian yang memulai halaman baru TIDAK perlu lagi dijaga agar utuh: ia
@@ -227,11 +227,13 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
    px (isinya 11px). Ditulis dari PHP dan ditaruh SESUDAH lapisan pemadatan,
    karena aturan bersatuan pt yang ditumpuk lewat ".skpdoc.kertas ..." tidak
    tersalur ke dalam sel tabel di mPDF. */
+/* Baris kota & tanggal ikut ukuran yang sama — ia satu kesatuan dengan blok
+   tanda tangan di bawahnya. */
 $skpUkuranTtd = $skpDocType === 'sks'
     ? ['11pt', '11pt', '10.5pt', '10pt'][min(3, (int) ($RAPAT ?? 0))]
     : ['11px', '11px', '10.5px', '10px'][min(3, (int) ($RAPAT ?? 0))];
 ?>
-<style>.skpdoc table.sign td { font-size: <?= $skpUkuranTtd ?>; }</style>
+<style>.skpdoc table.sign td, .skpdoc .tgl-surat { font-size: <?= $skpUkuranTtd ?>; }</style>
 <?= skp_css_potong((int) ($POTONG ?? 0)) ?>
 <div class="skpdoc<?= $skpDocType === 'sks' ? ' kertas' : '' ?>">
     <div class="doc-title"<?= $skpDocType === 'sks' ? ' style="font-weight:bold;text-decoration:underline"' : '' ?>><?= $h(skp_doc_heading($skpDocType, $skpTpl)) ?></div>
