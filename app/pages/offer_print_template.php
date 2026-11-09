@@ -274,7 +274,8 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
    ke pinggir adalah kolom kosong di tengahnya, bukan perataan isinya. */
 .sign td.col{width:22%;padding:0;border:none;vertical-align:bottom;text-align:center}
 .sign td.antara{width:56%;padding:0;border:none}
-.sign td.peran{font-size:9.5px;color:#6b7280;line-height:1.3;padding-bottom:1.2mm}
+/* Judul kolom SEUKURAN nama & jabatan di bawahnya — sama dengan SKP/Gudang. */
+.sign td.peran{font-size:12.5px;color:#6b7280;line-height:1.3;padding-bottom:1.2mm}
 .sign td.sigarea{height:20mm}
 .sign td.nama{vertical-align:top}
 .ttd-img{height:58px;width:auto;margin:2px 0}

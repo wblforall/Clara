@@ -137,7 +137,9 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 /* Baris jabatan kolom ("Hormat Kami," + nama PT) menempel ke DASAR barisnya,
    jadi berapa pun barisnya, ruang tanda tangan di bawahnya tetap mulai pada
    ketinggian yang sama di ketiga kolom. */
-.skpdoc table.sign td.peran { font-size: 12px; color: #6b7280; line-height: 1.3; padding-bottom: 1.2mm; }
+/* Judul kolom SEUKURAN nama & jabatan di bawahnya — satu ukuran untuk
+   seluruh blok tanda tangan, di semua jenis surat. */
+.skpdoc table.sign td.peran { font-size: 12.5px; color: #6b7280; line-height: 1.3; padding-bottom: 1.2mm; }
 /* Ruang tanda tangan: tingginya dikunci supaya muat QR / coretan / ruang
    kosong bergaris, dan isinya menempel ke dasar — itulah yang membuat nama
    ketiga penanda tangan sejajar, apa pun isinya. */
