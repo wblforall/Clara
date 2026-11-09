@@ -882,7 +882,9 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
         foreach (($tpl['notes'] ?? []) as $i => $n) {
             $o .= $i === 0
                 ? '<p style="font-size:9px;line-height:1.5;margin:0 0 8px;font-style:italic;font-weight:bold">' . $h($n) . '</p>'
-                : '<p style="font-size:10.5px;line-height:1.6;margin:0 0 6px;font-weight:bold">' . $h($n) . '</p>';
+                // Baris rekening diberi jarak atas supaya blok uang tidak menempel
+                // ke catatan kaki PPN di atasnya — sama lapangnya dengan SKP.
+                : '<p style="font-size:10.5px;line-height:1.6;margin:8px 0 6px;font-weight:bold">' . $h($n) . '</p>';
         }
         $o .= '</div>';
 

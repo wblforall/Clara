@@ -634,7 +634,7 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
              susunan formulir kertasnya. */ ?>
     <?php if ($skpDocType === 'fu' && !empty($skpTpl['terms'])): ?>
     <div class="bagian">
-    <div class="sec" style="margin-top:14px">Catatan</div>
+    <div class="sec" style="margin-top:10mm">Catatan</div>
     <table class="notes">
         <?php foreach ($skpTpl['terms'] as $i => $t): ?><tr><td class="nn"><?= $i + 1 ?>.</td><td class="nt"><?= $h($t) ?></td></tr><?php endforeach; ?>
     </table>
