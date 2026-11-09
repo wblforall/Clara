@@ -4430,7 +4430,18 @@ function offer_templates_page(PDO $pdo): void
                         <td><?= $t['dp_required'] ? 'Wajib · ' . h(rtrim(rtrim(number_format((float)$t['dp_months_default'],1,',',''),'0'),',')) . ' bln' : '<span class="muted">Tanpa DP</span>' ?></td>
                         <td class="muted"><?= $n($t['fasilitas_json']) ?> / <?= $n($t['media_json'] ?? '[]') ?> / <?= $n($t['payment_json']) ?> / <?= $n($t['terms_json']) ?></td>
                         <td><?= $t['status'] === 'active' ? '<span style="color:#16a34a">Aktif</span>' : '<span class="muted">Nonaktif</span>' ?></td>
-                        <td><?php if (can('manage_offer_templates')): ?><a class="btn light" href="?r=offer_template_form&id=<?= (int)$t['id'] ?>">Edit</a><?php endif; ?></td>
+                        <td><?php if (can('manage_offer_templates')): ?>
+                            <div style="display:flex;gap:6px;justify-content:flex-end">
+                                <a class="btn light" href="?r=offer_template_form&id=<?= (int)$t['id'] ?>">Edit</a>
+                                <?php /* Duplikat lewat POST, bukan tautan: menyalin itu MENGUBAH data,
+                                         dan tautan bisa terpanggil ulang hanya karena halaman di-refresh. */ ?>
+                                <form method="post" action="?r=offer_template_duplicate" style="margin:0">
+                                    <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                                    <input type="hidden" name="id" value="<?= (int) $t['id'] ?>">
+                                    <button class="btn light" type="submit" title="Buat salinan template ini untuk diubah">Duplikat</button>
+                                </form>
+                            </div>
+                        <?php endif; ?></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$tpls): ?><tr><td colspan="8" class="muted">Belum ada template untuk modul ini.</td></tr><?php endif; ?>
@@ -4986,6 +4997,59 @@ function offer_template_preview(PDO $pdo): void
            . 'Pratinjau gagal dibuat: ' . $h($e->getMessage()) . '</div>';
     }
     exit;
+}
+
+/**
+ * Duplikat satu template surat penawaran.
+ *
+ * Salinan dibuat supaya template yang sudah jadi bisa dipakai sebagai titik
+ * mulai — tinggal diubah bagian yang perlu, tanpa menyentuh template yang
+ * sedang dipakai sales lain. Salinannya:
+ *   - tetap di PROPERTI yang sama (e-Walk & Pentacity punya daftar sendiri),
+ *   - tidak pernah ikut menjadi "bawaan" walau yang disalin adalah bawaan,
+ *   - diberi nama "<nama asli> duplicate 1", lalu 2, 3, dan seterusnya.
+ *
+ * Seluruh kolom disalin apa adanya (kecuali id, penanda bawaan, dan waktu),
+ * jadi kolom template yang ditambahkan kemudian ikut tersalin tanpa perlu
+ * mengubah fungsi ini.
+ */
+function offer_template_duplicate(PDO $pdo): void
+{
+    require_permission('manage_offer_templates');
+    verify_csrf();
+    $pid = current_property_id();
+    $id  = (int) post('id', getv('id'));
+
+    $st = $pdo->prepare('SELECT * FROM offer_templates WHERE id = ? AND property_id = ?');
+    $st->execute([$id, $pid]);
+    $asal = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$asal) { flash('Template tidak ditemukan.'); redirect_to('offer_templates'); }
+
+    // Nama dasar = nama template yang disalin, tanpa akhiran "duplicate N"
+    // yang mungkin sudah ada — menyalin salinan tidak menumpuk akhiran.
+    $dasar = preg_replace('/\s+duplicate\s+\d+$/i', '', (string) $asal['name']);
+    $pakai = $pdo->prepare('SELECT name FROM offer_templates WHERE property_id = ? AND module = ?');
+    $pakai->execute([$pid, $asal['module']]);
+    $adaNama = array_map('mb_strtolower', $pakai->fetchAll(PDO::FETCH_COLUMN) ?: []);
+    $n = 1;
+    while (in_array(mb_strtolower($dasar . ' duplicate ' . $n), $adaNama, true)) $n++;
+
+    $baru = $asal;
+    unset($baru['id'], $baru['created_at'], $baru['updated_at']);
+    $baru['name']       = mb_substr($dasar . ' duplicate ' . $n, 0, 120);
+    $baru['is_default'] = 0;          // bawaan tetap satu; salinan tidak merebutnya
+    $baru['status']     = 'active';
+
+    $kolom = array_keys($baru);
+    $sql = 'INSERT INTO offer_templates (' . implode(', ', $kolom) . ') VALUES ('
+         . implode(', ', array_map(fn($k) => ':' . $k, $kolom)) . ')';
+    $pdo->prepare($sql)->execute($baru);
+    $idBaru = (int) $pdo->lastInsertId();
+    audit($pdo, 'duplicate_offer_template', 'offer_templates', (string) $idBaru,
+        ['dari' => $id, 'nama' => $baru['name']], [], 'offers');
+
+    flash('Template disalin menjadi "' . $baru['name'] . '". Silakan diubah sesuai kebutuhan.');
+    redirect_to('offer_template_form', ['id' => $idBaru]);
 }
 
 function offer_template_save(PDO $pdo): void

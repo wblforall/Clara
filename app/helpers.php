@@ -910,7 +910,8 @@ function permission_for_route(string $route): string
         // Template surat penawaran punya izinnya SENDIRI, bukan manage_master.
         // Yang perlu mengubah isi surat belum tentu boleh menyentuh unit, PIC,
         // target, atau client — dan sebaliknya.
-        'offer_template_form', 'offer_template_save', 'offer_template_preview' => 'manage_offer_templates',
+        'offer_template_form', 'offer_template_save', 'offer_template_preview',
+        'offer_template_duplicate' => 'manage_offer_templates',
         // Halamannya memeriksa superadmin sendiri; gerbang rute ini hanya
         // memastikan peran lain tidak lagi lolos lewat default view_dashboard.
         'recurring_candidates' => 'manage_users',

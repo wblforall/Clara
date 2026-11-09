@@ -92,6 +92,9 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
    pertama di bawahnya. Dibuat sebagai kelas (bukan gaya sebaris) supaya
    penyesuai halaman bisa merapatkannya. */
 .skpdoc .tgl-surat { text-align: left; margin-top: 16px; font-size: 10.5px; }
+/* Bagian yang SELALU mulai di halaman baru, bukan sekadar ditawarkan sebagai
+   titik potong kepada penyesuai halaman. */
+.skpdoc .potong-wajib { page-break-before: always; margin-top: 0; }
 .skpdoc .sec { font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: .04em; color: #0D9488; border-bottom: 1px solid #d1d5db; padding-bottom: 3px; margin: 14px 0 7px; page-break-after: avoid; }
 .skpdoc table.kv { width: 100%; border-collapse: collapse; }
 .skpdoc table.kv td { padding: 2.5px 0; vertical-align: top; border: none; font-size: 11px; }
@@ -109,7 +112,9 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc table.notes tr { page-break-inside: avoid; }
 .skpdoc table.notes td.nn { width: 20px; vertical-align: top; font-weight: bold; font-size: 11px; color: #374151; }
 .skpdoc table.notes td.nt { font-size: 11px; color: #374151; line-height: 1.45; padding-bottom: 3px; text-align: justify; }
-.skpdoc table.sign { width: 100%; border-collapse: collapse; margin-top: 14px; page-break-inside: avoid; table-layout: fixed; }
+/* Jarak sebelum blok tanda tangan dibuat selebar satu baris kosong supaya
+   batas antara isi surat dan tanda tangan jelas terlihat. */
+.skpdoc table.sign { width: 100%; border-collapse: collapse; margin-top: 7mm; page-break-inside: avoid; table-layout: fixed; }
 /* Isi SEMUA kolom rata tengah. Kolom tepi dibuat lebih sempit daripada kolom
    tengah supaya titik tengahnya bergeser ke luar — blok pertama duduk lebih
    mepet ke garis kiri dan blok terakhir lebih mepet ke garis kanan, tanpa
@@ -165,18 +170,14 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc.kertas p.judul-aturan { margin-top: 16px; }
 .skpdoc.kertas ol.aturan { margin: 2px 0 0 6mm; padding: 0; }
 .skpdoc.kertas ol.aturan li { text-align: justify; margin-bottom: 2px; }
-/* Surat kertas (Gudang/Media) memakai satuan pt dengan isi 11pt, jadi angka
-   px di atas akan terbaca jauh lebih kecil daripada badan suratnya. Angkanya
-   sama, satuannya mengikuti surat — perbandingannya dengan isi surat jadi
-   persis sama seperti di SKP. */
-.skpdoc.kertas table.sign td.peran { color: #000; font-size: 9.5pt; }
-.skpdoc.kertas .name { color: #000; font-size: 12.5pt; }
-.skpdoc.kertas .jab  { color: #000; font-size: 12.5pt; }
-/* Surat kertas memakai nama PT di kolom pertama — barisnya lebih panjang,
-   jadi kolom tepinya tidak bisa sesempit surat lain tanpa membuatnya pecah
-   dua baris. Tetap sesempit mungkin supaya bloknya mepet ke pinggir. */
-.skpdoc.kertas table.sign td.col { width: 30%; }
-.skpdoc.kertas table.sign td.tengah { width: 40%; }
+/* Blok tanda tangan surat gudang SAMA PERSIS dengan SKP — ukuran huruf dan
+   lebar kolomnya tidak lagi mengikuti satuan pt badan suratnya. Dulu dibuat
+   ikut (12,5pt = 16,7px) dan hasilnya jauh lebih besar daripada surat lain,
+   sehingga antar surat terlihat tidak konsisten. Yang tersisa khas kertas
+   cuma warnanya: hitam, bukan abu-abu. */
+.skpdoc.kertas table.sign td.peran { color: #000; }
+.skpdoc.kertas .name { color: #000; }
+.skpdoc.kertas .jab  { color: #000; }
 </style>
 <?php /* Lapisan pemadatan OTOMATIS. Kosong pada keadaan biasa; hanya terisi
          kalau penyesuai halaman di skp.php memutuskan surat ini "nanggung".
@@ -479,7 +480,10 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
     </table>
     <?php if ($kenaPpn): ?><div class="muted" style="font-size:9px;margin-top:3px">*PPN 12% sesuai PMK Nomor 131 Tahun 2024.</div><?php endif; ?>
 
-    <div class="sec<?= skp_potong_kelas() ?>">Note</div>
+    <?php /* NOTE SELALU mulai di halaman baru. Halaman pertama berhenti di
+             Rincian Pembayaran Sewa; daftar ketentuan tidak pernah terpotong
+             satu-dua poin di kaki halaman lalu sisanya menyeberang. */ ?>
+    <div class="sec potong-wajib<?= skp_potong_kelas() ?>">Note</div>
     <table class="notes">
         <?php foreach ($skpNotes as $i => $n): ?><tr><td class="nn"><?= $i + 1 ?>.</td><td class="nt"><?= $h($n) ?></td></tr><?php endforeach; ?>
     </table>
