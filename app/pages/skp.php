@@ -948,6 +948,25 @@ function skp_form(PDO $pdo): void
         if (!function_exists('offer_items_detail')) require_once __DIR__ . '/offers.php';
         foreach (offer_items_detail($pdo, (int) $offerId, $pid) as $it) $total += (float) ($it['nilai'] ?? 0);
     }
+    // Dokumen PAKET yang lahir dari perpanjangan rombongan: sumbernya satu
+    // transaksi, padahal suratnya memuat beberapa lokasi. Tanpa ini Rincian
+    // Pembayaran hanya memuat nilai lokasi PERTAMA sementara tabel Komponen
+    // Paket di atasnya menjumlahkan semuanya — dua angka berbeda di satu
+    // surat, dan yang ditagih justru yang kecil. Dokumen yang lahir dari
+    // Surat Penawaran tidak lewat sini: nilainya sudah nilai paket.
+    if (!$offerId && $trxId) {
+        $bd = $pdo->prepare('SELECT bundle_id FROM transactions
+                              WHERE id = ? AND property_id = ? AND deleted_at IS NULL LIMIT 1');
+        $bd->execute([(int) $trxId, $pid]);
+        $bundle = trim((string) ($bd->fetchColumn() ?: ''));
+        if ($bundle !== '') {
+            $jm = $pdo->prepare('SELECT COUNT(*) n, COALESCE(SUM(final_amount),0) jml FROM transactions
+                                  WHERE property_id = ? AND bundle_id = ? AND deleted_at IS NULL');
+            $jm->execute([$pid, $bundle]);
+            $rk = $jm->fetch(PDO::FETCH_ASSOC) ?: [];
+            if ((int) ($rk['n'] ?? 0) >= 2 && (float) ($rk['jml'] ?? 0) > 0) $total = (float) $rk['jml'];
+        }
+    }
     $defDeposit = (float) ($skp['deposit_amount'] ?? $src['deposit_amount'] ?? 0);
     // Deposit sudah dibayar? Dokumen lama pakai nilainya sendiri; dokumen baru
     // dicentang otomatis bila client ini pernah menyetor deposit sebelumnya
