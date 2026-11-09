@@ -567,6 +567,7 @@ function permission_labels(): array
         'manage_users'        => 'Kelola Users',
         'manage_deleted'      => 'Hapus Transaksi',
         'request_delete'      => 'Ajukan Hapus Data',
+        'view_monitoring'     => 'Monitoring Transaksi',
         'view_payments'       => 'Lihat Invoice & Pembayaran',
         'manage_payments'     => 'Isi Invoice & Pembayaran',
         'approve_delete'      => 'Putuskan Pengajuan Hapus',
@@ -877,6 +878,11 @@ function permission_for_route(string $route): string
         // menuntut manage_payments. Pemegang manage_payments diberi
         // view_payments juga (migrasi 082), jadi tidak ada yang terkunci.
         'payments', 'payments_csv', 'payments_xlsx', 'payment_form' => 'view_payments',
+        // Monitoring hanya MEMBACA keadaan dokumen/kontrak/tagihan, dan
+        // mencatat jejak pengejaran — tidak pernah mengubah angka. Izinnya
+        // sendiri supaya bisa diberikan ke PIC & Asisten Manager tanpa ikut
+        // membuka layar pengisian tagihan.
+        'monitoring', 'monitoring_tindak' => 'view_monitoring',
         'payment_invoice_save', 'payment_add', 'payment_edit', 'payment_delete' => 'manage_payments',
         'master' => 'view_master',
         // Mengubah master bergantung jenisnya (unit / PIC & target / lainnya).

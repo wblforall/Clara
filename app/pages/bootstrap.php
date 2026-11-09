@@ -144,6 +144,7 @@ function _nav_ikon(string $key): string
         'transactions:media' => '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>',
         'transactions:gudang'=> '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05"/><path d="M12 22.08V12"/>',
         'payments'           => '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>',
+        'monitoring'         => '<path d="M4 5h10"/><path d="M4 10h7"/><path d="M4 15h5"/><circle cx="16.5" cy="15.5" r="4"/><path d="m19.5 18.5 2.5 2.5"/>',
         'master:cl'          => '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
         'master:cl_unit_type'=> '<path d="M12 2H2v10l9.29 9.29a1 1 0 0 0 1.41 0l8.59-8.59a1 1 0 0 0 0-1.41Z"/><circle cx="7" cy="7" r="1.5"/>',
         'offer_templates'    => '<rect x="3" y="3" width="18" height="7" rx="1"/><rect x="3" y="14" width="9" height="7" rx="1"/><rect x="16" y="14" width="5" height="7" rx="1"/>',
@@ -276,7 +277,11 @@ function layout(string $title, callable $body, array $opts = []): void
         ['', 'skp&module=gudang', 'SKS Gudang', 'manage_skp'],
         ['', 'contract_requests', 'Permintaan Kontrak', 'manage_skp'],
         ['', 'renewals', 'Renewal Kontrak', 'view_renewals'],
-        ['Kontrak & Tagihan', 'transactions&module=cl', 'Transaksi Exhibition', 'view_transactions'],
+        // Monitoring diletakkan paling atas kelompok ini karena ia PINTU
+        // MASUKNYA: dari situ orang tahu berkas mana yang perlu dibuka, bukan
+        // sebaliknya menyusuri daftar transaksi dan menebak mana yang macet.
+        ['Kontrak & Tagihan', 'monitoring', 'Monitoring Transaksi', 'view_monitoring'],
+        ['', 'transactions&module=cl', 'Transaksi Exhibition', 'view_transactions'],
         ['', 'transactions&module=media', 'Transaksi Media', 'view_transactions'],
         ['', 'transactions&module=gudang', 'Transaksi Gudang', 'view_transactions'],
         ['', 'payments', 'Tagihan & Pembayaran', 'view_payments'],
@@ -319,6 +324,20 @@ function layout(string $title, callable $body, array $opts = []): void
     // Lencana angka di sidebar: pemutus pengajuan penghapusan perlu tahu ada
     // yang menunggu tanpa harus membuka menunya. Dihitung sekali per halaman.
     $navBadge = ['deletion_request' => ($pdo instanceof PDO) ? deletion_pending_count($pdo, current_property_id()) : 0];
+    // Pengingat Monitoring: berapa berkas yang menunggu tindakan ORANG INI.
+    // Inilah pengingatnya — terlihat tiap kali CLARA dibuka, tanpa menyentuh
+    // Dashboard. Angkanya diingat 3 menit di sesi (lihat mon_badge()), jadi
+    // halaman lain tidak ikut menanggung hitungannya.
+    if ($pdo instanceof PDO && can('view_monitoring')) {
+        try {
+            require_once __DIR__ . '/monitoring.php';
+            $navBadge['monitoring'] = mon_badge($pdo, current_property_id());
+        } catch (Throwable $_e) { $navBadge['monitoring'] = 0; }
+    }
+    $navBadgeKet = [
+        'deletion_request' => 'pengajuan menunggu keputusan Anda',
+        'monitoring'       => 'berkas menunggu tindakan Anda',
+    ];
 
     $currentProp  = current_property();
     $isMulti      = is_multi_property();
@@ -541,7 +560,10 @@ function layout(string $title, callable $body, array $opts = []): void
                     }
                     $_add = _nav_tambah($key);
                     if ($_add && !can($_add[1])) $_add = null;
-                    $_groups[$_g]['items'][] = [$key, $label, $_active, (int) ($navBadge[$_kp['r'] ?? ''] ?? 0), $_add];
+                    // Rute dasar ikut dibawa: keterangan lencana dibaca saat
+                    // MENCETAK, dan di titik itu $_kp sudah berpindah ke menu lain.
+                    $_groups[$_g]['items'][] = [$key, $label, $_active,
+                                                (int) ($navBadge[$_kp['r'] ?? ''] ?? 0), $_add, $_kp['r'] ?? ''];
                     if ($_active) $_groups[$_g]['active'] = true;
                     // Halaman turunan (mis. transaction_form, skp_form, client_form)
                     // tidak ada di menu; kelompok induknya tetap dibuka.
@@ -563,13 +585,13 @@ function layout(string $title, callable $body, array $opts = []): void
                     </button>
                     <?php endif; ?>
                     <div class="nav-group-isi">
-                    <?php foreach ($_grp['items'] as [$key, $label, $_active, $_bdg, $_add]): ?>
+                    <?php foreach ($_grp['items'] as [$key, $label, $_active, $_bdg, $_add, $_rute]): ?>
                         <div class="nav-item">
                             <a class="<?= $_active ? 'active' : '' ?>" href="?r=<?= h($key) ?>" data-label="<?= h($label) ?>"<?=
                                 $_add ? ' data-add="?r=' . h($_add[0]) . '" data-add-label="' . h($_add[2]) . '"' : '' ?>>
                                 <span class="nav-ico"><?= _nav_ikon($key) ?></span>
                                 <span class="nav-teks"><?= h($label) ?></span>
-                                <?php if ($_bdg > 0): ?><span class="nav-bdg" title="<?= $_bdg ?> pengajuan menunggu keputusan Anda"><?= $_bdg ?></span><?php endif; ?>
+                                <?php if ($_bdg > 0): ?><span class="nav-bdg" title="<?= $_bdg ?> <?= h($navBadgeKet[$_rute] ?? 'menunggu Anda') ?>"><?= $_bdg ?></span><?php endif; ?>
                             </a>
                             <?php if ($_add): ?>
                             <a class="nav-add" href="?r=<?= h($_add[0]) ?>" title="<?= h($_add[2]) ?>" aria-label="<?= h($_add[2]) ?>"><?= _nav_ikon('_tambah') ?></a>
