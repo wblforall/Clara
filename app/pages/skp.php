@@ -61,7 +61,12 @@ function _skp_source(PDO $pdo, int $trxId, int $pid): ?array
 function _skp_source_from_offer(PDO $pdo, int $offerId, int $pid): ?array
 {
     $stmt = $pdo->prepare(
-        "SELECT o.*, o.keterangan AS content_note, o.total_calculated AS final_amount,
+        // Nilai penawaran bisa tersimpan di total hitungannya ATAU di nilai
+        // kesepakatan (override) — mis. harga nego yang diketik sendiri, yang
+        // membuat total_calculated tetap 0. Dibaca keduanya, kalau tidak
+        // seluruh Rincian Pembayaran di dokumennya tercetak Rp 0.
+        "SELECT o.*, o.keterangan AS content_note,
+                COALESCE(NULLIF(o.total_calculated,0), NULLIF(o.override_amount,0)) AS final_amount,
                 c.company_name, c.brand_name, c.npwp, c.ktp AS client_ktp, c.siup, c.address, c.business_type,
                 ct.name cp_name, ct.phone cp_phone,
                 COALESCE(u.location_name, g.name, CONCAT_WS(' - ', m.media_type, m.location, NULLIF(m.point, ''))) AS location_name,
