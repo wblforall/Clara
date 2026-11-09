@@ -107,10 +107,7 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
    DALAM blok yang juga avoid membuat mPDF berputar sampai batas waktu PHP
    (Mpdf.php:7916), bukan sekadar lambat. */
 .skpdoc .bagian { page-break-inside: avoid; }
-/* Judul bagian TIDAK ditebalkan: ukurannya sudah sama dengan isinya, dan
-   huruf tebal membuatnya terbaca lebih besar. Yang membedakannya dari isi
-   tinggal warna, huruf kapital, dan garis bawah. */
-.skpdoc .sec { font-size: 11px; font-weight: normal; text-transform: uppercase; letter-spacing: .04em; color: #0D9488; border-bottom: 1px solid #d1d5db; padding-bottom: 3px; margin: 14px 0 7px; page-break-after: avoid; }
+.skpdoc .sec { font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: .04em; color: #0D9488; border-bottom: 1px solid #d1d5db; padding-bottom: 3px; margin: 14px 0 7px; page-break-after: avoid; }
 .skpdoc table.kv { width: 100%; border-collapse: collapse; }
 .skpdoc table.kv td { padding: 2.5px 0; vertical-align: top; border: none; font-size: 11px; }
 .skpdoc table.kv td.l { width: 38%; color: #374151; }
@@ -129,20 +126,29 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc table.notes td.nt { font-size: 11px; color: #374151; line-height: 1.45; padding-bottom: 3px; text-align: justify; }
 /* Jarak sebelum blok tanda tangan dibuat selebar satu baris kosong supaya
    batas antara isi surat dan tanda tangan jelas terlihat. */
-.skpdoc table.sign { width: 100%; border-collapse: collapse; margin-top: 7mm; page-break-inside: avoid; table-layout: fixed; }
+/* overflow:wrap mematikan penyusutan huruf otomatis milik mPDF: tanpa ini
+   mPDF mengecilkan SELURUH isi tabel supaya muat kolom (huruf tanda tangan
+   tercetak 8,5pt padahal isi suratnya 11pt). Dengan wrap, kata yang terlalu
+   panjang dipotong ke baris berikutnya dan ukuran hurufnya dipertahankan. */
+.skpdoc table.sign { width: 100%; border-collapse: collapse; margin-top: 7mm; page-break-inside: avoid; table-layout: fixed; overflow: visible; }
 /* Isi SEMUA kolom rata tengah. Kolom tepi dibuat lebih sempit daripada kolom
    tengah supaya titik tengahnya bergeser ke luar — blok pertama duduk lebih
    mepet ke garis kiri dan blok terakhir lebih mepet ke garis kanan, tanpa
    ada yang jadi rata kiri/rata kanan. */
+/* Ukuran huruf blok tanda tangan dipasang di SEL-nya, bukan di div di
+   dalamnya: mPDF mewariskan font-size dari sel ke isinya, tetapi aturan
+   bersatuan pt yang ditulis pada div di dalam sel tidak tersalur. */
 .skpdoc table.sign td.col { width: 22%; padding: 0; border: none; vertical-align: bottom; text-align: center; }
+
 .skpdoc table.sign td.tengah { width: 56%; }
 .skpdoc table.sign td.col img { max-width: 100%; height: auto; }
 /* Baris jabatan kolom ("Hormat Kami," + nama PT) menempel ke DASAR barisnya,
    jadi berapa pun barisnya, ruang tanda tangan di bawahnya tetap mulai pada
    ketinggian yang sama di ketiga kolom. */
-/* Judul kolom SEUKURAN nama & jabatan di bawahnya — satu ukuran untuk
-   seluruh blok tanda tangan, di semua jenis surat. */
-.skpdoc table.sign td.peran { font-size: 12.5px; color: #6b7280; line-height: 1.3; padding-bottom: 1.2mm; }
+/* SELURUH blok tanda tangan — keterangan kolom, nama, dan jabatan — seukuran
+   BADAN SURAT. Satu ukuran dari atas sampai bawah, tidak ada yang menonjol
+   sendiri; ukurannya diwarisi dari sel di atas. */
+.skpdoc table.sign td.peran { color: #6b7280; line-height: 1.3; padding-bottom: 1.2mm; }
 /* Ruang tanda tangan: tingginya dikunci supaya muat QR / coretan / ruang
    kosong bergaris, dan isinya menempel ke dasar — itulah yang membuat nama
    ketiga penanda tangan sejajar, apa pun isinya. */
@@ -153,8 +159,8 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc table.sign td.nama { vertical-align: top; }
 /* Nama & jabatan sedikit lebih besar daripada paragraf surat, tidak
    ditebalkan; jabatan dimiringkan. */
-.skpdoc .name { display: block; padding-top: 3px; font-size: 12.5px; line-height: 1.3; }
-.skpdoc .jab { display: block; font-style: italic; font-size: 12.5px; line-height: 1.3; }
+.skpdoc .name { display: block; padding-top: 3px; line-height: 1.3; }
+.skpdoc .jab { display: block; font-style: italic; line-height: 1.3; }
 .skpdoc .ttd-ket { display: block; font-style: normal; color: #6b7280; font-size: 8px; }
 .skpdoc .qrbox { width: 70px; height: 70px; margin: 0 auto 3px; }
 .skpdoc .qrbox img, .skpdoc .qrbox svg { width: 70px !important; height: 70px !important; display: block; }
@@ -202,6 +208,9 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc.kertas table.sign td, .skpdoc.kertas table.sign td.peran,
 .skpdoc.kertas .name, .skpdoc.kertas .jab, .skpdoc.kertas .qrhint,
 .skpdoc.kertas .ttd-ket { font-family: carlito, sans-serif; }
+/* Badan surat gudang 11pt, jadi blok tanda tangannya pun 11pt — seukuran
+   "Peraturan Sewa Gudang :" dan poin-poinnya. Angka px di atas akan terbaca
+   jauh lebih kecil di surat bersatuan pt. */
 .skpdoc.kertas table.sign td.peran { color: #000; }
 .skpdoc.kertas .name { color: #000; }
 .skpdoc.kertas .jab  { color: #000; }
@@ -210,6 +219,19 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
          kalau penyesuai halaman di skp.php memutuskan surat ini "nanggung".
          Ditaruh SESUDAH gaya utama supaya menimpanya. */ ?>
 <?= skp_css_rapat((int) ($RAPAT ?? 0)) ?>
+<?php
+/* Ukuran huruf blok tanda tangan = ukuran BADAN SURAT, dan IKUT TURUN
+   bersama isinya saat penyesuai halaman merapatkan surat — kalau tidak,
+   begitu isinya dimampatkan tanda tangannya jadi lebih besar sendiri.
+   Satuannya ikut jenis surat: gudang memakai pt (isinya 11pt), surat lain
+   px (isinya 11px). Ditulis dari PHP dan ditaruh SESUDAH lapisan pemadatan,
+   karena aturan bersatuan pt yang ditumpuk lewat ".skpdoc.kertas ..." tidak
+   tersalur ke dalam sel tabel di mPDF. */
+$skpUkuranTtd = $skpDocType === 'sks'
+    ? ['11pt', '11pt', '10.5pt', '10pt'][min(3, (int) ($RAPAT ?? 0))]
+    : ['11px', '11px', '10.5px', '10px'][min(3, (int) ($RAPAT ?? 0))];
+?>
+<style>.skpdoc table.sign td { font-size: <?= $skpUkuranTtd ?>; }</style>
 <?= skp_css_potong((int) ($POTONG ?? 0)) ?>
 <div class="skpdoc<?= $skpDocType === 'sks' ? ' kertas' : '' ?>">
     <div class="doc-title"<?= $skpDocType === 'sks' ? ' style="font-weight:bold;text-decoration:underline"' : '' ?>><?= $h(skp_doc_heading($skpDocType, $skpTpl)) ?></div>

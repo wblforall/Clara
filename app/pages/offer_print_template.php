@@ -249,9 +249,8 @@ table.cost tr.sub td{background:#f8fafc}
 table.cost tr.tot td{background:#f1f5f9;font-weight:700}
 table.cost tr.grand td{background:#f0fdfa;color:#0f766e;font-weight:800;font-size:11px}
 .validbox{display:inline-block;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:600;margin-top:4px}
-/* Judul bagian TIDAK ditebalkan — seragam dengan isinya, sama seperti SKP. */
-.sec{font-weight:normal;margin:14px 0 5px;color:#0D9488;font-size:11px;letter-spacing:.02em;page-break-after:avoid}
-.secrom{font-weight:normal;color:#111;font-size:11px;margin:13px 0 4px;page-break-after:avoid}
+.sec{font-weight:800;margin:14px 0 5px;color:#0D9488;font-size:11px;letter-spacing:.02em;page-break-after:avoid}
+.secrom{font-weight:bold;color:#111;font-size:11px;margin:13px 0 4px;page-break-after:avoid}
 ul,ol{margin:0 0 0 18px}
 li{margin-bottom:3px;line-height:1.45;text-align:justify}
 .intro,.closing{text-align:justify}
@@ -275,13 +274,13 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
    ke pinggir adalah kolom kosong di tengahnya, bukan perataan isinya. */
 .sign td.col{width:22%;padding:0;border:none;vertical-align:bottom;text-align:center}
 .sign td.antara{width:56%;padding:0;border:none}
-/* Judul kolom SEUKURAN nama & jabatan di bawahnya — sama dengan SKP/Gudang. */
-.sign td.peran{font-size:12.5px;color:#6b7280;line-height:1.3;padding-bottom:1.2mm}
+/* SELURUH blok tanda tangan seukuran badan surat — sama dengan SKP/Gudang. */
+.sign td.peran{font-size:11px;color:#6b7280;line-height:1.3;padding-bottom:1.2mm}
 .sign td.sigarea{height:20mm}
 .sign td.nama{vertical-align:top}
 .ttd-img{height:58px;width:auto;margin:2px 0}
-.nm{display:block;padding-top:3px;font-size:12.5px;line-height:1.3}
-.jab{display:block;font-style:italic;font-size:12.5px;line-height:1.3}
+.nm{display:block;padding-top:3px;font-size:11px;line-height:1.3}
+.jab{display:block;font-style:italic;font-size:11px;line-height:1.3}
 .ttd-ket{display:block;font-style:normal;color:#6b7280;font-size:8px}
 .qrbox{width:70px;height:70px;margin:6px auto 3px}
 .qrbox img,.qrbox svg{width:70px!important;height:70px!important;display:block}

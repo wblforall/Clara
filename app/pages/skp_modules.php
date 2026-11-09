@@ -752,8 +752,7 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
             // surat gudang tidak muat satu halaman, di sinilah batas yang
             // masuk akal untuk membaginya.
             $o .= '<div class="bagian"><p class="judul-aturan' . skp_potong_kelas()
-                // Tidak ditebalkan — seragam dengan poin-poin di bawahnya.
-                . '">Peraturan Sewa Gudang :</p><ol class="aturan">';
+                . '"><strong>Peraturan Sewa Gudang :</strong></p><ol class="aturan">';
             // Daftar peraturan TIDAK pernah dipotong di tengah: satu bagian
             // berpindah seluruhnya ke halaman berikutnya kalau sisa halaman
             // tidak cukup (lihat page-break-inside pada ol.aturan). Dulu tiap
