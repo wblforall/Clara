@@ -137,7 +137,7 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 /* Baris jabatan kolom ("Hormat Kami," + nama PT) menempel ke DASAR barisnya,
    jadi berapa pun barisnya, ruang tanda tangan di bawahnya tetap mulai pada
    ketinggian yang sama di ketiga kolom. */
-.skpdoc table.sign td.peran { font-size: 9.5px; color: #6b7280; line-height: 1.3; padding-bottom: 1.2mm; }
+.skpdoc table.sign td.peran { font-size: 11px; color: #6b7280; line-height: 1.3; padding-bottom: 1.2mm; }
 /* Ruang tanda tangan: tingginya dikunci supaya muat QR / coretan / ruang
    kosong bergaris, dan isinya menempel ke dasar — itulah yang membuat nama
    ketiga penanda tangan sejajar, apa pun isinya. */
@@ -190,6 +190,13 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
    ikut (12,5pt = 16,7px) dan hasilnya jauh lebih besar daripada surat lain,
    sehingga antar surat terlihat tidak konsisten. Yang tersisa khas kertas
    cuma warnanya: hitam, bukan abu-abu. */
+/* mPDF TIDAK mewariskan font-family ke dalam sel tabel — tanpa penyebutan
+   ulang, blok tanda tangan surat gudang tercetak dengan huruf berkait
+   (serif) sementara badan suratnya Carlito. Sama seperti yang sudah
+   dilakukan pada table.idn dan table.harga di atas. */
+.skpdoc.kertas table.sign td, .skpdoc.kertas table.sign td.peran,
+.skpdoc.kertas .name, .skpdoc.kertas .jab, .skpdoc.kertas .qrhint,
+.skpdoc.kertas .ttd-ket { font-family: carlito, sans-serif; }
 .skpdoc.kertas table.sign td.peran { color: #000; }
 .skpdoc.kertas .name { color: #000; }
 .skpdoc.kertas .jab  { color: #000; }
