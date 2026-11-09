@@ -931,6 +931,18 @@ function skp_form(PDO $pdo): void
 
     $days     = _skp_days($src['start_date'], $src['end_date']);
     $total    = (float) ($src['final_amount'] ?: $src['total_calculated']);
+    // Penawaran yang nilainya tidak tersimpan di kolom totalnya — mis. harga
+    // hasil nego yang hanya ada di itemnya, atau penawaran paket — membuat
+    // SELURUH Rincian Pembayaran di contoh suratnya tercetak Rp 0. Nilainya
+    // dicari lagi dengan cara yang sama seperti saat dokumennya disimpan:
+    // dihitung dari tarif x masa sewa, lalu dari jumlah item penawarannya.
+    if ($total <= 0) {
+        try { $total = (float) AllocationService::totalCalculated($src); } catch (Throwable $e) { $total = 0.0; }
+    }
+    if ($total <= 0 && $offerId) {
+        if (!function_exists('offer_items_detail')) require_once __DIR__ . '/offers.php';
+        foreach (offer_items_detail($pdo, (int) $offerId, $pid) as $it) $total += (float) ($it['nilai'] ?? 0);
+    }
     $defDeposit = (float) ($skp['deposit_amount'] ?? $src['deposit_amount'] ?? 0);
     // Deposit sudah dibayar? Dokumen lama pakai nilainya sendiri; dokumen baru
     // dicentang otomatis bila client ini pernah menyetor deposit sebelumnya
