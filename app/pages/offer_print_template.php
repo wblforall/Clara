@@ -249,8 +249,9 @@ table.cost tr.sub td{background:#f8fafc}
 table.cost tr.tot td{background:#f1f5f9;font-weight:700}
 table.cost tr.grand td{background:#f0fdfa;color:#0f766e;font-weight:800;font-size:11px}
 .validbox{display:inline-block;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:600;margin-top:4px}
-.sec{font-weight:800;margin:14px 0 5px;color:#0D9488;font-size:11px;letter-spacing:.02em;page-break-after:avoid}
-.secrom{font-weight:bold;color:#111;font-size:11px;margin:13px 0 4px;page-break-after:avoid}
+/* Judul bagian TIDAK ditebalkan — seragam dengan isinya, sama seperti SKP. */
+.sec{font-weight:normal;margin:14px 0 5px;color:#0D9488;font-size:11px;letter-spacing:.02em;page-break-after:avoid}
+.secrom{font-weight:normal;color:#111;font-size:11px;margin:13px 0 4px;page-break-after:avoid}
 ul,ol{margin:0 0 0 18px}
 li{margin-bottom:3px;line-height:1.45;text-align:justify}
 .intro,.closing{text-align:justify}

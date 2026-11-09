@@ -107,7 +107,10 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
    DALAM blok yang juga avoid membuat mPDF berputar sampai batas waktu PHP
    (Mpdf.php:7916), bukan sekadar lambat. */
 .skpdoc .bagian { page-break-inside: avoid; }
-.skpdoc .sec { font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: .04em; color: #0D9488; border-bottom: 1px solid #d1d5db; padding-bottom: 3px; margin: 14px 0 7px; page-break-after: avoid; }
+/* Judul bagian TIDAK ditebalkan: ukurannya sudah sama dengan isinya, dan
+   huruf tebal membuatnya terbaca lebih besar. Yang membedakannya dari isi
+   tinggal warna, huruf kapital, dan garis bawah. */
+.skpdoc .sec { font-size: 11px; font-weight: normal; text-transform: uppercase; letter-spacing: .04em; color: #0D9488; border-bottom: 1px solid #d1d5db; padding-bottom: 3px; margin: 14px 0 7px; page-break-after: avoid; }
 .skpdoc table.kv { width: 100%; border-collapse: collapse; }
 .skpdoc table.kv td { padding: 2.5px 0; vertical-align: top; border: none; font-size: 11px; }
 .skpdoc table.kv td.l { width: 38%; color: #374151; }
