@@ -162,7 +162,11 @@ function skp_potong_dipilih(?int $ke = null): int
 function skp_css_potong(int $ke): string
 {
     if ($ke < 1) return '';
-    return '<style>.skpdoc .potong-' . $ke . ' { page-break-before: always; margin-top: 0; }</style>';
+    // page-break-inside:auto sengaja ikut: bagian yang dipaksa mulai di halaman
+    // baru sudah berada di puncak halaman kosong, dan menggabungkannya dengan
+    // "jangan dipotong" membuat mPDF menyisipkan halaman kosong.
+    return '<style>.skpdoc .potong-' . $ke . ', .potong-' . $ke
+         . ' { page-break-before: always; margin-top: 0; page-break-inside: auto; }</style>';
 }
 
 /**
@@ -747,36 +751,18 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
             // Judul peraturan ditawarkan sebagai titik potong halaman: kalau
             // surat gudang tidak muat satu halaman, di sinilah batas yang
             // masuk akal untuk membaginya.
-            $o .= '<p class="judul-aturan' . skp_potong_kelas() . '"><strong>Peraturan Sewa Gudang :</strong></p><ol class="aturan">';
-            // Tiap poin peraturan jadi titik potong halaman. Kalau suratnya
-            // tidak muat satu halaman, dibagi DI ANTARA POIN — halaman pertama
-            // tetap terisi penuh sampai poin terakhir yang muat. Memotong di
-            // judulnya saja membuat halaman pertama tinggal separuh.
-            // Poin pertama sengaja dilewati: memotong di situ meninggalkan
-            // judul "Peraturan Sewa Gudang :" sendirian di kaki halaman.
-            foreach ($tpl['terms'] as $iTerm => $t) {
+            $o .= '<div class="bagian"><p class="judul-aturan' . skp_potong_kelas()
+                . '"><strong>Peraturan Sewa Gudang :</strong></p><ol class="aturan">';
+            // Daftar peraturan TIDAK pernah dipotong di tengah: satu bagian
+            // berpindah seluruhnya ke halaman berikutnya kalau sisa halaman
+            // tidak cukup (lihat page-break-inside pada ol.aturan). Dulu tiap
+            // poin ditawarkan sebagai titik potong; hasilnya judul bagian bisa
+            // tertinggal di halaman sebelumnya, terpisah dari sebagian isinya.
+            foreach ($tpl['terms'] as $t) {
                 $t = skp_fill((string) $t, ['deposit' => $rp($d['deposit_amount'] ?? ($amt['deposit'] ?? 0))]);
-                $kelas = '';
-                if ($iTerm > 0) {
-                    $nomor = skp_potong_nomor();
-                    if ($nomor === skp_potong_dipilih()) {
-                        // Daftarnya DIPECAH, bukan sekadar diberi page-break:
-                        // mPDF memulai ulang penomoran dari 1 kalau satu <ol>
-                        // terpotong di tengah. <ol start="..."> menyambungnya
-                        // dengan benar, dan nomor poin di surat tidak boleh
-                        // salah walau sehalaman pun.
-                        $o .= '</ol><ol class="aturan" start="' . ($iTerm + 1)
-                            . '" style="page-break-before:always;margin-top:0">';
-                    } else {
-                        // Kelas "poin" hanya penanda; spasi sebelum "potong-"
-                        // itulah yang dihitung pemanggil sebagai calon titik
-                        // potong (lihat _skp_kirim_pdf di skp.php).
-                        $kelas = ' class="poin potong-' . $nomor . '"';
-                    }
-                }
-                $o .= '<li' . $kelas . '>' . $h($t) . '</li>';
+                $o .= '<li>' . $h($t) . '</li>';
             }
-            $o .= '</ol>';
+            $o .= '</ol></div>';
         }
 
         // Sisa catatan kaki (mis. nomor rekening) — tebal, seperti di kertas.
@@ -789,7 +775,7 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
     // ── Form Utilities (media) ───────────────────────────────────────────────
     {
         $rp = fn($v) => is_numeric($v) ? 'Rp. ' . number_format((float) $v, 0, ',', '.') : (string) $v;
-        $o .= '<div class="sec">Data Permohonan</div><table class="kv tebal">';
+        $o .= '<div class="bagian"><div class="sec">Data Permohonan</div><table class="kv tebal">';
         $tglDoc = (string) ($d['doc_date'] ?? date('Y-m-d'));
         foreach ([
             'Hari / Tanggal Permohonan' => skp_hari($tglDoc) . ', ' . skp_tgl($tglDoc),
@@ -807,7 +793,7 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
         ] as $l => $v) {
             $o .= '<tr><td class="l">' . $h($l) . '</td><td class="c">:</td><td class="v">' . $h($v ?: '-') . '</td></tr>';
         }
-        $o .= '</table>';
+        $o .= '</table></div>';
 
         // Daftar centang. Kolom biaya bisa disembunyikan per kelompok: ada
         // penyewa yang cukup diberi tahu fasilitas APA yang dipakai, sedangkan
@@ -816,7 +802,8 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
         $sembunyi = (array) ($det['sembunyi_harga'] ?? []);
         $grup = function (string $judul, array $items, bool $withLokasi, bool $tanpaHarga) use ($h, $rp): string {
             if (!$items) return '';
-            $x = '<div class="sec">' . $h($judul) . '</div><table class="pay">';
+            // Judul bagian & isinya satu blok utuh — tidak pernah terpisah halaman.
+            $x = '<div class="bagian"><div class="sec">' . $h($judul) . '</div><table class="pay">';
             foreach ($items as $it) {
                 // ■/□ (bukan ☑/☐) — font PDF DejaVu tidak punya glyph ballot-box.
                 $tanda = !empty($it['checked'])
@@ -837,7 +824,7 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
                         . '</td>')
                     . '</tr>';
             }
-            return $x . '</table>';
+            return $x . '</table></div>';
         };
         $o .= $grup('Utilities', $det['utilities'] ?? [], false, !empty($sembunyi['utilities']));
         $o .= $grup('Media Promo', $det['media_promo'] ?? [], true, !empty($sembunyi['media_promo']));

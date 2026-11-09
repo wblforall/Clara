@@ -41,16 +41,19 @@ $ROMAWI = function (int $n): string {
 };
 /** Satu judul bagian, menurut gaya yang dipilih template. */
 $JUDUL_BAGIAN = function (string $teks) use (&$_romawiN, $GAYA_JUDUL, $ROMAWI, $h): string {
-    // Tiap judul bagian ditawarkan sebagai titik potong halaman — berlaku
-    // untuk SEMUA template penawaran, apa pun bagian yang dipasang di
-    // dalamnya, tanpa perlu didaftar satu per satu.
-    $potong = function_exists('skp_potong_kelas') ? skp_potong_kelas() : '';
-    if ($GAYA_JUDUL !== 'romawi') return '<div class="sec' . $potong . '">' . $h($teks) . '</div>';
+    // Titik potong halaman TIDAK dipasang di judulnya, melainkan di pembungkus
+    // bagiannya (lihat kelas "bagian"). Perintah "mulai halaman baru" yang
+    // mendarat DI DALAM blok yang tidak boleh dipotong membuat mPDF berputar
+    // sampai batas waktu PHP.
+    if ($GAYA_JUDUL !== 'romawi') return '<div class="sec">' . $h($teks) . '</div>';
     $_romawiN++;
     // Sengaja DIV biasa, bukan tabel: tabel membuat mPDF memutus halaman tepat
     // sesudah judul, sehingga sisa halamannya kosong melompong.
-    return '<div class="secrom' . $potong . '">' . $ROMAWI($_romawiN) . '.&nbsp;&nbsp;&nbsp;&nbsp;' . $h($teks) . '</div>';
+    return '<div class="secrom">' . $ROMAWI($_romawiN) . '.&nbsp;&nbsp;&nbsp;&nbsp;' . $h($teks) . '</div>';
 };
+/** Pembungkus satu bagian surat; sekaligus menawarkan dirinya sebagai titik potong. */
+$BUNGKUS = fn(string $kelas = 'bagian'): string =>
+    '<div class="' . $kelas . (function_exists('skp_potong_kelas') ? skp_potong_kelas() : '') . '">';
 // Tarif efektif. 12% dengan rumus PMK 131/2024 = 11% polos — angkanya memang
 // sama; yang berbeda cuma kalimat di surat.
 $PPN_TARIF = $PPN_RUMUS ? ($PPN_PERSEN / 100) * 11 / 12 : ($PPN_PERSEN / 100);
@@ -253,7 +256,15 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
 .intro,.closing{text-align:justify}
 .pay li{font-size:11px}
 .rek{background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;margin-top:6px;font-size:11px;line-height:1.7}
-.tnc li{font-size:11px;color:#374151;page-break-inside:avoid}
+/* SUBJUDUL DAN ISINYA TIDAK PERNAH TERPISAH HALAMAN. Satu BAGIAN = judul +
+   isinya, dibungkus satu blok yang tidak boleh terpotong; mPDF tidak
+   menghormati page-break-after pada judulnya sendirian. Kalau sisa halaman
+   tidak cukup, bagian itu pindah SELURUHNYA ke halaman berikutnya.
+   Pembungkusnya SATU LAPIS: page-break-inside:avoid yang bersarang (blok di
+   dalam blok, atau daftar/tabel di dalam blok) membuat mPDF berputar sampai
+   batas waktu PHP dan melempar "Undefined array key" di BlockTag.php. */
+.bagian{page-break-inside:avoid}
+.tnc li{font-size:11px;color:#374151}
 /* Blok tanda tangan: bentuknya SAMA PERSIS dengan SKP/Gudang
    (skp_print_body.php) — satu tabel tiga baris supaya sel yang sebaris
    otomatis setinggi sel tertinggi, kolom pertama rata kiri tepat di garis
@@ -490,6 +501,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
              angkanya cukup di kolom harga. Dibiarkan menyala secara bawaan supaya
              surat yang sudah terbit tidak berubah; template bisa mematikannya. */ ?>
     <?php if ($PAKAI_RINCIAN_BIAYA): ?>
+    <?= $BUNGKUS() ?>
     <?= $JUDUL_BAGIAN($JUDUL['rincian_biaya']) ?>
     <?php $tierHarga = $tierHarga ?? []; ?>
     <table class="cost">
@@ -657,6 +669,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             <td class="amt"<?= $depLunas ? ' style="color:#166534;font-weight:bold"' : '' ?>><?= $rp($deposit) ?><?= $depLunas ? ' (Sudah Dibayarkan)' : '' ?></td></tr>
         <tr class="grand"><td class="lbl">Grand Total<?= $scBulanan > 0 ? ' (Sewa + Service Charge)' : '' ?> <?= $depLunas ? '(di luar Security Deposit)' : '(pembayaran awal + deposit)' ?></td><td class="amt"><?= $rp($grand) ?></td></tr>
     </table>
+    </div>
     <?php endif; ?>
 
     <?php
@@ -665,17 +678,24 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     $amts = ['dp' => $o['dp_amount'] ?: 0, 'deposit' => $deposit, 'total' => $dasarPpn, 'ppn' => $ppn, 'grand' => $grand];
     ?>
     <?php if ($facil): ?>
+    <?= $BUNGKUS() ?>
     <?= $JUDUL_BAGIAN($JUDUL['fasilitas']) ?>
     <ul><?php foreach ($facil as $f): ?><li><?= clara_format_bold($f) ?></li><?php endforeach; ?></ul>
+    </div>
     <?php endif; ?>
 
     <?php /* "Media promosi yang dapat digunakan" adalah bagian tersendiri di surat
              kertas, bukan salah satu butir Fasilitas. */ ?>
     <?php $mediaList = $letter['media'] ?? []; if ($mediaList): ?>
+    <?= $BUNGKUS() ?>
     <?= $JUDUL_BAGIAN($JUDUL['media']) ?>
     <ul><?php foreach ($mediaList as $m): ?><li><?= clara_format_bold((string) $m) ?></li><?php endforeach; ?></ul>
+    </div>
     <?php endif; ?>
 
+    <?php /* Cara Pembayaran beserta rekeningnya satu blok utuh: nomor rekening
+             tanpa judulnya, atau judul tanpa nomornya, sama-sama tidak terbaca. */ ?>
+    <?= $BUNGKUS() ?>
     <?php if ($payList): ?>
     <?= $JUDUL_BAGIAN($JUDUL['pembayaran']) ?>
     <<?= $TAG_LIST ?> class="pay"><?php foreach ($payList as $p): ?><li><?= clara_format_bold(offer_letter_fill((string) $p, $amts + $isiKet)) ?></li><?php endforeach; ?></<?= $TAG_LIST ?>>
@@ -701,24 +721,16 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
         </div>
         <?php endif; ?>
     <?php endif; ?>
+    </div>
 
     <?php if ($ketentuan): ?>
+    <?= $BUNGKUS() ?>
     <?= $JUDUL_BAGIAN($JUDUL['ketentuan']) ?>
-    <?php /* Tiap poin ketentuan jadi titik potong halaman. Daftarnya DIPECAH
-             (bukan sekadar diberi page-break) karena mPDF mengulang penomoran
-             dari 1 kalau satu <ol> terpotong di tengah — nomor ketentuan di
-             surat tidak boleh salah. Poin pertama dilewati: memotong di situ
-             meninggalkan judul bagiannya sendirian di kaki halaman. */ ?>
-    <<?= $TAG_LIST ?> class="tnc"><?php foreach ($ketentuan as $iKet => $t): $kls = '';
-        if ($iKet > 0 && function_exists('skp_potong_nomor')) {
-            $nomor = skp_potong_nomor();
-            if ($nomor === skp_potong_dipilih()) {
-                echo '</' . $TAG_LIST . '><' . $TAG_LIST . ' class="tnc" start="' . ($iKet + 1)
-                   . '" style="page-break-before:always;margin-top:0">';
-            } else {
-                $kls = ' class="poin potong-' . $nomor . '"';
-            }
-        } ?><li<?= $kls ?>><?= clara_format_bold(offer_letter_fill((string) $t, $amts + $isiKet)) ?></li><?php endforeach; ?></<?= $TAG_LIST ?>>
+    <?php /* Daftar ketentuan TIDAK dipotong di tengah — satu bagian pindah
+             seluruhnya ke halaman berikutnya kalau sisa halaman tidak cukup
+             (lihat page-break-inside pada .tnc). */ ?>
+    <<?= $TAG_LIST ?> class="tnc"><?php foreach ($ketentuan as $t): ?><li><?= clara_format_bold(offer_letter_fill((string) $t, $amts + $isiKet)) ?></li><?php endforeach; ?></<?= $TAG_LIST ?>>
+    </div>
     <?php endif; ?>
     <?php if (!isset($letter['tampil_berlaku']) || !empty($letter['tampil_berlaku'])): ?>
     <div class="validbox" style="margin-top:8px">Penawaran ini berlaku s/d <?= $h($berlaku) ?></div>

@@ -94,7 +94,19 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc .tgl-surat { text-align: left; margin-top: 16px; font-size: 10.5px; }
 /* Bagian yang SELALU mulai di halaman baru, bukan sekadar ditawarkan sebagai
    titik potong kepada penyesuai halaman. */
-.skpdoc .potong-wajib { page-break-before: always; margin-top: 0; }
+/* Bagian yang memulai halaman baru TIDAK perlu lagi dijaga agar utuh: ia
+   sudah mulai dari puncak halaman kosong. Memberi dua perintah sekaligus
+   (mulai halaman baru + jangan dipotong) membuat mPDF membuka halaman lalu
+   memindahkan isinya lagi — hasilnya satu halaman kosong di tengah surat. */
+.skpdoc .potong-wajib { page-break-before: always; margin-top: 0; page-break-inside: auto; }
+/* SUBJUDUL DAN ISINYA TIDAK PERNAH TERPISAH HALAMAN. Satu BAGIAN = judul +
+   isinya, dibungkus satu blok yang tidak boleh terpotong; kalau sisa halaman
+   tidak cukup, bagian itu pindah SELURUHNYA ke halaman berikutnya.
+   page-break-after pada judulnya saja tidak cukup — mPDF mengabaikannya.
+   Pembungkusnya SATU LAPIS: memberi page-break-inside:avoid pada tabel DI
+   DALAM blok yang juga avoid membuat mPDF berputar sampai batas waktu PHP
+   (Mpdf.php:7916), bukan sekadar lambat. */
+.skpdoc .bagian { page-break-inside: avoid; }
 .skpdoc .sec { font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: .04em; color: #0D9488; border-bottom: 1px solid #d1d5db; padding-bottom: 3px; margin: 14px 0 7px; page-break-after: avoid; }
 .skpdoc table.kv { width: 100%; border-collapse: collapse; }
 .skpdoc table.kv td { padding: 2.5px 0; vertical-align: top; border: none; font-size: 11px; }
@@ -168,7 +180,10 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc.kertas .kaki { font-style: italic; font-weight: bold; font-size: 10pt; margin: 4px 0 12px; }
 .skpdoc.kertas .bayar { font-weight: bold; margin: 8px 0 0; }
 .skpdoc.kertas p.judul-aturan { margin-top: 16px; }
-.skpdoc.kertas ol.aturan { margin: 2px 0 0 6mm; padding: 0; }
+/* Daftar peraturan gudang utuh satu halaman bersama judulnya. */
+.skpdoc.kertas p.judul-aturan { page-break-after: avoid; }
+.skpdoc.kertas ol.aturan { margin: 2px 0 0 6mm; padding: 0; page-break-inside: avoid; }
+.skpdoc.kertas table.harga { page-break-inside: avoid; }
 .skpdoc.kertas ol.aturan li { text-align: justify; margin-bottom: 2px; }
 /* Blok tanda tangan surat gudang SAMA PERSIS dengan SKP — ukuran huruf dan
    lebar kolomnya tidak lagi mengikuti satuan pt badan suratnya. Dulu dibuat
@@ -207,6 +222,7 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
     <?= skp_detail_print($skpDocType, $d, $skpTpl) ?>
     <?php else: ?>
 
+    <div class="bagian">
     <div class="sec">Identitas Penyewa</div>
     <table class="kv">
         <tr><td class="l">Nama Perusahaan</td><td class="c">:</td><td class="v"><?= $h($d['company_name'] ?? '-') ?></td></tr>
@@ -215,6 +231,7 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
         <tr><td class="l">Nomor KTP Penanggung Jawab</td><td class="c">:</td><td class="v"><?= $h($d['ktp_pj'] ?? '-') ?></td></tr>
         <tr><td class="l">Nomor Telepon</td><td class="c">:</td><td class="v"><?= $h($d['phone'] ?? '-') ?></td></tr>
     </table>
+    </div>
 
     <?php
     $att = $d['attachments'] ?? [];
@@ -222,7 +239,8 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
     if ($hasOffer || $att):
         $fn = fn($k) => isset($att[$k]) ? ' <span class="muted" style="font-weight:normal">(' . $h($att[$k]) . ')</span>' : '';
     ?>
-    <div class="sec<?= skp_potong_kelas() ?>">Lampiran Dokumen</div>
+    <div class="bagian<?= skp_potong_kelas() ?>">
+    <div class="sec">Lampiran Dokumen</div>
     <table class="kv">
         <?php if ($hasOffer): ?><tr><td class="l">Surat Penawaran Final</td><td class="c">:</td><td class="v chk"><span style="color:#0D9488">■</span> <span class="muted" style="font-weight:normal">No. <?= $h($d['offer_no']) ?></span></td></tr><?php endif; ?>
         <tr><td class="l">Copy KTP Penanggung Jawab</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['ktp']) || ($d['admin_ktp'] ?? 0)) ?> <span class="muted" style="font-weight:normal"><?= !empty($d['ktp_pj']) ? 'No. ' . $h($d['ktp_pj']) : '' ?></span><?= $fn('ktp') ?></td></tr>
@@ -231,6 +249,7 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
         <tr><td class="l">Bukti Transfer</td><td class="c">:</td><td class="v chk"><?= $chk(isset($att['bukti_transfer'])) ?><?= $fn('bukti_transfer') ?></td></tr>
         <?php if (isset($att['pengajuan'])): ?><tr><td class="l">Dokumen Pengajuan</td><td class="c">:</td><td class="v chk"><span style="color:#0D9488">■</span><?= $fn('pengajuan') ?></td></tr><?php endif; ?>
     </table>
+    </div>
     <?php endif; ?>
 
     <?php
@@ -247,7 +266,8 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
         fn($x) => $x !== '' && $x !== '-'))));
     $lokSkp = $adaKmp ? 'Paket — ' . count($kmpSkp) . ' lokasi' : (string) ($d['location'] ?? '-');
     ?>
-    <div class="sec<?= skp_potong_kelas() ?>">Spesifikasi Tempat &amp; Periode Sewa</div>
+    <div class="bagian<?= skp_potong_kelas() ?>">
+    <div class="sec">Spesifikasi Tempat &amp; Periode Sewa</div>
     <table class="kv">
         <tr><td class="l">Lokasi</td><td class="c">:</td><td class="v"><?= $h($lokSkp) ?></td></tr>
         <tr><td class="l">Lantai</td><td class="c">:</td><td class="v"><?= $h($adaKmp && $lantaiKmp !== '' ? $lantaiKmp : ($d['floor'] ?? '-')) ?></td></tr>
@@ -258,11 +278,13 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
         <tr><td class="l">Jenis Usaha / Kegiatan</td><td class="c">:</td><td class="v"><?= $h($d['business_type'] ?? '-') ?></td></tr>
         <tr><td class="l">Produk</td><td class="c">:</td><td class="v"><?= $h(($d['produk'] ?? '') ?: ($d['brand_name'] ?? '-')) ?></td></tr>
     </table>
+    </div>
 
     <?php /* Patokannya ada tidaknya komponen, bukan penanda is_bundle: ada
              dokumen paket yang penandanya tidak tersimpan. */ ?>
     <?php if ($adaKmp): $segL = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang']; ?>
-    <div class="sec<?= skp_potong_kelas() ?>">Komponen Paket &mdash; <?= count($kmpSkp) ?> lokasi</div>
+    <div class="bagian<?= skp_potong_kelas() ?>">
+    <div class="sec">Komponen Paket &mdash; <?= count($kmpSkp) ?> lokasi</div>
     <table class="pay">
         <tr>
             <td style="width:10%"><strong>Kode</strong></td>
@@ -288,6 +310,7 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
             <td class="amt"><?= $rp(array_sum(array_map(fn($x) => (float) ($x['total'] ?? 0), $kmpSkp))) ?></td>
         </tr>
     </table>
+    </div>
     <?php /* Nilai per lokasi adalah daftar harga penawaran; yang ditagih adalah
              Total di Rincian Pembayaran Sewa. Disebut supaya pemeriksa tidak
              mengira ada dua harga yang bertentangan. */ ?>
@@ -342,7 +365,8 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
         ];
     };
     ?>
-    <div class="sec<?= skp_potong_kelas() ?>">Rincian Pembayaran Sewa</div>
+    <div class="bagian<?= skp_potong_kelas() ?>">
+    <div class="sec">Rincian Pembayaran Sewa</div>
     <table class="pay">
         <tr><td class="lbl">A. Biaya Sewa Area</td><td class="amt"></td></tr>
         <?php
@@ -479,14 +503,17 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
         <tr class="grand"><td class="lbl"><?= $adaSc ? 'D. Total Biaya Sewa + SC' . ($kenaPpn ? ' Inc. PPN' : '') : 'C. Grand Total Biaya Area' ?><?= $depLunas ? ' <span class="muted">(di luar Security Deposit)</span>' : '' ?></td><td class="amt"><?= $rp($a['grand_total'] ?? 0) ?></td></tr>
     </table>
     <?php if ($kenaPpn): ?><div class="muted" style="font-size:9px;margin-top:3px">*PPN 12% sesuai PMK Nomor 131 Tahun 2024.</div><?php endif; ?>
+    </div>
 
     <?php /* NOTE SELALU mulai di halaman baru. Halaman pertama berhenti di
              Rincian Pembayaran Sewa; daftar ketentuan tidak pernah terpotong
              satu-dua poin di kaki halaman lalu sisanya menyeberang. */ ?>
-    <div class="sec potong-wajib<?= skp_potong_kelas() ?>">Note</div>
+    <div class="bagian potong-wajib<?= skp_potong_kelas() ?>">
+    <div class="sec">Note</div>
     <table class="notes">
         <?php foreach ($skpNotes as $i => $n): ?><tr><td class="nn"><?= $i + 1 ?>.</td><td class="nt"><?= $h($n) ?></td></tr><?php endforeach; ?>
     </table>
+    </div>
 
     <?php endif; ?>
 
@@ -606,9 +633,11 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
     <?php /* Form Utilities: blok CATATAN berada di bawah tanda tangan, mengikuti
              susunan formulir kertasnya. */ ?>
     <?php if ($skpDocType === 'fu' && !empty($skpTpl['terms'])): ?>
+    <div class="bagian">
     <div class="sec" style="margin-top:14px">Catatan</div>
     <table class="notes">
         <?php foreach ($skpTpl['terms'] as $i => $t): ?><tr><td class="nn"><?= $i + 1 ?>.</td><td class="nt"><?= $h($t) ?></td></tr><?php endforeach; ?>
     </table>
+    </div>
     <?php endif; ?>
 </div>
