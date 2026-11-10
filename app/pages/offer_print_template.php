@@ -454,8 +454,19 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             <?php
             /* Kolom Keterangan di surat kertas berisi bullet baku milik template
                (masa sewa, periode, status PPN, status listrik) — bukan catatan
-               bebas. Catatan bebas penawaran tetap ikut tercetak di bawahnya
-               supaya tidak ada isian yang hilang. */
+               bebas.
+ 
+               Kotak "Keterangan" di formulir penawaran ternyata dipakai sebagai
+               LABEL INTERNAL, bukan kalimat untuk client: isinya hal seperti
+               "Harga Paket", "Recurring", "Kontrak 1 Tahun (12 Bulan)", bahkan
+               "dinput ulang karena terhapus". Selama ini label itu ikut dicetak
+               sebagai bullet terakhir, sehingga catatan kerja internal terbaca
+               client — dan pada template yang bulletnya sudah menyebut masa
+               sewa, isinya cuma pengulangan.
+ 
+               Jadi label itu hanya dicetak pada template yang TIDAK punya bullet
+               Keterangan sendiri (template lama), supaya tidak ada surat yang
+               mendadak kehilangan satu-satunya isi kolom itu. */
             $ketBullet = [];
             foreach (($letter['ket'] ?? []) as $kb) {
                 $kb = trim(offer_letter_fill((string) $kb, $isiKet));
@@ -485,7 +496,6 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                 <td>
                     <?php if ($ketBullet): ?>
                         <?php foreach ($ketBullet as $kb): ?><div style="line-height:1.45">&#9679; <?= clara_format_bold($kb) ?></div><?php endforeach; ?>
-                        <?php if ($ketBebas !== ''): ?><div style="line-height:1.45">&#9679; <?= $h($ketBebas) ?></div><?php endif; ?>
                         <?php if ($PPN_CATATAN !== '' && $kenaPpn): ?>
                         <div style="font-size:8px;font-style:italic;color:#475569;margin-top:2px"><?= $h(offer_letter_fill($PPN_CATATAN, $isiKet)) ?></div>
                         <?php endif; ?>

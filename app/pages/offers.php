@@ -2159,7 +2159,11 @@ function offer_form(PDO $pdo): void
                     <div class="help">Terisi sendiri dari <strong>Master</strong> saat unit dipilih &mdash; boleh diubah, boleh dikosongkan.
                         <strong>Kosong = barisnya tidak tercetak</strong> di surat, PDF, maupun halaman tanda tangan client.</div>
                 </div>
-                <div class="wide"><label>Keterangan</label><input name="keterangan" value="<?= $v('keterangan') ?>" <?= $disabled ?>></div>
+                <div class="wide"><label>Keterangan</label><input name="keterangan" value="<?= $v('keterangan') ?>" placeholder="mis. Harga Paket, Recurring" <?= $disabled ?>>
+                    <div class="help"><strong>Label internal</strong> &mdash; terbaca di daftar penawaran, transaksi, dan laporan.
+                        Pada template yang kolom Keterangan suratnya sudah diisi sendiri (Pushcart, Atrium, sewa 1 tahun, dan sejenisnya)
+                        label ini <strong>tidak ikut tercetak</strong>. Kalimat untuk client ditulis di Template Penawaran, bukan di sini.</div>
+                </div>
             </div>
             </div><!-- /#single-fields (Objek Sewa) -->
 
