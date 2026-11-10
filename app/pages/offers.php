@@ -349,7 +349,7 @@ function offer_letter_fill(string $text, array $a, string $gaya = 'polos'): stri
     // Huruf besar maupun kecil sama-sama diterima — orang yang menyunting template
     // menulis {PIC}, dan menolak diam-diam hanya menyisakan kurung kurawal di surat.
     foreach (['hari', 'periode', 'periode_panjang', 'masa_bulan_hari', 'lokasi', 'luas',
-              'harga', 'harga_bulan', 'ppn_persen',
+              'harga', 'harga_bulan', 'tarif', 'ppn_persen',
               'pic', 'pic_besar', 'wa', 'email', 'kantor'] as $k) {
         if (!array_key_exists($k, $a)) continue;
         $ganti['{' . $k . '}'] = (string) $a[$k];

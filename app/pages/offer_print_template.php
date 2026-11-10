@@ -358,6 +358,14 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
         // per satuan, bukan harga sebulan.)
         'harga_bulan' => (float) ($o['monthly_amount'] ?? 0) > 0
                        ? $rp((float) $o['monthly_amount']) : '',
+        // Tarif per satuan apa adanya — "Rp. 2.800.000,-" pada sewa per m²/bulan.
+        // Surat kertas sewa setahun menyebutnya di kolom Keterangan ("Harga sewa
+        // Rp. 2.800.000 /meter/bulan"); tanpa ini angkanya harus diketik ulang di
+        // template dan jadi salah begitu dipakai penyewa berikutnya. Lump sum
+        // (pricing 'fixed') tidak punya tarif satuan, jadi dikosongkan — bukan
+        // "Rp 0", yang terbaca sebagai gratis.
+        'tarif'      => ($tarifCetak > 0 && ($o['pricing_type'] ?? '') !== 'fixed')
+                       ? $rp((float) $tarifCetak) : '',
         'periode'    => $periode,
         'periode_panjang' => function_exists('offer_periode_panjang')
                            ? offer_periode_panjang($o['start_date'] ?? null, $o['end_date'] ?? null) : $periode,
@@ -694,14 +702,43 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     </div>
     <?php endif; ?>
 
-    <?php /* Cara Pembayaran beserta rekeningnya satu blok utuh: nomor rekening
-             tanpa judulnya, atau judul tanpa nomornya, sama-sama tidak terbaca. */ ?>
-    <?= $BUNGKUS() ?>
+    <?php
+    /* DAFTAR PANJANG BOLEH TERPOTONG ANTAR HALAMAN.
+     *
+     * Dulu judul + seluruh butir + blok rekening dibungkus satu blok
+     * page-break-inside:avoid. Pada surat sewa setahun — tujuh butir cara
+     * pembayaran — bagian itu tidak muat di sisa halaman pertama, lalu pindah
+     * SELURUHNYA ke halaman kedua dan halaman pertama tinggal separuh terisi.
+     * Surat kertasnya sendiri memotong Cara Pembayaran di tengah.
+     *
+     * Yang dijaga sekarang hanya judul bersama dua butir pertamanya, supaya
+     * judul tidak pernah berdiri sendiri di kaki halaman; sisa butirnya
+     * mengalir. Daftar bernomor dipecah jadi dua dengan start= yang benar —
+     * mPDF mengulang penomoran dari 1 kalau satu <ol> terpotong di tengah.
+     */
+    $GLUE    = 2;
+    $payAwal = array_slice($payList, 0, $GLUE);
+    $paySisa = array_slice($payList, $GLUE);
+    $liIsi   = fn($x) => '<li>' . clara_format_bold(offer_letter_fill((string) $x, $amts + $isiKet, $GAYA_UANG)) . '</li>';
+    $mulaiDi = fn(int $n) => $TAG_LIST === 'ol' ? ' start="' . $n . '"' : '';
+    ?>
     <?php if ($payList): ?>
+    <?= $BUNGKUS() ?>
     <?= $JUDUL_BAGIAN($JUDUL['pembayaran']) ?>
-    <<?= $TAG_LIST ?> class="pay"><?php foreach ($payList as $p): ?><li><?= clara_format_bold(offer_letter_fill((string) $p, $amts + $isiKet, $GAYA_UANG)) ?></li><?php endforeach; ?></<?= $TAG_LIST ?>>
+    <<?= $TAG_LIST ?> class="pay"><?php foreach ($payAwal as $p) echo $liIsi($p); ?></<?= $TAG_LIST ?>>
+    </div>
+    <?php if ($paySisa): ?>
+    <<?= $TAG_LIST ?> class="pay"<?= $mulaiDi($GLUE + 1) ?>><?php foreach ($paySisa as $p) echo $liIsi($p); ?></<?= $TAG_LIST ?>>
     <?php endif; ?>
+    <?php endif; ?>
+
+    <?php /* Blok rekening berdiri sebagai bagian tersendiri: kalimat
+             pengantarnya ("Untuk pembayaran dapat ditransfer ke rekening")
+             ikut di dalamnya, jadi ia tetap terbaca utuh walau jatuh di
+             halaman berikutnya — dan tidak lagi ikut menyeret seluruh Cara
+             Pembayaran turun bersamanya. */ ?>
     <?php if (trim((string) ($BANK['rekening'] ?? '')) !== ''): ?>
+    <?= $BUNGKUS() ?>
         <?php if ($GAYA_BANK === 'menyatu'): ?>
         <?php /* Gaya surat kertas: menempel di bawah Cara Pembayaran, tanpa kotak,
                  masuk ke dalam sedikit mengikuti teks butir di atasnya. */ ?>
@@ -721,17 +758,22 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             Bukti pembayaran dikirim via WhatsApp ke <strong><?= $h($payWa) ?></strong><?= $o['pic_email'] ? ' atau email <strong>' . $h($o['pic_email']) . '</strong>' : '' ?>.
         </div>
         <?php endif; ?>
-    <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <?php if ($ketentuan): ?>
+    <?php /* Sama seperti Cara Pembayaran: judul + dua butir pertama tidak
+             terpisah, sisanya boleh mengalir ke halaman berikutnya. Daftar
+             ketentuan hampir selalu lebih panjang dari sisa halaman, jadi
+             memaksanya utuh berarti selalu ada halaman yang separuh kosong. */ ?>
+    <?php $tncAwal = array_slice($ketentuan, 0, $GLUE); $tncSisa = array_slice($ketentuan, $GLUE); ?>
     <?= $BUNGKUS() ?>
     <?= $JUDUL_BAGIAN($JUDUL['ketentuan']) ?>
-    <?php /* Daftar ketentuan TIDAK dipotong di tengah — satu bagian pindah
-             seluruhnya ke halaman berikutnya kalau sisa halaman tidak cukup
-             (lihat page-break-inside pada .tnc). */ ?>
-    <<?= $TAG_LIST ?> class="tnc"><?php foreach ($ketentuan as $t): ?><li><?= clara_format_bold(offer_letter_fill((string) $t, $amts + $isiKet, $GAYA_UANG)) ?></li><?php endforeach; ?></<?= $TAG_LIST ?>>
+    <<?= $TAG_LIST ?> class="tnc"><?php foreach ($tncAwal as $t) echo $liIsi($t); ?></<?= $TAG_LIST ?>>
     </div>
+    <?php if ($tncSisa): ?>
+    <<?= $TAG_LIST ?> class="tnc"<?= $mulaiDi($GLUE + 1) ?>><?php foreach ($tncSisa as $t) echo $liIsi($t); ?></<?= $TAG_LIST ?>>
+    <?php endif; ?>
     <?php endif; ?>
     <?php if (!isset($letter['tampil_berlaku']) || !empty($letter['tampil_berlaku'])): ?>
     <div class="validbox" style="margin-top:8px">Penawaran ini berlaku s/d <?= $h($berlaku) ?></div>
