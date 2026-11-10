@@ -1438,7 +1438,7 @@ function offer_view(PDO $pdo): void
             <h3 style="margin-top:0">Ringkasan Penawaran</h3>
             <?php
             $clientDisp = ($offer['company_name'] ?? '-') . ($offer['brand_name'] ? ' — ' . $offer['brand_name'] : '');
-            $unitDisp   = ($offer['location_name'] ?: $offer['master_code']) . ($offer['floor'] ? ' (Lt. ' . $offer['floor'] . ')' : '');
+            $unitDisp   = clara_lokasi_lantai((string) ($offer['location_name'] ?: $offer['master_code']), $offer['floor'] ?? null);
             $row('Client / Perusahaan', h($clientDisp));
             if ($offer['cp_name']) $row('Up. (Contact)', h($offer['cp_name']));
             $row('PIC Sales', h($offer['pic_name'] ?: '-'));
@@ -4185,7 +4185,7 @@ function _offer_sign_view(array $o): array
     return [
         'company_name' => $o['company_name'] ?? '-',
         'cp_name'      => $o['cp_name'] ?? '',
-        'location'     => ($o['location_name'] ?: $o['master_code']) . ($o['floor'] ? ' — Lt. ' . $o['floor'] : ''),
+        'location'     => clara_lokasi_lantai((string) ($o['location_name'] ?: $o['master_code']), $o['floor'] ?? null, ' — Lt. %s'),
         'area'         => (float) ($o['area_sqm'] ?? 0),
         'start_date'   => $o['start_date'],
         'end_date'     => $o['end_date'],

@@ -1414,6 +1414,34 @@ function clara_satuan_harga(string $pricingType): string
     };
 }
 
+/**
+ * Nama lokasi untuk dokumen, dengan lantainya HANYA bila belum tersebut.
+ *
+ * Kode unit casual leasing hampir selalu sudah memuat lantainya — "33/GF
+ * ISLAND", "01/LG LA (Funtastic Market)", "GF - Main Atrium". Menempelkan
+ * "(Lt. GF)" di belakangnya membuat surat ke penyewa menyebut lantai yang sama
+ * dua kali dalam satu tarikan napas.
+ *
+ * Tetapi tidak semua nama memuatnya: "Railing Lantai 1" ada di FF, "Atrium
+ * Family" di LG, "PJU 1 A" di GF. Untuk yang begitu lantainya justru satu-
+ * satunya petunjuk letak, jadi tetap ditempelkan.
+ *
+ * Pencocokannya pakai batas kata, bukan sekadar "ada huruf GF di dalamnya",
+ * supaya nama yang kebetulan memuat potongan huruf itu tidak ikut tertelan.
+ */
+function clara_lokasi_lantai(string $nama, ?string $lantai, string $pola = ' (Lt. %s)'): string
+{
+    $nama   = trim($nama);
+    $lantai = trim((string) $lantai);
+    if ($lantai === '' || $lantai === '-') return $nama;
+
+    $sudahAda = (bool) preg_match(
+        '/(?<![A-Za-z0-9])' . preg_quote($lantai, '/') . '(?![A-Za-z0-9])/iu',
+        $nama
+    );
+    return $sudahAda ? $nama : $nama . sprintf($pola, $lantai);
+}
+
 /** Pilihan dasar harga untuk dropdown — bawaannya per m² per hari. */
 function clara_pilihan_harga(): array
 {

@@ -433,9 +433,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                 <?php /* Lantai ikut di kolom lokasi: yang pertama dicari pemeriksa
                          adalah "di mana", dan paket lintas lantai (GF + UG) tidak
                          boleh terbaca seolah satu lantai. */ ?>
-                <td><?= $h($it['name_snapshot'] ?: $it['master_code']) ?><?php
-                    $lt = trim((string) ($it['lantai'] ?? ''));
-                    if ($lt !== '' && $lt !== '-') echo ' (Lt. ' . $h($lt) . ')'; ?></td>
+                <td><?= $h(clara_lokasi_lantai((string) ($it['name_snapshot'] ?: $it['master_code']), $it['lantai'] ?? null)) ?></td>
                 <?php /* Dua keterangan, bukan salah satu: paket campuran punya titik
                          media tanpa luas, dan jenisnya tetap perlu terbaca. */ ?>
                 <td><?= (float) ($it['area_sqm'] ?? 0) > 0
@@ -480,7 +478,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             $ketBebas = trim((string) ($o['keterangan'] ?? ''));
             ?>
             <tr>
-                <td><?= $h(($o['location_name'] ?: $o['master_code']) . ($o['floor'] ? ' (Lt. ' . $o['floor'] . ')' : '')) ?></td>
+                <td><?= $h(clara_lokasi_lantai((string) ($o['location_name'] ?: $o['master_code']), $o['floor'] ?? null)) ?></td>
                 <?php /* Ukuran apa adanya (mis. "2x3 m2") lebih mudah dibayangkan client
                          daripada hasil kalinya; dipakai bila diisi. */ ?>
                 <td><?= trim((string) ($o['ukuran'] ?? '')) !== ''
