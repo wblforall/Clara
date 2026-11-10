@@ -806,14 +806,15 @@ function monitoring_page(PDO $pdo): void
         $tglJam = fn($v) => $v ? date('d/m/Y H:i', strtotime((string) $v)) : '—';
         ?>
         <?php
-        // Semua saringan berupa DROPDOWN berlabel yang kelihatan. Bentuk
-        // sebelumnya — lima baris tombol berwarna — memaksa orang membaca
-        // puluhan kata untuk tahu apa yang bisa disaring; bentuk ini cukup
-        // dibaca sekali, dan tiap pilihan membawa angkanya sendiri.
+        // Saringan disusun pada KISI TETAP 4 kolom, bukan auto-fit: dengan
+        // auto-fit, lebar tiap kotak berubah-ubah mengikuti layar dan baris
+        // terakhir menyisakan kotak kesepian di tengah — itu yang membuat
+        // layar ini terbaca berantakan. Cari memakan dua kolom, sisanya satu,
+        // sehingga 12 kotak jatuh rapi jadi tiga baris penuh.
         $pilih = function (string $nama, string $label, array $opsi, $nilai, array $hitung = [], string $judul = '') {
             echo '<div' . ($judul !== '' ? ' title="' . h($judul) . '"' : '') . '>'
-               . '<label class="muted" style="display:block;margin-bottom:3px">' . h($label) . '</label>'
-               . '<select name="' . h($nama) . '" style="width:100%">';
+               . '<label for="f-' . h($nama) . '">' . h($label) . '</label>'
+               . '<select id="f-' . h($nama) . '" name="' . h($nama) . '">';
             foreach ($opsi as $k => $v) {
                 $n = array_key_exists((string) $k, $hitung) ? ' (' . (int) $hitung[(string) $k] . ')' : '';
                 echo '<option value="' . h((string) $k) . '"' . ((string) $nilai === (string) $k ? ' selected' : '')
@@ -825,50 +826,105 @@ function monitoring_page(PDO $pdo): void
         $blnLalu = date('Y-m', strtotime('first day of last month'));
         $hitungRingkas = ['macet' => $ring['macet'], 'tuntas' => $ring['tuntas'], 'lewat' => $ring['lewat'],
                           'diam' => $ring['diam'], '' => $ring['n']];
+        // Berapa saringan yang sedang menyempitkan daftar — dipakai di kepala
+        // panel supaya orang tahu daftarnya sedang disaring tanpa memeriksa
+        // sebelas kotak satu per satu.
+        $aktif = count(array_filter([
+            $f['q'], $f['pic'], $f['period'] === 'semua' ? '' : $f['period'], $f['tahap'],
+            $f['giliran'], $f['kontrak'], $f['doc'], $f['module'], $f['umur'], $f['saya'],
+        ], fn($v) => $v !== '' && $v !== 0));
         ?>
-        <form method="get" class="panel" style="padding:14px 16px;margin-bottom:14px">
+        <style>
+        .mon-filter { padding: 0; margin-bottom: 14px; overflow: hidden; }
+        .mon-filter .kepala { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+                              padding: 12px 18px; border-bottom: 1px solid var(--line); background: #FBFCFE; }
+        .mon-filter .judul { font-size: 11.5px; font-weight: 700; text-transform: uppercase;
+                             letter-spacing: .05em; color: var(--muted); }
+        .mon-filter .isi { padding: 16px 18px; display: grid; gap: 14px 16px;
+                           grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .mon-filter .isi .lebar { grid-column: span 2; }
+        .mon-filter .isi label { margin-bottom: 5px; font-size: 12.5px; }
+        .mon-filter .kaki { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+                            padding: 0 18px 16px; }
+        .mon-filter .ceklis { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+                              font-size: 13px; color: var(--ink2); cursor: pointer; font-weight: 600; }
+        .mon-filter .ceklis input { width: 15px; height: 15px; margin: 0; }
+        .mon-seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+        .mon-seg a { padding: 7px 13px; font-size: 12.5px; font-weight: 600; color: var(--ink2);
+                     border-left: 1px solid var(--line); background: #fff; white-space: nowrap; }
+        .mon-seg a:first-child { border-left: 0; }
+        .mon-seg a.on { background: var(--primary); color: #fff; }
+        .mon-tile { display: grid; gap: 12px; margin-bottom: 16px;
+                    grid-template-columns: repeat(6, minmax(0, 1fr)); }
+        .mon-tile .card { padding: 14px 16px; }
+        .mon-tile .kpi-value { font-size: 19px; margin-top: 6px; }
+        .mon-tile .sub { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+        @media (max-width: 1500px) { .mon-tile { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+        @media (max-width: 1180px) { .mon-filter .isi { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        @media (max-width: 760px)  { .mon-filter .isi { grid-template-columns: 1fr; }
+                                     .mon-filter .isi .lebar { grid-column: span 1; }
+                                     .mon-tile { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        </style>
+
+        <form method="get" class="panel mon-filter">
             <input type="hidden" name="r" value="monitoring">
             <input type="hidden" name="sort" value="<?= h($f['sort']) ?>">
             <input type="hidden" name="dir" value="<?= h($f['dir']) ?>">
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(172px,1fr));gap:10px 12px;align-items:end">
-                <div style="grid-column:span 2;min-width:220px">
-                    <label class="muted" style="display:block;margin-bottom:3px">Cari</label>
-                    <input type="text" name="q" value="<?= h($f['q']) ?>" style="width:100%"
+
+            <div class="kepala">
+                <span class="judul">Saringan</span>
+                <?php if ($aktif): ?>
+                    <span class="badge" style="background:var(--soft);color:var(--primary-dark);border-color:transparent">
+                        <?= (int) $aktif ?> aktif
+                    </span>
+                <?php endif; ?>
+                <span class="mon-seg" style="margin-left:auto">
+                    <a class="<?= $f['period'] === $blnIni ? 'on' : '' ?>"
+                       href="<?= h($qs(['period' => $blnIni, 'page' => 1])) ?>"><?= h(pembayaran_nama_bulan($blnIni)) ?></a>
+                    <a class="<?= $f['period'] === $blnLalu ? 'on' : '' ?>"
+                       href="<?= h($qs(['period' => $blnLalu, 'page' => 1])) ?>"><?= h(pembayaran_nama_bulan($blnLalu)) ?></a>
+                    <a class="<?= $f['period'] === 'semua' ? 'on' : '' ?>"
+                       href="<?= h($qs(['period' => 'semua', 'page' => 1])) ?>">Semua bulan</a>
+                </span>
+            </div>
+
+            <div class="isi">
+                <div class="lebar">
+                    <label for="f-q">Cari</label>
+                    <input id="f-q" type="text" name="q" value="<?= h($f['q']) ?>"
                            placeholder="Penyewa, brand, no. dokumen, unit, no. kontrak, no. invoice">
                 </div>
-
                 <?php if ($picSaya !== null): ?>
                     <div>
-                        <label class="muted" style="display:block;margin-bottom:3px">PIC</label>
-                        <div style="padding:9px 12px;border:1px solid rgba(100,116,139,.25);border-radius:8px;
-                                    font-weight:700;background:var(--soft,#F8FAFC);white-space:nowrap;overflow:hidden;
+                        <label>PIC</label>
+                        <div style="padding:9px 11px;border:1px solid var(--line);border-radius:var(--r);
+                                    font-weight:700;background:#F8FAFC;white-space:nowrap;overflow:hidden;
                                     text-overflow:ellipsis" title="Akun Anda hanya melihat dokumen sendiri.">
                             <?= h($picSaya !== '' ? $picSaya : 'Dokumen yang Anda buat') ?>
                         </div>
                         <input type="hidden" name="pic" value="<?= h($f['pic']) ?>">
                     </div>
                 <?php else: $pilih('pic', 'PIC', ['' => 'Semua PIC'] + array_combine($pics, $pics), $f['pic']); endif; ?>
-
                 <div>
-                    <label class="muted" style="display:block;margin-bottom:3px">Bulan</label>
-                    <input type="month" name="period" style="width:100%"
+                    <label for="f-period">Bulan</label>
+                    <input id="f-period" type="month" name="period"
                            value="<?= h($f['period'] === 'semua' ? '' : $f['period']) ?>">
                 </div>
+
                 <?php
                 $pilih('mode', 'Bulan dihitung dari', [
                     'jalan'  => 'Sewa berjalan di bulan itu',
                     'mulai'  => 'Sewa mulai di bulan itu',
                     'dibuat' => 'Dokumen dibuat di bulan itu',
                 ], $f['mode'], [], 'Dasar yang dipakai Dashboard adalah "sewa berjalan di bulan itu".');
-
                 $pilih('ringkas', 'Tampilkan', [
                     'macet'  => 'Belum tuntas', 'tuntas' => 'Tuntas', 'lewat' => 'Lewat jatuh tempo',
                     'diam'   => 'Ditunda / dikecualikan', '' => 'Semua',
                 ], $f['ringkas'], $hitungRingkas);
-
                 $pilih('tahap', 'Tahap sekarang', ['' => 'Semua tahap'] + array_map(fn($x) => $x[0], $tahapD),
                        $f['tahap'], $nTahap);
                 $pilih('giliran', 'Giliran siapa', ['' => 'Semua'] + $giliranD, $f['giliran'], $nGiliran);
+
                 $pilih('kontrak', 'Kontrak', ['' => 'Semua'] + array_map(fn($x) => $x[0], $kontrakD),
                        $f['kontrak'], $nKontrak);
                 $pilih('doc', 'Jenis dokumen',
@@ -878,36 +934,27 @@ function monitoring_page(PDO $pdo): void
                 ?>
             </div>
 
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
+            <div class="kaki">
                 <button type="submit">Terapkan</button>
                 <a class="btn light" href="?r=monitoring">Reset</a>
-                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-left:4px">
+                <label class="ceklis" style="margin-left:6px">
                     <input type="checkbox" name="saya" value="1" <?= $f['saya'] === '1' ? 'checked' : '' ?>
                            onchange="this.form.submit()">
                     Hanya giliran saya (<?= (int) $ring['saya'] ?>)
                 </label>
-                <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
-                    <a class="btn <?= $f['period'] === $blnIni ? '' : 'light' ?>"
-                       href="<?= h($qs(['period' => $blnIni, 'page' => 1])) ?>"><?= h(pembayaran_nama_bulan($blnIni)) ?></a>
-                    <a class="btn <?= $f['period'] === $blnLalu ? '' : 'light' ?>"
-                       href="<?= h($qs(['period' => $blnLalu, 'page' => 1])) ?>"><?= h(pembayaran_nama_bulan($blnLalu)) ?></a>
-                    <a class="btn <?= $f['period'] === 'semua' ? '' : 'light' ?>"
-                       href="<?= h($qs(['period' => 'semua', 'page' => 1])) ?>">Semua bulan</a>
-                </span>
             </div>
         </form>
 
         <?php if (!empty($d['lebih'])): ?>
-            <div class="panel" style="padding:10px 14px;margin-bottom:14px;border-left:3px solid #B45309;color:#92400E">
+            <div class="panel" style="padding:10px 14px;margin-bottom:14px;border-left:3px solid var(--amber);color:#92400E">
                 Daftar dipotong di 3.000 dokumen. Pakai saringan bulan atau PIC supaya angkanya utuh.
             </div>
         <?php endif; ?>
 
         <?php
-        // Kartu income sengaja dipajang bersama kartu jumlah berkas: pertanyaan
-        // "bulan ini saya sudah memasukkan apa saja, dan berapa incomenya"
-        // dijawab di satu layar, bukan dengan membuka Dashboard lalu menebak
-        // bagian mana yang miliknya.
+        // Enam ubin, satu gaya. Warna hanya dipakai pada angka yang memang
+        // perlu diwaspadai — tujuh ubin dengan tujuh warna garis membuat
+        // semuanya terasa sama pentingnya, dan karena itu tak satu pun menonjol.
         $satuBulan = $f['period'] !== 'semua';
         $incLabel  = $satuBulan ? 'Income ' . pembayaran_nama_bulan($f['period']) : 'Income diakui';
         $incArti   = $satuBulan
@@ -918,27 +965,32 @@ function monitoring_page(PDO $pdo): void
                  . '", jadi belum sebanding dengan Dashboard.')
             : 'Seluruh income yang diakui dari dokumen yang sedang tampil, dijumlah untuk semua bulan kontraknya. '
               . 'Pilih satu bulan kalau ingin dibandingkan dengan Dashboard.';
-        $kartu = [
-            ['Dokumen', (int) $ring['n'] . ' berkas', 'var(--primary)',
-             'Jumlah dokumen pada saringan sekarang. Satu dokumen = satu kesepakatan, walau isinya beberapa lokasi.'],
-            [$incLabel, money($ring['income']), '#7C3AED', $incArti],
-            ['Tuntas', (int) $ring['tuntas'] . ' berkas', '#047857',
+        $persenTuntas = $ring['n'] > 0 ? round($ring['tuntas'] / $ring['n'] * 100) : 0;
+        $tile = [
+            ['Dokumen', (int) $ring['n'], 'berkas pada saringan ini', 'var(--ink)',
+             'Satu dokumen = satu kesepakatan, walau isinya beberapa lokasi.'],
+            [$incLabel, money($ring['income']), $satuBulan ? 'dasar sama dengan Dashboard' : 'seluruh bulan kontrak',
+             'var(--primary-dark)', $incArti],
+            ['Tuntas', (int) $ring['tuntas'], $persenTuntas . '% dari yang tampil', 'var(--green)',
              'Sudah diteken, sudah di-invoice, dan pembayarannya lunas.'],
-            ['Masih menggantung', (int) $ring['macet'] . ' berkas', $ring['macet'] > 0 ? '#B45309' : '#047857',
+            ['Masih menggantung', (int) $ring['macet'],
+             $ring['terlama'] > 0 ? 'terlama ' . (int) $ring['terlama'] . ' hari' : 'tidak ada yang macet',
+             $ring['macet'] > 0 ? '#B45309' : 'var(--ink)',
              'Belum tuntas. Kolom "Macet" menunjukkan sudah berapa hari berdiri di tahap yang sekarang.'],
-            ['Giliran saya', (int) $ring['saya'] . ' berkas', $ring['saya'] > 0 ? '#B91C1C' : 'var(--muted)',
-             'Dokumen yang menunggu tindakan Anda sendiri — angka yang sama dengan lencana di menu samping.'],
-            ['Terlama macet', (int) $ring['terlama'] . ' hari', $ring['terlama'] >= 14 ? '#B91C1C' : 'var(--muted)',
-             'Umur dokumen yang paling lama berdiri di satu tahap.'],
-            ['Lewat jatuh tempo', (int) $ring['lewat'] . ' berkas', $ring['lewat'] > 0 ? '#B91C1C' : 'var(--muted)',
+            ['Giliran saya', (int) $ring['saya'], 'menunggu tindakan Anda',
+             $ring['saya'] > 0 ? 'var(--accent)' : 'var(--ink)',
+             'Angka yang sama dengan lencana di menu samping.'],
+            ['Lewat jatuh tempo', (int) $ring['lewat'], 'invoice belum lunas',
+             $ring['lewat'] > 0 ? 'var(--accent)' : 'var(--ink)',
              'Invoice yang tanggal jatuh temponya sudah lewat dan belum lunas.'],
         ];
         ?>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin-bottom:14px">
-            <?php foreach ($kartu as [$lbl, $val, $clr, $arti]): ?>
-                <div class="card" style="padding:12px 14px;border-top:3px solid <?= $clr ?>" title="<?= h($arti) ?>">
-                    <div class="muted" style="font-size:12px"><?= h($lbl) ?></div>
-                    <div style="font-size:18px;font-weight:800;color:<?= $clr ?>"><?= h($val) ?></div>
+        <div class="mon-tile">
+            <?php foreach ($tile as [$lbl, $val, $sub, $clr, $arti]): ?>
+                <div class="card" title="<?= h($arti) ?>">
+                    <div class="kpi-label"><?= h($lbl) ?></div>
+                    <div class="kpi-value" style="color:<?= $clr ?>"><?= h((string) $val) ?></div>
+                    <div class="sub"><?= h($sub) ?></div>
                 </div>
             <?php endforeach; ?>
         </div>
@@ -1011,15 +1063,12 @@ function monitoring_page(PDO $pdo): void
                 <?php endforeach; ?>
                 </tbody>
             </table></div>
-            <div class="muted" style="padding:8px 16px 12px;font-size:12px;line-height:1.75">
-                <b>Giliran dia</b> = dokumen yang berhentinya memang di PIC (minta tanda tangan klien, atau menagih pembayaran).
-                Kolom itulah yang perlu dikejar; sisanya sedang di Approver, Legal, atau Admin.<br>
-                <b>Nilai tuntas &amp; Belum tuntas</b> memakai nilai kontrak. <b>Income diakui</b> memakai dasar yang sama
-                dengan Dashboard dan Laporan PIC<?= $f['period'] !== 'semua'
-                    ? ' — pada periode ' . h(pembayaran_nama_bulan($f['period'])) . ', angkanya sama persis dengan income bulan itu di Dashboard.'
-                    : ', dijumlah untuk seluruh bulan kontraknya. Pilih satu periode kalau ingin dibandingkan dengan Dashboard.' ?>
-                Dua kolom itu memang berbeda: nilai kontrak belum dikurangi listrik &amp; deposit, dan dokumen yang
-                <b>ditolak</b> atau <b>belum diteken klien</b> belum menjadi income di mana pun.
+            <div class="muted" style="padding:10px 16px 14px;font-size:12px;line-height:1.7;
+                        border-top:1px solid var(--line)">
+                <b>Giliran dia</b> = berkas yang berhentinya memang di PIC. Itu yang perlu dikejar; sisanya di Approver, Legal, atau Admin.
+                <b>Income diakui</b> memakai dasar yang sama dengan Dashboard<?= $f['period'] !== 'semua'
+                    ? ' untuk bulan ' . h(pembayaran_nama_bulan($f['period'])) : ', seluruh bulan kontrak' ?>;
+                dua kolom di kirinya memakai nilai kontrak, yang memang lebih besar karena belum dikurangi listrik &amp; deposit.
             </div>
         </details>
         <?php endif; ?>
@@ -1039,17 +1088,16 @@ function monitoring_page(PDO $pdo): void
             <thead><tr>
                 <th style="width:26px"></th>
                 <?php $th('Dokumen', 'dokumen'); $th('Penyewa', 'penyewa'); ?>
-                <th>Unit / lokasi</th>
-                <?php $th('Periode sewa', 'mulai'); $th('Nilai', 'nilai', 'right'); $th('PIC', 'pic'); ?>
+                <?php $th('Unit & periode sewa', 'mulai'); $th('Nilai', 'nilai', 'right'); $th('PIC', 'pic'); ?>
                 <?php $th('Tahap sekarang', 'tahap'); ?>
                 <th>Giliran</th>
                 <?php $th('Macet', 'macet', 'right'); ?>
-                <th>Kontrak</th><th>Invoice</th><th>Bayar</th>
+                <th>Kontrak</th><th>Tagihan &amp; pembayaran</th>
                 <?php $th('Dikejar', 'kejar', 'right'); ?>
             </tr></thead>
             <tbody>
             <?php if (!$baris): ?>
-                <tr><td colspan="14" style="text-align:center;padding:28px;color:var(--muted)">
+                <tr><td colspan="12" style="text-align:center;padding:28px;color:var(--muted)">
                     Tidak ada dokumen pada saringan ini.</td></tr>
             <?php endif; ?>
             <?php foreach ($baris as $r):
@@ -1081,13 +1129,14 @@ function monitoring_page(PDO $pdo): void
                             <div class="muted" style="font-size:11px"><?= h($r['brand_name']) ?></div>
                         <?php endif; ?>
                     </td>
-                    <td style="max-width:170px">
-                        <?= h($kode ?: '—') ?>
-                        <?php if ($nLok >= 2): ?>
-                            <div class="muted" style="font-size:11px"><?= $nLok ?> lokasi (paket)</div>
-                        <?php endif; ?>
+                    <td style="max-width:190px">
+                        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                             title="<?= h($kode) ?>"><?= h($kode ?: '—') ?></div>
+                        <div class="muted" style="font-size:11px;white-space:nowrap">
+                            <?= h($tgl($r['start_date'])) ?> – <?= h($tgl($r['end_date'])) ?>
+                            <?php if ($nLok >= 2): ?> · <?= $nLok ?> lokasi<?php endif; ?>
+                        </div>
                     </td>
-                    <td style="white-space:nowrap"><?= h($tgl($r['start_date'])) ?> – <?= h($tgl($r['end_date'])) ?></td>
                     <td style="text-align:right;white-space:nowrap">
                         <?= h(money($r['nilai'])) ?>
                         <?php if ($f['period'] !== 'semua'): ?>
@@ -1098,18 +1147,22 @@ function monitoring_page(PDO $pdo): void
                         <?php endif; ?>
                     </td>
                     <td><?= h($r['pic_name'] ?: '—') ?></td>
-                    <td><?php $lencana($tLbl, $tClr, $tBg); ?>
+                    <td style="max-width:230px"><?php $lencana($tLbl, $tClr, $tBg); ?>
                         <?php if (!empty($r['aksi'])): ?>
-                            <div class="muted" style="font-size:11px;margin-top:2px"><?= h($r['aksi']) ?></div>
+                            <div class="muted" style="font-size:11px;margin-top:3px;white-space:nowrap;
+                                        overflow:hidden;text-overflow:ellipsis" title="<?= h($r['aksi']) ?>"><?= h($r['aksi']) ?></div>
                         <?php endif; ?>
                     </td>
                     <td style="white-space:nowrap">
                         <?php if ($r['giliran'] === 'selesai'): ?>
                             <span class="muted">—</span>
                         <?php else: ?>
-                            <div style="font-weight:600;font-size:12px"><?= h($giliranD[$r['giliran']] ?? '—') ?></div>
-                            <div class="muted" style="font-size:11px;max-width:150px;overflow:hidden;text-overflow:ellipsis">
-                                <?= h($r['giliran_nama'] ?: '—') ?></div>
+                            <?php $peran = $giliranD[$r['giliran']] ?? '—'; $siapa = trim((string) $r['giliran_nama']); ?>
+                            <div style="font-weight:600;font-size:12px"><?= h($peran) ?></div>
+                            <?php if ($siapa !== '' && $siapa !== $peran): ?>
+                                <div class="muted" style="font-size:11px;max-width:150px;overflow:hidden;
+                                            text-overflow:ellipsis" title="<?= h($siapa) ?>"><?= h($siapa) ?></div>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </td>
                     <td style="text-align:right;white-space:nowrap">
@@ -1130,24 +1183,25 @@ function monitoring_page(PDO $pdo): void
                             <div class="muted" style="font-size:11px"><?= h($r['cr_no']) ?></div>
                         <?php endif; ?>
                     </td>
-                    <td style="white-space:nowrap">
-                        <?php if ((int) $r['inv_n'] > 0): ?>
-                            <?= h($r['inv_no'] ?: '✓ ada') ?>
-                            <div class="muted" style="font-size:11px">
-                                <?= h($tgl($r['inv_tgl'])) ?><?php if (!empty($r['inv_tempo'])): ?> · tempo <?= h($tgl($r['inv_tempo'])) ?><?php endif; ?>
+                    <td style="white-space:nowrap;max-width:210px">
+                        <?php if ((int) $r['inv_n'] === 0): ?>
+                            <span class="muted">Invoice belum terbit</span>
+                        <?php else: ?>
+                            <div style="overflow:hidden;text-overflow:ellipsis"
+                                 title="<?= h(($r['inv_no'] ?: 'tanpa nomor') . ' · terbit ' . $tgl($r['inv_tgl'])) ?>">
+                                <?= h($r['inv_no'] ?: 'Invoice terbit') ?>
                             </div>
-                        <?php else: ?><span class="muted">belum</span><?php endif; ?>
-                    </td>
-                    <td style="white-space:nowrap">
-                        <?php if ((float) $r['tagihan'] > 0): ?>
-                            <?= h(money($r['terbayar'])) ?>
-                            <div class="muted" style="font-size:11px">
-                                dari <?= h(money($r['tagihan'])) ?><?php if ((float) $r['sisa'] > 0.5): ?> · sisa <?= h(money($r['sisa'])) ?><?php endif; ?>
-                            </div>
-                            <?php if (!empty($r['lewat'])): ?>
-                                <div style="font-size:11px;color:#B91C1C;font-weight:700">lewat tempo</div>
+                            <?php if ((float) $r['tagihan'] > 0): ?>
+                                <div class="muted" style="font-size:11px">
+                                    <?= h(money($r['terbayar'])) ?> dari <?= h(money($r['tagihan'])) ?>
+                                    <?php if ((float) $r['sisa'] > 0.5): ?> · sisa <?= h(money($r['sisa'])) ?><?php endif; ?>
+                                </div>
                             <?php endif; ?>
-                        <?php else: ?><span class="muted">—</span><?php endif; ?>
+                            <?php if (!empty($r['lewat'])): ?>
+                                <div style="font-size:11px;color:var(--accent);font-weight:700">
+                                    lewat tempo <?= h($tgl($r['inv_tempo'])) ?></div>
+                            <?php endif; ?>
+                        <?php endif; ?>
                     </td>
                     <td style="text-align:right">
                         <?php if ((int) $r['kejar_n'] > 0): ?>
@@ -1157,7 +1211,7 @@ function monitoring_page(PDO $pdo): void
                     </td>
                 </tr>
                 <tr class="mon-rinci" style="display:none;background:var(--soft,#F8FAFC)">
-                    <td colspan="14" style="padding:14px 18px">
+                    <td colspan="12" style="padding:14px 18px">
                         <?php monitoring_rinci($r, $tahapD, $giliranD, $kontrakD, $tglJam, $tgl); ?>
                     </td>
                 </tr>
