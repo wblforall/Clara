@@ -234,7 +234,12 @@ body{font-family:Helvetica, Arial, sans-serif;font-size:11px;color:#111}
 .meta{margin-bottom:10px;line-height:1.7}
 .meta b{display:inline-block;min-width:70px}
 table.obj{width:100%;border-collapse:collapse;margin:10px 0}
-table.obj th,table.obj td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left;font-size:11px}
+/* Isi tabel objek RATA TENGAH, mendatar maupun tegak — begitu bentuknya di
+   surat kertas, dan kolom Lokasi yang sendirian rata kiri membuat barisnya
+   terbaca miring sebelah. Kecuali kolom Keterangan: isinya daftar bullet, dan
+   daftar bullet yang dirata tengah tidak bisa ditelusuri matanya. */
+table.obj th,table.obj td{border:1px solid #cbd5e1;padding:6px 8px;text-align:center;vertical-align:middle;font-size:11px}
+table.obj td.ket{text-align:left}
 table.obj th{background:#f1f5f9}
 table.rinci{width:100%;border-collapse:collapse;margin:10px 0}
 table.rinci td{border:1px solid #334155;padding:4px 7px;font-size:10.5px;vertical-align:top;line-height:1.4}
@@ -493,7 +498,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
                 <?php $hargaKolom = ($letter['harga_tampil'] ?? 'periode') === 'bulan'
                         ? (float) ($o['monthly_amount'] ?? 0) : $total; ?>
                 <td><?= $hargaKolom > 0 ? $rp($hargaKolom) : '&nbsp;' ?></td>
-                <td>
+                <td class="ket">
                     <?php if ($ketBullet): ?>
                         <?php foreach ($ketBullet as $kb): ?><div style="line-height:1.45">&#9679; <?= clara_format_bold($kb) ?></div><?php endforeach; ?>
                         <?php if ($PPN_CATATAN !== '' && $kenaPpn): ?>
