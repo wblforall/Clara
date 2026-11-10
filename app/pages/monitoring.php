@@ -214,7 +214,6 @@ function _mon_ambil(PDO $pdo, int $pid, array $f): array
                    COALESCE(NULLIF(s.pic_name,\'\'), NULLIF(t.pic_name,\'\'),
                             NULLIF(o.pic_name,\'\'))                                AS pic_name,
                    o.offer_no, o.status AS offer_status, o.deal_at,
-                   t.bundle_id,
                    (SELECT COUNT(*) FROM offer_items oi1 WHERE oi1.offer_id = s.offer_id) AS paket_n,
                    (SELECT GROUP_CONCAT(oi2.master_code ORDER BY oi2.sort_order, oi2.id SEPARATOR \' · \')
                       FROM offer_items oi2 WHERE oi2.offer_id = s.offer_id)         AS paket_kode,
@@ -234,7 +233,8 @@ function _mon_ambil(PDO $pdo, int $pid, array $f): array
                    ' . _mon_sub('MIN(tx.invoice_due)') . '                           AS inv_tempo,
                    ' . _mon_sub("MAX(NULLIF(tx.contract_no,''))") . '                AS trx_kontrak,
                    ' . _mon_sub("GROUP_CONCAT(DISTINCT tx.master_code ORDER BY tx.master_code SEPARATOR ' · ')") . ' AS trx_kode,
-                   ' . $bayar . '                                                    AS terbayar
+                   ' . $bayar . '                                                    AS terbayar,
+                   t.bundle_id                                                      AS bundle_set
             FROM skp_documents s
             LEFT JOIN transactions t   ON t.id  = s.transaction_id
             LEFT JOIN master_clients tc ON tc.id = t.client_id
@@ -249,6 +249,60 @@ function _mon_ambil(PDO $pdo, int $pid, array $f): array
     $st = $pdo->prepare($sql);
     $st->execute($params);
     return $st->fetchAll();
+}
+
+/**
+ * Income tiap dokumen menurut `transaction_allocations` — dasar yang SAMA
+ * dengan Dashboard, Laporan PIC, dan Executive Summary.
+ *
+ * Nilai kontrak (final_amount) bukan income: ia belum dikurangi listrik &
+ * deposit, dan ia tetap ada walau dokumennya ditolak atau belum diteken klien.
+ * Selama dua halaman memakai dua dasar berbeda, angkanya tidak akan pernah
+ * bertemu dan tidak ada yang tahu mana yang benar.
+ *
+ * Satu kueri untuk SELURUH daftar, bukan satu subkueri per baris: bentuk
+ * per-baris membuat halaman ini dua kali lebih lambat, dan lencana di menu
+ * samping ikut menanggungnya di setiap halaman.
+ *
+ * @param string $periode 'semua' atau YYYY-MM (porsi bulan itu saja)
+ * @return array<int,float> transaction_id => jumlah
+ */
+function mon_income_peta(PDO $pdo, int $pid, array $rows, string $periode): array
+{
+    $trx = $bun = [];
+    foreach ($rows as $r) {
+        if (!empty($r['transaction_id'])) $trx[(int) $r['transaction_id']] = true;
+        if (!empty($r['bundle_set']))     $bun[(int) $r['bundle_set']]     = true;
+    }
+    if (!$trx && !$bun) return ['trx' => [], 'bundle' => []];
+
+    $syarat = []; $par = [$pid];
+    if ($trx) { $syarat[] = 'tx.id IN (' . implode(',', array_fill(0, count($trx), '?')) . ')';
+                $par = array_merge($par, array_keys($trx)); }
+    if ($bun) { $syarat[] = 'tx.bundle_id IN (' . implode(',', array_fill(0, count($bun), '?')) . ')';
+                $par = array_merge($par, array_keys($bun)); }
+    $bulan = $periode !== 'semua' ? ' AND a.period_key = ?' : '';
+    if ($bulan !== '') $par[] = $periode;
+
+    // Saringan bulan ditaruh di WHERE, bukan di ON: penanda '?' dibaca menurut
+    // URUTANNYA di teks SQL, dan satu di klausa JOIN akan menggeser SELURUH
+    // parameter berikutnya — hasilnya nol tanpa satu pun pesan galat.
+    $st = $pdo->prepare('SELECT tx.id, tx.bundle_id, COALESCE(SUM(a.amount),0) jml
+                           FROM transactions tx
+                           JOIN transaction_allocations a ON a.transaction_id = tx.id
+                          WHERE tx.property_id = ? AND tx.deleted_at IS NULL
+                            AND (' . implode(' OR ', $syarat) . ')' . $bulan . '
+                          GROUP BY tx.id');
+    $st->execute($par);
+    $peta = ['trx' => [], 'bundle' => []];
+    foreach ($st->fetchAll() as $a) {
+        $peta['trx'][(int) $a['id']] = (float) $a['jml'];
+        if (!empty($a['bundle_id'])) {
+            $b = (int) $a['bundle_id'];
+            $peta['bundle'][$b] = ($peta['bundle'][$b] ?? 0.0) + (float) $a['jml'];
+        }
+    }
+    return $peta;
 }
 
 /**
@@ -395,6 +449,7 @@ function mon_baris(PDO $pdo, int $pid, array $f): array
     // Jejak tindak lanjut untuk semua baris sekaligus, bukan satu kueri per baris.
     $ids = array_map(fn($r) => (int) $r['id'], $rows);
     $jejak = $ids ? mon_tindak_peta($pdo, $pid, $ids) : [];
+    $incomePeta = mon_income_peta($pdo, $pid, $rows, (string) $f['period']);
 
     $akuNama = trim((string) ($_SESSION['user']['name'] ?? ''));
     $akuPic  = '';
@@ -436,9 +491,22 @@ function mon_baris(PDO $pdo, int $pid, array $f): array
 
         // Nilai kesepakatan. Dokumen paket mengambil jumlah SELURUH transaksinya;
         // total_amount dokumen dipakai bila transaksinya belum terbit.
+        //
+        // Dokumen DITOLAK tidak dihitung nilainya. Transaksinya memang masih
+        // ada di basis data, tapi seluruh CLARA lain sudah menyembunyikannya
+        // (lihat transaksi_sah_sql & transaksi_tampil_kondisi) — ikut
+        // menjumlahkannya di sini membuat papan PIC lebih besar daripada
+        // Dashboard tanpa ada yang tahu sebabnya. Barisnya tetap tampil,
+        // karena memang masih harus dibereskan; cuma uangnya yang tidak ikut.
         $nilai = (float) ($r['trx_nilai'] ?? 0);
         if ($nilai <= 0) $nilai = (float) ($r['total_amount'] ?? 0);
-        $r['nilai'] = $nilai;
+        $r['nilai'] = $th['kode'] === 'ditolak' ? 0.0 : $nilai;
+        // Dokumen paket memakai jumlah SELURUH rombongannya; yang tunggal
+        // memakai transaksinya sendiri.
+        $inc = !empty($r['bundle_set'])
+            ? ($incomePeta['bundle'][(int) $r['bundle_set']] ?? 0.0)
+            : ($incomePeta['trx'][(int) ($r['transaction_id'] ?? 0)] ?? 0.0);
+        $r['income'] = $th['kode'] === 'ditolak' ? 0.0 : $inc;
 
         $r['sisa']  = max(0.0, (float) $r['tagihan'] - (float) $r['terbayar']);
         $r['lewat'] = !empty($r['inv_tempo']) && $r['inv_tempo'] < date('Y-m-d')
@@ -559,15 +627,20 @@ function _mon_papan(array $rows): array
         if (!isset($pics[$n])) {
             $pics[$n] = ['nama' => $n, 'n' => 0, 'tuntas' => 0, 'macet' => 0, 'giliran' => 0,
                          'lewat' => 0, 'terlama' => 0, 'nilai' => 0.0, 'nilai_tuntas' => 0.0,
-                         'tagihan' => 0.0, 'terbayar' => 0.0];
+                         'nilai_gantung' => 0.0, 'income' => 0.0, 'tagihan' => 0.0, 'terbayar' => 0.0];
         }
         $p = &$pics[$n];
         $p['n']++;
         $p['nilai']    += (float) $r['nilai'];
+        $p['income']   += (float) ($r['income'] ?? 0);
         $p['tagihan']  += (float) $r['tagihan'];
         $p['terbayar'] += (float) $r['terbayar'];
         if ($r['tahap'] === 'tuntas') { $p['tuntas']++; $p['nilai_tuntas'] += (float) $r['nilai']; }
         else {
+            // "Belum tuntas" = yang MASIH harus dikejar. Dulu kolom ini berisi
+            // nilai SELURUH berkas (tuntas ikut di dalamnya) tetapi diberi nama
+            // "dipegang" — terbaca seperti tunggakan padahal bukan.
+            $p['nilai_gantung'] += (float) $r['nilai'];
             $p['macet']++;
             $p['terlama'] = max($p['terlama'], (int) $r['macet']);
             if ($r['giliran'] === 'pic') $p['giliran']++;
@@ -627,6 +700,12 @@ function monitoring_page(PDO $pdo): void
     $pid = current_property_id();
     $f   = _mon_saringan();
 
+    // Akun PIC membuka layar yang sama, tapi kotak PIC-nya langsung berisi
+    // namanya sendiri — bukan "Semua", yang membuat orang mengira ia sedang
+    // melihat data satu mal padahal sudah dibatasi ke miliknya.
+    $scopeSaya = current_sales_scope($pdo, $pid);
+    $picSaya   = $scopeSaya ? (string) $scopeSaya['pic'] : null;
+
     $d       = mon_baris($pdo, $pid, $f);
     $semua   = $d['rows'];
     $tersisa = _mon_sisir($semua, $f);
@@ -643,6 +722,29 @@ function monitoring_page(PDO $pdo): void
 
     // Papan pencapaian juga dari $dasar: "sudah berapa yang tuntas" tidak
     // boleh ikut hilang hanya karena daftar sedang disaring ke yang macet.
+    // Pencocokan dengan Dashboard. Monitoring hanya memuat kesepakatan yang
+    // lahir dari dokumen; income yang dicatat langsung sebagai transaksi (data
+    // lama sebelum CLARA, atau input manual) tidak punya dokumen dan karena itu
+    // tidak akan pernah muncul di sini. Selisihnya dipajang terang-terangan,
+    // supaya tidak ada lagi yang menebak-nebak kenapa dua angka tidak sama.
+    //
+    // Hanya ditampilkan bila yang disaring memang cuma periode — kalau daftar
+    // sedang dipersempit ke satu PIC atau satu tahap, membandingkannya dengan
+    // total Dashboard justru menyesatkan.
+    $banding = null;
+    $saringanLain = ($f['q'] !== '' || $f['pic'] !== '' || $f['module'] !== '' || $f['doc'] !== ''
+                     || $f['tahap'] !== '' || $f['giliran'] !== '' || $f['kontrak'] !== '');
+    // Hanya mode "sewa berjalan" yang sebanding: Dashboard menjumlah income
+    // SETIAP kontrak yang jalan di bulan itu, bukan hanya yang mulai di bulan itu.
+    if ($f['period'] !== 'semua' && $f['mode'] === 'jalan' && !$saringanLain && $picSaya === null) {
+        try {
+            $bq = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM transaction_allocations
+                                  WHERE property_id = ? AND period_key = ?');
+            $bq->execute([$pid, $f['period']]);
+            $banding = ['dashboard' => (float) $bq->fetchColumn(), 'dokumen' => 0.0];
+        } catch (Throwable $e) { $banding = null; }
+    }
+
     $papan = _mon_papan($dasar);
     // Kartu ringkasan memakai $dasar: ia JAWABAN ATAS SELURUH saringan keras
     // (pencarian, periode, PIC, modul, jenis) dan tidak berubah ketika orang
@@ -661,6 +763,7 @@ function monitoring_page(PDO $pdo): void
         if (!empty($r['lewat']))   $ring['lewat']++;
         if (!empty($r['saya']))    $ring['saya']++;
         if (!empty($r['diamkan'])) $ring['diam']++;
+        if ($banding !== null) $banding['dokumen'] += (float) ($r['income'] ?? 0);
     }
 
     $tersisa = _mon_urut($tersisa, $f);
@@ -682,7 +785,7 @@ function monitoring_page(PDO $pdo): void
 
     layout('Monitoring Transaksi', function () use (
         $f, $baris, $tersisa, $papan, $ring, $nTahap, $nGiliran, $nKontrak,
-        $pics, $qs, $hal, $totalHal, $per, $d
+        $pics, $qs, $hal, $totalHal, $per, $d, $picSaya, $banding, $saringanLain
     ) {
         $tahapD   = mon_tahap_daftar();
         $giliranD = mon_giliran_daftar();
@@ -697,49 +800,67 @@ function monitoring_page(PDO $pdo): void
         $tgl = fn($v) => $v ? date('d/m/y', strtotime((string) $v)) : '—';
         $tglJam = fn($v) => $v ? date('d/m/Y H:i', strtotime((string) $v)) : '—';
         ?>
-        <form method="get" class="toolbar" style="gap:10px">
+        <?php
+        // Saringan dibagi dua. Yang di atas: tiga yang benar-benar dipakai tiap
+        // hari. Sisanya dilipat — daftar saringan yang terbentang lima baris
+        // membuat orang berhenti membacanya sama sekali, dan justru itu yang
+        // membuat layar ini terasa rumit padahal isinya sederhana.
+        $lanjutan = ['doc' => $f['doc'], 'module' => $f['module'], 'mode' => $f['mode'] === 'mulai' ? '' : $f['mode'],
+                     'umur' => $f['umur'], 'giliran' => $f['giliran'], 'tahap' => $f['tahap'], 'kontrak' => $f['kontrak']];
+        $nLanjutan = count(array_filter($lanjutan, fn($v) => $v !== '' && $v !== 0));
+        $pilih = function (string $nama, string $label, array $opsi, $nilai, array $hitung = []) {
+            echo '<div><label class="muted">' . h($label) . '</label><select name="' . h($nama) . '">';
+            foreach ($opsi as $k => $v) {
+                $n = $k !== '' && isset($hitung[$k]) ? ' (' . (int) $hitung[$k] . ')' : '';
+                echo '<option value="' . h((string) $k) . '"' . ((string) $nilai === (string) $k ? ' selected' : '')
+                   . '>' . h($v) . $n . '</option>';
+            }
+            echo '</select></div>';
+        };
+        ?>
+        <form method="get" class="toolbar" style="gap:10px;align-items:flex-end">
             <input type="hidden" name="r" value="monitoring">
-            <div style="flex:1 1 260px">
-                <label class="muted">Cari</label>
-                <input type="text" name="q" value="<?= h($f['q']) ?>" style="width:100%"
-                       placeholder="Nama penyewa, brand, no. dokumen, unit, no. kontrak, no. invoice, CP">
-            </div>
-            <div><label class="muted">Jenis dokumen</label>
-                <select name="doc"><option value="">Semua</option>
-                    <?php foreach (['skp' => 'SKP Exhibition', 'sks' => 'SKS Gudang', 'fu' => 'Form Utilities'] as $k => $v): ?>
-                        <option value="<?= h($k) ?>" <?= $f['doc'] === $k ? 'selected' : '' ?>><?= h($v) ?></option>
-                    <?php endforeach; ?></select></div>
-            <div><label class="muted">Modul</label>
-                <select name="module"><option value="">Semua</option>
-                    <?php foreach ($modLbl as $k => $v): ?>
-                        <option value="<?= h($k) ?>" <?= $f['module'] === $k ? 'selected' : '' ?>><?= h($v) ?></option>
-                    <?php endforeach; ?></select></div>
-            <div><label class="muted">PIC</label>
-                <select name="pic"><option value="">Semua</option>
-                    <?php foreach ($pics as $p): ?><option <?= $f['pic'] === $p ? 'selected' : '' ?>><?= h($p) ?></option><?php endforeach; ?>
-                </select></div>
-            <div><label class="muted">Periode</label>
-                <input type="month" name="period" value="<?= h($f['period'] === 'semua' ? '' : $f['period']) ?>" style="width:150px"></div>
-            <div><label class="muted">Periode dihitung dari</label>
-                <select name="mode">
-                    <option value="mulai"  <?= $f['mode'] === 'mulai'  ? 'selected' : '' ?>>Sewa mulai di bulan itu</option>
-                    <option value="jalan"  <?= $f['mode'] === 'jalan'  ? 'selected' : '' ?>>Sewa berjalan di bulan itu</option>
-                    <option value="dibuat" <?= $f['mode'] === 'dibuat' ? 'selected' : '' ?>>Dokumen dibuat di bulan itu</option>
-                </select></div>
-            <div><label class="muted">Macet minimal</label>
-                <select name="umur">
-                    <?php foreach ([0 => 'Berapa pun', 7 => '7 hari', 14 => '14 hari', 30 => '30 hari'] as $k => $v): ?>
-                        <option value="<?= $k ?>" <?= $f['umur'] === $k ? 'selected' : '' ?>><?= h($v) ?></option>
-                    <?php endforeach; ?></select></div>
-            <input type="hidden" name="tahap" value="<?= h($f['tahap']) ?>">
-            <input type="hidden" name="giliran" value="<?= h($f['giliran']) ?>">
-            <input type="hidden" name="kontrak" value="<?= h($f['kontrak']) ?>">
             <input type="hidden" name="ringkas" value="<?= h($f['ringkas']) ?>">
             <input type="hidden" name="saya" value="<?= h($f['saya']) ?>">
             <input type="hidden" name="sort" value="<?= h($f['sort']) ?>">
             <input type="hidden" name="dir" value="<?= h($f['dir']) ?>">
+            <div style="flex:1 1 300px">
+                <label class="muted">Cari</label>
+                <input type="text" name="q" value="<?= h($f['q']) ?>" style="width:100%"
+                       placeholder="Nama penyewa, brand, no. dokumen, unit, no. kontrak, no. invoice, CP">
+            </div>
+            <?php if ($picSaya !== null): ?>
+                <div>
+                    <label class="muted">PIC</label>
+                    <div style="padding:8px 12px;border:1px solid rgba(100,116,139,.25);border-radius:8px;
+                                font-weight:700;background:var(--soft,#F8FAFC);white-space:nowrap">
+                        <?= h($picSaya !== '' ? $picSaya : 'Dokumen yang Anda buat') ?>
+                    </div>
+                    <input type="hidden" name="pic" value="<?= h($f['pic']) ?>">
+                </div>
+            <?php else: $pilih('pic', 'PIC', ['' => 'Semua PIC'] + array_combine($pics, $pics), $f['pic']); endif; ?>
+            <div><label class="muted">Periode</label>
+                <input type="month" name="period" value="<?= h($f['period'] === 'semua' ? '' : $f['period']) ?>" style="width:150px"></div>
             <button type="submit">Terapkan</button>
             <a class="btn light" href="?r=monitoring">Reset</a>
+
+            <details style="flex:1 1 100%;margin-top:4px" <?= $nLanjutan ? 'open' : '' ?>>
+                <summary style="cursor:pointer;font-size:12.5px;color:var(--muted);padding:4px 0">
+                    Saringan lain<?= $nLanjutan ? ' · ' . $nLanjutan . ' sedang dipakai' : '' ?>
+                </summary>
+                <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding-top:8px">
+                    <?php
+                    $pilih('tahap', 'Tahap', ['' => 'Semua tahap'] + array_map(fn($x) => $x[0], $tahapD), $f['tahap'], $nTahap);
+                    $pilih('giliran', 'Giliran', ['' => 'Semua'] + $giliranD, $f['giliran'], $nGiliran);
+                    $pilih('kontrak', 'Kontrak', ['' => 'Semua'] + array_map(fn($x) => $x[0], $kontrakD), $f['kontrak'], $nKontrak);
+                    $pilih('doc', 'Jenis dokumen', ['' => 'Semua', 'skp' => 'SKP Exhibition', 'sks' => 'SKS Gudang', 'fu' => 'Form Utilities'], $f['doc']);
+                    $pilih('module', 'Modul', ['' => 'Semua'] + $modLbl, $f['module']);
+                    $pilih('mode', 'Periode dihitung dari', ['mulai' => 'Sewa mulai di bulan itu', 'jalan' => 'Sewa berjalan di bulan itu', 'dibuat' => 'Dokumen dibuat di bulan itu'], $f['mode']);
+                    $pilih('umur', 'Macet minimal', [0 => 'Berapa pun', 7 => '7 hari', 14 => '14 hari', 30 => '30 hari'], $f['umur']);
+                    ?>
+                    <button type="submit">Terapkan</button>
+                </div>
+            </details>
         </form>
 
         <?php if (!empty($d['lebih'])): ?>
@@ -773,65 +894,53 @@ function monitoring_page(PDO $pdo): void
             <?php endforeach; ?>
         </div>
 
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-            <span class="muted" style="width:70px">Tampilkan</span>
+        <?php
+        $blnIni  = date('Y-m');
+        $blnLalu = date('Y-m', strtotime('first day of last month'));
+        ?>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
             <?php foreach (['macet' => 'Belum tuntas', 'tuntas' => 'Tuntas', 'lewat' => 'Lewat tempo',
                             'diam' => 'Ditunda / dikecualikan (' . (int) $ring['diam'] . ')', '' => 'Semua'] as $k => $v): ?>
                 <a class="btn <?= $f['ringkas'] === $k ? '' : 'light' ?>" href="<?= h($qs(['ringkas' => $k, 'page' => 1])) ?>"><?= h($v) ?></a>
             <?php endforeach; ?>
             <a class="btn <?= $f['saya'] === '1' ? '' : 'light' ?>" href="<?= h($qs(['saya' => $f['saya'] === '1' ? '' : '1', 'page' => 1])) ?>"
-               title="Hanya dokumen yang menunggu tindakan Anda">⚑ Giliran saya (<?= (int) $ring['saya'] ?>)</a>
-        </div>
-
-        <?php
-        // Pintasan periode. Mengejar seluruh tunggakan sekaligus memang berat —
-        // yang sedang berjalan dulu, sisanya menyusul. Satu klik, bukan mengisi
-        // kolom bulan.
-        $blnIni  = date('Y-m');
-        $blnLalu = date('Y-m', strtotime('first day of last month'));
-        ?>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-            <span class="muted" style="width:70px">Periode</span>
+               title="Hanya dokumen yang menunggu tindakan Anda">&#9873; Giliran saya (<?= (int) $ring['saya'] ?>)</a>
+            <span style="width:14px"></span>
             <a class="btn <?= $f['period'] === $blnIni ? '' : 'light' ?>"
-               href="<?= h($qs(['period' => $blnIni, 'page' => 1])) ?>">Bulan ini (<?= h(pembayaran_nama_bulan($blnIni)) ?>)</a>
+               href="<?= h($qs(['period' => $blnIni, 'page' => 1])) ?>"><?= h(pembayaran_nama_bulan($blnIni)) ?></a>
             <a class="btn <?= $f['period'] === $blnLalu ? '' : 'light' ?>"
-               href="<?= h($qs(['period' => $blnLalu, 'page' => 1])) ?>">Bulan lalu (<?= h(pembayaran_nama_bulan($blnLalu)) ?>)</a>
+               href="<?= h($qs(['period' => $blnLalu, 'page' => 1])) ?>"><?= h(pembayaran_nama_bulan($blnLalu)) ?></a>
             <a class="btn <?= $f['period'] === 'semua' ? '' : 'light' ?>"
                href="<?= h($qs(['period' => 'semua', 'page' => 1])) ?>">Semua periode</a>
-            <?php if ($f['period'] !== 'semua'): ?>
-                <span class="muted" style="font-size:12px">
-                    dihitung dari <?= h(['mulai' => 'tanggal sewa mulai', 'jalan' => 'kontrak yang berjalan',
-                                         'dibuat' => 'tanggal dokumen dibuat'][$f['mode']] ?? $f['mode']) ?>
-                </span>
-            <?php endif; ?>
         </div>
 
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-            <span class="muted" style="width:70px">Giliran</span>
-            <a class="btn <?= $f['giliran'] === '' ? '' : 'light' ?>" href="<?= h($qs(['giliran' => '', 'page' => 1])) ?>">Semua</a>
-            <?php foreach ($giliranD as $k => $v): if (empty($nGiliran[$k]) && $f['giliran'] !== $k) continue; ?>
-                <a class="btn <?= $f['giliran'] === $k ? '' : 'light' ?>" href="<?= h($qs(['giliran' => $k, 'page' => 1])) ?>">
-                    <?= h($v) ?> (<?= (int) ($nGiliran[$k] ?? 0) ?>)</a>
-            <?php endforeach; ?>
-        </div>
+        <?php if ($banding === null && $f['period'] !== 'semua' && $f['mode'] !== 'jalan'
+                  && $picSaya === null && !$saringanLain): ?>
+            <div class="panel" style="padding:10px 15px;margin-bottom:14px;font-size:12.5px;
+                                      border-left:3px solid var(--primary)">
+                Mau mencocokkan dengan income Dashboard <?= h(pembayaran_nama_bulan($f['period'], true)) ?>?
+                <a href="<?= h($qs(['mode' => 'jalan', 'page' => 1])) ?>"><b>Hitung dari kontrak yang berjalan di bulan itu</b></a>
+                — itu dasar yang dipakai Dashboard. Dengan "sewa mulai di bulan itu", kontrak yang mulai bulan lalu
+                tapi masih berjalan tidak ikut terhitung, jadi angkanya memang tidak akan sama.
+            </div>
+        <?php endif; ?>
 
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-            <span class="muted" style="width:70px">Tahap</span>
-            <a class="btn <?= $f['tahap'] === '' ? '' : 'light' ?>" href="<?= h($qs(['tahap' => '', 'page' => 1])) ?>">Semua</a>
-            <?php foreach ($tahapD as $k => [$lbl, $clr, $bg]): if (empty($nTahap[$k]) && $f['tahap'] !== $k) continue; ?>
-                <a class="btn <?= $f['tahap'] === $k ? '' : 'light' ?>" href="<?= h($qs(['tahap' => $k, 'page' => 1])) ?>"
-                   style="<?= $f['tahap'] === $k ? '' : 'color:' . $clr ?>"><?= h($lbl) ?> (<?= (int) ($nTahap[$k] ?? 0) ?>)</a>
-            <?php endforeach; ?>
-        </div>
-
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
-            <span class="muted" style="width:70px">Kontrak</span>
-            <a class="btn <?= $f['kontrak'] === '' ? '' : 'light' ?>" href="<?= h($qs(['kontrak' => '', 'page' => 1])) ?>">Semua</a>
-            <?php foreach ($kontrakD as $k => [$lbl, $clr, $bg]): if (empty($nKontrak[$k]) && $f['kontrak'] !== $k) continue; ?>
-                <a class="btn <?= $f['kontrak'] === $k ? '' : 'light' ?>" href="<?= h($qs(['kontrak' => $k, 'page' => 1])) ?>"
-                   style="<?= $f['kontrak'] === $k ? '' : 'color:' . $clr ?>"><?= h($lbl) ?> (<?= (int) ($nKontrak[$k] ?? 0) ?>)</a>
-            <?php endforeach; ?>
-        </div>
+        <?php if ($banding !== null):
+            $selisih = (float) $banding['dashboard'] - (float) $banding['dokumen']; ?>
+            <div class="panel" style="padding:11px 15px;margin-bottom:14px;font-size:12.5px;line-height:1.8;
+                                      border-left:3px solid var(--primary)">
+                <b>Cocok dengan Dashboard <?= h(pembayaran_nama_bulan($f['period'], true)) ?>?</b>
+                Income di Dashboard <b><?= h(money($banding['dashboard'])) ?></b> ·
+                yang berasal dari dokumen di daftar ini <b><?= h(money($banding['dokumen'])) ?></b>
+                <?php if (abs($selisih) > 0.5): ?>
+                    · selisih <b style="color:#B45309"><?= h(money($selisih)) ?></b> berasal dari transaksi yang
+                    <u>tidak punya dokumen SKP/SKS/FU</u> — data lama sebelum CLARA atau transaksi yang diinput langsung,
+                    sehingga memang tidak bisa muncul di Monitoring.
+                <?php else: ?>
+                    · <span style="color:#047857;font-weight:700">cocok seluruhnya.</span>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
 
         <?php if ($papan): ?>
         <details class="panel" style="padding:0;margin-bottom:16px" <?= count($papan) <= 12 ? 'open' : '' ?>>
@@ -843,8 +952,10 @@ function monitoring_page(PDO $pdo): void
                     <th>PIC</th><th style="text-align:right">Berkas</th><th style="text-align:right">Tuntas</th>
                     <th style="width:150px">Pencapaian</th><th style="text-align:right">Menggantung</th>
                     <th style="text-align:right">Giliran dia</th><th style="text-align:right">Terlama</th>
-                    <th style="text-align:right">Lewat tempo</th><th style="text-align:right">Nilai tuntas</th>
-                    <th style="text-align:right">Nilai dipegang</th>
+                    <th style="text-align:right">Lewat tempo</th>
+                    <th style="text-align:right" title="Nilai kontrak berkas yang pembayarannya sudah lunas.">Nilai tuntas</th>
+                    <th style="text-align:right" title="Nilai kontrak berkas yang BELUM tuntas — inilah yang masih harus dikejar.">Belum tuntas</th>
+                    <th style="text-align:right" title="Income menurut transaction_allocations — dasar yang sama dengan Dashboard, Laporan PIC, dan Executive Summary.">Income diakui</th>
                 </tr></thead>
                 <tbody>
                 <?php foreach ($papan as $p): ?>
@@ -865,14 +976,21 @@ function monitoring_page(PDO $pdo): void
                         <td style="text-align:right;<?= $p['terlama'] >= 14 ? 'color:#B91C1C;font-weight:700' : '' ?>"><?= (int) $p['terlama'] ?> hr</td>
                         <td style="text-align:right;<?= $p['lewat'] > 0 ? 'color:#B91C1C' : 'color:var(--muted)' ?>"><?= (int) $p['lewat'] ?></td>
                         <td style="text-align:right"><?= h(money($p['nilai_tuntas'])) ?></td>
-                        <td style="text-align:right"><?= h(money($p['nilai'])) ?></td>
+                        <td style="text-align:right;<?= $p['nilai_gantung'] > 0 ? 'font-weight:700' : '' ?>"><?= h(money($p['nilai_gantung'])) ?></td>
+                        <td style="text-align:right;color:var(--muted)"><?= h(money($p['income'])) ?></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
             </table></div>
-            <div class="muted" style="padding:8px 16px 12px;font-size:12px">
+            <div class="muted" style="padding:8px 16px 12px;font-size:12px;line-height:1.75">
                 <b>Giliran dia</b> = dokumen yang berhentinya memang di PIC (minta tanda tangan klien, atau menagih pembayaran).
-                Kolom itulah yang perlu dikejar; sisanya sedang di Approver, Legal, atau Admin.
+                Kolom itulah yang perlu dikejar; sisanya sedang di Approver, Legal, atau Admin.<br>
+                <b>Nilai tuntas &amp; Belum tuntas</b> memakai nilai kontrak. <b>Income diakui</b> memakai dasar yang sama
+                dengan Dashboard dan Laporan PIC<?= $f['period'] !== 'semua'
+                    ? ' — pada periode ' . h(pembayaran_nama_bulan($f['period'])) . ', angkanya sama persis dengan income bulan itu di Dashboard.'
+                    : ', dijumlah untuk seluruh bulan kontraknya. Pilih satu periode kalau ingin dibandingkan dengan Dashboard.' ?>
+                Dua kolom itu memang berbeda: nilai kontrak belum dikurangi listrik &amp; deposit, dan dokumen yang
+                <b>ditolak</b> atau <b>belum diteken klien</b> belum menjadi income di mana pun.
             </div>
         </details>
         <?php endif; ?>
