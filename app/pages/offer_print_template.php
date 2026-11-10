@@ -397,7 +397,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
             $lbl = trim((string) ($r['label'] ?? ''));
             if ($lbl === '') continue;
             $noR++;
-            $isi = offer_letter_fill((string) ($r['isi'] ?? ''), $amtsAwal + $isiKet); ?>
+            $isi = offer_letter_fill((string) ($r['isi'] ?? ''), $amtsAwal + $isiKet, $GAYA_UANG); ?>
         <tr>
             <td class="no"><?= $noR ?>.</td>
             <td class="lbl"><strong><?= $h($lbl) ?></strong></td>
@@ -699,7 +699,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     <?= $BUNGKUS() ?>
     <?php if ($payList): ?>
     <?= $JUDUL_BAGIAN($JUDUL['pembayaran']) ?>
-    <<?= $TAG_LIST ?> class="pay"><?php foreach ($payList as $p): ?><li><?= clara_format_bold(offer_letter_fill((string) $p, $amts + $isiKet)) ?></li><?php endforeach; ?></<?= $TAG_LIST ?>>
+    <<?= $TAG_LIST ?> class="pay"><?php foreach ($payList as $p): ?><li><?= clara_format_bold(offer_letter_fill((string) $p, $amts + $isiKet, $GAYA_UANG)) ?></li><?php endforeach; ?></<?= $TAG_LIST ?>>
     <?php endif; ?>
     <?php if (trim((string) ($BANK['rekening'] ?? '')) !== ''): ?>
         <?php if ($GAYA_BANK === 'menyatu'): ?>
@@ -730,7 +730,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     <?php /* Daftar ketentuan TIDAK dipotong di tengah — satu bagian pindah
              seluruhnya ke halaman berikutnya kalau sisa halaman tidak cukup
              (lihat page-break-inside pada .tnc). */ ?>
-    <<?= $TAG_LIST ?> class="tnc"><?php foreach ($ketentuan as $t): ?><li><?= clara_format_bold(offer_letter_fill((string) $t, $amts + $isiKet)) ?></li><?php endforeach; ?></<?= $TAG_LIST ?>>
+    <<?= $TAG_LIST ?> class="tnc"><?php foreach ($ketentuan as $t): ?><li><?= clara_format_bold(offer_letter_fill((string) $t, $amts + $isiKet, $GAYA_UANG)) ?></li><?php endforeach; ?></<?= $TAG_LIST ?>>
     </div>
     <?php endif; ?>
     <?php if (!isset($letter['tampil_berlaku']) || !empty($letter['tampil_berlaku'])): ?>

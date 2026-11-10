@@ -325,10 +325,18 @@ function offer_template_for(PDO $pdo, int $propertyId, ?string $unitType, string
     ];
 }
 
-/** Ganti placeholder nominal pada teks template: {dp} {deposit} {total} {ppn} {grand}. */
-function offer_letter_fill(string $text, array $a): string
+/**
+ * Ganti placeholder nominal pada teks template: {dp} {deposit} {total} {ppn} {grand}.
+ *
+ * $gaya mengikuti gaya_uang template. Tanpa itu, nominal hasil placeholder
+ * selalu tertulis "Rp 80.000.000" sementara tabel harga di surat yang sama
+ * tertulis "Rp. 80.000.000,-" — satu surat memuat dua gaya penulisan rupiah,
+ * persis yang hendak dihindari saat kolom gaya_uang dibuat. Bawaannya tetap
+ * 'polos', jadi template yang sudah ada tidak berubah satu huruf pun.
+ */
+function offer_letter_fill(string $text, array $a, string $gaya = 'polos'): string
 {
-    $rp = fn($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
+    $rp = fn($v) => offer_rupiah((float) $v, $gaya);
     $ganti = [
         '{dp}'      => $rp($a['dp'] ?? 0),
         '{deposit}' => $rp($a['deposit'] ?? 0),
