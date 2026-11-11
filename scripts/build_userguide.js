@@ -26,6 +26,7 @@ const META = {
   Manager:    { label: 'Manajer CL',     sub: 'Panduan persetujuan & pengawasan — approve SKP,<br>kontrak Legal, laporan tim, dan ringkasan eksekutif.' },
   Superadmin: { label: 'Superadmin',     sub: 'Panduan administrasi sistem — pengguna & hak akses,<br>audit, master data, dan konfigurasi.' },
   Tagihan:    { label: 'Tagihan & Pembayaran', sub: 'Panduan menu baru — mengisi invoice, mencatat<br>pembayaran, dan membaca status lunas.' },
+  Monitoring: { label: 'Monitoring Transaksi', sub: 'Panduan menu baru — berkas ini berhenti di mana,<br>giliran siapa, dan sudah berapa yang tuntas.' },
 };
 
 // ── helper gambar ────────────────────────────────────────────────────────────
@@ -44,6 +45,12 @@ function embed(text) {
       `\n<div class="ss-pair"><div class="ss-d"><div class="ss-lbl">Tampilan Desktop</div>${ssWrap(d, '', 'pair')}</div>` +
       `<div class="ss-m"><div class="ss-lbl">Tampilan Mobile</div>${ssWrap(mo, '', 'mob')}</div></div>` +
       (cap.trim() ? `<div class="ss-paircap">${cap.trim()}</div>` : '') + `\n`)
+    // @@FIG@@/@@FIGL@@ — gambar yang sengaja DIKECILKAN. Tangkapan layar
+    // setinggi setengah halaman memaksa paragraf penjelasnya terdorong ke
+    // halaman berikutnya, sehingga ada halaman yang isinya cuma gambar dan
+    // pembaca harus membolak-balik untuk tahu gambar itu gambar apa.
+    .replace(/@@FIGL:([\w-]+)\|([^@]*)@@/g, (m, n, cap) => `\n<div class="ss-single ss-figl">${ssWrap(n, cap.trim())}</div>\n`)
+    .replace(/@@FIG:([\w-]+)\|([^@]*)@@/g, (m, n, cap) => `\n<div class="ss-single ss-fig">${ssWrap(n, cap.trim())}</div>\n`)
     .replace(/@@SHOTM:([\w-]+)\|([^@]*)@@/g, (m, n, cap) => `\n<div class="ss-single mob-single">${ssWrap(n, cap.trim(), 'mob')}</div>\n`)
     .replace(/@@SHOT:([\w-]+)\|([^@]*)@@/g, (m, n, cap) => `\n<div class="ss-single">${ssWrap(n, cap.trim())}</div>\n`)
     .replace(/@@PB@@/g, '\n<div class="pb"></div>\n');
@@ -82,6 +89,13 @@ tr:nth-child(even) td{background:#f8fafc}
 .ss-single .ss-wrap{display:inline-block;max-width:100%}
 .ss-single .ss-wrap img{max-height:135mm;object-fit:contain}
 .mob-single .ss-wrap{max-width:62mm}
+/* Gambar kecil: tingginya dibatasi supaya selalu muat sehalaman bersama teks
+   yang menjelaskannya. .ss-figl untuk gambar orientasi yang memang perlu lebih
+   besar (tampilan layar penuh). */
+.ss-fig{margin:8px 0 10px}
+.ss-fig .ss-wrap img{max-height:48mm}
+.ss-figl{margin:8px 0 10px}
+.ss-figl .ss-wrap img{max-height:92mm}
 .ss-cap{background:#f8fafc;border-top:1px solid #e2e8f0;padding:4px 9px;font-size:7.5pt;color:#64748b;font-style:italic;text-align:center}
 .ss-paircap{font-size:7.5pt;color:#64748b;font-style:italic;text-align:center;margin-top:-4px}
 .ss-missing{background:#f3f4f6;border-radius:8px;color:#cbd5e1;font-size:8pt;padding:18px;text-align:center;margin:10px 0}
