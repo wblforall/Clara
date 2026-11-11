@@ -29,6 +29,28 @@ const META = {
   Monitoring: { label: 'Monitoring Transaksi', sub: 'Panduan menu baru — berkas ini berhenti di mana,<br>giliran siapa, dan sudah berapa yang tuntas.' },
 };
 
+// ── versi aplikasi ───────────────────────────────────────────────────────────
+// Dibaca dari sumbernya, bukan diketik di berkas ini. Sampul panduan sempat
+// tertulis "v1.0" selama aplikasinya sudah 4.21 — angka yang diketik tangan di
+// sampul memang selalu tertinggal, dan tidak ada yang menyadarinya sampai ada
+// yang membaca cetakannya. Urutan bacanya sama dengan yang dipakai aplikasi:
+// .env dulu, baru nilai bawaan di app/config.php.
+function versiApp() {
+  try {
+    const envF = ROOT + '.env';
+    if (fs.existsSync(envF)) {
+      const m = fs.readFileSync(envF, 'utf8').match(/^[ \t]*APP_VERSION[ \t]*=[ \t]*['"]?([^'"\r\n#]+)/m);
+      if (m && m[1].trim()) return m[1].trim();
+    }
+    const cfg = fs.readFileSync(ROOT + 'app/config.php', 'utf8');
+    const m2 = cfg.match(/'app_version'\s*=>\s*env_value\(\s*'APP_VERSION'\s*,\s*'([^']+)'/);
+    if (m2) return m2[1].trim();
+  } catch (e) { /* jatuh ke null di bawah */ }
+  // Tidak ketemu = kotak Versi tidak dicetak sama sekali. Sampul tanpa nomor
+  // versi masih benar; sampul dengan nomor versi yang salah tidak.
+  return null;
+}
+
 // ── helper gambar ────────────────────────────────────────────────────────────
 function imgData(name) {
   const f = SHOTS + name + '.png';
@@ -101,6 +123,9 @@ tr:nth-child(even) td{background:#f8fafc}
 .ss-missing{background:#f3f4f6;border-radius:8px;color:#cbd5e1;font-size:8pt;padding:18px;text-align:center;margin:10px 0}
 `;
 
+const VERSI = versiApp();
+const TAHUN = new Date().getFullYear();
+
 function coverHtml(role) {
   const m = META[role] || { label: role, sub: '' };
   return `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><style>
@@ -125,8 +150,8 @@ function coverHtml(role) {
     <p class="sub">${m.sub}</p>
     <div class="bar"></div>
     <div class="metas">
-      <div class="mbox"><div class="mval">v1.0</div><div class="mlbl">Versi</div></div>
-      <div class="mbox"><div class="mval">2026</div><div class="mlbl">Edisi</div></div>
+      ${VERSI ? `<div class="mbox"><div class="mval">v${VERSI}</div><div class="mlbl">Versi CLARA</div></div>` : ''}
+      <div class="mbox"><div class="mval">${TAHUN}</div><div class="mlbl">Edisi</div></div>
     </div>
     <div class="foot">PT. Wulandari Bangun Laksana Tbk. · Divisi IT · Dokumen Internal</div>
   </div></body></html>`;
