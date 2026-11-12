@@ -276,9 +276,21 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
    kiri paragraf, kolom terakhir rata kanan tepat di garis kanannya. */
 .sign{width:100%;border-collapse:collapse;margin-top:14px;page-break-inside:avoid;table-layout:fixed}
 /* Isi kedua kolom rata tengah; yang membuat blok kiri & kanan terlihat mepet
-   ke pinggir adalah kolom kosong di tengahnya, bukan perataan isinya. */
-.sign td.col{width:22%;padding:0;border:none;vertical-align:bottom;text-align:center}
-.sign td.antara{width:56%;padding:0;border:none}
+   ke pinggir adalah kolom kosong di tengahnya, bukan perataan isinya.
+   LEBAR KOLOM DIUKUR DARI NAMA PT, bukan dikira-kira: "PT. Wulandari Bangun
+   Laksana, Tbk." selebar 54,2 mm pada Helvetica tebal 11px, sedangkan isi
+   surat hanya 178 mm. Kolom 22% (39,2 mm) membuatnya pecah jadi dua baris —
+   nama perusahaan penanda tangan tidak boleh tercetak terputus. 34% = 60,5 mm,
+   cukup untuk satu baris penuh berikut sisa ruang, dan sekalian memuat
+   keterangan "Ditandatangani elektronik ..." (42,6 mm) di kolom kanan yang
+   selama ini juga terpotong dua baris. */
+.sign td.col{width:34%;padding:0;border:none;vertical-align:bottom;text-align:center}
+.sign td.antara{width:32%;padding:0;border:none}
+/* Penjaga: seandainya nama PT berubah/ditambah, ia tetap satu baris. Kolomnya
+   rata tengah, tapi kelebihan huruf hanya melebar ke kolom kosong di tengah —
+   bukan ke luar kertas. Hanya kolom KIRI; kolom kanan isinya nama penyewa yang
+   panjangnya tak tentu dan mepet ke tepi kanan kertas. */
+.sign td.perusahaan{white-space:nowrap}
 /* SELURUH blok tanda tangan seukuran badan surat — sama dengan SKP/Gudang. */
 .sign td.peran{font-size:11px;color:#6b7280;line-height:1.3;padding-bottom:1.2mm}
 .sign td.sigarea{height:20mm}
@@ -864,7 +876,7 @@ li{margin-bottom:3px;line-height:1.45;text-align:justify}
     ];
     ?>
     <table class="sign">
-        <tr><td class="col peran"><?= $kolomTtd[0]['peran'] ?></td><td class="antara"></td><td class="col peran"><?= $kolomTtd[1]['peran'] ?></td></tr>
+        <tr><td class="col peran perusahaan"><?= $kolomTtd[0]['peran'] ?></td><td class="antara"></td><td class="col peran"><?= $kolomTtd[1]['peran'] ?></td></tr>
         <tr><td class="col sigarea"><?= $kolomTtd[0]['ttd'] ?></td><td class="antara"></td><td class="col sigarea"><?= $kolomTtd[1]['ttd'] ?></td></tr>
         <tr><?php foreach ([0, 1] as $iKol): $kol = $kolomTtd[$iKol]; ?><?php if ($iKol): ?><td class="antara"></td><?php endif; ?><td class="col nama"><div class="nm"><?= $kol['nama'] ?></div><div class="jab"><?= $kol['jab'] ?></div><?= $kol['ket'] ?></td><?php endforeach; ?></tr>
     </table>

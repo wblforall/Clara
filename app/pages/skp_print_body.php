@@ -214,6 +214,24 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc.kertas table.sign td.peran { color: #000; }
 .skpdoc.kertas .name { color: #000; }
 .skpdoc.kertas .jab  { color: #000; }
+/* HANYA surat gudang: kolom tanda tangannya dilebarkan. Kolom pertamanya
+   menyebut nama penanda tangan sebelah mal — "PT. Wulandari Bangun Laksana,
+   Tbk." — dan pada Carlito 11pt nama itu selebar 58,4 mm, sedangkan kolom 22%
+   cuma 39,2 mm dari 178 mm isi surat. Hasilnya nama PT tercetak pecah dua
+   baris. 36% = 64,1 mm, satu baris penuh.
+   Kolom tepi KIRI dan KANAN harus tetap sama lebar: titik tengah kolom tengah
+   = kiri + setengah tengah, jadi begitu salah satu tepinya berbeda, tanda
+   tangan Manager di tengah ikut bergeser dari sumbu kertas. Sisanya 28%
+   (49,8 mm) — masih lebih lebar daripada "Casual Leasing Manager" (38,5 mm)
+   dan kotak QR-nya.
+   Surat lain (SKP, Form Utilities) tidak ikut: kolom pertamanya hanya berbunyi
+   "Dibuat Oleh," sehingga tidak pernah pecah, dan melebarkannya justru
+   menggeser blok tanda tangan yang sudah pas. */
+.skpdoc.kertas table.sign td.col    { width: 36%; }
+.skpdoc.kertas table.sign td.tengah { width: 28%; }
+/* Penjaga sama seperti Surat Penawaran: nama PT tetap satu baris. Kelebihan
+   huruf melebar ke kolom tengah, tidak ke luar kertas. */
+.skpdoc.kertas table.sign td.peran.kiri { white-space: nowrap; }
 </style>
 <?php /* Lapisan pemadatan OTOMATIS. Kosong pada keadaan biasa; hanya terisi
          kalau penyesuai halaman di skp.php memutuskan surat ini "nanggung".
