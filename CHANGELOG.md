@@ -31,8 +31,8 @@
   **tanggal kontrak**, bukan bulan kalender: sewa 08/11/2026 s.d 07/11/2027 berjalan dari tanggal 8 ke
   tanggal 7, sehingga periode pertamanya 08/11/2026 s.d 07/12/2026 &mdash; melintasi dua nama bulan.
   Menyebutnya &ldquo;November 2026&rdquo; membuat penyewa mengira tagihan berikutnya jatuh 1 Desember,
-  padahal 8 Desember. Yang tercetak: &ldquo;Periode Pertama (08/11/2026 s.d 07/12/2026) dan Terakhir
-  (08/10/2027 s.d 07/11/2027)&rdquo;, lalu &ldquo;Periode Kedua s.d Kesebelas (08/12/2026 s.d 07/10/2027)&rdquo;.
+  padahal 8 Desember. Yang tercetak: &ldquo;Periode Pertama (8 Nov. 2026 s.d 7 Des. 2026) dan Terakhir
+  (8 Okt. 2027 s.d 7 Nov. 2027)&rdquo;, lalu &ldquo;Periode Kedua s.d Kesebelas (8 Des. 2026 s.d 7 Okt. 2027)&rdquo;. Tanggalnya ditulis dengan nama bulan singkat dan hari tanpa nol di depan &mdash; satu baris memuat empat tanggal sekaligus, dan deretan angka di situ tidak terbaca.
 - Kontrak yang memang mulai **tanggal 1** tetap ditulis nama bulannya &mdash; 01/11/2026 s.d 30/11/2026 persis
   sama dengan &ldquo;November 2026&rdquo;, dan nama bulan lebih enak dibaca.
 - Penambahan bulannya dijepit ke hari terakhir bulan tujuan: 31 Januari + 1 bulan = 28/29 Februari, bukan

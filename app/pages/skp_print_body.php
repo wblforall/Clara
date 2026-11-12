@@ -600,20 +600,29 @@ $skpUkuranTtd = $skpDocType === 'sks'
             };
             $namaBulan = [1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
                           'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+            /* Tanggal periode ditulis dengan nama bulan, bukan angka: di satu
+               baris yang memuat EMPAT tanggal sekaligus, "08/11/2026 s.d
+               07/12/2026" menuntut pembacanya menerjemahkan angka bulan satu
+               per satu. Harinya tanpa nol di depan — "8", bukan "08".
+               Mei tidak diberi titik: ia nama utuh, bukan singkatan. */
+            $singkatBulan = [1 => 'Jan.', 'Feb.', 'Mar.', 'Apr.', 'Mei', 'Jun.',
+                             'Jul.', 'Agu.', 'Sep.', 'Okt.', 'Nov.', 'Des.'];
+            $tglRapi = static fn(int $ts): string =>
+                (int) date('j', $ts) . ' ' . ($singkatBulan[(int) date('n', $ts)] ?? '') . ' ' . date('Y', $ts);
             // Mulai tanggal 1 → periodenya memang bulan kalender.
             $ikutKalender = $tsMulai !== false && (int) date('j', $tsMulai) === 1;
             /* Keterangan satu rentang periode, mis. periode 2 s.d 11.
                Dokumen tanpa tanggal mulai (tidak seharusnya ada, tapi pernah)
                tetap mencetak jadwalnya — hanya tanpa keterangan periode. */
             $rentang = function (int $dari, int $sampai) use (
-                $tsMulai, $awalKe, $akhirKe, $namaBulan, $ikutKalender
+                $tsMulai, $awalKe, $akhirKe, $namaBulan, $ikutKalender, $tglRapi
             ): string {
                 if ($tsMulai === false) return '';
                 if ($ikutKalender) {
                     $n = fn(int $k): string => ($namaBulan[(int) date('n', $awalKe($k))] ?? '') . ' ' . date('Y', $awalKe($k));
                     return ' (' . ($dari === $sampai ? $n($dari) : $n($dari) . ' s.d ' . $n($sampai)) . ')';
                 }
-                return ' (' . date('d/m/Y', $awalKe($dari)) . ' s.d ' . date('d/m/Y', $akhirKe($sampai)) . ')';
+                return ' (' . $tglRapi($awalKe($dari)) . ' s.d ' . $tglRapi($akhirKe($sampai)) . ')';
             };
 
             $cicilBulan = $sewaBulanPpn + $listrikBulanPpn;
