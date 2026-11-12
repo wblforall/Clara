@@ -118,6 +118,15 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
 .skpdoc table.pay { width: 100%; border-collapse: collapse; margin-top: 3px; }
 .skpdoc table.pay td { padding: 4px 6px; border: 1px solid #e5e7eb; font-size: 11px; }
 .skpdoc table.pay td.lbl { width: 60%; } .skpdoc table.pay td.amt { text-align: right; font-weight: bold; white-space: nowrap; }
+/* Butir di dalam bagian (a, b, c ...). Menjoroknya dipasang sebagai PADDING,
+   bukan rangkaian &nbsp;: spasi hanya mendorong baris PERTAMA, sehingga butir
+   yang teksnya panjang — "Pembayaran Periode Pertama (8 Nov. 2026 s.d 7 Des.
+   2026) dan Terakhir (...)" — melipat ke baris kedua yang mulai mepet di tepi
+   kiri sel, tidak sejajar dengan apa pun.
+   text-indent negatif menarik baris pertamanya kembali ke tempat huruf urutnya,
+   jadi "a." tetap di luar dan seluruh baris sambungannya rata di bawah kata
+   pertama teksnya. */
+.skpdoc table.pay td.sub { padding-left: 7mm; text-indent: -3mm; }
 .skpdoc table.pay tr.grand td { background: #f0fdfa; font-weight: bold; color: #0f766e; }
 .skpdoc .chk { font-size: 13px; }
 .skpdoc table.notes { width: 100%; border-collapse: collapse; margin-top: 4px; }
@@ -485,7 +494,7 @@ $skpUkuranTtd = $skpDocType === 'sks'
         $mulaiBagian = function () use (&$butirKe) { $butirKe = 0; };
         $baris = function (string $label, $nilai, string $ket = '', bool $minus = false) use ($rp, $butir) {
             $gaya = $minus ? ' style="color:#b91c1c"' : '';
-            echo '<tr><td class="lbl"' . $gaya . '>&nbsp;&nbsp;&nbsp;' . $butir() . $label
+            echo '<tr><td class="lbl sub"' . $gaya . '>' . $butir() . $label
                . ($ket !== '' ? ' <span class="muted">(' . $ket . ')</span>' : '')
                . '</td><td class="amt"' . $gaya . '>'
                . ($minus ? '- ' : '') . (is_string($nilai) ? $nilai : $rp($nilai)) . '</td></tr>';
