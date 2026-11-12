@@ -11,6 +11,52 @@
 
 ---
 
+## Fitur & Perbaikan — 12 November 2026
+
+### Rincian Pembayaran SKP punya bentuk kedua: "Per bulan"
+
+- Rincian SKP selama ini cuma satu bentuk: daftar datar berisi nilai total. Benar angkanya, tapi tidak menjawab
+  pertanyaan yang selalu ditanya penyewa kontrak panjang &mdash; **sebulan bayar berapa, dan di muka berapa**.
+  Surat seperti *SKP Star Toys (1 Juli &ndash; 31 Desember 2026)* karena itu masih diketik di Excel.
+- Sekarang bentuknya **dipilih per dokumen** di formulir SKP, bukan ditebak dari datanya. Pameran tiga hari
+  tetap memakai bentuk **Ringkas** (bawaan, tidak berubah sama sekali); kontrak bulanan bisa memakai
+  **Per bulan**, yang menyusun suratnya persis seperti kertasnya:
+  A. Biaya Sewa Area (harga/bulan &rarr; PPN &rarr; per bulan setelah PPN &rarr; total N bulan),
+  B. Jaminan Area, C. Biaya Listrik sebagai bagian tersendiri, lalu D. Grand Total berikut **jadwal
+  pembayaran** (periode pertama &amp; terakhir di muka, sisanya per bulan).
+- Baris harga publish &amp; diskon tetap ikut tercetak pada bentuk baru &mdash; dokumen hasil nego tidak
+  kehilangan keterangan diskonnya hanya karena bentuknya diganti.
+- Security Deposit bisa diberi keterangan bebas, mis. &ldquo;sudah dibayarkan bulan Januari 2026&rdquo;.
+  Centang *Sudah dibayarkan* tetap yang menentukan deposit ikut ditagih atau tidak; keterangan ini tulisan saja.
+- Jumlah periode yang dibayar di muka bisa disetel (bawaan 2 untuk kontrak bulanan baru). Pilih
+  *Jadwal tidak dicetak* bila term-nya diatur tersendiri di kontrak.
+- Dokumen yang **sudah terbit tidak tersentuh**: bentuknya ikut dibekukan ke snapshot, dan dokumen lama tidak
+  punya kuncinya sama sekali sehingga cetak ulangnya tetap sama persis seperti saat diserahkan ke client.
+- Butuh migrasi: `php db_migrate.php` (114 &mdash; kolom `rincian_gaya`, `dp_periode`, `deposit_note`).
+
+### Template Surat Penawaran bisa diubah semua peran
+
+- Sebelumnya hanya administrasi &amp; asst_manager (plus satu sales lewat izin per-orang). Sekarang sales,
+  finance, supervisor, dan viewer ikut mendapat **Kelola Template Penawaran** &mdash; template surat adalah
+  alat kerja harian tim, bukan pengaturan sistem.
+- Dua izin sekaligus, karena halaman daftarnya di balik `view_master` sementara tombol tambah/simpan/duplikat
+  di balik `manage_offer_templates`. Memberi yang kedua saja membuat orang punya wewenang tanpa punya pintu.
+- Bisa dibatalkan kapan saja tanpa migrasi: hilangkan centangnya di **Admin &rsaquo; Hak Akses**.
+- Butuh migrasi: `php db_migrate.php` (113).
+
+### Nama PT di kolom tanda tangan tidak lagi pecah dua baris
+
+- &ldquo;PT. Wulandari Bangun Laksana, Tbk.&rdquo; tercetak terputus jadi dua baris di Surat Penawaran
+  (termasuk template Sewa Gudang) dan di Surat Konfirmasi Sewa Gudang. Lebar kolomnya 22% = 39,2 mm, padahal
+  namanya butuh 54,2 mm (Helvetica 11px) dan 58,4 mm (Carlito 11pt) &mdash; diukur langsung dari mesin cetak
+  PDF-nya, bukan dikira-kira.
+- Kolom dilebarkan ke 34% dan 36%. Keterangan &ldquo;Ditandatangani elektronik &hellip;&rdquo; di kolom kanan
+  yang juga terpotong ikut jadi satu baris.
+- SKP dan Form Utilities sengaja tidak ikut: kolom pertamanya cuma berbunyi &ldquo;Dibuat Oleh,&rdquo; yang
+  tidak pernah pecah, dan melebarkannya justru menggeser blok tanda tangan yang sudah pas.
+
+---
+
 ## Fitur & Perbaikan — 9 Oktober 2026
 
 ### Peran di luar daftar tidak lagi kehilangan izinnya saat Role & Permission disimpan

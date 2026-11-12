@@ -419,9 +419,159 @@ $skpUkuranTtd = $skpDocType === 'sks'
         ];
     };
     ?>
+    <?php
+    /* ──────────────────────────────────────────────────────────────────────
+       BENTUK RINCIAN. Dua bentuk, dipilih per dokumen di formulir (migrasi 114):
+
+         'ringkas'  satu daftar datar berisi nilai total — bentuk yang dipakai
+                    CLARA selama ini, dan tetap jadi bawaan. Benar untuk
+                    pameran harian yang ditagih sekali.
+         'bulanan'  bentuk surat kertas: harga per bulan dulu, baru dikalikan
+                    lama kontrak; listrik berdiri sebagai bagian sendiri; dan
+                    ditutup jadwal pembayaran. Ini yang ditanya client pada
+                    kontrak panjang — "sebulan berapa, di muka berapa".
+
+       Dokumen yang sudah terbit tidak punya kunci 'rincian_gaya' sama sekali,
+       jadi cetakan ulangnya tetap bentuk lama — persis seperti saat
+       diserahkan ke client.
+       ────────────────────────────────────────────────────────────────────── */
+    $rinciBulanan  = ((string) ($d['rincian_gaya'] ?? '')) === 'bulanan';
+    $bulanSewa     = max(1, (int) ($d['bulan_sewa'] ?? 0));
+    $satuanListrik = max(1, (int) ($d['listrik_satuan'] ?? 0));
+    $dpPeriode     = max(0, min($bulanSewa, (int) ($d['dp_periode'] ?? 0)));
+    $depNote       = trim((string) ($d['deposit_note'] ?? ''));
+    // Dipakai kedua bentuk, jadi disetel di sini — bukan di tengah daftar baris
+    // seperti dulu, ketika hanya satu bentuk yang memerlukannya.
+    $depLunas      = !empty($a['deposit_paid']);
+    ?>
     <div class="bagian<?= skp_potong_kelas() ?>">
     <div class="sec">Rincian Pembayaran Sewa</div>
     <table class="pay">
+    <?php if ($rinciBulanan): ?>
+        <?php
+        /* Angka per bulan diturunkan dari nilai yang SUDAH dibekukan, bukan
+           dihitung ulang dari tarif: yang ditagih adalah totalnya, dan baris
+           per bulan tidak boleh menghasilkan jumlah yang berbeda dari itu.
+           Untuk kontrak bulanan pembagiannya memang bulat — total sewa = harga
+           per bulan x jumlah bulan — jadi keduanya selalu cocok. */
+        $sewaTotal = (float) ($a['sewa'] ?? 0);
+        $sewaBulan = (float) ($d['sewa_per_bulan'] ?? 0);
+        if ($sewaBulan <= 0) $sewaBulan = round($sewaTotal / $bulanSewa);
+        $ppnSewaBulan = $kenaPpn ? round($sewaBulan * 11 / 12 * 0.12) : 0.0;
+        $sewaBulanPpn = $sewaBulan + $ppnSewaBulan;
+        $sewaTotalPpn = $sewaTotal + (float) ($a['ppn_sewa'] ?? 0);
+
+        $listrikTotal = (float) ($a['listrik'] ?? 0);
+        $listrikBulan = $listrikTotal > 0 ? round($listrikTotal / $satuanListrik) : 0.0;
+        $ppnListrikBulan = $kenaPpn ? round($listrikBulan * 11 / 12 * 0.12) : 0.0;
+        $listrikBulanPpn = $listrikBulan + $ppnListrikBulan;
+        $listrikTotalPpn = $listrikTotal + (float) ($a['ppn_listrik'] ?? 0);
+
+        // Huruf bagian (A, B, C, ...) dibagikan BERJALAN: bagian listrik dan
+        // service charge boleh tidak ada, dan hurufnya tidak pernah meloncat.
+        $hurufBagian = 0;
+        $bagian = function () use (&$hurufBagian) { return chr(65 + $hurufBagian++) . '. '; };
+        // Huruf butir di dalam bagian, direset tiap ganti bagian.
+        $butirKe = 0;
+        $butir   = function () use (&$butirKe) { return chr(97 + $butirKe++) . '. '; };
+        $mulaiBagian = function () use (&$butirKe) { $butirKe = 0; };
+        $baris = function (string $label, $nilai, string $ket = '', bool $minus = false) use ($rp, $butir) {
+            $gaya = $minus ? ' style="color:#b91c1c"' : '';
+            echo '<tr><td class="lbl"' . $gaya . '>&nbsp;&nbsp;&nbsp;' . $butir() . $label
+               . ($ket !== '' ? ' <span class="muted">(' . $ket . ')</span>' : '')
+               . '</td><td class="amt"' . $gaya . '>'
+               . ($minus ? '- ' : '') . (is_string($nilai) ? $nilai : $rp($nilai)) . '</td></tr>';
+        };
+        $ppnKet = 'nilai × 11/12 × 12%';
+        ?>
+        <tr><td class="lbl"><?= $bagian() ?>Biaya Sewa Area</td><td class="amt"></td></tr>
+        <?php
+        $mulaiBagian();
+        $baris('Harga Sewa / Bulan', $sewaBulan);
+        if ($kenaPpn) {
+            $baris('PPN 12%', $ppnSewaBulan, $ppnKet);
+            $baris('Biaya Sewa / Bulan setelah PPN', $sewaBulanPpn);
+        }
+        /* Harga publish & diskon memakai cetakan yang SAMA dengan bentuk
+           ringkas — kalau tidak, dokumen yang harganya hasil nego kehilangan
+           keterangan diskonnya begitu bentuknya diganti, dan client, legal,
+           serta finance tidak lagi melihat harganya turun dari berapa.
+           Angkanya nilai SEPANJANG KONTRAK, bukan per bulan: itu dasar yang
+           dipakai menghitung diskonnya. */
+        foreach ($barisDiskon() as $bd) {
+            $baris((string) $bd['label'], (float) $bd['amount'], (string) ($bd['note'] ?? ''), !empty($bd['minus']));
+        }
+        $baris('Total Biaya Sewa ' . $bulanSewa . ' Bulan' . ($kenaPpn ? ' + PPN' : ''), $sewaTotalPpn);
+        ?>
+        <tr><td class="lbl"<?= $depLunas ? ' style="color:#166534"' : '' ?>><?= $bagian() ?>Jaminan Area</td><td class="amt"></td></tr>
+        <?php
+        $mulaiBagian();
+        // Keterangan deposit ditulis apa adanya dari formulir — "sudah
+        // dibayarkan bulan Januari 2026" dan sejenisnya. Centang "sudah
+        // dibayarkan" hanya bisa bilang SUDAH, tidak bisa bilang KAPAN.
+        $ketDep = $depNote !== '' ? $h($depNote) : ($depLunas ? 'sudah dibayarkan' : '');
+        $baris('Security Deposit', (float) ($a['deposit'] ?? 0), $ketDep);
+        ?>
+        <?php if ($listrikTotal > 0): ?>
+        <tr><td class="lbl"><?= $bagian() ?>Biaya Listrik</td><td class="amt"></td></tr>
+        <?php
+        $mulaiBagian();
+        $baris('Harga Listrik / Bulan', $listrikBulan);
+        if ($kenaPpn) {
+            $baris('PPN 12%', $ppnListrikBulan, $ppnKet);
+            $baris('Total Biaya Listrik / Bulan setelah PPN', $listrikBulanPpn);
+        }
+        $baris('Total Biaya Listrik ' . $satuanListrik . ' Bulan' . ($kenaPpn ? ' + PPN' : ''), $listrikTotalPpn);
+        ?>
+        <?php endif; ?>
+        <?php if ((float) ($a['sc_bulanan'] ?? 0) > 0): ?>
+        <tr><td class="lbl"><?= $bagian() ?>Service Charge</td><td class="amt"></td></tr>
+        <?php
+        $mulaiBagian();
+        $baris('Biaya SC / Bulan', (float) $a['sc_bulanan']);
+        if ($kenaPpn) {
+            $baris('PPN 12%', (float) ($a['sc_ppn_bulan'] ?? 0), $ppnKet);
+            $baris('Total SC / Bulan setelah PPN', (float) ($a['sc_total_bulan'] ?? 0));
+        }
+        $baris('Total Biaya SC ' . (int) ($a['sc_bulan'] ?? 1) . ' Bulan' . ($kenaPpn ? ' + PPN' : ''), (float) ($a['sc_total'] ?? 0));
+        ?>
+        <?php endif; ?>
+        <tr class="grand"><td class="lbl"><?= $bagian() ?>Grand Total Biaya Sewa Area<?= $depLunas ? ' <span class="muted">(di luar Security Deposit)</span>' : '' ?></td>
+            <td class="amt"><?= $rp($a['grand_total'] ?? 0) ?></td></tr>
+        <?php
+        /* Jadwal pembayaran. Yang dibayar di muka pada surat kertas adalah
+           periode PERTAMA dan TERAKHIR sekaligus — sisanya ditagih per bulan.
+           Jumlah periodenya dipilih di formulir; 0 = jadwalnya tidak dicetak
+           (dokumen yang term-nya diatur tersendiri di kontrak). */
+        if ($dpPeriode > 0):
+            $urut = function (int $n): string {
+                return [1 => 'Pertama', 2 => 'Kedua', 3 => 'Ketiga', 4 => 'Keempat', 5 => 'Kelima',
+                        6 => 'Keenam', 7 => 'Ketujuh', 8 => 'Kedelapan', 9 => 'Kesembilan',
+                        10 => 'Kesepuluh', 11 => 'Kesebelas', 12 => 'Kedua Belas'][$n] ?? ('ke-' . $n);
+            };
+            $cicilBulan = $sewaBulanPpn + $listrikBulanPpn;
+            $imbuhL = $listrikTotal > 0 ? ' + Biaya Listrik' : '';
+            if ($dpPeriode === 2 && $bulanSewa >= 2) {
+                $lblMuka = 'Pembayaran Periode Pertama dan Terakhir';
+                $sisaDari = 2; $sisaSampai = $bulanSewa - 1;
+            } elseif ($dpPeriode === 1) {
+                $lblMuka = 'Pembayaran Periode Pertama';
+                $sisaDari = 2; $sisaSampai = $bulanSewa;
+            } else {
+                $lblMuka = 'Pembayaran ' . $dpPeriode . ' Periode di Muka';
+                $sisaDari = $dpPeriode + 1; $sisaSampai = $bulanSewa;
+            }
+            $mulaiBagian();
+            $baris($lblMuka . $imbuhL, $cicilBulan * $dpPeriode);
+            if ($sisaSampai >= $sisaDari) {
+                $lblSisa = $sisaSampai === $sisaDari
+                    ? 'Pembayaran Periode ' . $urut($sisaDari)
+                    : 'Pembayaran Periode ' . $urut($sisaDari) . ' s.d ' . $urut($sisaSampai);
+                $baris($lblSisa . $imbuhL, $rp($cicilBulan) . ' <span class="muted">/ Bulan</span>');
+            }
+        endif;
+        ?>
+    <?php else: ?>
         <tr><td class="lbl">A. Biaya Sewa Area</td><td class="amt"></td></tr>
         <?php
         /*
@@ -555,6 +705,7 @@ $skpUkuranTtd = $skpDocType === 'sks'
         <tr><td class="lbl">&nbsp;&nbsp;&nbsp;<?= $ab() ?>Total Biaya SC <?= (int) ($a['sc_bulan'] ?? 1) ?> bulan<?= $kenaPpn ? ' + PPN' : '' ?></td><td class="amt"><?= $rp($a['sc_total'] ?? 0) ?></td></tr>
         <?php endif; ?>
         <tr class="grand"><td class="lbl"><?= $adaSc ? 'D. Total Biaya Sewa + SC' . ($kenaPpn ? ' Inc. PPN' : '') : 'C. Grand Total Biaya Area' ?><?= $depLunas ? ' <span class="muted">(di luar Security Deposit)</span>' : '' ?></td><td class="amt"><?= $rp($a['grand_total'] ?? 0) ?></td></tr>
+    <?php endif; /* bentuk rincian */ ?>
     </table>
     <?php if ($kenaPpn): ?><div class="muted" style="font-size:9px;margin-top:3px">*PPN 12% sesuai PMK Nomor 131 Tahun 2024.</div><?php endif; ?>
     </div>

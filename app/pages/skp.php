@@ -1070,6 +1070,12 @@ function skp_form(PDO $pdo): void
             'amounts' => $amt, 'sales' => $src['pic_name'] ?? null,
             'property_name' => (current_property()['name'] ?? ''),
             'pricing_type' => (string) ($src['pricing_type'] ?? ''),
+            // Bentuk Rincian Pembayaran Sewa + bahan hitungnya. Lihat migrasi 114.
+            'rincian_gaya'   => (string) ($skp['rincian_gaya'] ?? ''),
+            'dp_periode'     => (int) ($skp['dp_periode'] ?? 0),
+            'deposit_note'   => (string) ($skp['deposit_note'] ?? ''),
+            'bulan_sewa'     => _skp_bulan($src['start_date'] ?? null, $src['end_date'] ?? null),
+            'listrik_satuan' => skp_listrik_satuan($skp ?? [], (string) ($src['start_date'] ?? ''), (string) ($src['end_date'] ?? '')),
             'tahap_harga' => AllocationService::priceSteps($pdo, (int) ($skp['transaction_id'] ?? $trxId), (int) ($skp['offer_id'] ?? $offerId)),
             'paraf' => ApprovalLine::jejakBeku($pdo, (int) ($skp['id'] ?? 0), $docType),
             'tier_harga' => (!empty($skp['offer_id'] ?? $offerId) && function_exists('offer_area_tiers'))
@@ -1590,6 +1596,58 @@ function skp_form(PDO $pdo): void
             <p class="help" style="margin-top:6px">Tercetak di surat: <strong id="fu-baris"><?= h($fuCetak) ?></strong></p>
             <?php else: ?>
             <h3 id="sec-bayar">Rincian Pembayaran</h3>
+            <?php
+            /* Bentuk rincian yang DICETAK — bukan angkanya, hanya susunannya.
+               Dua SKP bisa berisi nilai yang sama persis tapi harus dibaca
+               berbeda: pameran tiga hari ditagih sekali, kontrak enam bulan
+               ditagih per bulan dengan sebagian dibayar di muka. Karena itu
+               dipilih per dokumen, dan bawaannya TETAP bentuk lama supaya
+               ratusan surat yang sudah benar tidak ikut berubah. */
+            $gayaRinci    = ((string) ($skp['rincian_gaya'] ?? '')) === 'bulanan' ? 'bulanan' : 'ringkas';
+            $bulanKontrak = max(1, (int) $scBulan);
+            $bulananWajar = in_array((string) ($src['pricing_type'] ?? ''), ['monthly', 'monthly_area'], true)
+                            && $bulanKontrak >= 2;
+            $dpPeriode    = (int) ($skp['dp_periode'] ?? 0);
+            // Dokumen BARU pada kontrak bulanan: 2 periode di muka sudah jadi
+            // kebiasaan di kertas (periode pertama & terakhir). Dokumen yang
+            // sudah ada memakai angkanya sendiri, termasuk 0.
+            if (!$skp && $bulananWajar) $dpPeriode = 2;
+            ?>
+            <div class="form-grid" style="margin-bottom:4px">
+                <div class="wide">
+                    <label>Bentuk Rincian di Surat</label>
+                    <select name="rincian_gaya" id="skp_rincian_gaya" <?= $editable ? '' : 'disabled' ?>>
+                        <option value="ringkas" <?= $gayaRinci !== 'bulanan' ? 'selected' : '' ?>>Ringkas — satu daftar nilai total (bawaan)</option>
+                        <option value="bulanan" <?= $gayaRinci === 'bulanan' ? 'selected' : '' ?>>Per bulan — harga/bulan, total <?= (int) $bulanKontrak ?> bulan, listrik jadi bagian sendiri, + jadwal pembayaran</option>
+                    </select>
+                    <div class="help">
+                        <?php if ($bulananWajar): ?>
+                        Kontrak ini <strong><?= (int) $bulanKontrak ?> bulan</strong> — bentuk <em>Per bulan</em> yang biasa dipakai di surat kertas.
+                        <?php else: ?>
+                        Pameran harian cukup <em>Ringkas</em>. Bentuk <em>Per bulan</em> hanya masuk akal untuk kontrak yang ditagih bulanan.
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <div id="skp_dp_box">
+                    <label>Periode Dibayar di Muka</label>
+                    <select name="dp_periode" <?= $editable ? '' : 'disabled' ?>>
+                        <option value="0" <?= $dpPeriode <= 0 ? 'selected' : '' ?>>Jadwal tidak dicetak</option>
+                        <?php for ($u = 1; $u <= max(2, $bulanKontrak); $u++): ?>
+                        <option value="<?= $u ?>" <?= $dpPeriode === $u ? 'selected' : '' ?>><?= $u ?> periode</option>
+                        <?php endfor; ?>
+                    </select>
+                    <div class="help">2 periode = pembayaran pertama meliputi periode <strong>pertama &amp; terakhir</strong>, sisanya per bulan.</div>
+                </div>
+            </div>
+            <script>
+            /* Kotak "Periode Dibayar di Muka" hanya berarti pada bentuk Per bulan. */
+            (function () {
+                var s = document.getElementById('skp_rincian_gaya'), b = document.getElementById('skp_dp_box');
+                if (!s || !b) return;
+                var ikut = function () { b.style.display = s.value === 'bulanan' ? '' : 'none'; };
+                s.addEventListener('change', ikut); ikut();
+            })();
+            </script>
             <div class="form-grid">
                 <div><label><?= h(clara_satuan_harga((string) ($src['pricing_type'] ?? ''))) ?></label><input value="<?= money($amt['rate_m_day']) ?>" disabled></div>
                 <?php /* Biaya listrik ikut dari Surat Penawaran — ditampilkan terpisah
@@ -1676,7 +1734,16 @@ function skp_form(PDO $pdo): void
                         <input type="checkbox" name="deposit_paid" id="skp_dep_paid" value="1" style="width:15px;height:15px;flex:none;margin:0" <?= $defDepPaid ? 'checked' : '' ?> <?= $editable ? '' : 'disabled' ?>>
                         <span style="color:#166534;font-weight:600">Sudah dibayarkan</span>
                     </label>
+                    <?php /* Dibiarkan KOSONG — diisi hitungRincian() di bawah. */ ?>
                     <div class="help" id="skp_dep_help"></div>
+                    <?php /* Centang di atas cuma bisa bilang SUDAH; yang ditanya
+                             client justru KAPAN. Di surat kertas keterangannya
+                             ditulis tepat di samping angka depositnya. */ ?>
+                    <input name="deposit_note" value="<?= h((string) ($skp['deposit_note'] ?? '')) ?>"
+                           placeholder="mis. sudah dibayarkan bulan Januari 2026" maxlength="140"
+                           style="margin-top:7px" <?= $editable ? '' : 'disabled' ?>>
+                    <div class="help">Keterangan di samping Security Deposit pada surat &mdash; <strong>tulisan saja</strong>.
+                        Yang menentukan deposit ikut ditagih atau tidak tetap centang <em>Sudah dibayarkan</em> di atas.</div>
                 </div>
                 <?php
                 /* Biaya listrik milik dokumen ini. Untuk SKP dari Surat Penawaran
@@ -3041,6 +3108,17 @@ function _skp_fields_dari_post(string $docType): array
         'deposit_amount'=> (float) post('deposit_raw', 0),
         // Sudah disetor di kontrak sebelumnya → dicetak di surat, tapi di luar Grand Total.
         'deposit_paid'  => post('deposit_paid') ? 1 : 0,
+        // Centang di atas hanya bisa bilang SUDAH, tidak bisa bilang KAPAN —
+        // padahal itu yang ditanya client. Mis. "sudah dibayarkan bulan Januari 2026".
+        'deposit_note'  => mb_substr(trim((string) post('deposit_note', '')), 0, 140) ?: null,
+        // Bentuk Rincian Pembayaran Sewa pada cetakan (migrasi 114). Pameran
+        // harian ditagih sekali; kontrak bulanan dibaca per bulan. Dipilih per
+        // dokumen, bukan ditebak — dua SKP bisa berisi angka sama persis tapi
+        // harus dibaca berbeda.
+        'rincian_gaya'  => post('rincian_gaya') === 'bulanan' ? 'bulanan' : 'ringkas',
+        // Berapa periode dibayar di muka. 2 = periode pertama & terakhir,
+        // kebiasaan di surat kertas. 0 = jadwalnya tidak dicetak.
+        'dp_periode'    => (int) post('dp_periode', 0) > 0 ? min(24, (int) post('dp_periode')) : null,
         // Harga bersih tanpa PPN untuk penyewa yang pajaknya di luar sistem.
         'ppn_flag'      => post('ppn_flag') ? 1 : 0,
         // Service Charge bulanan (kosong = tidak dikenakan).
@@ -3631,6 +3709,15 @@ function skp_approve(PDO $pdo): void
         // Jenis harga ikut dibekukan supaya label rincian pembayaran bisa
         // menyebut satuan yang benar ("per bulan" vs "per m² per hari").
         'pricing_type' => (string) ($src['pricing_type'] ?? ''),
+        // Bentuk Rincian Pembayaran Sewa yang dipilih di formulir, berikut bahan
+        // hitungnya (migrasi 114). Ikut DIBEKUKAN: surat yang sudah diserahkan
+        // ke client tidak boleh berubah bentuk hanya karena pilihannya diubah
+        // belakangan. Dokumen lama tidak punya kunci ini → tetap bentuk lama.
+        'rincian_gaya'   => (string) ($skp['rincian_gaya'] ?? ''),
+        'dp_periode'     => (int) ($skp['dp_periode'] ?? 0),
+        'deposit_note'   => (string) ($skp['deposit_note'] ?? ''),
+        'bulan_sewa'     => _skp_bulan($src['start_date'] ?? null, $src['end_date'] ?? null),
+        'listrik_satuan' => skp_listrik_satuan($skp, (string) ($src['start_date'] ?? ''), (string) ($src['end_date'] ?? '')),
         // Biaya sewa per BULAN, dibekukan sebagai kunci tersendiri.
         //
         // Kuncinya baru: dokumen yang sudah terbit sebelum ini tidak memilikinya,
