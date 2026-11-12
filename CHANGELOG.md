@@ -21,9 +21,18 @@
 - Sekarang bentuknya **dipilih per dokumen** di formulir SKP, bukan ditebak dari datanya. Pameran tiga hari
   tetap memakai bentuk **Ringkas** (bawaan, tidak berubah sama sekali); kontrak bulanan bisa memakai
   **Per bulan**, yang menyusun suratnya persis seperti kertasnya:
-  A. Biaya Sewa Area (harga/bulan &rarr; PPN &rarr; per bulan setelah PPN &rarr; total N bulan),
-  B. Jaminan Area, C. Biaya Listrik sebagai bagian tersendiri, lalu D. Grand Total berikut **jadwal
-  pembayaran** (periode pertama &amp; terakhir di muka, sisanya per bulan).
+  A. Biaya Sewa Area (harga per m&sup2; per bulan &rarr; harga/bulan &rarr; PPN &rarr; per bulan setelah PPN
+  &rarr; total N bulan), B. Jaminan Area, C. Biaya Listrik sebagai bagian tersendiri, lalu D. Grand Total
+  berikut **jadwal pembayaran** (periode pertama &amp; terakhir di muka, sisanya per bulan).
+- **Harga per m&sup2; per bulan** ikut tercetak berikut perkaliannya &mdash; &ldquo;Harga Sewa / Bulan
+  (6 m&sup2; &times; Rp 500.000)&rdquo;. Diturunkan dari harga per bulan dibagi luas, bukan dari tarif
+  tersimpan: pada kontrak berharga paket tarif tersimpan bukan harga per m&sup2; sama sekali.
+- **Jadwal pembayarannya menyebut nama bulannya**, bukan sekadar nomor periode: &ldquo;Pembayaran Periode
+  Pertama (Oktober 2026) dan Terakhir (Desember 2026)&rdquo;, lalu &ldquo;Periode Kedua (November 2026)&rdquo;.
+  Perhitungan bulannya dinormalkan ke tanggal 1 dulu, supaya kontrak yang mulai tanggal 31 tidak meloncat
+  dua bulan.
+- Bentuk ini memakan satu halaman lebih daripada Ringkas bila listriknya ikut ditagih &mdash; isinya memang
+  bertambah enam baris.
 - Baris harga publish &amp; diskon tetap ikut tercetak pada bentuk baru &mdash; dokumen hasil nego tidak
   kehilangan keterangan diskonnya hanya karena bentuknya diganti.
 - Security Deposit bisa diberi keterangan bebas, mis. &ldquo;sudah dibayarkan bulan Januari 2026&rdquo;.

@@ -461,6 +461,14 @@ $skpUkuranTtd = $skpDocType === 'sks'
         $sewaBulanPpn = $sewaBulan + $ppnSewaBulan;
         $sewaTotalPpn = $sewaTotal + (float) ($a['ppn_sewa'] ?? 0);
 
+        /* Harga per m² per bulan — dasar yang dipakai sales saat menawar, dan
+           yang dipakai penyewa membandingkan dengan unit lain. Diturunkan dari
+           harga per bulan DIBAGI LUAS, bukan dari tarif tersimpan: pada kontrak
+           berharga paket tarif tersimpan bukan harga per m² sama sekali, dan
+           mencetaknya apa adanya akan menyesatkan. */
+        $luasSewa   = (float) ($d['area'] ?? 0);
+        $perM2Bulan = $luasSewa > 0 ? round($sewaBulan / $luasSewa) : 0.0;
+
         $listrikTotal = (float) ($a['listrik'] ?? 0);
         $listrikBulan = $listrikTotal > 0 ? round($listrikTotal / $satuanListrik) : 0.0;
         $ppnListrikBulan = $kenaPpn ? round($listrikBulan * 11 / 12 * 0.12) : 0.0;
@@ -487,7 +495,18 @@ $skpUkuranTtd = $skpDocType === 'sks'
         <tr><td class="lbl"><?= $bagian() ?>Biaya Sewa Area</td><td class="amt"></td></tr>
         <?php
         $mulaiBagian();
-        $baris('Harga Sewa / Bulan', $sewaBulan);
+        if ($perM2Bulan > 0) {
+            $baris('Harga Sewa / m&sup2; / Bulan', $perM2Bulan);
+            // Keterangan perkalian hanya ditulis bila memang menghasilkan
+            // angkanya persis. Luas berkoma kerap menyisakan pembulatan, dan
+            // "8,33 m² × Rp 500.000" yang tidak pas dijumlah pembaca justru
+            // bikin ragu pada angka yang sebenarnya benar.
+            $pas = abs($perM2Bulan * $luasSewa - $sewaBulan) < 1;
+            $baris('Harga Sewa / Bulan', $sewaBulan,
+                $pas ? angka($luasSewa) . ' m&sup2; &times; ' . $rp($perM2Bulan) : angka($luasSewa) . ' m&sup2;');
+        } else {
+            $baris('Harga Sewa / Bulan', $sewaBulan);
+        }
         if ($kenaPpn) {
             $baris('PPN 12%', $ppnSewaBulan, $ppnKet);
             $baris('Biaya Sewa / Bulan setelah PPN', $sewaBulanPpn);
@@ -549,16 +568,42 @@ $skpUkuranTtd = $skpDocType === 'sks'
                         6 => 'Keenam', 7 => 'Ketujuh', 8 => 'Kedelapan', 9 => 'Kesembilan',
                         10 => 'Kesepuluh', 11 => 'Kesebelas', 12 => 'Kedua Belas'][$n] ?? ('ke-' . $n);
             };
+            /* Nama bulan tiap periode. "Periode Kedua" saja memaksa pembaca
+               menghitung sendiri dari tanggal mulai; yang ditanya penyewa
+               justru "bulan apa saya bayar lagi".
+               Dihitung dari bulan tanggal MULAI dan dinormalkan ke tanggal 1
+               dulu — "+1 bulan" dari tanggal 31 meloncat dua bulan di PHP
+               (31 Januari + 1 bulan = 3 Maret), dan jadwalnya akan salah
+               nama pada kontrak yang mulai di akhir bulan. */
+            $bulanKe = function (int $k) use ($d): string {
+                $mulai = (string) ($d['start_date'] ?? '');
+                $ts0 = $mulai !== '' ? strtotime($mulai) : false;
+                if ($ts0 === false) return '';
+                $t = strtotime('+' . max(0, $k - 1) . ' month', (int) strtotime(date('Y-m-01', $ts0)));
+                $nama = [1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+                         'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+                return ($nama[(int) date('n', $t)] ?? '') . ' ' . date('Y', $t);
+            };
+            // Dokumen tanpa tanggal mulai (tidak seharusnya terjadi, tapi
+            // pernah) tetap mencetak jadwalnya — hanya tanpa nama bulan.
+            $kurung = fn(string $s): string => $s !== '' ? ' (' . $s . ')' : '';
+            $rentang = function (int $dari, int $sampai) use ($bulanKe, $kurung): string {
+                $a1 = $bulanKe($dari); $b1 = $bulanKe($sampai);
+                if ($a1 === '' || $b1 === '') return '';
+                return $kurung($dari === $sampai ? $a1 : $a1 . ' s.d ' . $b1);
+            };
+
             $cicilBulan = $sewaBulanPpn + $listrikBulanPpn;
             $imbuhL = $listrikTotal > 0 ? ' + Biaya Listrik' : '';
             if ($dpPeriode === 2 && $bulanSewa >= 2) {
-                $lblMuka = 'Pembayaran Periode Pertama dan Terakhir';
+                $lblMuka = 'Pembayaran Periode Pertama' . $kurung($bulanKe(1))
+                         . ' dan Terakhir' . $kurung($bulanKe($bulanSewa));
                 $sisaDari = 2; $sisaSampai = $bulanSewa - 1;
             } elseif ($dpPeriode === 1) {
-                $lblMuka = 'Pembayaran Periode Pertama';
+                $lblMuka = 'Pembayaran Periode Pertama' . $kurung($bulanKe(1));
                 $sisaDari = 2; $sisaSampai = $bulanSewa;
             } else {
-                $lblMuka = 'Pembayaran ' . $dpPeriode . ' Periode di Muka';
+                $lblMuka = 'Pembayaran Periode Pertama s.d ' . $urut($dpPeriode) . $rentang(1, $dpPeriode);
                 $sisaDari = $dpPeriode + 1; $sisaSampai = $bulanSewa;
             }
             $mulaiBagian();
@@ -567,7 +612,8 @@ $skpUkuranTtd = $skpDocType === 'sks'
                 $lblSisa = $sisaSampai === $sisaDari
                     ? 'Pembayaran Periode ' . $urut($sisaDari)
                     : 'Pembayaran Periode ' . $urut($sisaDari) . ' s.d ' . $urut($sisaSampai);
-                $baris($lblSisa . $imbuhL, $rp($cicilBulan) . ' <span class="muted">/ Bulan</span>');
+                $baris($lblSisa . $rentang($sisaDari, $sisaSampai) . $imbuhL,
+                       $rp($cicilBulan) . ' <span class="muted">/ Bulan</span>');
             }
         endif;
         ?>
