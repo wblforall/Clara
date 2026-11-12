@@ -568,39 +568,64 @@ $skpUkuranTtd = $skpDocType === 'sks'
                         6 => 'Keenam', 7 => 'Ketujuh', 8 => 'Kedelapan', 9 => 'Kesembilan',
                         10 => 'Kesepuluh', 11 => 'Kesebelas', 12 => 'Kedua Belas'][$n] ?? ('ke-' . $n);
             };
-            /* Nama bulan tiap periode. "Periode Kedua" saja memaksa pembaca
-               menghitung sendiri dari tanggal mulai; yang ditanya penyewa
-               justru "bulan apa saya bayar lagi".
-               Dihitung dari bulan tanggal MULAI dan dinormalkan ke tanggal 1
-               dulu — "+1 bulan" dari tanggal 31 meloncat dua bulan di PHP
-               (31 Januari + 1 bulan = 3 Maret), dan jadwalnya akan salah
-               nama pada kontrak yang mulai di akhir bulan. */
-            $bulanKe = function (int $k) use ($d): string {
-                $mulai = (string) ($d['start_date'] ?? '');
-                $ts0 = $mulai !== '' ? strtotime($mulai) : false;
-                if ($ts0 === false) return '';
-                $t = strtotime('+' . max(0, $k - 1) . ' month', (int) strtotime(date('Y-m-01', $ts0)));
-                $nama = [1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-                         'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-                return ($nama[(int) date('n', $t)] ?? '') . ' ' . date('Y', $t);
+            /* ── PERIODE DIHITUNG DARI TANGGAL KONTRAK, BUKAN BULAN KALENDER ──
+               Sewa jarang mulai tanggal 1. Kontrak 08/11/2026 s.d 07/11/2027
+               berjalan dari tanggal 8 ke tanggal 7, jadi periode pertamanya
+               08/11/2026 s.d 07/12/2026 — melintasi DUA nama bulan sekaligus.
+               Menamainya "November 2026" bukan sekadar kurang teliti: yang
+               membayar akan mengira tagihan berikutnya jatuh 1 Desember,
+               padahal 8 Desember, dan periode terakhirnya pun bergeser satu
+               bulan penuh.
+               Maka yang dicetak RENTANG TANGGALNYA. Kecuali kontrak yang
+               memang mulai tanggal 1: di situ 01/11/2026 s.d 30/11/2026 persis
+               sama dengan "November 2026", dan nama bulan lebih enak dibaca. */
+            $tsMulai = ($sm = (string) ($d['start_date'] ?? '')) !== '' ? strtotime($sm) : false;
+            $tsAkhir = ($se = (string) ($d['end_date'] ?? '')) !== '' ? strtotime($se) : false;
+            /* Tambah bulan yang TIDAK meloncat. strtotime('31 Januari +1 month')
+               menghasilkan 3 Maret; pada kontrak yang mulai akhir bulan seluruh
+               jadwalnya jadi salah. Di sini tanggalnya dijepit ke hari terakhir
+               bulan tujuan — 31 Januari + 1 bulan = 28/29 Februari. */
+            $tambahBulan = static function (int $ts, int $n): int {
+                $th = (int) date('Y', $ts); $bl = (int) date('n', $ts) + $n; $tg = (int) date('j', $ts);
+                $th += (int) floor(($bl - 1) / 12); $bl = (($bl - 1) % 12 + 12) % 12 + 1;
+                $maks = (int) date('t', mktime(12, 0, 0, $bl, 1, $th));
+                return (int) mktime(12, 0, 0, $bl, min($tg, $maks), $th);
             };
-            // Dokumen tanpa tanggal mulai (tidak seharusnya terjadi, tapi
-            // pernah) tetap mencetak jadwalnya — hanya tanpa nama bulan.
-            $kurung = fn(string $s): string => $s !== '' ? ' (' . $s . ')' : '';
-            $rentang = function (int $dari, int $sampai) use ($bulanKe, $kurung): string {
-                $a1 = $bulanKe($dari); $b1 = $bulanKe($sampai);
-                if ($a1 === '' || $b1 === '') return '';
-                return $kurung($dari === $sampai ? $a1 : $a1 . ' s.d ' . $b1);
+            $awalKe = fn(int $k): int => $tambahBulan((int) $tsMulai, $k - 1);
+            // Akhir periode = sehari sebelum periode berikutnya mulai, dan tidak
+            // pernah melewati tanggal berakhirnya kontrak.
+            $akhirKe = function (int $k) use ($tambahBulan, $tsMulai, $tsAkhir): int {
+                $t = strtotime('-1 day', $tambahBulan((int) $tsMulai, $k));
+                return $tsAkhir !== false ? min($t, (int) $tsAkhir) : $t;
+            };
+            $namaBulan = [1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+                          'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+            // Mulai tanggal 1 → periodenya memang bulan kalender.
+            $ikutKalender = $tsMulai !== false && (int) date('j', $tsMulai) === 1;
+            /* Keterangan satu rentang periode, mis. periode 2 s.d 11.
+               Dokumen tanpa tanggal mulai (tidak seharusnya ada, tapi pernah)
+               tetap mencetak jadwalnya — hanya tanpa keterangan periode. */
+            $rentang = function (int $dari, int $sampai) use (
+                $tsMulai, $awalKe, $akhirKe, $namaBulan, $ikutKalender
+            ): string {
+                if ($tsMulai === false) return '';
+                if ($ikutKalender) {
+                    $n = fn(int $k): string => ($namaBulan[(int) date('n', $awalKe($k))] ?? '') . ' ' . date('Y', $awalKe($k));
+                    return ' (' . ($dari === $sampai ? $n($dari) : $n($dari) . ' s.d ' . $n($sampai)) . ')';
+                }
+                return ' (' . date('d/m/Y', $awalKe($dari)) . ' s.d ' . date('d/m/Y', $akhirKe($sampai)) . ')';
             };
 
             $cicilBulan = $sewaBulanPpn + $listrikBulanPpn;
             $imbuhL = $listrikTotal > 0 ? ' + Biaya Listrik' : '';
             if ($dpPeriode === 2 && $bulanSewa >= 2) {
-                $lblMuka = 'Pembayaran Periode Pertama' . $kurung($bulanKe(1))
-                         . ' dan Terakhir' . $kurung($bulanKe($bulanSewa));
+                // Periode pertama & TERAKHIR — dua rentang yang tidak bersambung,
+                // jadi masing-masing ditulis sendiri.
+                $lblMuka = 'Pembayaran Periode Pertama' . $rentang(1, 1)
+                         . ' dan Terakhir' . $rentang($bulanSewa, $bulanSewa);
                 $sisaDari = 2; $sisaSampai = $bulanSewa - 1;
             } elseif ($dpPeriode === 1) {
-                $lblMuka = 'Pembayaran Periode Pertama' . $kurung($bulanKe(1));
+                $lblMuka = 'Pembayaran Periode Pertama' . $rentang(1, 1);
                 $sisaDari = 2; $sisaSampai = $bulanSewa;
             } else {
                 $lblMuka = 'Pembayaran Periode Pertama s.d ' . $urut($dpPeriode) . $rentang(1, $dpPeriode);

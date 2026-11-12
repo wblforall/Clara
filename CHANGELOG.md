@@ -27,10 +27,17 @@
 - **Harga per m&sup2; per bulan** ikut tercetak berikut perkaliannya &mdash; &ldquo;Harga Sewa / Bulan
   (6 m&sup2; &times; Rp 500.000)&rdquo;. Diturunkan dari harga per bulan dibagi luas, bukan dari tarif
   tersimpan: pada kontrak berharga paket tarif tersimpan bukan harga per m&sup2; sama sekali.
-- **Jadwal pembayarannya menyebut nama bulannya**, bukan sekadar nomor periode: &ldquo;Pembayaran Periode
-  Pertama (Oktober 2026) dan Terakhir (Desember 2026)&rdquo;, lalu &ldquo;Periode Kedua (November 2026)&rdquo;.
-  Perhitungan bulannya dinormalkan ke tanggal 1 dulu, supaya kontrak yang mulai tanggal 31 tidak meloncat
-  dua bulan.
+- **Jadwal pembayarannya menyebut periodenya**, bukan sekadar nomor urut. Periodenya dihitung dari
+  **tanggal kontrak**, bukan bulan kalender: sewa 08/11/2026 s.d 07/11/2027 berjalan dari tanggal 8 ke
+  tanggal 7, sehingga periode pertamanya 08/11/2026 s.d 07/12/2026 &mdash; melintasi dua nama bulan.
+  Menyebutnya &ldquo;November 2026&rdquo; membuat penyewa mengira tagihan berikutnya jatuh 1 Desember,
+  padahal 8 Desember. Yang tercetak: &ldquo;Periode Pertama (08/11/2026 s.d 07/12/2026) dan Terakhir
+  (08/10/2027 s.d 07/11/2027)&rdquo;, lalu &ldquo;Periode Kedua s.d Kesebelas (08/12/2026 s.d 07/10/2027)&rdquo;.
+- Kontrak yang memang mulai **tanggal 1** tetap ditulis nama bulannya &mdash; 01/11/2026 s.d 30/11/2026 persis
+  sama dengan &ldquo;November 2026&rdquo;, dan nama bulan lebih enak dibaca.
+- Penambahan bulannya dijepit ke hari terakhir bulan tujuan: 31 Januari + 1 bulan = 28/29 Februari, bukan
+  3 Maret seperti yang dilakukan `strtotime` apa adanya. Tanggal jangkarnya tetap dipertahankan, jadi periode
+  berikutnya kembali ke tanggal 31.
 - Bentuk ini memakan satu halaman lebih daripada Ringkas bila listriknya ikut ditagih &mdash; isinya memang
   bertambah enam baris.
 - Baris harga publish &amp; diskon tetap ikut tercetak pada bentuk baru &mdash; dokumen hasil nego tidak
