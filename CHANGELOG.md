@@ -43,6 +43,13 @@
   isinya tidak berubah satu pun.
 - Berlaku di ketiganya sekaligus &mdash; **contoh surat** di formulir, **PDF**, dan **halaman tanda tangan
   client** &mdash; karena ketiganya merender badan surat yang sama. Tidak ada migrasi.
+- **Halaman kedua tidak lagi tersisa separuh kosong.** Enam baris tambahan membuat tabel rincian tumpah
+  sedikit ke halaman berikutnya, dan karena daftar Note selalu wajib mulai di halaman baru, sisa halaman itu
+  menganggur hampir seluruhnya &mdash; surat dua halaman jadi tiga. Perapatan otomatis kini ikut merapatkan
+  tabel rincian sejak tingkat pertama (padding barisnya, bukan ukuran hurufnya), sehingga rinciannya kembali
+  muat di halaman pertama. Diuji pada dokumen yang tumpah: 3 halaman &rarr; **2 halaman**, terisi 85% / 51%.
+- Perapatan ini juga membuat SKP lain yang selama ini sudah bergantung pada perapatan **tidak perlu lagi
+  mengecilkan huruf** &mdash; merapatkan jarak baris jauh lebih tidak terasa daripada menyusutkan teksnya.
 
 ---
 

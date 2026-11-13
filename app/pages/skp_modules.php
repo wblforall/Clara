@@ -75,6 +75,13 @@ function skp_css_rapat(int $tingkat): string
 .skpdoc .doc-no { margin-bottom: 8px; }
 .skpdoc .sec { margin: 9px 0 5px; }
 .skpdoc table.kv td { padding: 1.5px 0; }
+/* Tabel rincian ikut dirapatkan sejak tingkat pertama. Sebelumnya tingkat
+   ini hanya menyentuh table.kv, padahal pada SKP bulanan berjadwal justru
+   table.pay yang paling panjang — dua puluhan baris, dan tiap baris
+   menyumbang 8px padding. Merapatkannya di sini jauh lebih tidak terasa
+   daripada mengecilkan hurufnya di tingkat 2. */
+.skpdoc table.pay td { padding: 2px 6px; }
+.skpdoc table.pay td.sub2 { padding-top: 0; padding-bottom: 0; }
 .skpdoc table.notes td.nt { padding-bottom: 2px; }
 .skpdoc .tgl-surat { margin-top: 9px; }
 .skpdoc table.sign { margin-top: 12px; }
