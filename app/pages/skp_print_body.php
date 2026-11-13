@@ -107,6 +107,15 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
    DALAM blok yang juga avoid membuat mPDF berputar sampai batas waktu PHP
    (Mpdf.php:7916), bukan sekadar lambat. */
 .skpdoc .bagian { page-break-inside: avoid; }
+/* Pengecualian untuk rincian bentuk "bulanan" yang berjadwal: bagian A
+   sampai jadwal pembayaran bisa lebih dari dua puluh baris, kerap melebihi
+   sisa halaman. Kalau bloknya tetap wajib utuh, SELURUH tabel pindah ke
+   halaman berikutnya dan halaman sebelumnya ditinggal separuh kosong —
+   justru bentuk yang dihindari clara_kirim_pdf_rapi(). Jadi di sini tabelnya
+   boleh terbelah, tapi tidak di tengah baris: tiap <tr> tetap utuh sehingga
+   nominal tidak pernah terpisah dari nama biayanya. */
+.skpdoc .bagian.panjang { page-break-inside: auto; }
+.skpdoc .bagian.panjang table.pay tr { page-break-inside: avoid; }
 .skpdoc .sec { font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: .04em; color: #0D9488; border-bottom: 1px solid #d1d5db; padding-bottom: 3px; margin: 14px 0 7px; page-break-after: avoid; }
 .skpdoc table.kv { width: 100%; border-collapse: collapse; }
 .skpdoc table.kv td { padding: 2.5px 0; vertical-align: top; border: none; font-size: 11px; }
@@ -127,6 +136,15 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
    jadi "a." tetap di luar dan seluruh baris sambungannya rata di bawah kata
    pertama teksnya. */
 .skpdoc table.pay td.sub { padding-left: 7mm; text-indent: -3mm; }
+/* Satu tingkat lebih dalam lagi: pecahan DI DALAM sebuah butir jadwal
+   ("- Biaya Sewa", "- PPN 12%", "- Biaya Sewa + PPN"). Jarak joroknya
+   dibuat jelas berbeda dari butir induknya supaya terbaca sebagai uraian
+   angka butir itu, bukan tiga tagihan baru yang berdiri sendiri.
+   Angka komponennya TIDAK ditebalkan. Yang benar-benar ditransfer client
+   adalah baris terakhir; kalau ketiganya sama tebal, mata menangkap tiga
+   nominal setara dan surat yang tadinya memperjelas malah membingungkan. */
+.skpdoc table.pay td.sub2 { padding: 1px 6px 1px 13mm; text-indent: -3mm; }
+.skpdoc table.pay td.amt.lemah { font-weight: normal; color: #374151; }
 .skpdoc table.pay tr.grand td { background: #f0fdfa; font-weight: bold; color: #0f766e; }
 .skpdoc .chk { font-size: 13px; }
 .skpdoc table.notes { width: 100%; border-collapse: collapse; margin-top: 4px; }
@@ -453,7 +471,7 @@ $skpUkuranTtd = $skpDocType === 'sks'
     // seperti dulu, ketika hanya satu bentuk yang memerlukannya.
     $depLunas      = !empty($a['deposit_paid']);
     ?>
-    <div class="bagian<?= skp_potong_kelas() ?>">
+    <div class="bagian<?= $rinciBulanan && $dpPeriode > 0 ? ' panjang' : '' ?><?= skp_potong_kelas() ?>">
     <div class="sec">Rincian Pembayaran Sewa</div>
     <table class="pay">
     <?php if ($rinciBulanan): ?>
@@ -634,8 +652,6 @@ $skpUkuranTtd = $skpDocType === 'sks'
                 return ' (' . $tglRapi($awalKe($dari)) . ' s.d ' . $tglRapi($akhirKe($sampai)) . ')';
             };
 
-            $cicilBulan = $sewaBulanPpn + $listrikBulanPpn;
-            $imbuhL = $listrikTotal > 0 ? ' + Biaya Listrik' : '';
             if ($dpPeriode === 2 && $bulanSewa >= 2) {
                 // Periode pertama & TERAKHIR — dua rentang yang tidak bersambung,
                 // jadi masing-masing ditulis sendiri.
@@ -649,14 +665,57 @@ $skpUkuranTtd = $skpDocType === 'sks'
                 $lblMuka = 'Pembayaran Periode Pertama s.d ' . $urut($dpPeriode) . $rentang(1, $dpPeriode);
                 $sisaDari = $dpPeriode + 1; $sisaSampai = $bulanSewa;
             }
+            /* ── TIAP PERIODE DIURAIKAN, BUKAN SATU ANGKA JADI ──
+               Sebelumnya satu periode dicetak sebagai satu nominal: "Pembayaran
+               Periode Pertama dan Terakhir ... Rp 51.282.000". Angkanya benar,
+               tapi tidak bisa dicocokkan client dengan apa pun di bagian A —
+               di sana yang tertulis Rp 23.100.000 dan Rp 2.541.000 per bulan,
+               sedangkan yang ditagih dua periode sekaligus. Jarak antara kedua
+               angka itu harus dihitung sendiri oleh yang membaca, dan tiap kali
+               ada yang keliru menghitungnya, yang ditanyakan ke PIC adalah
+               "kenapa tagihannya lebih besar dari yang di surat".
+               Maka kepalanya tetap nama periode + rentang tanggalnya, lalu di
+               bawahnya komponennya dipecah sampai bertemu angka transfer. */
+            $rinciPeriode = function (string $label, float $kali, string $imbuh) use (
+                $butir, $rp, $kenaPpn, $sewaBulan, $ppnSewaBulan, $sewaBulanPpn,
+                $listrikTotal, $listrikBulan, $ppnListrikBulan, $listrikBulanPpn
+            ): void {
+                $adaListrik = $listrikTotal > 0;
+                $komponen = [['Biaya Sewa', $sewaBulan * $kali]];
+                if ($kenaPpn)   { $komponen[] = ['PPN 12%', $ppnSewaBulan * $kali]; }
+                if ($adaListrik) {
+                    $komponen[] = ['Biaya Listrik', $listrikBulan * $kali];
+                    if ($kenaPpn) { $komponen[] = ['PPN Listrik 12%', $ppnListrikBulan * $kali]; }
+                }
+                $total = ($sewaBulanPpn + ($adaListrik ? $listrikBulanPpn : 0.0)) * $kali;
+
+                /* Sewa tanpa PPN dan tanpa listrik tidak punya yang bisa
+                   dipecah: komponennya cuma satu dan nilainya sama persis
+                   dengan totalnya. Mencetaknya tetap dua baris hanya akan
+                   mengulang nominal yang sama — bentuk lamanya yang benar. */
+                if (count($komponen) < 2) {
+                    echo '<tr><td class="lbl sub">' . $butir() . $label . '</td>'
+                       . '<td class="amt">' . $rp($total) . $imbuh . '</td></tr>';
+                    return;
+                }
+                echo '<tr><td class="lbl sub">' . $butir() . $label . '</td><td class="amt"></td></tr>';
+                foreach ($komponen as [$nama, $nilai]) {
+                    echo '<tr><td class="lbl sub2">&ndash; ' . $nama . '</td>'
+                       . '<td class="amt lemah">' . $rp($nilai) . $imbuh . '</td></tr>';
+                }
+                echo '<tr><td class="lbl sub2">&ndash; Biaya Sewa'
+                   . ($adaListrik ? ' + Listrik' : '') . ($kenaPpn ? ' + PPN' : '') . '</td>'
+                   . '<td class="amt">' . $rp($total) . $imbuh . '</td></tr>';
+            };
+
             $mulaiBagian();
-            $baris($lblMuka . $imbuhL, $cicilBulan * $dpPeriode);
+            $rinciPeriode($lblMuka, (float) $dpPeriode, '');
             if ($sisaSampai >= $sisaDari) {
                 $lblSisa = $sisaSampai === $sisaDari
                     ? 'Pembayaran Periode ' . $urut($sisaDari)
                     : 'Pembayaran Periode ' . $urut($sisaDari) . ' s.d ' . $urut($sisaSampai);
-                $baris($lblSisa . $rentang($sisaDari, $sisaSampai) . $imbuhL,
-                       $rp($cicilBulan) . ' <span class="muted">/ Bulan</span>');
+                $rinciPeriode($lblSisa . $rentang($sisaDari, $sisaSampai), 1.0,
+                              ' <span class="muted">/ Bulan</span>');
             }
         endif;
         ?>

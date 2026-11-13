@@ -11,6 +11,41 @@
 
 ---
 
+## Fitur & Perbaikan — 13 November 2026
+
+### Jadwal pembayaran SKP diuraikan sampai angka transfer
+
+- Pada rincian bentuk **Per bulan**, tiap periode di bagian Grand Total dulu dicetak sebagai **satu nominal
+  jadi**: &ldquo;Pembayaran Periode Pertama &hellip; dan Terakhir &hellip; Rp 51.282.000&rdquo;. Angkanya benar,
+  tapi tidak bisa dicocokkan penyewa dengan apa pun di bagian A &mdash; di sana yang tertulis Rp 23.100.000 dan
+  Rp 2.541.000 **per bulan**, sedangkan yang ditagih dua periode sekaligus. Selisihnya harus dihitung sendiri
+  oleh yang membaca, dan tiap kali ada yang keliru, yang ditanyakan ke PIC adalah &ldquo;kenapa tagihannya lebih
+  besar dari yang di surat&rdquo;.
+- Sekarang kepalanya tetap nama periode berikut rentang tanggalnya, lalu di bawahnya komponennya dipecah
+  sampai bertemu angka yang benar-benar ditransfer:
+
+  > a. Pembayaran Periode Pertama (8 Nov. 2026 s.d 7 Des. 2026) dan Terakhir (8 Okt. 2027 s.d 7 Nov. 2027)
+  > &nbsp;&nbsp;&nbsp;&ndash; Biaya Sewa &nbsp;Rp 46.200.000
+  > &nbsp;&nbsp;&nbsp;&ndash; PPN 12% &nbsp;Rp 5.082.000
+  > &nbsp;&nbsp;&nbsp;&ndash; Biaya Sewa + PPN &nbsp;**Rp 51.282.000**
+
+- Listrik ikut terurai bila ditagih: &ndash; Biaya Sewa, &ndash; PPN 12%, &ndash; Biaya Listrik,
+  &ndash; PPN Listrik 12%, lalu &ndash; Biaya Sewa + Listrik + PPN. Keterangan &ldquo;+ Biaya Listrik&rdquo;
+  yang dulu menempel di judul periode tidak diperlukan lagi &mdash; listriknya sekarang punya barisnya sendiri
+  berikut nominalnya.
+- Angka komponennya **tidak ditebalkan**; hanya baris terakhir yang tebal. Kalau ketiganya sama tebal, mata
+  menangkap tiga nominal setara dan surat yang tadinya memperjelas malah membingungkan.
+- Sewa tanpa PPN dan tanpa listrik **tidak diurai** &mdash; komponennya cuma satu dan nilainya sama persis
+  dengan totalnya, jadi barisnya tetap satu seperti dulu.
+- Tabel rincian yang panjang kini **boleh terbelah antar halaman**, tapi tidak di tengah baris. Sebelumnya
+  blok rinciannya wajib utuh, sehingga tambahan enam baris ini membuat seluruh tabel melompat ke halaman
+  berikutnya dan halaman sebelumnya ditinggal separuh kosong. Uji ulang 40 dokumen terbit: jumlah halaman dan
+  isinya tidak berubah satu pun.
+- Berlaku di ketiganya sekaligus &mdash; **contoh surat** di formulir, **PDF**, dan **halaman tanda tangan
+  client** &mdash; karena ketiganya merender badan surat yang sama. Tidak ada migrasi.
+
+---
+
 ## Fitur & Perbaikan — 12 November 2026
 
 ### Rincian Pembayaran SKP punya bentuk kedua: "Per bulan"
@@ -38,8 +73,6 @@
 - Penambahan bulannya dijepit ke hari terakhir bulan tujuan: 31 Januari + 1 bulan = 28/29 Februari, bukan
   3 Maret seperti yang dilakukan `strtotime` apa adanya. Tanggal jangkarnya tetap dipertahankan, jadi periode
   berikutnya kembali ke tanggal 31.
-- Bentuk ini memakan satu halaman lebih daripada Ringkas bila listriknya ikut ditagih &mdash; isinya memang
-  bertambah enam baris.
 - Baris harga publish &amp; diskon tetap ikut tercetak pada bentuk baru &mdash; dokumen hasil nego tidak
   kehilangan keterangan diskonnya hanya karena bentuknya diganti.
 - Security Deposit bisa diberi keterangan bebas, mis. &ldquo;sudah dibayarkan bulan Januari 2026&rdquo;.
