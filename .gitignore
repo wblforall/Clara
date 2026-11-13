@@ -111,3 +111,10 @@ scripts/build_laporan_sita_okt.php
 scripts/build_laporan_pic_okt.php
 scripts/build_laporan_okt.php
 scripts/_laporan_okt_isi.php
+
+# Ruang kerja lokal. Seluruh berkas yang dulu berserak di akar repo dipindah
+# ke sini supaya akar cuma berisi kode: dump database, spreadsheet sumber
+# laporan, dokumen asli klien, PDF hasil cetak, dan cadangan .env.
+# Isinya memuat nama penyewa, nilai kontrak, dan kredensial — repo ini PUBLIK,
+# jadi tidak satu pun boleh ikut ter-commit.
+/lokal/
