@@ -13,8 +13,19 @@ berkas, keluar = sys.argv[1], sys.argv[2]
 sheets = sys.argv[3].split(',')
 wb = openpyxl.load_workbook(berkas, data_only=True)
 
-BLN = {'JAN':'01','FEB':'02','MAR':'03','APR':'04','MEI':'05','JUN':'06',
-       'JUL':'07','AGS':'08','SEP':'09','OKT':'10','NOV':'11','DES':'12'}
+# Nama bulan di spreadsheet TIDAK seragam: satu sheet menulis "Target AGUS
+# 2026" dan "Target SEPT 2026", sheet lain "Target JUL 26". Dulu daftar ini
+# dicocokkan persis, sehingga AGUS dan SEPT tidak dikenali dan dua bulan penuh
+# terbaca NOL untuk seluruh PIC e-Walk — bukan selisih, melainkan bulan yang
+# tidak terbaca. Maka pencocokannya kini lewat TIGA HURUF pertama saja.
+BLN3 = {'JAN':'01','FEB':'02','MAR':'03','APR':'04','MEI':'05','JUN':'06',
+        'JUL':'07','AGS':'08','AGU':'08','SEP':'09','OKT':'10','OCT':'10',
+        'NOV':'11','DES':'12','DEC':'12'}
+
+
+def bulan_ke(nama):
+    """'AGUS' / 'SEPT' / 'OKT' -> '08' / '09' / '10'. None bila tak dikenal."""
+    return BLN3.get((nama or '')[:3].upper())
 # "GRAND TOTAL", bukan "GRAND" — ada penyewa bernama GRAND CITY.
 BUANG = ('TOTAL','ACTUAL','TARGET','SELISIH','PROYEKSI','KETERANGAN','PIC')
 
@@ -51,9 +62,10 @@ for sh in sheets:
             blok.append((bulan, r, pics))
 
     for i, (bulan, r, pics) in enumerate(blok):
-        if not bulan or bulan not in BLN:
+        nomor = bulan_ke(bulan)
+        if not nomor:
             continue
-        key = '2026-' + BLN[bulan]
+        key = '2026-' + nomor
         awal = blok[i - 1][1] + 6 if i > 0 else 1
         batas = r
         for rr in range(r - 1, max(awal, r - 16), -1):
