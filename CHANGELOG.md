@@ -11,6 +11,38 @@
 
 ---
 
+## Fitur & Perbaikan — 16 November 2026
+
+### Orang baru: akun login dan barisnya di Master PIC dibuat sekaligus
+
+- Menambah satu orang ke CLARA sebetulnya **dua pekerjaan di dua tempat**: menu **Users &amp; Role** membuat
+  akun loginnya, lalu **Master PIC** ditambah sendiri dan ditautkan ke akun itu. Yang kedua gampang terlewat,
+  dan akibatnya tidak terlihat dari layar mana pun: orangnya **tetap bisa login**, tetapi daftar Penawaran,
+  SKP, dan Transaksinya kosong. Pembatasan per-sales mencari nama PIC-nya lewat tautan itu &mdash; selama
+  tautannya belum ada, yang terlihat olehnya hanya dokumen yang **dia buat sendiri**, dan dokumen yang
+  dibuatkan admin atas namanya tidak pernah muncul. Yang dilaporkan ke IT: &ldquo;CLARA saya kosong.&rdquo;
+- Sekarang keduanya bisa dikerjakan sekali jalan: `php scripts/tambah_akun_pic.php "<Nama>" --email=&hellip;
+  --properti=1 --porsi=15 --terapkan`. Satu transaksi &mdash; jadi dua-duanya, atau tidak jadi sama sekali.
+- **Laporan dulu, baru menulis.** Tanpa `--terapkan` tidak ada satu baris pun diubah; yang tercetak hanya
+  keadaan sekarang dan daftar apa yang akan dikerjakan.
+- **Porsi target diperlihatkan sebelum disimpan**, lengkap dengan jumlahnya sesudah orang ini masuk. Target
+  satu PIC = porsi &times; target bulanan properti, jadi jumlahnya harus tepat 100%; kalau tidak, yang
+  tercetak adalah peringatan &mdash; bukan ketahuan belakangan dari halaman Cek Data.
+- **Baris yang sudah ada tidak ditimpa.** Kolom yang kosong diisi, yang isinya berbeda hanya dilaporkan.
+  Peran akun, nama akun, dan porsi target yang sudah terisi sengaja **tidak** diubah dari skrip: ketiganya
+  mengubah apa yang boleh dilihat, kepemilikan dokumen lama, dan target seluruh tim. Jadi skrip ini aman
+  dijalankan ulang.
+- **Dua keadaan dihentikan, bukan diteruskan dengan peringatan:** nama akun yang kembar dengan orang lain
+  (nama dipakai sebagai penanda pembuat dokumen &mdash; dua nama sama membuat dokumen keduanya saling
+  terlihat), dan baris Master PIC yang sudah tertaut ke akun lain.
+- Sesudah tersimpan, **tujuh syaratnya dibaca ulang dari database** dan dicetak satu per satu: akun aktif,
+  akses properti, baris PIC aktif &amp; tertaut, daftarnya sendiri akan terisi, masuk papan Achievement,
+  muncul di pilihan PIC Surat Penawaran, dan jumlah porsi target properti.
+- Terakhir, **teks WA** berisi link, email, dan sandi awal dicetak siap disalin &mdash; sama dengan yang
+  muncul di layar sesudah menambah user lewat menu.
+
+---
+
 ## Fitur & Perbaikan — 13 November 2026
 
 ### Jadwal pembayaran SKP diuraikan sampai angka transfer
