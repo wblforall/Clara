@@ -472,11 +472,16 @@ function skp_fu_sinkron_tpl(array $det, array $tpl): array
             $nama = trim((string) ($it['nama'] ?? ''));
             if ($nama === '') continue;
             $kunci = mb_strtolower($nama);
-            if (in_array($kunci, $ada, true)) continue;          // kembar di dokumen lama
             $terpakai = !empty($it['checked'])
                 || (float) ($it['biaya'] ?? 0) > 0
                 || trim((string) ($it['ket'] ?? '')) !== ''
                 || trim((string) ($it['lokasi'] ?? '')) !== '';
+            // Satu item boleh punya BEBERAPA baris — satu per titik pemasangan,
+            // masing-masing dengan lokasi dan biayanya sendiri. Jadi nama yang
+            // berulang tidak lagi otomatis dianggap kembar: yang dibuang hanya
+            // baris kembar yang masih kosong (sisa daftar lama, atau tombol
+            // "+ titik" yang diklik lalu tidak jadi dipakai).
+            if (in_array($kunci, $ada, true) && !$terpakai) continue;
             if ($bolehBuang && !$terpakai && !isset($tplNama[$kunci])) continue;
             $hasil[] = $it;
             $ada[]   = $kunci;
@@ -603,6 +608,81 @@ function skp_detail_form(string $docType, array $d, bool $editable, array $srcHa
         <div class="form-grid" style="margin-top:8px">
             <div class="wide"><label>Plat Nomor Kendaraan <span class="muted" style="font-weight:400">(STNK dilampirkan)</span></label><input name="d_plat_nomor" value="<?= h($d['plat_nomor'] ?? '') ?>" <?= $dis ?>></div>
         </div>
+        <?php if ($editable): ?>
+        <script>
+        /* Satu item media promo bisa terpasang di beberapa titik — mis. TVC di
+           dua lokasi dengan harga berbeda. Tiap titik satu baris: item yang sama,
+           lokasi & biaya sendiri. Barisnya sengaja disisipkan tepat di bawah
+           titik terakhir milik item itu, karena cetakan menggabungkan baris
+           BERURUTAN yang namanya sama jadi satu blok.
+
+           Skrip ini berdiri sendiri: formulir FU dari transaksi tidak memuat
+           skrip dokumen mandiri, jadi tombolnya tidak boleh bergantung padanya.
+           Total Nilai Sewa tetap dihitung skrip itu lewat pendengar yang
+           didelegasikan ke document — yang perlu dilakukan di sini hanya
+           membangunkannya sesudah baris berubah. */
+        (function () {
+            if (window.__fuTitik) return;
+            window.__fuTitik = true;
+            var urut = 90000;   // indeks baru, jauh dari indeks bawaan 0..n
+
+            document.addEventListener('click', function (e) {
+                var b = e.target;
+                if (!b || !b.classList) return;
+                if (b.classList.contains('fu-tambah-titik'))      { e.preventDefault(); tambah(b); }
+                else if (b.classList.contains('fu-hapus-titik'))  { e.preventDefault(); hapus(b); }
+            });
+
+            function tambah(tombol) {
+                var tr = tombol.closest('tr');
+                if (!tr) return;
+                var item = tr.getAttribute('data-item'), akhir = tr;
+                for (var n = tr.nextElementSibling; n && n.getAttribute('data-item') === item; n = n.nextElementSibling) {
+                    akhir = n;
+                }
+                var baru = tr.cloneNode(true);
+                baru.classList.add('fu-titik');
+                var ke = ++urut, kotak = baru.querySelectorAll('input');
+                for (var i = 0; i < kotak.length; i++) {
+                    var el = kotak[i];
+                    if (el.name) el.name = el.name.replace(/\[\d+\]/, '[' + ke + ']');
+                    // Lokasi & biaya dikosongkan — titik baru memang belum punya
+                    // keduanya. Satuan ikut terbawa karena hampir selalu sama.
+                    if (/\[(lokasi|biaya)\]$/.test(el.name || '')) el.value = '';
+                    // Titik yang baru ditambah = dipakai; kalau tidak, biayanya
+                    // tidak akan ikut menambah Total Nilai Sewa.
+                    if (el.type === 'checkbox') el.checked = true;
+                }
+                var t = baru.querySelector('.fu-tambah-titik');
+                if (t) {
+                    t.classList.remove('fu-tambah-titik');
+                    t.classList.add('fu-hapus-titik');
+                    t.textContent = 'hapus titik ini';
+                }
+                baru.style.background = '#f0fdf4';
+                akhir.parentNode.insertBefore(baru, akhir.nextSibling);
+                var isi = baru.querySelector('input[name$="[lokasi]"]');
+                if (isi) isi.focus();
+                hitungUlang(baru.querySelector('.fu-cek'));
+            }
+
+            function hapus(tombol) {
+                var tr = tombol.closest('tr');
+                if (!tr) return;
+                tr.parentNode.removeChild(tr);
+                hitungUlang(document.querySelector('.fu-cek'));
+            }
+
+            /* Dibangunkan lewat 'change' pada kotak centang, bukan 'input' pada
+               kotak biaya: pendengar biaya ikut MENCENTANG baris yang nilainya
+               di atas nol, dan baris orang lain tidak boleh ikut tercentang
+               hanya karena ada titik yang ditambah di tempat lain. */
+            function hitungUlang(cek) {
+                if (cek) cek.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        })();
+        </script>
+        <?php endif; ?>
         <?php
         return;
     }
@@ -619,6 +699,20 @@ function skp_fu_group(string $key, array $items, bool $withLokasi, bool $editabl
 {
     $dis = $editable ? '' : 'disabled';
     if (!$items) { echo '<p class="muted" style="margin:0">Daftar item belum diatur — isi lewat menu <strong>Template Penawaran → Media</strong>.</p>'; return; }
+    // Tiga kelompok memakai gaya yang sama; ditulis sekali saja.
+    static $gaya = false;
+    if (!$gaya) {
+        $gaya = true;
+        echo '<style>'
+           . '.fu-tabel td.fu-nama { font-weight: 600; }'
+           . '.fu-tabel tr.fu-titik td.fu-nama { font-weight: 400; color: var(--muted); }'
+           . '.fu-tabel tr.fu-titik td.fu-nama .fu-nama-teks:before { content: "\\21B3  "; }'
+           . '.fu-aksi { display: block; margin-top: 3px; padding: 0; border: 0; background: none;'
+           . ' font-size: 11px; font-weight: 400; color: var(--primary, #0d9488); cursor: pointer; }'
+           . '.fu-aksi:hover { text-decoration: underline; }'
+           . '.fu-tabel tr.fu-titik .fu-aksi { color: #b91c1c; }'
+           . '</style>';
+    }
     ?>
     <div style="overflow-x:auto">
     <table class="data fu-tabel" style="width:100%">
@@ -630,22 +724,42 @@ function skp_fu_group(string $key, array $items, bool $withLokasi, bool $editabl
             <th style="width:120px">Satuan</th>
         </tr></thead>
         <tbody>
-        <?php foreach ($items as $i => $it):
-            $on = !empty($it['checked']);
+        <?php
+        $sebelum = '';
+        foreach ($items as $i => $it):
+            $nama = trim((string) ($it['nama'] ?? ''));
+            $on   = !empty($it['checked']);
             // "Lainnya" tidak menyebut apa pun — barisnya diberi kotak isian
             // supaya yang dicentang itu jelas barangnya, bukan cuma biayanya.
-            $bebas = strcasecmp(trim((string) $it['nama']), 'Lainnya') === 0; ?>
-            <tr class="fu-row" data-grup="<?= h($grup) ?>" style="background:<?= $on ? '#f0fdf4' : 'transparent' ?>">
+            $bebas = strcasecmp($nama, 'Lainnya') === 0;
+            // Baris titik TAMBAHAN: item yang sama dipasang di tempat lain,
+            // dengan lokasi dan biayanya sendiri. Dikenali dari namanya yang
+            // sama dengan baris tepat di atasnya — urutan itu pula yang dipakai
+            // cetakan untuk menggabungkannya jadi satu item.
+            $lanjutan = $sebelum !== '' && strcasecmp($nama, $sebelum) === 0;
+            $sebelum  = $nama; ?>
+            <tr class="fu-row<?= $lanjutan ? ' fu-titik' : '' ?>" data-grup="<?= h($grup) ?>"
+                data-item="<?= h(mb_strtolower($nama)) ?>" style="background:<?= $on ? '#f0fdf4' : 'transparent' ?>">
                 <td style="text-align:center">
-                    <input type="hidden" name="<?= $key ?>[<?= $i ?>][nama]" value="<?= h($it['nama']) ?>">
+                    <input type="hidden" name="<?= $key ?>[<?= $i ?>][nama]" value="<?= h($nama) ?>">
                     <input type="checkbox" class="fu-cek" name="<?= $key ?>[<?= $i ?>][checked]" value="1" <?= $on ? 'checked' : '' ?> <?= $dis ?>>
                 </td>
-                <td style="font-weight:600"><?= h($it['nama']) ?>
+                <td class="fu-nama"><span class="fu-nama-teks"><?= h($nama) ?></span>
                     <?php if ($bebas): ?>
                         <input name="<?= $key ?>[<?= $i ?>][ket]" value="<?= h($it['ket'] ?? '') ?>" placeholder="tulis sendiri itemnya"
                                style="width:100%;margin-top:4px;font-weight:400;font-size:11.5px" <?= $dis ?>>
                     <?php else: ?>
                         <input type="hidden" name="<?= $key ?>[<?= $i ?>][ket]" value="<?= h($it['ket'] ?? '') ?>">
+                    <?php endif; ?>
+                    <?php /* Satu item, beberapa titik: tombolnya hanya ada di kelompok
+                             yang memang punya kolom lokasi — tanpa lokasi, dua baris
+                             item yang sama tidak bisa dibedakan isinya. */ ?>
+                    <?php if ($editable && $withLokasi): ?>
+                        <?php if ($lanjutan): ?>
+                            <button type="button" class="fu-aksi fu-hapus-titik">hapus titik ini</button>
+                        <?php else: ?>
+                            <button type="button" class="fu-aksi fu-tambah-titik">+ titik lain</button>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </td>
                 <?php if ($withLokasi): ?>
@@ -807,29 +921,101 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
         // tarif tiap fasilitas bukan urusannya — tarifnya tetap tersimpan di
         // dokumen, hanya tidak dicetak.
         $sembunyi = (array) ($det['sembunyi_harga'] ?? []);
+        //
+        // SATU ITEM, BEBERAPA TITIK. Satu media promo bisa terpasang di lebih
+        // dari satu tempat dengan harga yang berbeda — mis. TVC di dua titik.
+        // Di formulir itu beberapa baris berurutan yang namanya sama; di sini
+        // baris-baris itu dilebur jadi SATU item dengan titiknya menjorok di
+        // bawahnya, lalu ditutup jumlahnya. Kalau namanya diulang begitu saja,
+        // yang terbaca penyewa adalah tiga item berbeda yang kebetulan senama,
+        // dan tidak ada yang menunjukkan ketiganya ditagih sebagai satu.
+        //
+        // Item yang titiknya cuma satu dicetak persis seperti dulu — dokumen
+        // lama tidak boleh berubah bentuk hanya karena kemampuan ini ada.
         $grup = function (string $judul, array $items, bool $withLokasi, bool $tanpaHarga) use ($h, $rp): string {
             if (!$items) return '';
+            // ■/□ (bukan ☑/☐) — font PDF DejaVu tidak punya glyph ballot-box.
+            $tandaOn  = '<span style="color:#0D9488">■</span>';
+            $tandaOff = '<span style="color:#9ca3af">□</span>';
+            $nilai = function ($b, string $sat) use ($h, $rp): string {
+                return (float) $b > 0
+                    ? $h($rp($b) . ($sat !== '' ? ' ' . $sat : ''))
+                    : '<span class="muted">—</span>';
+            };
+            $kolomLbl = $tanpaHarga ? ' colspan="2" style="width:auto"' : '';
+
+            // Baris berurutan yang namanya sama → satu blok.
+            $blok = [];
+            foreach ($items as $it) {
+                $nama = trim((string) ($it['nama'] ?? ''));
+                if ($nama === '') continue;
+                $n = count($blok);
+                if ($n > 0 && strcasecmp((string) $blok[$n - 1]['nama'], $nama) === 0) $blok[$n - 1]['baris'][] = $it;
+                else $blok[] = ['nama' => $nama, 'baris' => [$it]];
+            }
+            if (!$blok) return '';
+
             // Judul bagian & isinya satu blok utuh — tidak pernah terpisah halaman.
             $x = '<div class="bagian"><div class="sec">' . $h($judul) . '</div><table class="pay">';
-            foreach ($items as $it) {
-                // ■/□ (bukan ☑/☐) — font PDF DejaVu tidak punya glyph ballot-box.
-                $tanda = !empty($it['checked'])
-                    ? '<span style="color:#0D9488">■</span>'
-                    : '<span style="color:#9ca3af">□</span>';
-                // Baris "Lainnya" dicetak beserta isian bebasnya, selain lokasinya.
-                $ket = trim((string) ($it['ket'] ?? '')) !== ''
-                    ? ' <span class="muted">— ' . $h($it['ket']) . '</span>' : '';
-                if ($withLokasi && trim((string) ($it['lokasi'] ?? '')) !== '') {
-                    $ket .= ' <span class="muted">— Lokasi: ' . $h($it['lokasi']) . '</span>';
+            foreach ($blok as $bl) {
+                // Titik yang tidak terpakai sama sekali tidak ikut tercetak: ia
+                // hanya sisa tombol "+ titik" yang batal diisi.
+                $pakai = [];
+                foreach ($bl['baris'] as $it) {
+                    if (empty($it['checked'])
+                        && trim((string) ($it['lokasi'] ?? '')) === ''
+                        && trim((string) ($it['ket'] ?? '')) === ''
+                        && (float) ($it['biaya'] ?? 0) <= 0) continue;
+                    $pakai[] = $it;
                 }
-                $b   = $it['biaya'] ?? '';
-                $sat = trim((string) ($it['satuan'] ?? ''));
-                $x .= '<tr><td class="lbl"' . ($tanpaHarga ? ' colspan="2" style="width:auto"' : '') . '>'
-                    . $tanda . ' ' . $h($it['nama']) . $ket . '</td>'
-                    . ($tanpaHarga ? '' : '<td class="amt">'
-                        . ((float) $b > 0 ? $h($rp($b) . ($sat !== '' ? ' ' . $sat : '')) : '<span class="muted">—</span>')
-                        . '</td>')
-                    . '</tr>';
+
+                // ── Satu titik: bentuk lama, apa adanya ──────────────────────
+                if (count($pakai) <= 1) {
+                    $it  = $pakai[0] ?? $bl['baris'][0];
+                    // Baris "Lainnya" dicetak beserta isian bebasnya, selain lokasinya.
+                    $ket = trim((string) ($it['ket'] ?? '')) !== ''
+                        ? ' <span class="muted">— ' . $h($it['ket']) . '</span>' : '';
+                    if ($withLokasi && trim((string) ($it['lokasi'] ?? '')) !== '') {
+                        $ket .= ' <span class="muted">— Lokasi: ' . $h($it['lokasi']) . '</span>';
+                    }
+                    $x .= '<tr><td class="lbl"' . $kolomLbl . '>'
+                        . (!empty($it['checked']) ? $tandaOn : $tandaOff) . ' ' . $h($bl['nama']) . $ket . '</td>'
+                        . ($tanpaHarga ? '' : '<td class="amt">'
+                            . $nilai($it['biaya'] ?? '', trim((string) ($it['satuan'] ?? ''))) . '</td>')
+                        . '</tr>';
+                    continue;
+                }
+
+                // ── Beberapa titik: kepala item, lalu satu baris per titik ───
+                $adaCek = false;
+                foreach ($bl['baris'] as $it) { if (!empty($it['checked'])) { $adaCek = true; break; } }
+                $x .= '<tr><td class="lbl"' . $kolomLbl . '>'
+                    . ($adaCek ? $tandaOn : $tandaOff) . ' ' . $h($bl['nama'])
+                    . ' <span class="muted">(' . count($pakai) . ' titik)</span></td>'
+                    . ($tanpaHarga ? '' : '<td class="amt"></td>') . '</tr>';
+
+                $jml = 0.0; $satuanSama = true; $satuan1 = null;
+                foreach ($pakai as $no => $it) {
+                    $sat = trim((string) ($it['satuan'] ?? ''));
+                    // Lokasi kosong tetap dapat namanya sendiri — tanpa itu dua
+                    // baris tak berlokasi tercetak sebagai dua garis yang sama.
+                    $lbl = trim((string) ($it['lokasi'] ?? ''));
+                    $lbl = $h($lbl !== '' ? $lbl : 'Titik ke-' . ($no + 1));
+                    if (trim((string) ($it['ket'] ?? '')) !== '') $lbl = $h($it['ket']) . ' &mdash; ' . $lbl;
+                    $x .= '<tr><td class="lbl sub2"' . $kolomLbl . '>&ndash; ' . $lbl . '</td>'
+                        . ($tanpaHarga ? '' : '<td class="amt lemah">' . $nilai($it['biaya'] ?? '', $sat) . '</td>')
+                        . '</tr>';
+                    $jml += (float) ($it['biaya'] ?? 0);
+                    if ($satuan1 === null) $satuan1 = $sat;
+                    elseif ($satuan1 !== $sat) $satuanSama = false;
+                }
+                // Jumlah per item hanya dicetak bila satuan semua titiknya sama.
+                // Menjumlahkan "/Titik/Hari" dengan "/Paket" menghasilkan angka
+                // yang tidak berarti apa pun — lebih baik tidak ada sama sekali.
+                if (!$tanpaHarga && $jml > 0 && $satuanSama) {
+                    $x .= '<tr><td class="lbl sub2">&ndash; Jumlah ' . $h($bl['nama']) . '</td>'
+                        . '<td class="amt">' . $h($rp($jml) . ($satuan1 ? ' ' . $satuan1 : '')) . '</td></tr>';
+                }
             }
             return $x . '</table></div>';
         };

@@ -13,6 +13,38 @@
 
 ## Fitur & Perbaikan — 16 November 2026
 
+### Satu media promo bisa dipasang di beberapa titik, masing-masing dengan harganya
+
+- Di Form Utilities tiap item hanya punya **satu** kotak Lokasi Pemasangan dan **satu** kotak Biaya.
+  Padahal satu media kerap dipasang di lebih dari satu tempat dengan harga yang berbeda &mdash; TVC di
+  tiga titik, misalnya. Selama ini jalan keluarnya menumpuk beberapa lokasi dalam satu kotak dan
+  menuliskan satu angka gabungan; di surat yang sampai ke penyewa, titik mana dihargai berapa jadi tidak
+  bisa dibaca sama sekali.
+- Sekarang tiap item punya tautan **&ldquo;+ titik lain&rdquo;** di kolom Item. Sekali klik, muncul baris
+  baru untuk item yang sama &mdash; lokasi dan biayanya sendiri, satuannya ikut terbawa &mdash; dan baris
+  itu bisa dibuang lagi lewat **&ldquo;hapus titik ini&rdquo;**. Baris tambahan ditandai &ldquo;&#8627;&rdquo;
+  supaya terbaca sebagai titik lain dari item di atasnya, bukan item baru.
+- **Total Nilai Sewa ikut menghitung semua titik** yang dicentang, persis seperti item satuan selama ini.
+  Menambah titik menaikkan totalnya, menghapusnya menurunkannya kembali.
+- **Di surat, PDF, dan halaman tanda tangan client** bentuknya sama: nama itemnya sekali, lalu titiknya
+  menjorok di bawahnya, lalu jumlahnya.
+
+  > &#9632; TVC <span style="color:#6b7280">(3 titik)</span>
+  > &nbsp;&nbsp;&nbsp;&ndash; GF Depan Beach Gate &nbsp;Rp. 77.000 /Titik/Hari
+  > &nbsp;&nbsp;&nbsp;&ndash; LG Atrium Utama &nbsp;Rp. 55.000 /Titik/Hari
+  > &nbsp;&nbsp;&nbsp;&ndash; UG Void Timur &nbsp;Rp. 40.000 /Titik/Hari
+  > &nbsp;&nbsp;&nbsp;&ndash; Jumlah TVC &nbsp;**Rp. 172.000 /Titik/Hari**
+
+- **Jumlah per item hanya dicetak bila satuan semua titiknya sama.** Menjumlahkan &ldquo;/Titik/Hari&rdquo;
+  dengan &ldquo;/Paket&rdquo; menghasilkan angka yang tidak berarti apa pun &mdash; lebih baik tidak ada
+  sama sekali daripada ada tapi menyesatkan.
+- **Item yang titiknya tetap satu dicetak persis seperti dulu**, tanpa kepala dan tanpa baris jumlah.
+  Dokumen lama tidak berubah bentuk hanya karena kemampuan ini ada.
+- Titik yang ditambahkan lalu dibiarkan kosong tidak ikut tercetak, dan hilang sendiri saat dokumennya
+  dibuka lagi &mdash; ia memang cuma sisa klik yang batal.
+- Tautannya hanya ada di **Media Promo**. Utilities dan Parkir tidak punya kolom lokasi, sehingga dua baris
+  item yang sama di sana tidak akan bisa dibedakan isinya oleh siapa pun yang membaca suratnya.
+
 ### Orang baru: akun login dan barisnya di Master PIC dibuat sekaligus
 
 - Menambah satu orang ke CLARA sebetulnya **dua pekerjaan di dua tempat**: menu **Users &amp; Role** membuat
