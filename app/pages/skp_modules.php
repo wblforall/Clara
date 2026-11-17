@@ -959,7 +959,12 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
                 return '<td class="nilai">Rp. ' . $h($nf($b)) . '</td>'
                      . '<td class="sat">' . ($sat !== '' ? $h($sat) : '') . '</td>';
             };
-            $kolomLbl = $tanpaHarga ? ' colspan="3" style="width:auto"' : '';
+            // Penanda (■ / □ / &ndash;) jadi KOLOM tersendiri. Dulu ia ikut di
+            // dalam sel nama, dan baris titik dijorokkan lewat padding — hasilnya
+            // nama titik tidak pernah segaris dengan nama itemnya, karena yang
+            // menentukan letaknya bukan kolom melainkan lebar glyph penanda.
+            // Dipisah begini, seluruh nama mulai di satu garis apa pun penandanya.
+            $kolomNm = $tanpaHarga ? ' colspan="3" style="width:auto"' : '';
 
             // Baris berurutan yang namanya sama → satu blok.
             $blok = [];
@@ -995,8 +1000,8 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
                     if ($withLokasi && trim((string) ($it['lokasi'] ?? '')) !== '') {
                         $ket .= ' <span class="muted">— Lokasi: ' . $h($it['lokasi']) . '</span>';
                     }
-                    $x .= '<tr><td class="lbl"' . $kolomLbl . '>'
-                        . (!empty($it['checked']) ? $tandaOn : $tandaOff) . ' ' . $h($bl['nama']) . $ket . '</td>'
+                    $x .= '<tr><td class="tnd">' . (!empty($it['checked']) ? $tandaOn : $tandaOff) . '</td>'
+                        . '<td class="nm"' . $kolomNm . '>' . $h($bl['nama']) . $ket . '</td>'
                         . ($tanpaHarga ? '' : $nilai($it['biaya'] ?? '', trim((string) ($it['satuan'] ?? ''))))
                         . '</tr>';
                     continue;
@@ -1005,8 +1010,8 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
                 // ── Beberapa titik: kepala item, lalu satu baris per titik ───
                 $adaCek = false;
                 foreach ($bl['baris'] as $it) { if (!empty($it['checked'])) { $adaCek = true; break; } }
-                $x .= '<tr><td class="lbl"' . $kolomLbl . '>'
-                    . ($adaCek ? $tandaOn : $tandaOff) . ' ' . $h($bl['nama'])
+                $x .= '<tr><td class="tnd">' . ($adaCek ? $tandaOn : $tandaOff) . '</td>'
+                    . '<td class="nm"' . $kolomNm . '>' . $h($bl['nama'])
                     . ' <span class="muted">(' . count($pakai) . ' titik)</span></td>'
                     . ($tanpaHarga ? '' : '<td class="nilai kosong" colspan="2"></td>')
                     . '</tr>';
@@ -1021,7 +1026,8 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
                     $lbl = trim((string) ($it['lokasi'] ?? ''));
                     $lbl = $h($lbl !== '' ? $lbl : 'Titik ke-' . ($no + 1));
                     if (trim((string) ($it['ket'] ?? '')) !== '') $lbl = $h($it['ket']) . ' &mdash; ' . $lbl;
-                    $x .= '<tr><td class="lbl titik"' . $kolomLbl . '>&ndash; ' . $lbl . '</td>'
+                    $x .= '<tr><td class="tnd">&ndash;</td>'
+                        . '<td class="nm"' . $kolomNm . '>' . $lbl . '</td>'
                         . ($tanpaHarga ? '' : $nilai($it['biaya'] ?? '', trim((string) ($it['satuan'] ?? ''))))
                         . '</tr>';
                 }

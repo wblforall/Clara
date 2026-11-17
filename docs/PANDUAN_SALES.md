@@ -66,13 +66,13 @@ Sewa media promo &mdash; T Banner, Neon Box, TVC, dan sebagainya &mdash; dicatat
 
 Jangan menumpuk beberapa lokasi ke dalam satu kotak lalu menuliskan satu angka gabungan: di surat yang dibaca penyewa, titik mana dihargai berapa jadi tidak terlihat sama sekali.
 
-Di surat, PDF, maupun halaman tanda tangan client, bentuknya sama &mdash; nama itemnya sekali, lalu titiknya menjorok di bawahnya, lalu jumlahnya:
+Di surat, PDF, maupun halaman tanda tangan client, bentuknya sama &mdash; nama itemnya sekali, lalu titiknya berderet di bawahnya dengan lokasi dan harganya masing-masing:
 
-@@SHOT:fu-titik-surat|Hasilnya di surat &mdash; nama item sekali, titiknya menjorok, lalu baris jumlahnya@@
+@@SHOT:fu-titik-surat|Hasilnya di surat &mdash; nama item sekali, titiknya berderet di bawahnya@@
 
-> **Baris jumlah hanya muncul bila satuan semua titiknya sama.** Menjumlahkan &ldquo;/Titik/Hari&rdquo; dengan &ldquo;/Paket&rdquo; menghasilkan angka yang tidak berarti apa pun, jadi barisnya sengaja tidak dicetak. Samakan satuannya bila jumlahnya memang perlu tampil.
+> **Tidak ada baris &ldquo;Jumlah&rdquo; per item.** Nilai yang ditagih sudah berdiri sendiri di Rincian Biaya di bawah, jadi daftar ini cukup menyebut tiap titik beserta harganya.
 
-> Item yang titiknya tetap satu dicetak seperti biasa: satu baris, tanpa kepala dan tanpa baris jumlah. Titik yang terlanjur ditambah lalu dibiarkan kosong tidak ikut tercetak, dan hilang sendiri begitu dokumennya dibuka lagi.
+> Item yang titiknya tetap satu dicetak seperti biasa: satu baris, tanpa kepala di atasnya. Titik yang terlanjur ditambah lalu dibiarkan kosong tidak ikut tercetak, dan hilang sendiri begitu dokumennya dibuka lagi.
 
 ### E. Permintaan Kontrak ke Legal
 1. Menu **Permintaan Kontrak** → buat dari SKP final.

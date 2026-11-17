@@ -27,12 +27,12 @@
 - **Total Nilai Sewa ikut menghitung semua titik** yang dicentang, persis seperti item satuan selama ini.
   Menambah titik menaikkan totalnya, menghapusnya menurunkannya kembali.
 - **Di surat, PDF, dan halaman tanda tangan client** bentuknya sama: nama itemnya sekali, lalu titiknya
-  menjorok di bawahnya.
+  berderet di bawahnya.
 
-  > &#9632; TVC <span style="color:#6b7280">(3 titik)</span>
-  > &nbsp;&nbsp;&nbsp;&ndash; GF Depan Beach Gate &nbsp;&nbsp;**Rp. 77.000** &nbsp;/Titik/Hari
-  > &nbsp;&nbsp;&nbsp;&ndash; LG Atrium Utama &nbsp;&nbsp;**Rp. 55.000** &nbsp;/Titik/Hari
-  > &nbsp;&nbsp;&nbsp;&ndash; UG Void Timur &nbsp;&nbsp;**Rp. 40.000** &nbsp;/Titik/Hari
+  > &#9632; &nbsp;TVC <span style="color:#6b7280">(3 titik)</span>
+  > &ndash; &nbsp;GF Depan Beach Gate &nbsp;&nbsp;**Rp. 77.000** &nbsp;/Titik/Hari
+  > &ndash; &nbsp;LG Atrium Utama &nbsp;&nbsp;**Rp. 55.000** &nbsp;/Titik/Hari
+  > &ndash; &nbsp;UG Void Timur &nbsp;&nbsp;**Rp. 40.000** &nbsp;/Titik/Hari
 
 - **Tidak ada baris &ldquo;Jumlah&rdquo; per item.** Nilai yang ditagih sudah berdiri sendiri di Rincian
   Biaya, dan menjumlahkan tarif yang satuannya bisa berbeda-beda hanya menambah satu angka lagi yang tidak
@@ -63,6 +63,10 @@
   Dipakai bentuk rata-kiri karena itu.
 - Perataan yang sama dipakai di **Rincian Biaya** &mdash; di sana pun &ldquo;Rp. 247.500&rdquo; dulu tidak
   pernah lurus dengan &ldquo;Rp. 2.250.000&rdquo; di baris atasnya.
+- **Penandanya (&#9632; / &#9633; / &ndash;) pindah ke kolomnya sendiri.** Baris titik dulu dijorokkan dengan
+  padding, sehingga nama titik tidak pernah benar-benar segaris dengan nama itemnya &mdash; yang menentukan
+  letaknya bukan kolom, melainkan lebar glyph penandanya. Sekarang seluruh nama, item maupun titik, mulai
+  di satu garis yang sama.
 
 ### Orang baru: akun login dan barisnya di Master PIC dibuat sekaligus
 

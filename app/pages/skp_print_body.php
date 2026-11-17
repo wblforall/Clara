@@ -152,7 +152,13 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
    dan di tengah tabel yang semua barisnya setinggi sama, baris serapat itu
    terbaca sesak — persis yang dikeluhkan. Yang dipakai hanya menjoroknya. */
 .skpdoc table.pay.fu td { padding: 5px 8px; }
-.skpdoc table.pay.fu td.titik { padding-left: 13mm; text-indent: -3.5mm; }
+/* Penanda ■ / □ / &ndash; berdiri di kolomnya sendiri yang sempit, lalu nama
+   itemnya di kolom berikutnya. Nama titik jadi mulai di garis yang sama dengan
+   nama item di atasnya — sebelumnya baris titik dijorokkan dengan padding, dan
+   tidak pernah benar-benar segaris. Garis di antara keduanya dihapus supaya
+   tetap terbaca satu kolom. */
+.skpdoc table.pay.fu td.tnd { width: 4%;  text-align: left; padding-right: 0; border-right: none; }
+.skpdoc table.pay.fu td.nm  { width: 52%; padding-left: 3px; border-left: none; }
 /* Kolom uang: "Rp." berdiri di satu garis, angkanya rata kanan di garis yang
    sama, satuannya menempel di ujung kanan. Lebarnya ditetapkan supaya ketiganya
    lurus ke bawah — tabel yang lebar kolomnya dibiarkan menyesuaikan isi akan
