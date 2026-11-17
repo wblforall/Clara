@@ -51,7 +51,30 @@ Urutannya **offer-first**: semua berawal dari Surat Penawaran, bukan input trans
 
 @@PAIR:skp|m_skp|Daftar SKP Pameran — status menyebut dokumen sedang menunggu tahap siapa@@
 
-### D. Permintaan Kontrak ke Legal
+### D. Form Utilities (Media)
+
+Sewa media promo &mdash; T Banner, Neon Box, TVC, dan sebagainya &mdash; dicatat lewat **Form Utilities**, bukan SKP Pameran. Alurnya sama: isi, submit, diparaf berjenjang, lalu nomor dokumennya terbit.
+
+1. Menu **Form Utilities (Media)**. Bisa dibuat dari transaksi media yang sudah ada, atau berdiri sendiri lewat menu itu.
+2. **Data Permohonan** terisi sendiri dari titik media & tanggal sewanya &mdash; boleh diketik ulang bila penulisannya mau lain.
+3. Centang item yang dipakai pada tiga kelompok: **Utilities**, **Media Promo**, dan **Parkir Kendaraan**, lalu isi **Lokasi Pemasangan** dan **Biaya**-nya.
+4. Biaya item yang dicentang **ikut menambah Total Nilai Sewa**, kecuali kelompok yang saklar *Sembunyikan harga di surat*-nya menyala &mdash; harga yang tidak tercetak memang tidak boleh diam-diam menambah tagihan.
+
+**Satu item boleh dipasang di beberapa titik.** Satu media kerap terpasang di lebih dari satu tempat dengan harga yang berbeda. Klik **&ldquo;+ titik lain&rdquo;** pada item itu: muncul baris baru untuk item yang sama, dengan lokasi dan biayanya sendiri. Baris tambahan ditandai &ldquo;&#8627;&rdquo; dan bisa dibuang lagi lewat **&ldquo;hapus titik ini&rdquo;**.
+
+@@SHOT:fu-titik-form|Media Promo &mdash; TVC dipasang di tiga titik, masing-masing dengan lokasi & biayanya sendiri@@
+
+Jangan menumpuk beberapa lokasi ke dalam satu kotak lalu menuliskan satu angka gabungan: di surat yang dibaca penyewa, titik mana dihargai berapa jadi tidak terlihat sama sekali.
+
+Di surat, PDF, maupun halaman tanda tangan client, bentuknya sama &mdash; nama itemnya sekali, lalu titiknya menjorok di bawahnya, lalu jumlahnya:
+
+@@SHOT:fu-titik-surat|Hasilnya di surat &mdash; nama item sekali, titiknya menjorok, lalu baris jumlahnya@@
+
+> **Baris jumlah hanya muncul bila satuan semua titiknya sama.** Menjumlahkan &ldquo;/Titik/Hari&rdquo; dengan &ldquo;/Paket&rdquo; menghasilkan angka yang tidak berarti apa pun, jadi barisnya sengaja tidak dicetak. Samakan satuannya bila jumlahnya memang perlu tampil.
+
+> Item yang titiknya tetap satu dicetak seperti biasa: satu baris, tanpa kepala dan tanpa baris jumlah. Titik yang terlanjur ditambah lalu dibiarkan kosong tidak ikut tercetak, dan hilang sendiri begitu dokumennya dibuka lagi.
+
+### E. Permintaan Kontrak ke Legal
 1. Menu **Permintaan Kontrak** → buat dari SKP final.
 2. Unggah berkas pendukung (Akta, Surat Kuasa bila perlu).
 3. Kirim → menghasilkan tautan untuk **Departemen Legal** meninjau & menyetujui. Anda pantau statusnya di sini.

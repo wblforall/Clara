@@ -44,6 +44,8 @@
   dibuka lagi &mdash; ia memang cuma sisa klik yang batal.
 - Tautannya hanya ada di **Media Promo**. Utilities dan Parkir tidak punya kolom lokasi, sehingga dua baris
   item yang sama di sana tidak akan bisa dibedakan isinya oleh siapa pun yang membaca suratnya.
+- **User Guide Sales** bertambah bagian **D. Form Utilities (Media)** &mdash; cara mengisi ketiga kelompok,
+  cara menambah titik, dan bentuk jadinya di surat, berikut tangkapan layarnya.
 
 ### Orang baru: akun login dan barisnya di Master PIC dibuat sekaligus
 

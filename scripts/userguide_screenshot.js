@@ -15,7 +15,9 @@ const desk = [
   { n: 'login',     u: 'login', noLogin: true },
   { n: 'dashboard', u: 'dashboard' },
   // Sales
-  { n: 'offers',     u: 'offers' },
+  // Tab "On Going" sering kosong untuk akun sales yang penawarannya sudah deal
+  // semua — dan daftar kosong tidak mengajarkan apa pun di panduan.
+  { n: 'offers',     u: 'offers&tab=deal' },
   { n: 'offer_form', u: 'offer_form' },
   { n: 'skp',        u: 'skp' },
   { n: 'skp_form',   u: 'skp_form&id=27' },
@@ -37,11 +39,19 @@ const desk = [
 // Mobile (390x844)
 const mob = [
   { n: 'm_home',         u: 'm_home' },
-  { n: 'm_offers',       u: 'm_offers' },
+  { n: 'm_offers',       u: 'm_offers&tab=deal' },
   { n: 'm_skp',          u: 'm_skp' },
   { n: 'm_transactions', u: 'm_transactions' },
   { n: 'm_exec',         u: 'm_exec' },
 ];
+
+// Ambil ulang SEBAGIAN saja: UG_ONLY=offers,skp,m_skp
+// Berguna ketika hanya satu panduan yang berubah. Tanpa penyaring ini,
+// mengambil ulang gambar panduan Sales (login sebagai sales) ikut menimpa
+// gambar panduan Manager & Superadmin dengan layar "tidak punya akses" —
+// karena seluruh daftar di atas dijalankan dari satu akun yang sedang login.
+const hanya = (process.env.UG_ONLY || '').split(',').map(x => x.trim()).filter(Boolean);
+const pilih = daftar => hanya.length ? daftar.filter(x => hanya.includes(x.n)) : daftar;
 
 async function login(p) {
   await p.goto(BASE + '?r=login', { waitUntil: 'networkidle2' });
@@ -63,11 +73,13 @@ async function login(p) {
   // login page dulu (belum login)
   await p.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
   await p.goto(BASE + '?r=login', { waitUntil: 'networkidle2' }); await sleep(400);
-  await p.screenshot({ path: OUT + 'login.png' }); console.log('OK login');
+  if (pilih([{ n: 'login' }]).length) {
+    await p.screenshot({ path: OUT + 'login.png' }); console.log('OK login');
+  }
   await login(p);
   const cookies = await p.cookies();
   // Desktop: viewport (BUKAN fullPage) → rasio konsisten ~3:2, layout rapi di PDF.
-  for (const s of desk) {
+  for (const s of pilih(desk)) {
     if (s.noLogin) continue;
     await p.setViewport({ width: 1280, height: 860, deviceScaleFactor: 1 });
     await p.goto(BASE + '?r=' + s.u, { waitUntil: 'networkidle2' }); await sleep(500);
@@ -76,7 +88,7 @@ async function login(p) {
   // Mobile: viewport 1 layar (BUKAN fullPage) → tampil berdampingan dgn desktop (ssPair).
   const pm = await b.newPage();
   await pm.setCookie(...cookies, { name: 'clara_view', value: 'mobile', domain: DOMAIN, path: '/' });
-  for (const s of mob) {
+  for (const s of pilih(mob)) {
     await pm.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true });
     await pm.goto(BASE + '?r=' + s.u, { waitUntil: 'networkidle2' }); await sleep(600);
     await pm.screenshot({ path: OUT + s.n + '.png', fullPage: false }); console.log('OK', s.n);
