@@ -46,6 +46,14 @@
   item yang sama di sana tidak akan bisa dibedakan isinya oleh siapa pun yang membaca suratnya.
 - **User Guide Sales** bertambah bagian **D. Form Utilities (Media)** &mdash; cara mengisi ketiga kelompok,
   cara menambah titik, dan bentuk jadinya di surat, berikut tangkapan layarnya.
+- **Jarak barisnya dilonggarkan.** Baris titik semula memakai gaya rincian SKP yang sengaja dirapatkan
+  sampai 1px &mdash; di sana memang perlu, supaya surat berjadwal panjang tidak tumpah ke halaman baru.
+  Di tengah daftar centang Form Utilities yang semua barisnya setinggi sama, baris serapat itu terbaca
+  sesak. Sekarang seluruh tabel Form Utilities punya kelas sendiri: barisnya **5px** (dari 4px), jarak
+  kiri-kanannya **8px** (dari 6px), dan titiknya menjorok rata di satu garis. Tabel pembayaran SKP tidak
+  ikut berubah &mdash; keduanya sengaja dipisah supaya tidak saling menyeret.
+- Diukur pada enam dokumen FU yang sudah terbit: **tidak ada yang bertambah halaman**, dan keterisian
+  halaman pertamanya justru naik (77&ndash;85% &rarr; 80&ndash;84%).
 
 ### Orang baru: akun login dan barisnya di Master PIC dibuat sekaligus
 

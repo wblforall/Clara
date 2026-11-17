@@ -82,6 +82,10 @@ function skp_css_rapat(int $tingkat): string
    daripada mengecilkan hurufnya di tingkat 2. */
 .skpdoc table.pay td { padding: 2px 6px; }
 .skpdoc table.pay td.sub2 { padding-top: 0; padding-bottom: 0; }
+/* Form Utilities ikut dirapatkan, tapi dari 6px ke 3px — bukan dikembalikan ke
+   angka tabel SKP. Tanpa baris ini, aturan .fu yang lebih khusus akan menang
+   dan dokumen Media tidak pernah bisa dipadatkan sama sekali. */
+.skpdoc table.pay.fu td { padding: 3px 6px; }
 .skpdoc table.notes td.nt { padding-bottom: 2px; }
 .skpdoc .tgl-surat { margin-top: 9px; }
 .skpdoc table.sign { margin-top: 12px; }
@@ -956,7 +960,7 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
             if (!$blok) return '';
 
             // Judul bagian & isinya satu blok utuh — tidak pernah terpisah halaman.
-            $x = '<div class="bagian"><div class="sec">' . $h($judul) . '</div><table class="pay">';
+            $x = '<div class="bagian"><div class="sec">' . $h($judul) . '</div><table class="pay fu">';
             foreach ($blok as $bl) {
                 // Titik yang tidak terpakai sama sekali tidak ikut tercetak: ia
                 // hanya sisa tombol "+ titik" yang batal diisi.
@@ -1002,7 +1006,7 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
                     $lbl = trim((string) ($it['lokasi'] ?? ''));
                     $lbl = $h($lbl !== '' ? $lbl : 'Titik ke-' . ($no + 1));
                     if (trim((string) ($it['ket'] ?? '')) !== '') $lbl = $h($it['ket']) . ' &mdash; ' . $lbl;
-                    $x .= '<tr><td class="lbl sub2"' . $kolomLbl . '>&ndash; ' . $lbl . '</td>'
+                    $x .= '<tr><td class="lbl titik"' . $kolomLbl . '>&ndash; ' . $lbl . '</td>'
                         . ($tanpaHarga ? '' : '<td class="amt lemah">' . $nilai($it['biaya'] ?? '', $sat) . '</td>')
                         . '</tr>';
                     $jml += (float) ($it['biaya'] ?? 0);
@@ -1013,7 +1017,7 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
                 // Menjumlahkan "/Titik/Hari" dengan "/Paket" menghasilkan angka
                 // yang tidak berarti apa pun — lebih baik tidak ada sama sekali.
                 if (!$tanpaHarga && $jml > 0 && $satuanSama) {
-                    $x .= '<tr><td class="lbl sub2">&ndash; Jumlah ' . $h($bl['nama']) . '</td>'
+                    $x .= '<tr><td class="lbl titik">&ndash; Jumlah ' . $h($bl['nama']) . '</td>'
                         . '<td class="amt">' . $h($rp($jml) . ($satuan1 ? ' ' . $satuan1 : '')) . '</td></tr>';
                 }
             }
@@ -1056,7 +1060,7 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
         $brs = fn(string $l, float $v, string $gaya = '') => '<tr><td class="lbl"' . $gaya . '>' . $l
             . '</td><td class="amt"' . $gaya . '>Rp. ' . $nf($v) . '</td></tr>';
         $o .= '<div style="page-break-inside:avoid">'
-            . '<div class="sec">Rincian Biaya</div><table class="pay">';
+            . '<div class="sec">Rincian Biaya</div><table class="pay fu">';
         if ($tarif > 0) $o .= $brs($h($lblTarif), $tarif);
         $o .= $brs('Total Biaya Sewa', $tot);
         if ($ppn > 0) $o .= $brs('PPN 12%', $ppn);

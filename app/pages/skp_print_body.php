@@ -144,6 +144,15 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
    adalah baris terakhir; kalau ketiganya sama tebal, mata menangkap tiga
    nominal setara dan surat yang tadinya memperjelas malah membingungkan. */
 .skpdoc table.pay td.sub2 { padding: 1px 6px 1px 13mm; text-indent: -3mm; }
+/* Form Utilities. Daftar centangnya panjang dan seluruhnya berupa kotak, jadi
+   barisnya diberi napas lebih daripada tabel pembayaran SKP — yang justru harus
+   padat supaya suratnya tidak tumpah ke halaman berikutnya. Dipisahkan lewat
+   kelas .fu supaya keduanya tidak saling menyeret.
+   Baris titik TIDAK memakai td.sub2: rincian SKP sengaja dirapatkan sampai 1px,
+   dan di tengah tabel yang semua barisnya setinggi sama, baris serapat itu
+   terbaca sesak — persis yang dikeluhkan. Yang dipakai hanya menjoroknya. */
+.skpdoc table.pay.fu td { padding: 5px 8px; }
+.skpdoc table.pay.fu td.titik { padding-left: 13mm; text-indent: -3.5mm; }
 .skpdoc table.pay td.amt.lemah { font-weight: normal; color: #374151; }
 .skpdoc table.pay tr.grand td { background: #f0fdfa; font-weight: bold; color: #0f766e; }
 .skpdoc .chk { font-size: 13px; }
