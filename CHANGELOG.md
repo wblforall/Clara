@@ -30,9 +30,9 @@
   menjorok di bawahnya.
 
   > &#9632; TVC <span style="color:#6b7280">(3 titik)</span>
-  > &nbsp;&nbsp;&nbsp;&ndash; GF Depan Beach Gate &nbsp;&nbsp;Rp. &nbsp;**77.000** &nbsp;/Titik/Hari
-  > &nbsp;&nbsp;&nbsp;&ndash; LG Atrium Utama &nbsp;&nbsp;Rp. &nbsp;**55.000** &nbsp;/Titik/Hari
-  > &nbsp;&nbsp;&nbsp;&ndash; UG Void Timur &nbsp;&nbsp;Rp. &nbsp;**40.000** &nbsp;/Titik/Hari
+  > &nbsp;&nbsp;&nbsp;&ndash; GF Depan Beach Gate &nbsp;&nbsp;**Rp. 77.000** &nbsp;/Titik/Hari
+  > &nbsp;&nbsp;&nbsp;&ndash; LG Atrium Utama &nbsp;&nbsp;**Rp. 55.000** &nbsp;/Titik/Hari
+  > &nbsp;&nbsp;&nbsp;&ndash; UG Void Timur &nbsp;&nbsp;**Rp. 40.000** &nbsp;/Titik/Hari
 
 - **Tidak ada baris &ldquo;Jumlah&rdquo; per item.** Nilai yang ditagih sudah berdiri sendiri di Rincian
   Biaya, dan menjumlahkan tarif yang satuannya bisa berbeda-beda hanya menambah satu angka lagi yang tidak
@@ -53,11 +53,14 @@
   ikut berubah &mdash; keduanya sengaja dipisah supaya tidak saling menyeret.
 - Diukur pada enam dokumen FU yang sudah terbit: **tidak ada yang bertambah halaman**, dan keterisian
   halaman pertamanya justru naik (77&ndash;85% &rarr; 80&ndash;84%).
-- **Kolom uangnya diluruskan.** &ldquo;Rp.&rdquo;, angkanya, dan satuannya dulu satu untai teks yang
-  dirata-kanan &mdash; sehingga letak &ldquo;Rp.&rdquo; ikut bergeser mengikuti panjang angka, dan
-  berderet ke bawah tidak ada satu pun yang lurus. Sekarang ketiganya sel sendiri-sendiri dengan lebar
-  tetap: **&ldquo;Rp.&rdquo; berdiri di satu garis, angkanya rata kanan, satuannya menempel di ujung**.
-  Garis pemisah antar ketiganya dihapus supaya tetap terbaca sebagai satu kolom, bukan kotak berderet.
+- **Kolom uangnya diluruskan.** &ldquo;Rp.&rdquo; beserta angkanya dulu satu untai teks yang dirata-kanan,
+  sehingga letak &ldquo;Rp.&rdquo; ikut bergeser mengikuti panjang angkanya &mdash; berderet ke bawah tidak
+  ada satu pun yang lurus. Sekarang &ldquo;Rp. 77.000&rdquo; duduk di sel sendiri yang **dirata-kiri**:
+  &ldquo;Rp.&rdquo; berdiri di garis yang sama pada tiap baris, dan angkanya tetap **menempel di
+  sebelahnya**. Satuannya sel tersendiri, duduk di ujung kanan.
+- Sempat dicoba memisah &ldquo;Rp.&rdquo; dan angkanya jadi dua sel yang sama-sama rata kanan. Memang lurus
+  &mdash; tapi angka pendek terlempar ke ujung kolomnya sendiri dan menganga jauh dari &ldquo;Rp.&rdquo;-nya.
+  Dipakai bentuk rata-kiri karena itu.
 - Perataan yang sama dipakai di **Rincian Biaya** &mdash; di sana pun &ldquo;Rp. 247.500&rdquo; dulu tidak
   pernah lurus dengan &ldquo;Rp. 2.250.000&rdquo; di baris atasnya.
 
