@@ -941,12 +941,25 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
             // ■/□ (bukan ☑/☐) — font PDF DejaVu tidak punya glyph ballot-box.
             $tandaOn  = '<span style="color:#0D9488">■</span>';
             $tandaOff = '<span style="color:#9ca3af">□</span>';
-            $nilai = function ($b, string $sat) use ($h, $rp): string {
-                return (float) $b > 0
-                    ? $h($rp($b) . ($sat !== '' ? ' ' . $sat : ''))
-                    : '<span class="muted">—</span>';
+            // Kolom uang dipecah TIGA sel: "Rp.", angkanya, lalu satuannya.
+            // Sebelumnya ketiganya satu untai teks yang dirata-kanan, sehingga
+            // letak "Rp." ikut bergeser mengikuti panjang angkanya — berderet ke
+            // bawah tidak ada satu pun yang lurus. Dipecah begini, "Rp." berdiri
+            // di satu garis, angkanya rata kanan di garis yang sama, dan
+            // satuannya tetap menempel di ujung kanan kolom.
+            $nf = fn($v) => number_format((float) $v, 0, ',', '.');
+            $nilai = function ($b, string $sat) use ($h, $nf): string {
+                if (!is_numeric($b) || (float) $b <= 0) {
+                    // Nilai bukan angka (mis. tulisan "termasuk paket") dicetak
+                    // apa adanya di kolom angka; yang benar-benar kosong jadi "—".
+                    $isi = (!is_numeric($b) && trim((string) $b) !== '')
+                        ? $h((string) $b) : '<span class="muted">&mdash;</span>';
+                    return '<td class="rp"></td><td class="angka">' . $isi . '</td><td class="sat"></td>';
+                }
+                return '<td class="rp">Rp.</td><td class="angka">' . $h($nf($b)) . '</td>'
+                     . '<td class="sat">' . ($sat !== '' ? $h($sat) : '') . '</td>';
             };
-            $kolomLbl = $tanpaHarga ? ' colspan="2" style="width:auto"' : '';
+            $kolomLbl = $tanpaHarga ? ' colspan="4" style="width:auto"' : '';
 
             // Baris berurutan yang namanya sama → satu blok.
             $blok = [];
@@ -984,8 +997,7 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
                     }
                     $x .= '<tr><td class="lbl"' . $kolomLbl . '>'
                         . (!empty($it['checked']) ? $tandaOn : $tandaOff) . ' ' . $h($bl['nama']) . $ket . '</td>'
-                        . ($tanpaHarga ? '' : '<td class="amt">'
-                            . $nilai($it['biaya'] ?? '', trim((string) ($it['satuan'] ?? ''))) . '</td>')
+                        . ($tanpaHarga ? '' : $nilai($it['biaya'] ?? '', trim((string) ($it['satuan'] ?? ''))))
                         . '</tr>';
                     continue;
                 }
@@ -996,29 +1008,22 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
                 $x .= '<tr><td class="lbl"' . $kolomLbl . '>'
                     . ($adaCek ? $tandaOn : $tandaOff) . ' ' . $h($bl['nama'])
                     . ' <span class="muted">(' . count($pakai) . ' titik)</span></td>'
-                    . ($tanpaHarga ? '' : '<td class="amt"></td>') . '</tr>';
+                    . ($tanpaHarga ? '' : '<td class="rp"></td><td class="angka"></td><td class="sat"></td>')
+                    . '</tr>';
 
-                $jml = 0.0; $satuanSama = true; $satuan1 = null;
+                // Tidak ada baris "Jumlah" per item: nilai yang ditagih sudah
+                // berdiri sendiri di Rincian Biaya, dan menjumlahkan tarif yang
+                // satuannya bisa berbeda-beda ("/Titik/Hari" dengan "/Paket")
+                // hanya menambah satu angka lagi yang tidak berarti apa pun.
                 foreach ($pakai as $no => $it) {
-                    $sat = trim((string) ($it['satuan'] ?? ''));
                     // Lokasi kosong tetap dapat namanya sendiri — tanpa itu dua
                     // baris tak berlokasi tercetak sebagai dua garis yang sama.
                     $lbl = trim((string) ($it['lokasi'] ?? ''));
                     $lbl = $h($lbl !== '' ? $lbl : 'Titik ke-' . ($no + 1));
                     if (trim((string) ($it['ket'] ?? '')) !== '') $lbl = $h($it['ket']) . ' &mdash; ' . $lbl;
                     $x .= '<tr><td class="lbl titik"' . $kolomLbl . '>&ndash; ' . $lbl . '</td>'
-                        . ($tanpaHarga ? '' : '<td class="amt lemah">' . $nilai($it['biaya'] ?? '', $sat) . '</td>')
+                        . ($tanpaHarga ? '' : $nilai($it['biaya'] ?? '', trim((string) ($it['satuan'] ?? ''))))
                         . '</tr>';
-                    $jml += (float) ($it['biaya'] ?? 0);
-                    if ($satuan1 === null) $satuan1 = $sat;
-                    elseif ($satuan1 !== $sat) $satuanSama = false;
-                }
-                // Jumlah per item hanya dicetak bila satuan semua titiknya sama.
-                // Menjumlahkan "/Titik/Hari" dengan "/Paket" menghasilkan angka
-                // yang tidak berarti apa pun — lebih baik tidak ada sama sekali.
-                if (!$tanpaHarga && $jml > 0 && $satuanSama) {
-                    $x .= '<tr><td class="lbl titik">&ndash; Jumlah ' . $h($bl['nama']) . '</td>'
-                        . '<td class="amt">' . $h($rp($jml) . ($satuan1 ? ' ' . $satuan1 : '')) . '</td></tr>';
                 }
             }
             return $x . '</table></div>';
@@ -1057,8 +1062,14 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
             'fixed'        => 'Nilai Kontrak',
             default        => 'Biaya / Hari',
         };
+        // "Rp." dipisah dari angkanya, sama seperti daftar centang di atas:
+        // dirata-kanan sebagai satu untai, letak "Rp." ikut bergeser mengikuti
+        // panjang angka — "Rp. 247.500" tidak pernah lurus dengan
+        // "Rp. 2.250.000" di barisnya sendiri. Angkanya tetap mentok kanan
+        // karena sel angka menelan kolom satuan yang di sini memang kosong.
         $brs = fn(string $l, float $v, string $gaya = '') => '<tr><td class="lbl"' . $gaya . '>' . $l
-            . '</td><td class="amt"' . $gaya . '>Rp. ' . $nf($v) . '</td></tr>';
+            . '</td><td class="rp"' . $gaya . '>Rp.</td>'
+            . '<td class="angka" colspan="2"' . $gaya . '>' . $nf($v) . '</td></tr>';
         $o .= '<div style="page-break-inside:avoid">'
             . '<div class="sec">Rincian Biaya</div><table class="pay fu">';
         if ($tarif > 0) $o .= $brs($h($lblTarif), $tarif);
@@ -1068,7 +1079,8 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
             $o .= $brs('Jaminan Area (Security Deposit)' . ($depOk ? ' <span class="muted">(Sudah Dibayarkan)</span>' : ''),
                        $dep, $depOk ? ' style="color:#166534"' : '');
         }
-        $o .= '<tr class="grand"><td class="lbl">Grand Total</td><td class="amt">Rp. ' . $nf($bayar) . '</td></tr>'
+        $o .= '<tr class="grand"><td class="lbl">Grand Total</td><td class="rp">Rp.</td>'
+            . '<td class="angka" colspan="2">' . $nf($bayar) . '</td></tr>'
             . '</table>';
         if (trim((string) ($det['terbilang'] ?? '')) !== '') {
             $o .= '<p style="font-size:10.5px;line-height:1.6;margin:5px 0 7px;font-style:italic;font-weight:bold">(terbilang : ' . $h($det['terbilang']) . ')</p>';

@@ -153,6 +153,16 @@ $skpHasQr = !empty($skp['sign_token']) || !empty($PRATINJAU);
    terbaca sesak — persis yang dikeluhkan. Yang dipakai hanya menjoroknya. */
 .skpdoc table.pay.fu td { padding: 5px 8px; }
 .skpdoc table.pay.fu td.titik { padding-left: 13mm; text-indent: -3.5mm; }
+/* Kolom uang: "Rp." berdiri di satu garis, angkanya rata kanan di garis yang
+   sama, satuannya menempel di ujung kanan. Lebarnya ditetapkan supaya ketiganya
+   lurus ke bawah — tabel yang lebar kolomnya dibiarkan menyesuaikan isi akan
+   bergeser setiap kali ada angka yang lebih panjang dari baris lain. */
+.skpdoc table.pay.fu td.lbl   { width: 56%; }
+/* Garis di ANTARA ketiga sel itu dihapus: ketiganya satu kolom uang, dan kalau
+   pemisahnya ikut tergambar tabelnya terbaca sebagai kotak-kotak berderet. */
+.skpdoc table.pay.fu td.rp    { width: 7%;  text-align: right; white-space: nowrap; padding-right: 2px; border-right: none; }
+.skpdoc table.pay.fu td.angka { width: 19%; text-align: right; white-space: nowrap; font-weight: bold; border-left: none; border-right: none; padding-left: 0; padding-right: 0; }
+.skpdoc table.pay.fu td.sat   { width: 18%; text-align: right; white-space: nowrap; color: #374151; border-left: none; }
 .skpdoc table.pay td.amt.lemah { font-weight: normal; color: #374151; }
 .skpdoc table.pay tr.grand td { background: #f0fdfa; font-weight: bold; color: #0f766e; }
 .skpdoc .chk { font-size: 13px; }

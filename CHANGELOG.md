@@ -27,18 +27,17 @@
 - **Total Nilai Sewa ikut menghitung semua titik** yang dicentang, persis seperti item satuan selama ini.
   Menambah titik menaikkan totalnya, menghapusnya menurunkannya kembali.
 - **Di surat, PDF, dan halaman tanda tangan client** bentuknya sama: nama itemnya sekali, lalu titiknya
-  menjorok di bawahnya, lalu jumlahnya.
+  menjorok di bawahnya.
 
   > &#9632; TVC <span style="color:#6b7280">(3 titik)</span>
-  > &nbsp;&nbsp;&nbsp;&ndash; GF Depan Beach Gate &nbsp;Rp. 77.000 /Titik/Hari
-  > &nbsp;&nbsp;&nbsp;&ndash; LG Atrium Utama &nbsp;Rp. 55.000 /Titik/Hari
-  > &nbsp;&nbsp;&nbsp;&ndash; UG Void Timur &nbsp;Rp. 40.000 /Titik/Hari
-  > &nbsp;&nbsp;&nbsp;&ndash; Jumlah TVC &nbsp;**Rp. 172.000 /Titik/Hari**
+  > &nbsp;&nbsp;&nbsp;&ndash; GF Depan Beach Gate &nbsp;&nbsp;Rp. &nbsp;**77.000** &nbsp;/Titik/Hari
+  > &nbsp;&nbsp;&nbsp;&ndash; LG Atrium Utama &nbsp;&nbsp;Rp. &nbsp;**55.000** &nbsp;/Titik/Hari
+  > &nbsp;&nbsp;&nbsp;&ndash; UG Void Timur &nbsp;&nbsp;Rp. &nbsp;**40.000** &nbsp;/Titik/Hari
 
-- **Jumlah per item hanya dicetak bila satuan semua titiknya sama.** Menjumlahkan &ldquo;/Titik/Hari&rdquo;
-  dengan &ldquo;/Paket&rdquo; menghasilkan angka yang tidak berarti apa pun &mdash; lebih baik tidak ada
-  sama sekali daripada ada tapi menyesatkan.
-- **Item yang titiknya tetap satu dicetak persis seperti dulu**, tanpa kepala dan tanpa baris jumlah.
+- **Tidak ada baris &ldquo;Jumlah&rdquo; per item.** Nilai yang ditagih sudah berdiri sendiri di Rincian
+  Biaya, dan menjumlahkan tarif yang satuannya bisa berbeda-beda hanya menambah satu angka lagi yang tidak
+  berarti apa pun.
+- **Item yang titiknya tetap satu dicetak persis seperti dulu**, tanpa kepala di atasnya.
   Dokumen lama tidak berubah bentuk hanya karena kemampuan ini ada.
 - Titik yang ditambahkan lalu dibiarkan kosong tidak ikut tercetak, dan hilang sendiri saat dokumennya
   dibuka lagi &mdash; ia memang cuma sisa klik yang batal.
@@ -54,6 +53,13 @@
   ikut berubah &mdash; keduanya sengaja dipisah supaya tidak saling menyeret.
 - Diukur pada enam dokumen FU yang sudah terbit: **tidak ada yang bertambah halaman**, dan keterisian
   halaman pertamanya justru naik (77&ndash;85% &rarr; 80&ndash;84%).
+- **Kolom uangnya diluruskan.** &ldquo;Rp.&rdquo;, angkanya, dan satuannya dulu satu untai teks yang
+  dirata-kanan &mdash; sehingga letak &ldquo;Rp.&rdquo; ikut bergeser mengikuti panjang angka, dan
+  berderet ke bawah tidak ada satu pun yang lurus. Sekarang ketiganya sel sendiri-sendiri dengan lebar
+  tetap: **&ldquo;Rp.&rdquo; berdiri di satu garis, angkanya rata kanan, satuannya menempel di ujung**.
+  Garis pemisah antar ketiganya dihapus supaya tetap terbaca sebagai satu kolom, bukan kotak berderet.
+- Perataan yang sama dipakai di **Rincian Biaya** &mdash; di sana pun &ldquo;Rp. 247.500&rdquo; dulu tidak
+  pernah lurus dengan &ldquo;Rp. 2.250.000&rdquo; di baris atasnya.
 
 ### Orang baru: akun login dan barisnya di Master PIC dibuat sekaligus
 
