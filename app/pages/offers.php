@@ -2192,16 +2192,24 @@ function offer_form(PDO $pdo): void
                         <option value="cycle_end" <?= ($offer['cycle_recognition'] ?? '') === 'cycle_end' ? 'selected' : '' ?>>Bulan Akhir siklus</option>
                     </select>
                 </div>
-                <div class="wide" style="display:flex;align-items:flex-start;gap:10px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:11px 14px">
-                    <input type="checkbox" name="prorata_kalender" id="prorata_kalender" value="1" style="width:18px;height:18px;flex-shrink:0;margin-top:1px" <?= !empty($offer['prorata_kalender']) ? 'checked' : '' ?> <?= $disabled ?>>
+                <?php /* Prorata hanya punya arti pada harga BULANAN: harga harian
+                         sudah dihitung per hari, jadi tidak ada yang perlu
+                         diprorata. Dulu kotaknya tetap bisa dicentang pada
+                         harga harian dan centangnya dibuang diam-diam saat
+                         disimpan — kelihatannya fiturnya rusak. Sekarang
+                         keadaannya terbaca di kotaknya sendiri. */ ?>
+                <div class="wide" id="prorata_wrap" style="display:flex;align-items:flex-start;gap:10px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:11px 14px">
+                    <input type="checkbox" name="prorata_kalender" id="prorata_kalender" value="1" style="width:18px;height:18px;flex-shrink:0;margin-top:1px" <?= !empty($offer['prorata_kalender']) ? 'checked' : '' ?> <?= $disabled ?> data-kunci="<?= $disabled ? '1' : '' ?>">
                     <label for="prorata_kalender" style="margin:0;cursor:pointer">
                         <span style="font-weight:700;color:#92400e">Prorata ikut bulan kalender</span>
                         <span class="help" style="display:block;margin-top:2px;font-weight:400">
                             Centang bila kontrak tidak mulai di tanggal 1. Bulan yang tidak penuh dihitung
                             <strong>per hari bulan itu</strong> (mis. 11&ndash;30 November = 20/30 bulan), sisanya bulan penuh &mdash;
                             cara yang dipakai surat penawaran kertas. Tanpa centang, siklusnya mengikuti tanggal mulai
-                            (11 &rarr; 10) dan totalnya bisa berbeda ratusan ribu. Hanya berlaku untuk Pricing Type <strong>monthly</strong>.
+                            (11 &rarr; 10) dan totalnya bisa berbeda ratusan ribu.
+                            Berlaku untuk Dasar Harga Sewa <strong>Per bulan</strong> dan <strong>Per m&sup2; / bulan</strong>.
                         </span>
+                        <span class="help" id="prorata_alasan" style="display:none;margin-top:4px;font-weight:600;color:#92400e"></span>
                     </label>
                 </div>
                 <div class="wide" style="display:flex;align-items:flex-start;gap:10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:11px 14px">
@@ -2890,7 +2898,14 @@ function offer_form(PDO $pdo): void
                 var m = byCode[code]; if (!m) return;
                 var area = document.getElementById('area_sqm'), rate = document.getElementById('unit_rate'), pt = document.getElementById('pricing_type');
                 if (m.rate && rate && !rate.value) claraSetRateOffer(m.rate);
-                if (m.pricing_type && pt) { pt.value = m.pricing_type; updateSatuanRate(); }
+                // Mengganti Dasar Harga Sewa dari master adalah perubahan betulan:
+                // kotak prorata, kalkulasi, dan jadwal harga ikut menyesuaikan.
+                // Mengisi .value saja tidak membangunkan satu pun dari mereka.
+                if (m.pricing_type && pt) {
+                    pt.value = m.pricing_type;
+                    updateSatuanRate();
+                    pt.dispatchEvent(new Event('change', { bubbles: true }));
+                }
                 if (area && !area.value) area.value = m.area_sqm || 0;
                 <?php if ($module === 'media'): ?>
                 var a = parseSizeM2(m.size); if (a > 0 && area) area.value = a.toFixed(2);
@@ -3236,17 +3251,21 @@ function offer_form(PDO $pdo): void
                     case 'daily_point': calc = rate * days; break;
                     case 'daily_slot':  calc = rate * Math.max(1, slots) * days; break;
                     case 'daily_area':  calc = rate * Math.max(1, area) * days; break;
+                    // Prorata bulan kalender berlaku untuk KEDUA harga bulanan.
+                    // Yang membedakan "per bulan" dan "per m2 / bulan" hanyalah
+                    // besar sewa sebulannya; pembagian ke bulan kalendernya sama
+                    // persis — sama seperti AllocationService di sisi server,
+                    // yang melewatkan keduanya ke jalur yang sama. Dulu hanya
+                    // 'monthly' yang dihitung prorata di sini, jadi booth yang
+                    // harganya per m2 per bulan mencentang kotaknya dan tidak
+                    // terjadi apa-apa, di layar maupun setelah disimpan.
                     case 'monthly_area':
-                        calc = rate * Math.max(1, area) * Math.max(1, months); break;
                     case 'monthly':
-                        // Prorata bulan kalender: bulan yang tidak penuh dihitung
-                        // per hari bulan itu. Harus sama persis dengan
-                        // AllocationService di sisi server, kalau tidak angka di
-                        // layar berbeda dari angka yang tersimpan.
                         var pk = document.getElementById('prorata_kalender');
-                        calc = (pk && pk.checked && s && e)
-                             ? prorataKalender(s, e, rate)
-                             : rate * Math.max(1, months);
+                        var sewaBulan = pricing === 'monthly_area' ? rate * Math.max(1, area) : rate;
+                        calc = (pk && pk.checked && !pk.disabled && s && e)
+                             ? prorataKalender(s, e, sewaBulan)
+                             : sewaBulan * Math.max(1, months);
                         break;
                     case 'fixed':   calc = rate; break;
                 }
@@ -3260,8 +3279,8 @@ function offer_form(PDO $pdo): void
                 // Dasar DP & deposit tetap dihitung di sini, tetapi TIDAK ditulis
                 // ke kotak Harga / Bulan: kotak itu diisi sendiri, dan kosong
                 // berarti suratnya memang tidak menyebut harga per bulan.
-                var dasarBulan = (pkM && pkM.checked && pricing === 'monthly')
-                            ? Math.round(rate)
+                var dasarBulan = (pkM && pkM.checked && !pkM.disabled && (pricing === 'monthly' || pricing === 'monthly_area'))
+                            ? Math.round(pricing === 'monthly_area' ? rate * Math.max(1, area) : rate)
                             : (months > 0 ? Math.round(total / months) : total);
                 document.getElementById('total_calc').value = rp(total);
                 document.getElementById('total_calc_h').value = total;
@@ -3440,7 +3459,32 @@ function offer_form(PDO $pdo): void
             // ikut berubah saat itu juga — bukan baru ketahuan setelah disimpan.
             var pkEl = document.getElementById('prorata_kalender');
             if (pkEl) pkEl.addEventListener('change', kalkulasi);
-            var ptEl = document.getElementById('pricing_type'); if (ptEl) ptEl.addEventListener('change', kalkulasi);
+            /**
+             * Kotak prorata hidup hanya pada harga bulanan. Pada harga harian
+             * ia dimatikan DAN alasannya ditulis di kotaknya — bukan dibiarkan
+             * bisa dicentang lalu centangnya hilang tanpa sepatah kata pun
+             * setelah disimpan.
+             */
+            function syncProrata() {
+                var pk = document.getElementById('prorata_kalender');
+                if (!pk || pk.dataset.kunci === '1') return;   // surat terkunci: jangan dihidupkan
+                var pt = (document.getElementById('pricing_type') || {}).value;
+                var wrap = document.getElementById('prorata_wrap');
+                var alasan = document.getElementById('prorata_alasan');
+                var bisa = pt === 'monthly' || pt === 'monthly_area';
+                pk.disabled = !bisa;
+                if (!bisa && pk.checked) pk.checked = false;
+                if (wrap) { wrap.style.opacity = bisa ? '' : '.55'; }
+                if (alasan) {
+                    alasan.style.display = bisa ? 'none' : '';
+                    alasan.innerHTML = bisa ? '' :
+                        'Tidak berlaku untuk Dasar Harga Sewa yang sekarang \u2014 harga harian sudah dihitung per hari, '
+                        + 'jadi tidak ada bulan yang perlu diprorata. Ganti ke <strong>Per bulan</strong> atau '
+                        + '<strong>Per m\u00b2 / bulan</strong> bila sewanya memang dihitung bulanan.';
+                }
+            }
+            var ptEl = document.getElementById('pricing_type');
+            if (ptEl) ptEl.addEventListener('change', function () { syncProrata(); kalkulasi(); });
             ['start_date', 'end_date'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('change', function () { syncRecognition(); kalkulasi(); checkOverlap(); }); });
             var btn = document.getElementById('btn-kalkulasi'); if (btn) btn.addEventListener('click', kalkulasi);
 
@@ -3465,6 +3509,7 @@ function offer_form(PDO $pdo): void
             }
 
             syncRecognition();
+            syncProrata();
             kalkulasi();
             checkOverlap();
         })();
@@ -3595,12 +3640,25 @@ function offer_save(PDO $pdo): void
     // per hari bulan itu, sisanya bulan penuh — cara surat kertas. Totalnya
     // harus datang dari mesin alokasi yang sama supaya angka di surat dan angka
     // di laporan tidak mungkin berbeda.
-    $prorataKal = post('prorata_kalender') === '1' && $pricing === 'monthly' ? 1 : 0;
+    //
+    // Berlaku untuk KEDUA harga bulanan — 'monthly' (harga datar sebulan) dan
+    // 'monthly_area' (harga per m² sebulan). Mesin alokasi sudah melewatkan
+    // keduanya ke jalur yang sama sejak awal; yang menolak monthly_area hanya
+    // baris ini, sehingga booth yang harganya per m² per bulan mencentang
+    // kotaknya lalu centangnya hilang tanpa sepatah kata pun.
+    $bisaProrata = in_array($pricing, ['monthly', 'monthly_area'], true);
+    $prorataKal  = post('prorata_kalender') === '1' && $bisaProrata ? 1 : 0;
+    // Dicentang pada harga harian: tidak bisa dipakai, dan itu harus DISEBUT.
+    // Centang yang hilang diam-diam membuat fiturnya terlihat rusak.
+    $pesanProrata = (post('prorata_kalender') === '1' && !$bisaProrata)
+        ? ' Catatan: "Prorata ikut bulan kalender" tidak ikut tersimpan — Dasar Harga Sewa "'
+          . (clara_pilihan_harga()[$pricing] ?? $pricing) . '" dihitung per hari, jadi tidak ada bulan yang perlu diprorata.'
+        : '';
     // Total kalkulasi (mesin pricing) → ditimpa harga nego final bila ada.
     if ($prorataKal && $start && $end) {
         require_once dirname(__DIR__) . '/AllocationService.php';
         $calc = round(AllocationService::totalCalculated([
-            'pricing_type' => 'monthly', 'unit_rate' => $rate, 'quantity' => 1, 'slots' => $slots,
+            'pricing_type' => $pricing, 'unit_rate' => $rate, 'quantity' => 1, 'slots' => $slots,
             'area_sqm' => $area, 'start_date' => $start, 'end_date' => $end,
             'contract_months' => null, 'prorata_kalender' => 1,
         ]));
@@ -3629,6 +3687,7 @@ function offer_save(PDO $pdo): void
     $pesanNol = $final > 0 ? ''
         : ' PERHATIAN: nilainya Rp 0 — Rate dan Harga Nego Final dua-duanya kosong,'
         . ' dan suratnya akan tercetak Rp 0 sampai salah satunya diisi.';
+    $pesanNol .= $pesanProrata;
     // Harga / Bulan. Untuk kontrak prorata, membagi total dengan jumlah bulan
     // menghasilkan rata-rata (mis. Rp 8.297.619) — bukan tarif yang disepakati
     // dan tidak ada di surat mana pun. Tarif sewanya yang ditampilkan.

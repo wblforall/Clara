@@ -11,6 +11,28 @@
 
 ---
 
+## Fitur & Perbaikan — 17 November 2026
+
+### Prorata bulan kalender akhirnya benar-benar bisa dipakai
+
+- Kotak **&ldquo;Prorata ikut bulan kalender&rdquo;** di Surat Penawaran sudah lama ada, tetapi
+  centangnya hanya tersimpan bila Dasar Harga Sewa-nya tepat **Per bulan**. Pada **Per m&sup2; / bulan**
+  &mdash; dasar harga yang dipakai booth dan island yang disewa bulanan &mdash; centangnya dibuang diam-diam
+  saat disimpan: nilainya tidak berubah, tidak ada pesan apa pun, dan kotaknya kembali kosong begitu
+  suratnya dibuka lagi. Dari 102 penawaran yang pernah dibuat, tidak satu pun tersimpan dengan prorata aktif.
+- Sekarang **Per m&sup2; / bulan ikut diprorata**, di layar maupun saat disimpan. Sewa Rp 10.000.000/m&sup2;/bulan
+  untuk 10 m&sup2;, 11 Nov&ndash;10 Feb, kini bernilai **Rp 302.380.953** (November 20/30 bulan, Februari 10/28)
+  &mdash; bukan Rp 300.000.000 yang menghitung tiga bulan penuh untuk sewa yang tidak penuh tiga bulan.
+- **Dasar DP & Security Deposit** pada kontrak prorata memakai sewa sebulannya, bukan total dibagi jumlah bulan.
+- Pada dasar harga **harian**, kotaknya kini **mati dengan alasannya tertulis** di kotak itu juga: harga harian
+  sudah dihitung per hari, jadi tidak ada bulan yang perlu diprorata. Bila centangnya tetap terkirim, pesan
+  simpannya menyebutkan bahwa centang itu tidak ikut tersimpan &mdash; tidak lagi hilang tanpa sepatah kata.
+- **Tarif yang tercetak di baris diskon** pada kontrak prorata kembali ke angka yang disepakati. Lama sewanya
+  kini dihitung sebagai bulan pecahan (3,0238 bulan), sehingga tarif yang diturunkan dari total berhenti
+  menjadi Rp 10.079.365 untuk harga yang dinegosiasikan Rp 10.000.000.
+
+---
+
 ## Fitur & Perbaikan — 16 November 2026
 
 ### Satu media promo bisa dipasang di beberapa titik, masing-masing dengan harganya

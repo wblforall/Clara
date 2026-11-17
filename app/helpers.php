@@ -1456,6 +1456,45 @@ function clara_pilihan_harga(): array
 }
 
 /**
+ * Lama sewa dalam BULAN pecahan menurut bulan kalender — kembaran
+ * AllocationService::monthlyCalendarAllocations().
+ *
+ * Bulan yang tercakup penuh bernilai 1; bulan yang tidak penuh bernilai
+ * (jumlah hari terpakai / jumlah hari bulan ITU SENDIRI). Jadi 11 Nov 2026
+ * s/d 10 Feb 2027 = 20/30 + 1 + 1 + 10/28 = 3,0238 bulan.
+ *
+ * Dipakai sebagai pengali harga pada kontrak yang diprorata, supaya tarif yang
+ * diturunkan dari total kembali persis ke tarif yang disepakati.
+ */
+function clara_bulan_prorata(string $mulai, string $akhir): float
+{
+    if ($mulai === '' || $akhir === '') return 0.0;
+    try {
+        $s = new DateTimeImmutable($mulai);
+        $e = new DateTimeImmutable($akhir);
+    } catch (Throwable $x) { return 0.0; }
+    if ($e < $s) return 0.0;
+
+    $jml = 0.0;
+    $kursor = $s->modify('first day of this month');
+    while ($kursor <= $e) {
+        $awalBulan  = $kursor;
+        $akhirBulan = $kursor->modify('last day of this month');
+        $a = $awalBulan  < $s ? $s : $awalBulan;
+        $b = $akhirBulan > $e ? $e : $akhirBulan;
+        if ($a <= $b) {
+            $penuh = $a->format('Y-m-d') === $awalBulan->format('Y-m-d')
+                  && $b->format('Y-m-d') === $akhirBulan->format('Y-m-d');
+            $jml += $penuh
+                ? 1.0
+                : ((int) $a->diff($b)->format('%a') + 1) / (int) $akhirBulan->format('d');
+        }
+        $kursor = $kursor->modify('+1 month');
+    }
+    return $jml;
+}
+
+/**
  * Pengali harga sebuah penawaran/transaksi — berapa "satuan" yang dikalikan tarif.
  *
  *   daily_area  : luas × hari      daily_slot : slot × hari
@@ -1491,8 +1530,18 @@ function clara_pengali_harga(array $o): float
     $bulan = max(1, $bulan);
     $luas  = max(1.0, (float) ($o['area_sqm'] ?? 0));
     $slot  = max(1.0, (float) ($o['slots'] ?? 0));
+    // Kontrak prorata TIDAK dikalikan bulan bulat. Sewa 11 Nov s/d 10 Feb
+    // yang diprorata bernilai 3,0238 bulan, bukan 3 — dan pengali inilah yang
+    // dipakai menurunkan "tarif setelah diskon" dari total. Dengan 3, tarif
+    // yang tercetak di surat jadi Rp 10.079.365 untuk harga yang disepakati
+    // Rp 10.000.000: angka yang tidak pernah dinegosiasikan siapa pun.
+    $pt = (string) ($o['pricing_type'] ?? '');
+    if (!empty($o['prorata_kalender']) && in_array($pt, ['monthly', 'monthly_area'], true)) {
+        $bulanPro = clara_bulan_prorata((string) ($o['start_date'] ?? ''), (string) ($o['end_date'] ?? ''));
+        if ($bulanPro > 0) $bulan = $bulanPro;
+    }
 
-    return match ((string) ($o['pricing_type'] ?? '')) {
+    return match ($pt) {
         'daily_point' => (float) $hari,
         'daily_slot'  => $slot * $hari,
         'daily_area'  => $luas * $hari,
