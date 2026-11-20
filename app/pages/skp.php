@@ -1164,6 +1164,15 @@ function skp_form(PDO $pdo): void
         $bq->execute([(int) $skp['id']]);
         $bagi = $bq->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
+    // Paket: PIC penerima income tiap komponen. Dokumen paket melahirkan satu
+    // transaksi per komponen, dan tiap komponen boleh jatuh ke sales berbeda —
+    // paket tiga island kerap dikerjakan dua orang. [offer_item_id => nama PIC]
+    $bagiItem = [];
+    if ($skp) {
+        $bi = $pdo->prepare('SELECT offer_item_id, pic_name FROM skp_item_pic WHERE skp_id = ?');
+        $bi->execute([(int) $skp['id']]);
+        $bagiItem = $bi->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
+    }
     // Acuan jumlah: nilai kontrak dokumen ini, bukan angka yang diketik ulang.
     $nilaiAcuan = (float) ($src['final_amount'] ?: $src['total_calculated']);
     // Masa sewa, harga dan jumlah bulan diisi LANGSUNG di formulir ini selama
@@ -1199,7 +1208,7 @@ function skp_form(PDO $pdo): void
         ? '?r=transaction_edit&id=' . $trxId . '&skp=' . (int) $skp['id'] : '';
 
 
-    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir, $revTahap, $revPending, $revRiwayat, $revBolehAjukan, $revBolehPutus, $dibatalkan, $sumberHilang, $ubahPeriode, $satuanTarif, $ubahTrxUrl, $tampilTotalManual, $batasUnggahMb, $komponenPaket, $luasPaket, $defDiskon, $defPublish, $listrikAll) {
+    layout(($skp ? ($editable ? 'Edit' : 'Lihat') : 'Buat') . ' ' . skp_doc_short($docType), function () use ($pdo, $skp, $src, $trxId, $offerId, $docType, $docLabel, $editable, $days, $total, $amt, $area, $defDeposit, $defDepPaid, $defPpn, $defSc, $defScRp, $scBulan, $picAktif, $bagi, $bagiItem, $nilaiAcuan, $atts, $reuse, $val, $pid, $isRenew, $detail, $standalone, $modKind, $alur, $alurTahap, $alurKet, $alurJejak, $alurBoleh, $alurWakil, $alurTunggu, $alurAkhir, $revTahap, $revPending, $revRiwayat, $revBolehAjukan, $revBolehPutus, $dibatalkan, $sumberHilang, $ubahPeriode, $satuanTarif, $ubahTrxUrl, $tampilTotalManual, $batasUnggahMb, $komponenPaket, $luasPaket, $defDiskon, $defPublish, $listrikAll) {
         $statusSewaDefault = ($isRenew || (!empty($src['renewal_status']) && $src['renewal_status'] !== 'none')) ? 'Perpanjangan' : 'Baru';
         ?>
         <?php /* Sumbernya hilang → tombol kembali ke sumber ikut buntu, jadi
@@ -1493,7 +1502,7 @@ function skp_form(PDO $pdo): void
                      halaman hanya menampilkan satu lokasi dan satu luas, dan dokumen
                      empat titik terlihat seperti dokumen satu titik. */ ?>
             <?php if ($komponenPaket): ?>
-            <div style="border:1px solid #bae6fd;background:#f0f9ff;border-radius:9px;padding:12px 14px;margin-top:4px">
+            <div id="komponen-paket" style="border:1px solid #bae6fd;background:#f0f9ff;border-radius:9px;padding:12px 14px;margin-top:4px">
                 <div style="font-weight:800;color:#075985;font-size:13px;margin-bottom:8px">
                     Dokumen ini gabungan <?= count($komponenPaket) ?> lokasi (Penawaran Paket)
                 </div>
@@ -1502,10 +1511,11 @@ function skp_form(PDO $pdo): void
                         <thead><tr>
                             <th>Modul</th><th>Kode</th><th>Lokasi</th><th>Lantai</th>
                             <th style="text-align:right">Luas (m²)</th><th style="text-align:right">Nilai</th>
+                            <th style="min-width:170px">Income ke PIC</th>
                         </tr></thead>
                         <tbody>
                         <?php $segL = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang']; ?>
-                        <?php foreach ($komponenPaket as $k): ?>
+                        <?php foreach ($komponenPaket as $k): $kid = (int) ($k['id'] ?? 0); ?>
                             <tr>
                                 <td><?= h($segL[$k['segment']] ?? $k['segment']) ?></td>
                                 <td><strong><?= h($k['kode']) ?></strong></td>
@@ -1513,6 +1523,21 @@ function skp_form(PDO $pdo): void
                                 <td><?= h($k['lantai']) ?></td>
                                 <td style="text-align:right"><?= angka($k['luas']) ?></td>
                                 <td style="text-align:right;white-space:nowrap"><?= h(money($k['nilai'])) ?></td>
+                                <?php /* Satu komponen = satu transaksi, jadi yang dipilih di sini
+                                         adalah PEMILIK transaksi itu — bukan pecahan nominal. */ ?>
+                                <td>
+                                <?php if ($editable && $kid > 0): ?>
+                                    <select name="bagi_item[<?= $kid ?>]" class="bagi-item-pic"
+                                            data-nilai="<?= (int) round((float) $k['nilai']) ?>" style="width:100%">
+                                        <option value="">&mdash; ikut PIC dokumen &mdash;</option>
+                                        <?php foreach ($picAktif as $pRow): $pn = $pRow['name']; ?>
+                                        <option value="<?= h($pn) ?>" <?= ($bagiItem[$kid] ?? '') === $pn ? 'selected' : '' ?>><?= h($pn) ?><?= $pRow['di_laporan'] ? '' : ' — tidak tampil di Laporan PIC' ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                <?php else: ?>
+                                    <?= h(($bagiItem[$kid] ?? '') ?: (($src['pic_name'] ?? '') ?: '-')) ?>
+                                <?php endif; ?>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                         </tbody>
@@ -1520,13 +1545,32 @@ function skp_form(PDO $pdo): void
                             <td colspan="4">TOTAL</td>
                             <td style="text-align:right"><?= angka($luasPaket) ?></td>
                             <td style="text-align:right;white-space:nowrap"><?= h(money(array_sum(array_column($komponenPaket, 'nilai')))) ?></td>
+                            <td></td>
                         </tr></tfoot>
                     </table>
                 </div>
                 <p class="help" style="margin:8px 0 0">
                     Nilai per komponen di atas berasal dari Surat Penawaran. Setelah dokumen ini disetujui,
-                    tiap komponen terbit sebagai transaksinya sendiri.
+                    tiap komponen terbit sebagai transaksinya sendiri &mdash; dan <strong>income-nya masuk ke PIC
+                    yang dipilih di kolom terakhir</strong>. Dibiarkan kosong berarti ikut PIC dokumen
+                    (<?= h(($src['pic_name'] ?? '') ?: 'belum diisi') ?>).
                 </p>
+                <?php
+                /* Rekap dihitung di PHP lebih dulu supaya dokumen yang sudah
+                   terkunci (tidak ada dropdown lagi) tetap menampilkan siapa
+                   mendapat berapa. Saat masih bisa diedit, JS menimpanya tiap
+                   kali pilihan berubah. */
+                $rekapPaket = [];
+                foreach ($komponenPaket as $k) {
+                    $nm = ($bagiItem[(int) ($k['id'] ?? 0)] ?? '') ?: (($src['pic_name'] ?? '') ?: '(PIC dokumen belum diisi)');
+                    $rekapPaket[$nm] = ($rekapPaket[$nm] ?? 0) + (float) $k['nilai'];
+                }
+                $rekapTeks = [];
+                foreach ($rekapPaket as $nm => $nl) $rekapTeks[] = '<strong>' . h($nm) . '</strong> ' . h(money($nl));
+                ?>
+                <div id="bagi-paket-ringkas" data-pic="<?= h($src['pic_name'] ?? '') ?>" style="margin-top:8px;font-size:13px">
+                    Income masuk ke: <?= implode(' &middot; ', $rekapTeks) ?>
+                </div>
             </div>
             <?php endif; ?>
 
@@ -1810,7 +1854,18 @@ function skp_form(PDO $pdo): void
             <?php $paketSrc = !empty($src['is_bundle']); ?>
             <?php if ($paketSrc): ?>
             <h3 id="sec-pic">Pembagian Income per PIC</h3>
-            <p class="help">Dokumen ini berasal dari <strong>Penawaran Paket</strong> — nilainya terpecah ke beberapa transaksi komponen, sehingga pembagian per PIC diisi di halaman <strong>Alokasi</strong> masing-masing komponen setelah dokumen disetujui.</p>
+            <?php /* Dokumen paket tidak memakai daftar nominal: tiap komponen terbit
+                     sebagai transaksinya sendiri, jadi yang menentukan income masuk ke
+                     siapa adalah PEMILIK tiap komponen. Dipilih langsung di tabel
+                     Komponen Paket di atas, bukan di sini — di sanalah komponennya
+                     terlihat lengkap dengan kode, lokasi, dan nilainya. */ ?>
+            <p class="help" style="margin-bottom:0">
+                Dokumen ini berasal dari <strong>Penawaran Paket</strong>. Tiap komponen terbit sebagai
+                transaksinya sendiri, jadi pembagiannya ditentukan <strong>per komponen</strong> &mdash;
+                lewat kolom <strong>Income ke PIC</strong> pada tabel
+                <a href="#komponen-paket">Komponen Paket</a> di atas.
+                Komponen yang dibiarkan kosong ikut PIC dokumen.
+            </p>
             <?php else: ?>
             <h3 id="sec-pic">Pembagian Income per PIC <span style="font-weight:400;font-size:12px;color:var(--muted)">(opsional — kosongkan bila seluruhnya milik <?= h($src['pic_name'] ?: 'PIC dokumen') ?>)</span></h3>
             <div id="bagi-box" data-acuan="<?= (int) round($nilaiAcuan) ?>">
@@ -2469,6 +2524,36 @@ function skp_form(PDO $pdo): void
         })();
         </script>
         <script>
+        // ── Paket: income tiap komponen jatuh ke PIC-nya ────────────────────
+        // Dokumen paket tidak membagi NOMINAL: tiap komponen terbit sebagai
+        // transaksinya sendiri, jadi satu komponen utuh menjadi milik satu
+        // sales. Rekapnya dihitung di layar supaya salah pilih terbaca sebelum
+        // disubmit — bukan baru ketahuan setelah transaksinya terbit atas nama
+        // yang keliru dan achievement-nya sudah berjalan.
+        (function () {
+            var ring = document.getElementById('bagi-paket-ringkas');
+            if (!ring) return;
+            var pilih = [].slice.call(document.querySelectorAll('.bagi-item-pic'));
+            if (!pilih.length) return;                 // dokumen terkunci: biarkan rekap dari PHP
+            var picDok = ring.dataset.pic || '';
+            function rp(x) { return 'Rp ' + Math.round(x || 0).toLocaleString('id-ID'); }
+            function hitung() {
+                var per = {}, urut = [];
+                pilih.forEach(function (sel) {
+                    var nama = sel.value || picDok || '(PIC dokumen belum diisi)';
+                    var n = parseInt(sel.dataset.nilai, 10) || 0;
+                    if (!(nama in per)) { per[nama] = 0; urut.push(nama); }
+                    per[nama] += n;
+                });
+                ring.innerHTML = 'Income masuk ke: ' + urut.map(function (nm) {
+                    return '<strong>' + nm + '</strong> ' + rp(per[nm]);
+                }).join(' &middot; ');
+            }
+            pilih.forEach(function (sel) { sel.addEventListener('change', hitung); });
+            hitung();
+        })();
+        </script>
+        <script>
         // ── Pembagian income per PIC ────────────────────────────────────────
         // Jumlahnya WAJIB pas dengan nilai kontrak. Tombol "Submit untuk
         // Approval" ditahan bila belum pas; "Simpan Draft" tetap boleh lewat
@@ -2751,6 +2836,68 @@ function _skp_bagi_dari_post(?PDO $pdo = null, int $pid = 0): array
         unset($b);
     }
     return $hasil;
+}
+
+/**
+ * PIC penerima income tiap komponen paket, dibaca dari formulir.
+ *
+ * Bentuk kiriman: bagi_item[<offer_item_id>] = nama PIC. Kosong berarti
+ * komponen itu ikut PIC dokumen — bukan kesalahan, dan memang jalur yang
+ * dipakai paket yang seluruhnya dikerjakan satu orang.
+ *
+ * Dua hal disaring di sini, dan dua-duanya soal uang:
+ *   • id komponen WAJIB milik penawaran dokumen ini. Tanpa itu satu POST bisa
+ *     menandai komponen penawaran lain.
+ *   • nama PIC wajib ada di master_pic yang aktif. Nama asing tidak akan pernah
+ *     muncul di Laporan PIC, jadi income-nya hilang dari pandangan semua orang.
+ *
+ * @return array{peta: array<int,string>, asing: string[]}
+ */
+function _skp_item_pic_dari_post(PDO $pdo, int $pid, int $offerId): array
+{
+    $kirim = (array) ($_POST['bagi_item'] ?? []);
+    if (!$kirim || $offerId <= 0) return ['peta' => [], 'asing' => []];
+
+    $st = $pdo->prepare('SELECT id FROM offer_items WHERE offer_id = ?');
+    $st->execute([$offerId]);
+    $sahItem = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN) ?: []);
+
+    $sp = $pdo->prepare("SELECT name FROM master_pic WHERE property_id = ? AND status = 'active'");
+    $sp->execute([$pid]);
+    $sahPic = $sp->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+    $peta = []; $asing = [];
+    foreach ($kirim as $itemId => $nama) {
+        $itemId = (int) $itemId;
+        $nama   = trim((string) $nama);
+        if ($nama === '' || !in_array($itemId, $sahItem, true)) continue;
+        if (!in_array($nama, $sahPic, true)) { $asing[] = $nama; continue; }
+        $peta[$itemId] = $nama;
+    }
+    return ['peta' => $peta, 'asing' => array_values(array_unique($asing))];
+}
+
+/** Tulis ulang PIC per komponen milik satu dokumen (hapus-lalu-tulis). */
+function _skp_simpan_item_pic(PDO $pdo, int $pid, int $skpId, array $peta, string $uname): void
+{
+    $lama = $pdo->prepare('SELECT COUNT(*) FROM skp_item_pic WHERE skp_id = ?');
+    $lama->execute([$skpId]);
+    if (!$peta && !(int) $lama->fetchColumn()) return;
+
+    $sendiri = !$pdo->inTransaction();
+    if ($sendiri) $pdo->beginTransaction();
+    try {
+        $pdo->prepare('DELETE FROM skp_item_pic WHERE skp_id = ?')->execute([$skpId]);
+        if ($peta) {
+            $ins = $pdo->prepare('INSERT INTO skp_item_pic (property_id, skp_id, offer_item_id, pic_name, created_by)
+                                  VALUES (?,?,?,?,?)');
+            foreach ($peta as $itemId => $nama) $ins->execute([$pid, $skpId, (int) $itemId, $nama, $uname]);
+        }
+        if ($sendiri) $pdo->commit();
+    } catch (Throwable $e) {
+        if ($sendiri && $pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
 }
 
 /**
@@ -3266,11 +3413,18 @@ function skp_save(PDO $pdo): void
         // baris alokasi dan tidak akan pernah muncul di laporan mana pun.
         $bagi = array_values(array_filter($bagi, fn($b) => !isset($b['valid']) || $b['valid']));
     }
-    // Paket: satu dokumen melahirkan beberapa transaksi, pembagian tunggal tidak
-    // punya arti — dibuang supaya tidak tersimpan lalu terabaikan diam-diam.
+    // Paket: satu dokumen melahirkan beberapa transaksi, jadi daftar NOMINAL
+    // tunggal tidak punya arti — dibuang supaya tidak tersimpan lalu terabaikan
+    // diam-diam. Pembagiannya ditentukan per komponen, di bawah ini.
     if ($bagi && !empty($src['is_bundle'])) {
         $bagi = [];
-        flash('Pembagian income tidak dipakai pada dokumen Paket — isi di halaman Alokasi tiap komponen.');
+        flash('Pembagian nominal tidak dipakai pada dokumen Paket — yang berlaku adalah kolom "Income ke PIC" pada tiap komponen.');
+    }
+    // PIC penerima income tiap komponen paket. Tiap komponen terbit sebagai
+    // transaksinya sendiri, jadi satu komponen utuh jatuh ke satu sales.
+    $itemPic = _skp_item_pic_dari_post($pdo, $pid, $offerId);
+    if ($itemPic['asing']) {
+        $missNum[] = 'PIC komponen tidak dikenal / tidak aktif: ' . implode(', ', $itemPic['asing']);
     }
     // Nominal diakui per bulan WAJIB berjumlah sama dengan nilai kontraknya.
     //
@@ -3344,6 +3498,7 @@ function skp_save(PDO $pdo): void
                 WHERE id=:id AND property_id=:pid';
         $pdo->prepare($sql)->execute(array_merge($fields, [':status' => $newStatus, ':uname' => $uname, ':id' => $id, ':pid' => $pid]));
         _skp_simpan_bagi($pdo, $pid, $id, $trxId ?: null, $bagi, $uname);
+        _skp_simpan_item_pic($pdo, $pid, $id, $itemPic['peta'], $uname);
         audit($pdo, $doSubmit ? 'submit' : 'update', 'skp_documents', (string) $id, $fields);
         flash($blockMsg ?: ($doSubmit ? 'Dokumen disubmit untuk approval.' : 'Draft disimpan.'));
         redirect_to('skp_form', ['id' => $id]);
@@ -3384,6 +3539,7 @@ function skp_save(PDO $pdo): void
     }
     $newId = (int) $pdo->lastInsertId();
     _skp_simpan_bagi($pdo, $pid, $newId, $trxId ?: null, $bagi, $uname);
+    _skp_simpan_item_pic($pdo, $pid, $newId, $itemPic['peta'], $uname);
     $gagalUnggah = _skp_handle_uploads($pdo, $newId, $uname, $clientId);
     _skp_update_master($pdo, $clientId, $ktp, $npwp, $siup);
     audit($pdo, 'create', 'skp_documents', (string) $newId, $fields);
@@ -3492,7 +3648,11 @@ function _skp_create_transaction(PDO $pdo, array $skp, array $src, int $pid, ?ar
         'total_calculated' => $total,
         'override_amount'  => $total,
         'final_amount'     => $total,
-        'pic_name'         => $src['pic_name'] ?? null,
+        // Komponen paket boleh jatuh ke sales yang berbeda dari PIC dokumen —
+        // itu dipilih di kolom "Income ke PIC" pada formulir SKP. Kosong berarti
+        // memang ikut PIC dokumen.
+        'pic_name'         => (trim((string) ($item['pic_name'] ?? '')) !== '')
+                              ? (string) $item['pic_name'] : ($src['pic_name'] ?? null),
         'referrer_name'    => $src['referrer_name'] ?? null,
         'remarks'          => 'Dari ' . skp_doc_short((string) ($skp['doc_type'] ?? 'skp')) . ' ' . ($skp['skp_no'] ?? '') . ($noteAdd ? ' · ' . $noteAdd : ''),
         'invoice_no'       => null,
@@ -3653,6 +3813,20 @@ function skp_approve(PDO $pdo): void
         $bq->execute([(int) $skp['offer_id']]);
         $bundleRows = $bq->fetchAll();
     }
+    // PIC penerima income tiap komponen, sebagaimana ditentukan di formulir
+    // dokumen ini. Ditempelkan ke barisnya supaya transaksi yang terbit nanti
+    // langsung lahir atas nama yang benar — bukan diperbaiki belakangan, saat
+    // achievement-nya sudah terlanjur terhitung ke orang lain.
+    $petaItemPic = [];
+    $pip = $pdo->prepare('SELECT offer_item_id, pic_name FROM skp_item_pic WHERE skp_id = ?');
+    $pip->execute([$id]);
+    $petaItemPic = $pip->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
+    if ($petaItemPic) {
+        foreach ($bundleRows as &$_br) {
+            $_br['pic_name'] = $petaItemPic[(int) $_br['id']] ?? null;
+        }
+        unset($_br);
+    }
     // Dua patokan yang SENGAJA dipisah:
     //  • tampilan  → ada tidaknya komponen ($bundleTampil). Penanda is_bundle
     //    bisa tidak tersimpan, dan dokumennya lalu dicetak satu lokasi padahal
@@ -3684,6 +3858,10 @@ function skp_approve(PDO $pdo): void
     $bundleItemsSnap = array_map(fn($k) => [
         'segment' => $k['segment'], 'master_code' => $k['kode'], 'name' => $k['nama'],
         'lantai'  => $k['lantai'], 'luas' => (float) $k['luas'], 'total' => (float) $k['nilai'],
+        // Catatan internal: siapa yang income-nya. TIDAK dicetak di surat yang
+        // diserahkan ke client — hanya agar dokumen yang sudah terkunci tetap
+        // bisa menjawab "komponen ini milik siapa" tanpa menebak dari transaksi.
+        'pic'     => $petaItemPic[(int) ($k['id'] ?? 0)] ?? (($src['pic_name'] ?? '') ?: null),
     ], $komponenSnap);
     $bundleLantai = implode(', ', array_values(array_unique(array_filter(
         array_map(fn($k) => trim((string) $k['lantai']), $komponenSnap),

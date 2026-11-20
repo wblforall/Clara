@@ -926,8 +926,10 @@ function _offer_write_items(PDO $pdo, int $offerId, array $items): void
 function offer_items_detail(PDO $pdo, int $offerId, int $pid): array
 {
     if ($offerId <= 0) return [];
+    // id ikut dibawa: dokumen SKP menandai PIC penerima income per komponen,
+    // dan yang dipakai sebagai kuncinya adalah id baris offer_items ini.
     $st = $pdo->prepare(
-        'SELECT segment, master_code, name_snapshot, area_sqm, total_amount, dp_amount, deposit_amount
+        'SELECT id, segment, master_code, name_snapshot, area_sqm, total_amount, dp_amount, deposit_amount
            FROM offer_items WHERE offer_id = ? ORDER BY sort_order ASC, id ASC'
     );
     $st->execute([$offerId]);
@@ -992,6 +994,9 @@ function offer_items_lengkapi(PDO $pdo, array $rows, int $pid): array
         $nama = trim((string) ($r['name_snapshot'] ?? ''));
         if ($nama === '' || $nama === $kode) $nama = trim((string) ($m['lokasi'] ?? '')) ?: ($nama ?: $kode);
         $out[] = [
+            // 0 untuk komponen yang belum tersimpan (pratinjau surat paket yang
+            // masih diketik) — belum punya baris di offer_items.
+            'id'      => (int) ($r['id'] ?? 0),
             'segment' => $seg,
             'kode'    => $kode,
             'nama'    => $nama,

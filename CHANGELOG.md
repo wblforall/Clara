@@ -11,6 +11,31 @@
 
 ---
 
+## Fitur & Perbaikan — 20 November 2026
+
+### Income tiap komponen paket bisa jatuh ke sales yang berbeda
+
+- Penawaran Paket melahirkan **satu transaksi per komponen**, tetapi semuanya terbit atas nama satu orang:
+  PIC dokumennya. Padahal paket tiga island kerap dikerjakan dua sales &mdash; 10/GF ISLAND oleh yang satu,
+  27/GF dan 30/GF oleh yang lain. Tidak ada tempat untuk menyatakan itu: tabel &ldquo;Pembagian Income per PIC&rdquo;
+  sengaja dimatikan pada dokumen paket, dengan catatan agar diisi di halaman Alokasi **setelah** dokumen
+  disetujui &mdash; artinya transaksinya sudah terlanjur terbit atas nama yang keliru, dan achievement-nya
+  sudah ikut terhitung ke orang yang salah.
+- Sekarang tabel **Komponen Paket** di formulir SKP punya kolom **&ldquo;Income ke PIC&rdquo;**. Tiap komponen
+  dipilih pemiliknya sendiri; yang dibiarkan kosong ikut PIC dokumen. Di bawah tabel ada rekap hidup
+  &mdash; *&ldquo;Income masuk ke: Sita Rp 33.040.000 &middot; Zulfikar Rp 33.040.000&rdquo;* &mdash; jadi salah pilih
+  terbaca sebelum disubmit, bukan sesudah transaksinya lahir.
+- Saat dokumen disetujui, **tiap transaksi komponen terbit langsung atas nama PIC-nya**, berikut baris
+  alokasi bulanannya. Laporan PIC dan Achievement ikut terbagi tanpa satu pun perbaikan manual.
+- Nama PIC yang tidak ada di Master PIC aktif **ditolak saat submit**, bukan tersimpan lalu hilang dari
+  semua laporan. Komponen yang dikirim pun wajib milik penawaran dokumen itu sendiri.
+- **Tidak tercetak di surat yang diserahkan ke client.** Pembagian ini catatan internal: dokumen yang sudah
+  terkunci tetap bisa menjawab &ldquo;komponen ini milik siapa&rdquo; di layar, sementara surat, PDF, dan halaman
+  tanda tangan client tidak berubah satu baris pun.
+- Butuh migrasi: `php db_migrate.php` (tabel `skp_item_pic`).
+
+---
+
 ## Fitur & Perbaikan — 17 November 2026
 
 ### Prorata bulan kalender akhirnya benar-benar bisa dipakai
