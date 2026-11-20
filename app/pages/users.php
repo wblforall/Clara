@@ -204,7 +204,11 @@ function user_form(PDO $pdo): void
                      Dua-duanya sekarang dikerjakan sekaligus di sini. */ ?>
             <?php
             $picAda   = !empty($picUtama);
-            $picCek   = $picAda || (!$id && ($row['role'] ?? '') === 'sales');
+            // Panel dibuka sejak awal untuk SEMUA akun Sales, bukan hanya yang
+            // baru: akun sales lama yang belum punya baris PIC justru keadaan
+            // yang ditandai "belum terdaftar" di halaman Pengguna, dan orang
+            // sampai ke layar ini karena menekan tanda itu.
+            $picCek   = $picAda || ($row['role'] ?? '') === 'sales';
             $picPct   = $picAda ? rtrim(rtrim(number_format((float) $picUtama['target_share'] * 100, 2, '.', ''), '0'), '.') : '';
             $picProp  = (int) ($picUtama['property_id'] ?? 0);
             $komisi   = ['' => '— tidak dikategorikan —', 'sales' => 'Sales', 'manager' => 'Manager',
@@ -247,12 +251,12 @@ function user_form(PDO $pdo): void
                     </div>
                     <div>
                         <label>Nama PIC</label>
-                        <input name="pic_name" id="pic_name" value="<?= h((string) ($picUtama['name'] ?? '')) ?>" placeholder="ikut Nama di atas">
+                        <input name="pic_name" id="pic_name" value="<?= h((string) ($picUtama['name'] ?? $row['name'] ?? '')) ?>" placeholder="ikut Nama di atas">
                         <div class="help">Kunci pencocokan di transaksi, alokasi, dan laporan &mdash; <strong>jangan diubah lagi</strong> setelah dipakai.</div>
                     </div>
                     <div>
                         <label>Jabatan</label>
-                        <input name="pic_role_name" value="<?= h((string) ($picUtama['role_name'] ?? '')) ?>" placeholder="mis. Sales, Sales Executive">
+                        <input name="pic_role_name" value="<?= h((string) ($picUtama['role_name'] ?? (($row['role'] ?? '') === 'sales' ? 'Sales' : ''))) ?>" placeholder="mis. Sales, Sales Executive">
                         <div class="help">Tercetak di bawah tanda tangan surat.</div>
                     </div>
                     <div>
