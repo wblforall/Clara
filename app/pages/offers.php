@@ -1185,7 +1185,9 @@ function offers_list_page(PDO $pdo): void
     $in = implode(',', array_fill(0, count($tabStatuses[$tab]), '?'));
     $stmt = $pdo->prepare(
         "SELECT o.*, c.company_name,
-                (SELECT COUNT(*) FROM offer_items oi WHERE oi.offer_id = o.id) AS komponen
+                (SELECT COUNT(*) FROM offer_items oi WHERE oi.offer_id = o.id) AS komponen,
+                (SELECT s.id FROM skp_documents s
+                  WHERE s.offer_id = o.id AND s.deleted_at IS NULL ORDER BY s.id DESC LIMIT 1) AS skp_id
          FROM offers o LEFT JOIN master_clients c ON c.id = o.client_id
          WHERE o.property_id = ? AND o.deleted_at IS NULL AND o.status IN ($in)" . ($module ? ' AND o.module = ?' : '') . $scopeSql . " ORDER BY o.id DESC"
     );
@@ -1236,7 +1238,36 @@ function offers_list_page(PDO $pdo): void
                 <table style="font-size:12.5px">
                     <thead><tr><th>No. Penawaran</th><th>Modul</th><th>Client</th><th>Periode</th><th>Nilai</th><th>Revisi</th><th>Status</th><th></th></tr></thead>
                     <tbody>
-                    <?php if (!$rows): ?><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">Belum ada penawaran.</td></tr><?php endif; ?>
+                    <?php /* Kosong yang MENJELASKAN DIRINYA. Menu "SKP Exhibition"
+                             mengarahkan ke tab Deal ini, jadi orang yang baru saja
+                             membuat penawaran mendarat di sini dan melihat daftar
+                             kosong — tanpa petunjuk bahwa yang kurang adalah
+                             menandai DEAL dan tanda tangan client. Pesan lama
+                             ("Belum ada penawaran.") malah terbaca seperti
+                             penawarannya hilang. */ ?>
+                    <?php if (!$rows): ?>
+                        <tr><td colspan="8" style="padding:24px;color:var(--muted)">
+                        <?php if ($tab === 'deal'): ?>
+                            <div style="text-align:center;line-height:1.75">
+                                <div style="font-weight:700;color:var(--ink,#0f172a);margin-bottom:4px">Belum ada penawaran yang DEAL.</div>
+                                <strong>SKP Exhibition</strong> hanya bisa dibuat dari penawaran yang sudah
+                                ditandai <strong>DEAL</strong> <em>dan</em> ditandatangani client &mdash; jadi selama
+                                belum ada yang sampai tahap itu, daftar ini memang kosong.
+                                <?php if ((int) $counts['on_going'] > 0): ?>
+                                <div style="margin-top:12px">
+                                    Penawaran Anda yang masih berjalan ada <strong><?= (int) $counts['on_going'] ?></strong>.
+                                    Buka penawarannya &rarr; <strong>Tandai DEAL</strong> &rarr; kirim tautan tanda tangan ke client.
+                                </div>
+                                <div style="margin-top:10px"><a class="btn" href="?r=offers&tab=on_going<?= $module ? '&module=' . h($module) : '' ?>">Lihat <?= (int) $counts['on_going'] ?> penawaran On Going</a></div>
+                                <?php else: ?>
+                                <div style="margin-top:12px"><a class="btn" href="?r=offer_form&module=cl">+ Buat Penawaran Exhibition</a></div>
+                                <?php endif; ?>
+                            </div>
+                        <?php else: ?>
+                            <div style="text-align:center">Belum ada penawaran.</div>
+                        <?php endif; ?>
+                        </td></tr>
+                    <?php endif; ?>
                     <?php foreach ($rows as $r): $b = $badge[$r['status']] ?? $badge['draft']; $href = '?r=offer_view&id=' . (int)$r['id']; ?>
                         <tr style="cursor:pointer" onclick="if(!event.target.closest('a'))location.href='<?= $href ?>'">
                             <td style="white-space:nowrap;font-weight:600"><a href="<?= $href ?>" style="color:#0369a1;text-decoration:none"><?= h($r['offer_no'] ?? '—') ?></a></td>
@@ -1255,7 +1286,20 @@ function offers_list_page(PDO $pdo): void
                                      dicari orang saat memindai daftar. */ ?>
                             <td style="white-space:nowrap"><?= money($r['override_amount'] ?: $r['total_calculated']) ?></td>
                             <td style="text-align:center"><?= (int)$r['revision_count'] ?>×</td>
-                            <td><span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span><?php if ($r['status'] === 'cancelled' && !empty($r['lost_category'])): ?><div style="font-size:10.5px;color:#991b1b;margin-top:2px"><?= h(offer_lost_label($r['lost_category'])) ?></div><?php endif; ?></td>
+                            <td><span class="badge" style="color:<?= $b[1] ?>;background:<?= $b[2] ?>"><?= $b[0] ?></span><?php if ($r['status'] === 'cancelled' && !empty($r['lost_category'])): ?><div style="font-size:10.5px;color:#991b1b;margin-top:2px"><?= h(offer_lost_label($r['lost_category'])) ?></div><?php endif; ?>
+                                <?php /* Penawaran DEAL belum tentu bisa jadi SKP: tanda tangan
+                                         client adalah syarat kedua, dan selama ini baru
+                                         ketahuan setelah tombol "Buat SKP" ditekan dan
+                                         memantul kembali. Disebut di daftarnya. */ ?>
+                                <?php if ($r['status'] === 'deal'): ?>
+                                    <?php if (!empty($r['skp_id'])): ?>
+                                        <div style="font-size:10.5px;color:#166534;margin-top:3px">SKP sudah dibuat</div>
+                                    <?php elseif (empty($r['signed_at'])): ?>
+                                        <div style="font-size:10.5px;color:#92400e;margin-top:3px">⚠ belum diteken client &mdash; SKP belum bisa dibuat</div>
+                                    <?php else: ?>
+                                        <div style="font-size:10.5px;color:#0369a1;margin-top:3px">siap dibuatkan SKP</div>
+                                    <?php endif; ?>
+                                <?php endif; ?></td>
                             <td style="white-space:nowrap">
                                 <?php if ($r['offer_no']): ?><a class="btn light" href="?r=offer_print&id=<?= (int)$r['id'] ?>" target="_blank">PDF</a><?php endif; ?>
                             </td>

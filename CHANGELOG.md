@@ -13,6 +13,42 @@
 
 ## Fitur & Perbaikan — 20 November 2026
 
+### Sales baru akhirnya bisa dipakai sejak hari pertama
+
+- Menyimpan user yang **sudah ada** berakhir layar putih `Fatal error`. Penyebabnya nomor user dikirim
+  sebagai teks ke parameter yang menuntut angka, dan berkas ini memakai `declare(strict_types=1)`.
+  Yang membuat ini berbahaya: baris user dan akses propertinya **sudah terlanjur tersimpan** sebelum
+  kesalahan itu dilempar, sedangkan Izin Tambahan tidak pernah ikut tersimpan. Dari layar, admin melihat
+  penyuntingan seperti gagal total; sebagian isinya sebenarnya sudah masuk.
+- Layar **Tambah User** hanya membuat akun login, tidak pernah membuat barisnya di **Master PIC** &mdash;
+  itu pekerjaan terpisah di menu lain, dan mudah terlewat. Akibatnya orang baru bisa masuk, tetapi
+  namanya **tidak ada** di pilihan *PIC Sales (pembuat)* pada Surat Penawaran. Kotak itu wajib diisi,
+  jadi satu-satunya jalan baginya adalah memakai nama sales lain &mdash; dan incomenya jatuh ke orang itu.
+  Daftar Penawaran/SKP/Transaksinya juga kosong, dan ia tidak muncul di Laporan PIC maupun Achievement.
+- Formulir user sekarang punya bagian **Master PIC** sendiri: jabatan, nomor WhatsApp, porsi target,
+  kategori komisi, tampil-di-penawaran, dan tampil-di-achievement. Untuk peran *Sales* bagian itu
+  tercentang sejak awal. Warna di Kalender Pameran dipilihkan dari yang belum terpakai.
+- Nama PIC adalah kunci pencocokan transaksi dan laporan, jadi nama yang sudah dipegang akun lain
+  **ditolak saat simpan** &mdash; bukan tersimpan lalu memecah riwayat dua orang. Baris lama yang senama
+  dan belum bertuan **diambil alih**, bukan digandakan. Melepas centang tidak pernah menghapus baris
+  yang sudah ada, dan nama lengkap serta email yang sudah terisi di Master PIC tidak tertimpa.
+- Daftar **Pengguna** dapat kolom **Master PIC**. Akun yang semestinya membuat dokumen tetapi belum
+  punya barisnya ditandai *&ldquo;belum terdaftar&rdquo;* dan bisa langsung diklik untuk diperbaiki. Halaman
+  setelah akun dibuat juga menyebutkan hal yang sama, selagi orang yang membuatnya masih di layar itu.
+
+### &ldquo;Buat SKP&rdquo; tidak lagi menyodorkan daftar kosong tanpa sebab
+
+- Menu **SKP Exhibition &rarr; + Buat dari Penawaran DEAL** bermuara ke tab *Deal* pada Surat Penawaran.
+  Sales yang baru membuat penawaran mendarat di sana dan melihat **&ldquo;Belum ada penawaran.&rdquo;** &mdash; terbaca
+  seperti penawarannya hilang, padahal yang kurang adalah dua langkah yang tidak pernah disebutkan:
+  penawarannya belum ditandai **DEAL**, dan belum ditandatangani client.
+- Tab *Deal* yang kosong sekarang menjelaskan dirinya: syaratnya apa, berapa penawaran yang sedang
+  berjalan, dan tombol langsung ke tab *On Going*.
+- Penawaran DEAL yang **belum diteken client** ditandai di daftarnya (*&ldquo;belum diteken client &mdash; SKP belum
+  bisa dibuat&rdquo;*), begitu juga yang sudah siap dan yang SKP-nya sudah ada. Sebelumnya syarat kedua ini
+  baru ketahuan setelah tombol *Buat SKP* ditekan dan memantul balik.
+
+
 ### Income tiap komponen paket bisa jatuh ke sales yang berbeda
 
 - Penawaran Paket melahirkan **satu transaksi per komponen**, tetapi semuanya terbit atas nama satu orang:
