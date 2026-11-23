@@ -2756,7 +2756,36 @@ function allocation_detail(PDO $pdo): void
                 'aksi' => null];
         }
     }
-    layout('Detail Alokasi Transaksi #' . $id, function () use ($trx, $allocRows, $adaBagi, $picBaris, $sebabNol, $lockSkp, $tahap, $bisaUbahHarga, $bedaDariSurat, $bagiTrx, $picPilihan, $bisaUbahBagi, $acuanBagiTrx, $bisaUbahBulan, $nilaiTerkunci, $ovrTersimpan) {
+    // ── Kalau income-nya MEMANG sudah masuk, katakan juga ──────────────────
+    // Tidak adanya peringatan bukan jawaban: orang yang bertanya "income saya
+    // sudah masuk belum?" tetap harus pergi ke Laporan PIC untuk memastikan,
+    // dan kalau di sana angkanya tidak dicari-cari sampai ketemu ia pulang
+    // dengan dugaan yang sama. Jadi dijawab di tempat ia bertanya.
+    $sudahMasuk = null;
+    if ($allocRows) {
+        $blnIni   = date('Y-m');
+        $porsiIni = 0.0;
+        $jumlah   = 0.0;
+        $bulanSet = [];
+        foreach ($allocRows as $r) {
+            $jumlah += (float) $r['amount'];
+            $bulanSet[(string) $r['period_key']] = true;
+            if ((string) $r['period_key'] === $blnIni) $porsiIni += (float) $r['amount'];
+        }
+        $kunciBulan = array_keys($bulanSet);
+        sort($kunciBulan);
+        $sudahMasuk = [
+            'bulan_ini'  => $blnIni,
+            'porsi_ini'  => $porsiIni,
+            'punya_ini'  => array_key_exists($blnIni, $bulanSet),
+            'jumlah'     => $jumlah,
+            'n_bulan'    => count($kunciBulan),
+            'dari'       => $kunciBulan[0] ?? '',
+            'sampai'     => $kunciBulan[count($kunciBulan) - 1] ?? '',
+            'atas_nama'  => $picBaris,
+        ];
+    }
+    layout('Detail Alokasi Transaksi #' . $id, function () use ($trx, $allocRows, $adaBagi, $picBaris, $sebabNol, $sudahMasuk, $lockSkp, $tahap, $bisaUbahHarga, $bedaDariSurat, $bagiTrx, $picPilihan, $bisaUbahBagi, $acuanBagiTrx, $bisaUbahBulan, $nilaiTerkunci, $ovrTersimpan) {
         ?>
         <?php /* Peringatan ini berdiri PALING ATAS, sebelum nilai kontraknya
                  terbaca. Urutannya disengaja: angka besar yang dibaca lebih
@@ -2772,6 +2801,35 @@ function allocation_detail(PDO $pdo): void
                     <div style="font-size:13px;line-height:1.75"><?= $sebabNol['isi'] ?></div>
                     <?php if ($sebabNol['aksi']): ?>
                     <div style="margin-top:11px"><a class="btn" href="<?= h($sebabNol['aksi'][1]) ?>"><?= h($sebabNol['aksi'][0]) ?></a></div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+        <?php if ($sudahMasuk): ?>
+        <div class="panel" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534;margin-bottom:12px">
+            <div style="display:flex;gap:12px;align-items:flex-start">
+                <span style="font-size:20px;line-height:1.3;flex-shrink:0">&#10003;</span>
+                <div style="font-size:13px;line-height:1.75">
+                    <div style="font-weight:800;font-size:15px;margin-bottom:5px">Income transaksi ini sudah masuk laporan</div>
+                    <?php if ($sudahMasuk['punya_ini']): ?>
+                        Bulan ini (<strong><?= h(pembayaran_nama_bulan($sudahMasuk['bulan_ini'])) ?></strong>) terhitung
+                        <strong><?= money($sudahMasuk['porsi_ini']) ?></strong><?php
+                        if ($sudahMasuk['atas_nama']): ?> atas nama <strong><?= h(implode(', ', $sudahMasuk['atas_nama'])) ?></strong><?php endif; ?>.
+                    <?php else: ?>
+                        Bulan ini (<strong><?= h(pembayaran_nama_bulan($sudahMasuk['bulan_ini'])) ?></strong>) tidak ada porsinya &mdash;
+                        masa sewanya memang tidak menyentuh bulan ini.
+                    <?php endif; ?>
+                    <div style="margin-top:4px">
+                        Seluruhnya <strong><?= money($sudahMasuk['jumlah']) ?></strong> tersebar di
+                        <strong><?= (int) $sudahMasuk['n_bulan'] ?> bulan</strong>
+                        (<?= h(pembayaran_nama_bulan($sudahMasuk['dari'])) ?> &ndash; <?= h(pembayaran_nama_bulan($sudahMasuk['sampai'])) ?>),
+                        persis seperti rincian di bawah.
+                    </div>
+                    <?php if ($sudahMasuk['punya_ini']): ?>
+                    <div style="margin-top:11px">
+                        <a class="btn light" href="?r=pic_report&period=<?= h($sudahMasuk['bulan_ini']) ?>">Lihat di Laporan PIC <?= h(pembayaran_nama_bulan($sudahMasuk['bulan_ini'])) ?></a>
+                    </div>
                     <?php endif; ?>
                 </div>
             </div>
@@ -3015,14 +3073,20 @@ function allocation_detail(PDO $pdo): void
             <div class="table-wrap">
                 <table>
                     <thead><tr>
-                        <th>Bulan</th><th>Periode Alokasi</th><?php if ($adaBagi): ?><th>PIC</th><?php endif; ?><th>Hari</th><th>Capacity-days</th><th>Aktual</th>
+                        <th>Bulan</th><th>Periode Alokasi</th><?php if ($adaBagi): ?><th>PIC</th><?php endif; ?><th>Hari</th><th>Capacity-days</th><th>Aktual</th><th>Income</th>
                         <?php if ($bisaUbahBulan): ?><th></th><?php endif; ?>
                     </tr></thead>
                     <tbody>
                     <?php
                     $isSpreadEditable = $bisaUbahBulan;
                     $csrfToken = csrf_token();
-                    $kolom = $adaBagi ? 7 : 6;
+                    $kolom = $adaBagi ? 8 : 7;
+                    // Bulan berjalan jadi garis batas: bulan ini dan sebelumnya
+                    // sudah ikut terhitung di Dashboard & Laporan PIC, bulan
+                    // sesudahnya baru masuk saat bulannya tiba. Tanpa ini,
+                    // kontrak 12 bulan terbaca seolah seluruh Rp 201 juta sudah
+                    // jadi achievement bulan ini.
+                    $blnBerjalan = date('Y-m');
                     /*
                      * Satu bulan = satu baris per PIC.
                      *
@@ -3075,6 +3139,18 @@ function allocation_detail(PDO $pdo): void
                             <td><?= h((string) $row['allocated_days']) ?></td>
                             <td><?= h((string) $row['capacity_days']) ?></td>
                             <td id="amt-<?= (int)$row['id'] ?>"><?= money($row['amount']) ?></td>
+                            <td style="white-space:nowrap">
+                                <?php if (!$awalSiklus): ?>
+                                <?php elseif ((float) $row['amount'] <= 0): ?>
+                                    <span class="badge" style="background:#f1f5f9;color:#64748b">tidak ada porsi</span>
+                                <?php elseif ((string) $row['period_key'] < $blnBerjalan): ?>
+                                    <span class="badge" style="background:#dcfce7;color:#166534" title="Sudah terhitung di Dashboard dan Laporan PIC bulan itu">&#10003; sudah masuk</span>
+                                <?php elseif ((string) $row['period_key'] === $blnBerjalan): ?>
+                                    <span class="badge" style="background:#dcfce7;color:#166534;font-weight:800" title="Bulan yang sedang berjalan — sudah terhitung">&#10003; sudah masuk &middot; bulan ini</span>
+                                <?php else: ?>
+                                    <span class="badge" style="background:#f1f5f9;color:#64748b" title="Masuk otomatis saat bulannya tiba — tidak perlu diinput lagi">belum &mdash; menyusul</span>
+                                <?php endif; ?>
+                            </td>
                             <?php if ($isSpreadEditable): ?>
                             <td style="white-space:nowrap">
                                 <button type="button" class="btn light" style="font-size:11px;padding:2px 8px" onclick="toggleEditRow(<?= (int)$row['id'] ?>, <?= (int)$row['amount'] ?>)">Edit</button>
@@ -3112,6 +3188,7 @@ function allocation_detail(PDO $pdo): void
                             <td colspan="<?= $adaBagi ? 3 : 2 ?>" style="text-align:right;font-size:12px;color:#475569">Jumlah <?= h(period_label($row['period_key'])) ?></td>
                             <td colspan="2"></td>
                             <td><?= money(array_sum(array_map(fn($x) => (float) $x['amount'], $barisSiklus))) ?></td>
+                            <td></td>
                             <?php if ($isSpreadEditable): ?><td></td><?php endif; ?>
                         </tr>
                         <?php endif; ?>
@@ -3119,6 +3196,14 @@ function allocation_detail(PDO $pdo): void
                     </tbody>
                 </table>
             </div>
+            <?php if ($allocRows): ?>
+            <p class="help" style="margin-top:7px">
+                Kolom <strong>Income</strong>: bulan yang sudah lewat dan bulan yang sedang berjalan
+                <strong>sudah terhitung</strong> di Dashboard, Laporan PIC, dan papan Achievement bulan itu
+                masing-masing. Bulan sesudahnya masuk <strong>otomatis saat bulannya tiba</strong> &mdash; tidak
+                perlu diinput ulang.
+            </p>
+            <?php endif; ?>
             <?php if ($adaBagi): ?>
             <p class="help" style="margin-top:7px">Income kontrak ini dibagi ke <strong><?= count(array_unique(array_filter(array_column($allocRows, 'pic_name')))) ?> PIC</strong>, jadi tiap bulan punya satu baris per PIC. <strong>Special Price</strong> mengubah porsi satu PIC saja &mdash; nominal pembagiannya ikut disesuaikan otomatis.</p>
             <?php endif; ?>

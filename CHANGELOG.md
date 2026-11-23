@@ -32,6 +32,19 @@
 - Daftar modul sudah lebih dulu punya spanduk *&ldquo;N transaksi &middot; Rp X belum masuk laporan mana pun&rdquo;*
   beserta tautan **lihat daftarnya**; keduanya kini bercerita hal yang sama.
 
+### Breakdown Bulanan menyebut bulan mana yang income-nya sudah terhitung
+
+- Tidak adanya peringatan bukan jawaban. Sales yang bertanya *&ldquo;income saya sudah masuk belum?&rdquo;* masih
+  harus pergi ke Laporan PIC untuk memastikan, dan kontrak 12 bulan senilai Rp 201 juta terbaca seolah
+  seluruhnya sudah jadi achievement bulan ini.
+- **Detail Alokasi** kini membuka dengan jawaban: *&ldquo;Income transaksi ini sudah masuk laporan &mdash; bulan ini
+  (Nov 2026) terhitung Rp 16.800.000 atas nama Zulfikar. Seluruhnya Rp 201.600.000 tersebar di 12 bulan.&rdquo;*
+  Lengkap dengan tombol ke Laporan PIC bulan itu.
+- Tabel **Breakdown Bulanan** dapat kolom **Income**: tiap bulan ditandai **&#10003; sudah masuk**,
+  **&#10003; sudah masuk &middot; bulan ini**, **belum &mdash; menyusul**, atau *tidak ada porsi*. Bulan yang
+  sesudah bulan berjalan masuk otomatis saat bulannya tiba &mdash; dan itu dikatakan di bawah tabelnya,
+  supaya tidak ada yang merasa perlu menginput ulang.
+
 ## Fitur & Perbaikan — 20 November 2026
 
 ### Sales baru akhirnya bisa dipakai sejak hari pertama
