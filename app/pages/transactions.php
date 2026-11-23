@@ -2706,8 +2706,77 @@ function allocation_detail(PDO $pdo): void
     // itu memang kebutuhannya — tapi harus terbaca jelas bahwa nilainya lalu
     // berbeda dari surat yang dipegang client.
     $bedaDariSurat = _trx_tahap_beda_dari_surat($lockSkp, $tahap);
-    layout('Detail Alokasi Transaksi #' . $id, function () use ($trx, $allocRows, $adaBagi, $lockSkp, $tahap, $bisaUbahHarga, $bedaDariSurat, $bagiTrx, $picPilihan, $bisaUbahBagi, $acuanBagiTrx, $bisaUbahBulan, $nilaiTerkunci, $ovrTersimpan) {
+    // ── Kenapa nilainya belum terhitung di laporan mana pun? ────────────────
+    // Tanpa baris alokasi, transaksi ini menyumbang Rp 0 ke Dashboard, Laporan
+    // PIC, dan papan Achievement — sementara halaman ini tetap memperlihatkan
+    // nilai kontraknya utuh dan menyebut nama PIC-nya. Dua kalimat yang
+    // bertentangan, dan yang membaca menyimpulkan "income saya hilang".
+    // Sebabnya hampir selalu sama dan bisa disebutkan: dokumennya belum diteken
+    // client. Dikatakan di sini, bukan dibiarkan ditebak.
+    $sebabNol = null;
+    if (!$allocRows) {
+        $dq = $pdo->prepare(
+            "SELECT id, skp_no, doc_type, status, revisi_ke, signed_at FROM skp_documents
+              WHERE property_id = ? AND (transaction_id = ? OR id = ?) AND deleted_at IS NULL
+              ORDER BY id DESC LIMIT 1"
+        );
+        $dq->execute([current_property_id(), $id, (int) ($trx['skp_id'] ?? 0)]);
+        $dok     = $dq->fetch() ?: null;
+        $ttdDari = ttd_wajib_mulai($pdo);
+        $kena    = ttd_wajib_untuk($pdo, (string) ($trx['created_at'] ?? ''));
+        // Nomor dokumen baru terbit saat disetujui, jadi draft & submitted belum
+        // punya satu pun — disebut tanpa nomor, bukan dengan tempelan janggal.
+        $noDok   = trim((string) ($dok['skp_no'] ?? ''));
+        $sebut   = $noDok !== '' ? 'Dokumen ' . $noDok : 'Dokumen transaksi ini';
+        // 'judul' dicetak lewat h(); 'isi' dicetak apa adanya karena memuat
+        // penekanan — jadi nomor dokumen yang masuk ke 'isi' diamankan di sini.
+        $sebutH  = h($sebut);
+        $labelSt = ['draft' => 'masih draft', 'submitted' => 'sudah disubmit, menunggu approval',
+                    'approved' => 'sudah disetujui manager', 'rejected' => 'DITOLAK', 'signed' => 'sudah diteken'];
+
+        if (!$dok) {
+            $sebabNol = ['nada' => 'amber', 'judul' => 'Belum ada dokumen untuk transaksi ini',
+                'isi' => 'Alokasi bulanan terbentuk dari dokumen (SKP / SKS / Form Utilities). Selama dokumennya belum dibuat, nilai kontrak ini tidak masuk ke laporan mana pun.',
+                'aksi' => null];
+        } elseif (($dok['status'] ?? '') === 'rejected') {
+            $sebabNol = ['nada' => 'merah', 'judul' => $sebut . ' ditolak',
+                'isi' => 'Selama dokumennya ditolak, nilainya sengaja tidak diakui. Perbaiki dokumennya lalu ajukan ulang.',
+                'aksi' => ['Buka dokumen', '?r=skp_form&id=' . (int) $dok['id']]];
+        } elseif (empty($dok['signed_at']) && $kena) {
+            $sebabNol = ['nada' => 'amber', 'judul' => $sebut . ' belum ditandatangani client',
+                'isi' => 'Sejak ' . h(date('d/m/Y', strtotime($ttdDari))) . ', income baru diakui setelah client meneken dokumennya. '
+                       . 'Dokumen ini ' . ($labelSt[$dok['status'] ?? ''] ?? (string) ($dok['status'] ?? '')) . ', jadi belum ada alokasi bulanan '
+                       . 'dan nilainya Rp 0 di Dashboard, Laporan PIC, maupun papan Achievement. '
+                       . 'Kirim tautan tanda tangan ke client, atau unggah surat yang sudah diteken.',
+                'aksi' => ['Buka dokumen', '?r=skp_form&id=' . (int) $dok['id']]];
+        } else {
+            $sebabNol = ['nada' => 'merah', 'judul' => 'Alokasi bulanan tidak terbentuk',
+                'isi' => $sebutH . ' sudah selesai, tetapi baris alokasinya tidak ada &mdash; ini bukan keadaan yang wajar. '
+                       . 'Nilainya Rp 0 di semua laporan sampai alokasinya dibangun ulang. Laporkan ke IT dengan menyebut nomor transaksi ini.',
+                'aksi' => null];
+        }
+    }
+    layout('Detail Alokasi Transaksi #' . $id, function () use ($trx, $allocRows, $adaBagi, $picBaris, $sebabNol, $lockSkp, $tahap, $bisaUbahHarga, $bedaDariSurat, $bagiTrx, $picPilihan, $bisaUbahBagi, $acuanBagiTrx, $bisaUbahBulan, $nilaiTerkunci, $ovrTersimpan) {
         ?>
+        <?php /* Peringatan ini berdiri PALING ATAS, sebelum nilai kontraknya
+                 terbaca. Urutannya disengaja: angka besar yang dibaca lebih
+                 dulu akan tetap diingat sebagai "income saya", berapa pun
+                 penjelasan yang menyusul di bawahnya. */ ?>
+        <?php if ($sebabNol): $nd = $sebabNol['nada'] === 'merah'
+                ? ['#fef2f2', '#fecaca', '#991b1b'] : ['#fffbeb', '#fde68a', '#92400e']; ?>
+        <div class="panel" style="background:<?= $nd[0] ?>;border-color:<?= $nd[1] ?>;color:<?= $nd[2] ?>;margin-bottom:12px">
+            <div style="display:flex;gap:12px;align-items:flex-start">
+                <span style="font-size:20px;line-height:1.3;flex-shrink:0">&#9888;&#65039;</span>
+                <div>
+                    <div style="font-weight:800;font-size:15px;margin-bottom:5px">Income transaksi ini belum masuk laporan mana pun &mdash; <?= h($sebabNol['judul']) ?></div>
+                    <div style="font-size:13px;line-height:1.75"><?= $sebabNol['isi'] ?></div>
+                    <?php if ($sebabNol['aksi']): ?>
+                    <div style="margin-top:11px"><a class="btn" href="<?= h($sebabNol['aksi'][1]) ?>"><?= h($sebabNol['aksi'][0]) ?></a></div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
         <div class="panel">
             <?php $moduleLabel = ['cl' => 'Exhibition', 'media' => 'Media', 'gudang' => 'Gudang']; ?>
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
@@ -2806,7 +2875,18 @@ function allocation_detail(PDO $pdo): void
         <div class="panel" style="margin-top:14px">
             <h2>Pembagian Income per PIC</h2>
             <?php if (!$bagiTrx): ?>
-            <p class="muted" style="margin-top:0">Belum dibagi &mdash; seluruh nilai tercatat atas nama <strong><?= h($trx['pic_name'] ?: 'PIC transaksi') ?></strong>.</p>
+                <?php /* Dulu kalimat ini selalu menyebut PIC TRANSAKSI, bahkan
+                         ketika tidak ada satu pun baris alokasi — jadi layar
+                         menyatakan nilainya "tercatat atas nama X" padahal tidak
+                         tercatat di mana pun. Yang disebut sekarang adalah nama
+                         yang benar-benar menempel di baris alokasinya. */ ?>
+                <?php if (!$allocRows): ?>
+                <p class="muted" style="margin-top:0">Belum ada alokasi bulanan &mdash; nilai transaksi ini
+                   <strong>belum tercatat atas nama siapa pun</strong>. Lihat keterangan di bagian atas halaman.</p>
+                <?php else: ?>
+                <p class="muted" style="margin-top:0">Belum dibagi &mdash; seluruh nilai tercatat atas nama
+                   <strong><?= h($picBaris[0] ?? ($trx['pic_name'] ?: 'PIC transaksi')) ?></strong>.</p>
+                <?php endif; ?>
             <?php else: ?>
             <div class="table-wrap">
                 <table style="max-width:560px">

@@ -11,6 +11,27 @@
 
 ---
 
+## Fitur & Perbaikan — 23 November 2026
+
+### &ldquo;Income saya tidak masuk&rdquo; akhirnya dijawab di layar yang ditanyakan
+
+- Sejak **8 Oktober 2026** income hanya diakui setelah **client menandatangani** dokumennya. Itu aturan yang
+  disengaja. Yang tidak disengaja: transaksi yang belum diteken menghilang tanpa jejak &mdash; alokasi bulanannya
+  tidak dibangun, jadi nilainya Rp 0 di Dashboard, Laporan PIC, dan papan Achievement, sementara barisnya ikut
+  disaring keluar dari daftar modulnya.
+- Halaman **Detail Alokasi** justru memperkuat salah paham itu. Ia tetap memperlihatkan nilai kontrak utuh, dan
+  menulis *&ldquo;Belum dibagi &mdash; seluruh nilai tercatat atas nama [PIC]&rdquo;* &mdash; kalimat yang diambil dari PIC
+  **transaksi**, bukan dari baris alokasi. Untuk transaksi yang belum punya satu pun baris alokasi, layar itu
+  menyatakan nilainya tercatat atas nama seseorang padahal tidak tercatat di mana pun.
+- Sekarang halaman itu berterus terang. Di paling atas &mdash; sebelum angka kontraknya sempat terbaca &mdash; muncul
+  keterangan **&ldquo;Income transaksi ini belum masuk laporan mana pun&rdquo;** beserta sebabnya yang sebenarnya:
+  dokumennya belum dibuat, masih draft, menunggu approval, sudah disetujui tetapi belum diteken client, atau
+  ditolak. Lengkap dengan tombol langsung ke dokumennya.
+- Kalimat pembagian income ikut dibetulkan: yang disebut sekarang nama yang benar-benar menempel di baris
+  alokasinya, dan bila belum ada barisnya ia berkata apa adanya &mdash; *belum tercatat atas nama siapa pun*.
+- Daftar modul sudah lebih dulu punya spanduk *&ldquo;N transaksi &middot; Rp X belum masuk laporan mana pun&rdquo;*
+  beserta tautan **lihat daftarnya**; keduanya kini bercerita hal yang sama.
+
 ## Fitur & Perbaikan — 20 November 2026
 
 ### Sales baru akhirnya bisa dipakai sejak hari pertama
