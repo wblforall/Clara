@@ -36,6 +36,11 @@
 - Satuan yang nominalnya sudah berupa total (mis. *&ldquo;/5 Titik/Hari&rdquo;* berisi Rp 25.000.000) **tidak ditebak**.
   Harga satuannya tidak tersimpan di mana pun, dan menebaknya berarti mencetak angka karangan di surat
   yang dipegang client &mdash; item seperti itu memerlukan kolom **Hitungan** diisi sekali.
+- Untuk item borongan pada dokumen yang **sudah terlanjur disubmit**, hitungannya bisa dilengkapi tanpa
+  menolak dokumennya: `php scripts/set_hitungan_fu.php --doc=469 --item=&quot;Mobil&quot; --tarif=1000000
+  --titik=5 --hari=5`. Skrip itu **menolak** menyimpan bila harga &times; titik &times; hari tidak sama persis
+  dengan nominal yang sudah tersimpan &mdash; yang ditambahkan hanya keterangan, bukan uang. Tanpa
+  `--terapkan` ia hanya menampilkan daftar item dan keadaan hitungannya.
 
 ## Fitur & Perbaikan — 23 November 2026
 
