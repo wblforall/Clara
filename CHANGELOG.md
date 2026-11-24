@@ -11,6 +11,24 @@
 
 ---
 
+## Fitur & Perbaikan — 24 November 2026
+
+### Rincian Biaya Form Utilities menunjukkan hitungannya, bukan hanya hasilnya
+
+- Formulir kertasnya selalu menuliskan asal angkanya &mdash; *&ldquo;Total biaya t-banner Rp 135.000 x 5 titik
+  x 7 hari = Rp 4.725.000&rdquo;*. Yang tercetak CLARA hanya satu angka jadi, karena memang hanya itu yang
+  tersimpan: tiap item punya satu kotak **Biaya** dan satu keterangan satuan berupa tulisan bebas.
+  Penyewa tidak punya cara memeriksa dari mana Rp 29.725.000 itu datang.
+- Tiap item Utilities / Media Promo / Parkir sekarang punya kolom **Hitungan**: harga satuan &times; jumlah
+  titik &times; jumlah hari. Mengisinya langsung mengisi kolom **Biaya** &mdash; dan angka yang diketik tangan
+  tidak pernah ditimpa, jadi item berharga borongan cukup mengisi Biaya seperti dulu.
+- **Rincian Biaya** pada surat kini memuat satu baris per item beserta hitungannya, persis seperti
+  formulir kertas, sebelum *Total Biaya Sewa* dan *Grand Total*. Item yang ketiga angkanya kosong tetap
+  tercetak seperti sebelumnya.
+- Catatan kaki **&ldquo;*PPN 12% Sesuai PMK No. 131 Tahun 2024&hellip;&rdquo;** tidak lagi ikut tercetak pada dokumen
+  yang memang **tanpa PPN**. Sebelumnya selalu muncul, dan penyewa membacanya sebagai pemberitahuan
+  bahwa angkanya masih akan ditambah 12%.
+
 ## Fitur & Perbaikan — 23 November 2026
 
 ### &ldquo;Income saya tidak masuk&rdquo; akhirnya dijawab di layar yang ditanyakan

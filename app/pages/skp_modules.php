@@ -339,7 +339,8 @@ function skp_detail_defaults(array $tpl, string $docType, array $src, array $amt
         // 'ket' hanya dipakai item bernama "Lainnya" — namanya sendiri belum
         // menyebut apa pun, jadi isinya ditulis sendiri oleh pengisi formulir.
         $mk = fn(array $names) => array_map(
-            fn($n) => ['nama' => (string) $n, 'checked' => 0, 'ket' => '', 'lokasi' => '', 'biaya' => '', 'satuan' => ''],
+            fn($n) => ['nama' => (string) $n, 'checked' => 0, 'ket' => '', 'lokasi' => '', 'biaya' => '', 'satuan' => '',
+                       'tarif' => '', 'titik' => '', 'hari' => ''],
             $names
         );
         return [
@@ -409,6 +410,13 @@ function skp_detail_from_post(string $docType): array
                     'biaya'   => parse_rupiah((string) ($r['biaya'] ?? '0')),
                     // Keterangan satuan bebas, mis. "/Titik/Hari".
                     'satuan'  => trim((string) ($r['satuan'] ?? '')),
+                    // Bahan hitungan biayanya, supaya surat bisa mencetak
+                    // "Rp. 135.000 × 5 titik × 7 hari = Rp. 4.725.000" dan
+                    // bukan hanya angka jadinya. Boleh kosong: item yang
+                    // harganya borongan tetap tercetak satu angka seperti dulu.
+                    'tarif'   => parse_rupiah((string) ($r['tarif'] ?? '0')),
+                    'titik'   => max(0, (int) preg_replace('/\D/', '', (string) ($r['titik'] ?? ''))),
+                    'hari'    => max(0, (int) preg_replace('/\D/', '', (string) ($r['hari'] ?? ''))),
                 ];
             }
             return $out;
@@ -492,7 +500,8 @@ function skp_fu_sinkron_tpl(array $det, array $tpl): array
         }
         foreach ($tplNama as $kunci => $nama) {
             if (in_array($kunci, $ada, true)) continue;
-            $hasil[] = ['nama' => $nama, 'checked' => 0, 'ket' => '', 'lokasi' => '', 'biaya' => '', 'satuan' => ''];
+            $hasil[] = ['nama' => $nama, 'checked' => 0, 'ket' => '', 'lokasi' => '', 'biaya' => '', 'satuan' => '',
+                        'tarif' => '', 'titik' => '', 'hari' => ''];
             $ada[]   = $kunci;
         }
         $det[$k] = $hasil;
@@ -724,6 +733,7 @@ function skp_fu_group(string $key, array $items, bool $withLokasi, bool $editabl
             <th style="width:54px;text-align:center">Pakai</th>
             <th style="<?= $withLokasi ? 'width:26%' : '' ?>">Item</th>
             <?php if ($withLokasi): ?><th>Lokasi Pemasangan</th><?php endif; ?>
+            <th style="width:250px">Hitungan <span style="font-weight:400;color:var(--muted);font-size:11px">(harga &times; titik &times; hari)</span></th>
             <th style="width:150px;text-align:right">Biaya</th>
             <th style="width:120px">Satuan</th>
         </tr></thead>
@@ -769,6 +779,26 @@ function skp_fu_group(string $key, array $items, bool $withLokasi, bool $editabl
                 <?php if ($withLokasi): ?>
                 <td><input name="<?= $key ?>[<?= $i ?>][lokasi]" value="<?= h($it['lokasi'] ?? '') ?>" placeholder="mis. Lobby Utama Lt. 1" style="width:100%" <?= $dis ?>></td>
                 <?php endif; ?>
+                <?php /* Harga satuan, jumlah titik, jumlah hari. Diisi di sini supaya
+                         SURATNYA bisa mencetak hitungannya — formulir kertas memang
+                         menuliskannya begitu ("Rp 135.000 x 5 titik x 7 hari =
+                         Rp 4.725.000"), dan tanpa ketiga angka ini yang tersimpan
+                         hanya hasil akhirnya. Boleh dikosongkan: item berharga
+                         borongan tetap cukup mengisi kolom Biaya. */ ?>
+                <td>
+                    <div style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted)">
+                        <?php skp_input_rp("{$key}[{$i}][tarif]", $it['tarif'] ?? '', $dis, false, true, 'fu-tarif'); ?>
+                        <span>&times;</span>
+                        <input name="<?= $key ?>[<?= $i ?>][titik]" class="fu-titik-n" inputmode="numeric"
+                               value="<?= h((int) ($it['titik'] ?? 0) > 0 ? (string) (int) $it['titik'] : '') ?>" placeholder="0"
+                               style="width:40px;text-align:right;font-size:11.5px;padding:0 4px" <?= $dis ?>>
+                        <span>titik &times;</span>
+                        <input name="<?= $key ?>[<?= $i ?>][hari]" class="fu-hari-n" inputmode="numeric"
+                               value="<?= h((int) ($it['hari'] ?? 0) > 0 ? (string) (int) $it['hari'] : '') ?>" placeholder="0"
+                               style="width:40px;text-align:right;font-size:11.5px;padding:0 4px" <?= $dis ?>>
+                        <span>hari</span>
+                    </div>
+                </td>
                 <td><?php skp_input_rp("{$key}[{$i}][biaya]", $it['biaya'] ?? '', $dis, false, true, 'fu-biaya'); ?></td>
                 <td><input name="<?= $key ?>[<?= $i ?>][satuan]" value="<?= h($it['satuan'] ?? '') ?>" placeholder="/Titik/Hari" style="width:100%;font-size:11.5px" <?= $dis ?>></td>
             </tr>
@@ -1078,6 +1108,41 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
         $o .= '<div style="page-break-inside:avoid">'
             . '<div class="sec">Rincian Biaya</div><table class="pay fu">';
         if ($tarif > 0) $o .= $brs($h($lblTarif), $tarif);
+        // Baris hitungan per item — persis cara formulir kertas menuliskannya:
+        // "Total biaya T Banner / Rp. 135.000 × 5 titik × 7 hari ... Rp. 4.725.000".
+        // Sebelumnya yang tercetak hanya satu angka jadi, sehingga penyewa tidak
+        // bisa memeriksa dari mana asalnya. Item yang harganya borongan (ketiga
+        // angkanya kosong) tetap tidak dapat baris sendiri — tidak ada yang bisa
+        // diuraikan di situ.
+        foreach ([
+            'utilities'   => $det['utilities']   ?? [],
+            'media_promo' => $det['media_promo'] ?? [],
+            'parkir'      => $det['parkir']      ?? [],
+        ] as $gKey => $gItems) {
+            if (!empty($sembunyi[$gKey])) continue;   // harga kelompok ini memang tidak dicetak
+            foreach ((array) $gItems as $it) {
+                if (empty($it['checked'])) continue;
+                $itTarif = (float) ($it['tarif'] ?? 0);
+                $itTitik = (int) ($it['titik'] ?? 0);
+                $itHari  = (int) ($it['hari'] ?? 0);
+                if ($itTarif <= 0 || $itTitik <= 0 || $itHari <= 0) continue;
+                $itNama = trim((string) ($it['ket'] ?? '')) !== ''
+                    ? (string) $it['ket'] : (string) ($it['nama'] ?? '');
+                // "Mobil" sendirian tidak menyebut jasanya. Formulir kertas
+                // menulis "test drive", jadi kelompok parkir diberi awalan itu.
+                if ($gKey === 'parkir') $itNama = 'Test Drive ' . $itNama;
+                $itLok  = trim((string) ($it['lokasi'] ?? ''));
+                $itNilai = (float) ($it['biaya'] ?? 0) > 0
+                    ? (float) $it['biaya'] : $itTarif * $itTitik * $itHari;
+                $o .= $brs(
+                    'Total biaya ' . $h($itNama)
+                    . ($itLok !== '' ? ' <span class="muted">(' . $h($itLok) . ')</span>' : '')
+                    . '<br><span class="muted" style="font-size:9.5px">Rp. ' . $nf($itTarif)
+                    . ' &times; ' . $itTitik . ' titik &times; ' . $itHari . ' hari</span>',
+                    $itNilai
+                );
+            }
+        }
         $o .= $brs('Total Biaya Sewa', $tot);
         if ($ppn > 0) $o .= $brs('PPN 12%', $ppn);
         if ($dep > 0) {
@@ -1094,6 +1159,10 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
         // dasar hukum, bukan bagian dari angka. Sisanya — nomor rekening
         // pembayaran — tebal seukuran badan surat, mengikuti formulir aslinya.
         foreach (($tpl['notes'] ?? []) as $i => $n) {
+            // Butir pertama adalah dasar hukum PPN. Dokumen tanpa PPN tidak
+            // boleh ikut mencetaknya: penyewa membaca catatan itu sebagai
+            // pemberitahuan bahwa angkanya masih akan ditambah 12%.
+            if ($i === 0 && $ppn <= 0) continue;
             $o .= $i === 0
                 ? '<p style="font-size:9px;line-height:1.5;margin:0 0 8px;font-style:italic;font-weight:bold">' . $h($n) . '</p>'
                 // Baris rekening diberi jarak atas supaya blok uang tidak menempel
@@ -2197,6 +2266,34 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
             var tr = el.closest('tr'), c = tr ? tr.querySelector('.fu-cek') : null;
             if (c && !c.checked && angka(el) > 0) c.checked = true;   // diisi = dipakai
             if (tr && c) tr.style.background = c.checked ? '#f0fdf4' : 'transparent';
+            // Biaya yang diketik sendiri menang atas hitungan harga × titik × hari.
+            if (tr) tr.dataset.biayaManual = angka(el) > 0 ? '1' : '';
+            hitungTotal();
+        });
+        // Harga satuan × titik × hari → kolom Biaya. Yang tersimpan tetap satu
+        // angka seperti dulu; ketiga angkanya ikut tersimpan hanya supaya
+        // suratnya bisa mencetak hitungannya.
+        document.addEventListener('input', function (e) {
+            var el = e.target;
+            if (!el.classList) return;
+            if (!el.classList.contains('fu-tarif') && !el.classList.contains('fu-titik-n')
+                && !el.classList.contains('fu-hari-n')) return;
+            var tr = el.closest('tr');
+            if (!tr) return;
+            var t = angka(tr.querySelector('.fu-tarif')),
+                n = angka(tr.querySelector('.fu-titik-n')),
+                d = angka(tr.querySelector('.fu-hari-n')),
+                b = tr.querySelector('.fu-biaya');
+            if (!b || t <= 0 || n <= 0 || d <= 0) return;
+            // Hanya menimpa Biaya yang memang lahir dari hitungan ini — angka
+            // yang diketik tangan tidak ditarik pergi dari bawah penggunanya.
+            if (tr.dataset.biayaManual === '1' && b.value.replace(/\D/g, '') !== (tr.dataset.biayaAuto || '')) return;
+            var hasil = t * n * d;
+            b.value = fmt(hasil);
+            tr.dataset.biayaAuto = String(hasil);
+            tr.dataset.biayaManual = '';
+            var c = tr.querySelector('.fu-cek');
+            if (c && !c.checked) { c.checked = true; tr.style.background = '#f0fdf4'; }
             hitungTotal();
         });
         document.addEventListener('input', function (e) {
@@ -2237,7 +2334,7 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
             if (!g) return;
             var baris = document.querySelectorAll('tr.fu-row[data-grup="' + g + '"]');
             for (var i = 0; i < baris.length; i++) {
-                var sel = baris[i].querySelectorAll('.fu-biaya, input[name$="[satuan]"]');
+                var sel = baris[i].querySelectorAll('.fu-biaya, .fu-tarif, .fu-titik-n, .fu-hari-n, input[name$="[satuan]"]');
                 for (var j = 0; j < sel.length; j++) {
                     var kotak = sel[j].closest('div') || sel[j];
                     kotak.style.opacity = redup ? '.4' : '';
