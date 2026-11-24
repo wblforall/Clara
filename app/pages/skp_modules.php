@@ -1048,7 +1048,33 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
                     continue;
                 }
 
-                // ── Beberapa titik: kepala item, lalu satu baris per titik ───
+                // ── Beberapa titik yang TIDAK dibedakan apa pun ──────────────
+                // Lokasi kosong, keterangan kosong, nominal & satuannya sama:
+                // memecahnya jadi "Titik ke-1 … ke-5" hanya mencetak lima baris
+                // yang bunyinya persis sama. Yang ingin dibaca penyewa cuma dua
+                // hal — berapa titik, dan berapa harganya per titik per hari.
+                $seragam = true; $wakil = null;
+                foreach ($pakai as $it) {
+                    if (trim((string) ($it['lokasi'] ?? '')) !== ''
+                        || trim((string) ($it['ket'] ?? '')) !== '') { $seragam = false; break; }
+                    if ($wakil === null) { $wakil = $it; continue; }
+                    if (abs((float) ($wakil['biaya'] ?? 0) - (float) ($it['biaya'] ?? 0)) > 0.009
+                        || trim((string) ($wakil['satuan'] ?? '')) !== trim((string) ($it['satuan'] ?? ''))) {
+                        $seragam = false; break;
+                    }
+                }
+                if ($seragam && $wakil !== null) {
+                    $adaCek = false;
+                    foreach ($bl['baris'] as $it) { if (!empty($it['checked'])) { $adaCek = true; break; } }
+                    $x .= '<tr><td class="tnd">' . ($adaCek ? $tandaOn : $tandaOff) . '</td>'
+                        . '<td class="nm"' . $kolomNm . '>' . $h($bl['nama'])
+                        . ' <span class="muted">(' . count($pakai) . ' titik)</span></td>'
+                        . ($tanpaHarga ? '' : $nilai($wakil['biaya'] ?? '', trim((string) ($wakil['satuan'] ?? ''))))
+                        . '</tr>';
+                    continue;
+                }
+
+                // ── Beberapa titik yang berbeda lokasi: kepala item, lalu satu baris per titik ───
                 $adaCek = false;
                 foreach ($bl['baris'] as $it) { if (!empty($it['checked'])) { $adaCek = true; break; } }
                 $x .= '<tr><td class="tnd">' . ($adaCek ? $tandaOn : $tandaOff) . '</td>'
