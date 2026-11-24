@@ -36,6 +36,9 @@
 - Satuan yang nominalnya sudah berupa total (mis. *&ldquo;/5 Titik/Hari&rdquo;* berisi Rp 25.000.000) **tidak ditebak**.
   Harga satuannya tidak tersimpan di mana pun, dan menebaknya berarti mencetak angka karangan di surat
   yang dipegang client &mdash; item seperti itu memerlukan kolom **Hitungan** diisi sekali.
+- Baris **&ldquo;Biaya / Hari&rdquo;** tidak lagi dicetak di Rincian Biaya Form Utilities. Itu tarif kontrak, bukan
+  bagian dari penjumlahan item &mdash; berdiri di atas daftar yang menjumlah sendiri, ia terbaca seperti
+  biaya tambahan. Formulir kertasnya pun tidak memuatnya.
 - Item yang titiknya **tidak dibedakan apa pun** &mdash; lokasi kosong, keterangan kosong, nominal &
   satuannya sama &mdash; tidak lagi dipecah menjadi daftar *&ldquo;Titik ke-1 &hellip; ke-5&rdquo;* yang bunyinya persis
   sama lima kali. Cukup satu baris: **Mobil (5 titik) &middot; Rp. 1.000.000 &middot; /Titik/Hari**. Item yang tiap

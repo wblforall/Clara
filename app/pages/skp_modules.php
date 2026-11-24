@@ -1124,17 +1124,12 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
         // Jaminan yang SUDAH disetor tetap tercetak sebagai keterangan, tapi
         // tidak ditagih ulang — sama seperti di SKP.
         $bayar = $grand + ($dep > 0 && !$depOk ? $dep : 0.0);
-        $tarif = (float) ($amt['rate_m_day'] ?? 0);
-        // Nama baris tarif mengikuti dasar harga yang dipakai kontraknya, supaya
-        // "Biaya / Hari" tidak tercetak di dokumen yang dihitung per bulan.
-        $lblTarif = match ((string) ($d['pricing_type'] ?? '')) {
-            'daily_area'   => 'Biaya / m² / Hari',
-            'daily_slot'   => 'Biaya / Slot / Hari',
-            'monthly'      => 'Biaya / Bulan',
-            'monthly_area' => 'Biaya / m² / Bulan',
-            'fixed'        => 'Nilai Kontrak',
-            default        => 'Biaya / Hari',
-        };
+        // Baris tarif kontrak ("Biaya / Hari") sengaja TIDAK dicetak di sini.
+        // Formulir Utilities menagih per item — tiap barisnya sudah menyebut
+        // harga satuan, jumlah titik, dan jumlah harinya sendiri. Tarif kontrak
+        // berdiri di luar penjumlahan itu, jadi yang membaca melihat satu angka
+        // yang tidak ikut ke mana-mana dan mengira ada biaya tambahan.
+        // Formulir kertasnya pun tidak memuat baris ini.
         // "Rp." dipisah dari angkanya, sama seperti daftar centang di atas:
         // dirata-kanan sebagai satu untai, letak "Rp." ikut bergeser mengikuti
         // panjang angka — "Rp. 247.500" tidak pernah lurus dengan
@@ -1144,7 +1139,6 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
             . '</td><td class="nilai" colspan="2"' . $gaya . '>Rp. ' . $nf($v) . '</td></tr>';
         $o .= '<div style="page-break-inside:avoid">'
             . '<div class="sec">Rincian Biaya</div><table class="pay fu">';
-        if ($tarif > 0) $o .= $brs($h($lblTarif), $tarif);
         // ── Baris hitungan per item ──────────────────────────────────────
         // Formulir kertasnya menulis asal angkanya: "Total biaya t-banner
         // Rp 135.000 x 5 titik x 7 hari = Rp 4.725.000". Dua sumber dipakai,
