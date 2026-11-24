@@ -1119,38 +1119,79 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
         $o .= '<div style="page-break-inside:avoid">'
             . '<div class="sec">Rincian Biaya</div><table class="pay fu">';
         if ($tarif > 0) $o .= $brs($h($lblTarif), $tarif);
-        // Baris hitungan per item — persis cara formulir kertas menuliskannya:
-        // "Total biaya T Banner / Rp. 135.000 × 5 titik × 7 hari ... Rp. 4.725.000".
-        // Sebelumnya yang tercetak hanya satu angka jadi, sehingga penyewa tidak
-        // bisa memeriksa dari mana asalnya. Item yang harganya borongan (ketiga
-        // angkanya kosong) tetap tidak dapat baris sendiri — tidak ada yang bisa
-        // diuraikan di situ.
+        // ── Baris hitungan per item ──────────────────────────────────────
+        // Formulir kertasnya menulis asal angkanya: "Total biaya t-banner
+        // Rp 135.000 x 5 titik x 7 hari = Rp 4.725.000". Dua sumber dipakai,
+        // berurutan:
+        //
+        //   1. Kolom Hitungan yang DIISI di formulir (harga/titik/hari) — ini
+        //      yang berlaku kalau ada, karena hanya pengisinya yang tahu bila
+        //      satu item dipakai lebih pendek dari masa sewanya (test drive 5
+        //      hari di dalam sewa 7 hari).
+        //   2. Kalau kosong, DITURUNKAN dari yang memang sudah tersimpan: satu
+        //      item yang dipasang di beberapa titik tersimpan sebagai beberapa
+        //      baris, dan tiap baris bersatuan "/Titik/Hari" dengan nominal yang
+        //      sama. Satuan itu tidak bermakna ganda — nominalnya harga per
+        //      titik per hari — jadi jumlah titiknya = jumlah barisnya dan
+        //      jumlah harinya = masa sewa dokumen. Dokumen lama pun langsung
+        //      punya rinciannya tanpa diketik ulang.
+        //
+        // Satuan selain itu (mis. "/5 Titik/Hari" yang nominalnya sudah total)
+        // sengaja TIDAK ditebak: menebak di sini berarti mencetak harga satuan
+        // karangan di surat yang dipegang client.
+        $hariDok = (int) ($d['days'] ?? 0);
         foreach ([
             'utilities'   => $det['utilities']   ?? [],
             'media_promo' => $det['media_promo'] ?? [],
             'parkir'      => $det['parkir']      ?? [],
         ] as $gKey => $gItems) {
             if (!empty($sembunyi[$gKey])) continue;   // harga kelompok ini memang tidak dicetak
+            // Baris dikelompokkan menurut nama item, sama seperti daftar centang
+            // di atas menggabungkan beberapa titik jadi satu item.
+            $kelompok = [];
             foreach ((array) $gItems as $it) {
                 if (empty($it['checked'])) continue;
-                $itTarif = (float) ($it['tarif'] ?? 0);
-                $itTitik = (int) ($it['titik'] ?? 0);
-                $itHari  = (int) ($it['hari'] ?? 0);
-                if ($itTarif <= 0 || $itTitik <= 0 || $itHari <= 0) continue;
-                $itNama = trim((string) ($it['ket'] ?? '')) !== ''
+                $nm = trim((string) ($it['ket'] ?? '')) !== ''
                     ? (string) $it['ket'] : (string) ($it['nama'] ?? '');
+                $kelompok[mb_strtolower($nm)][] = $it;
+            }
+            foreach ($kelompok as $barisItem) {
+                $awal    = $barisItem[0];
+                $itTarif = (float) ($awal['tarif'] ?? 0);
+                $itTitik = (int) ($awal['titik'] ?? 0);
+                $itHari  = (int) ($awal['hari'] ?? 0);
+
+                if ($itTarif <= 0 || $itTitik <= 0 || $itHari <= 0) {
+                    // Diturunkan — hanya bila SELURUH barisnya bersatuan
+                    // "/Titik/Hari" dengan nominal yang sama persis.
+                    $satuan1 = null; $sah = $hariDok > 0;
+                    foreach ($barisItem as $r) {
+                        $sat = strtolower(preg_replace('/\s+/', '', (string) ($r['satuan'] ?? '')));
+                        $nil = (float) ($r['biaya'] ?? 0);
+                        if ($sat !== '/titik/hari' || $nil <= 0) { $sah = false; break; }
+                        if ($satuan1 === null) $satuan1 = $nil;
+                        elseif (abs($satuan1 - $nil) > 0.009) { $sah = false; break; }
+                    }
+                    if (!$sah) continue;
+                    $itTarif = (float) $satuan1;
+                    $itTitik = count($barisItem);
+                    $itHari  = $hariDok;
+                }
+
+                $itNama = trim((string) ($awal['ket'] ?? '')) !== ''
+                    ? (string) $awal['ket'] : (string) ($awal['nama'] ?? '');
                 // "Mobil" sendirian tidak menyebut jasanya. Formulir kertas
                 // menulis "test drive", jadi kelompok parkir diberi awalan itu.
                 if ($gKey === 'parkir') $itNama = 'Test Drive ' . $itNama;
-                $itLok  = trim((string) ($it['lokasi'] ?? ''));
-                $itNilai = (float) ($it['biaya'] ?? 0) > 0
-                    ? (float) $it['biaya'] : $itTarif * $itTitik * $itHari;
+                $itLok = trim((string) ($awal['lokasi'] ?? ''));
+                // Nominalnya SELALU hasil hitungan yang tercetak di sebelahnya,
+                // supaya baris itu tidak pernah memuat matematika yang tidak cocok.
                 $o .= $brs(
                     'Total biaya ' . $h($itNama)
                     . ($itLok !== '' ? ' <span class="muted">(' . $h($itLok) . ')</span>' : '')
                     . '<br><span class="muted" style="font-size:9.5px">Rp. ' . $nf($itTarif)
                     . ' &times; ' . $itTitik . ' titik &times; ' . $itHari . ' hari</span>',
-                    $itNilai
+                    $itTarif * $itTitik * $itHari
                 );
             }
         }

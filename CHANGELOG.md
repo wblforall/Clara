@@ -28,6 +28,14 @@
 - Catatan kaki **&ldquo;*PPN 12% Sesuai PMK No. 131 Tahun 2024&hellip;&rdquo;** tidak lagi ikut tercetak pada dokumen
   yang memang **tanpa PPN**. Sebelumnya selalu muncul, dan penyewa membacanya sebagai pemberitahuan
   bahwa angkanya masih akan ditambah 12%.
+- **Dokumen lama ikut dapat rinciannya tanpa diketik ulang.** Satu item yang dipasang di beberapa titik
+  memang sudah tersimpan sebagai beberapa baris &mdash; lima baris T&nbsp;Banner, masing-masing
+  Rp 135.000 bersatuan *&ldquo;/Titik/Hari&rdquo;*. Satuan itu tidak bermakna ganda, jadi jumlah titiknya diambil dari
+  jumlah barisnya dan jumlah harinya dari masa sewa dokumen: tercetak
+  *&ldquo;Rp. 135.000 &times; 5 titik &times; 7 hari = Rp. 4.725.000&rdquo;*.
+- Satuan yang nominalnya sudah berupa total (mis. *&ldquo;/5 Titik/Hari&rdquo;* berisi Rp 25.000.000) **tidak ditebak**.
+  Harga satuannya tidak tersimpan di mana pun, dan menebaknya berarti mencetak angka karangan di surat
+  yang dipegang client &mdash; item seperti itu memerlukan kolom **Hitungan** diisi sekali.
 
 ## Fitur & Perbaikan — 23 November 2026
 
