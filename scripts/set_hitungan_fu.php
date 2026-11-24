@@ -27,6 +27,14 @@
  *   php scripts/set_hitungan_fu.php --doc=469
  *   php scripts/set_hitungan_fu.php --doc=469 --item="Mobil" --tarif=1000000 --titik=5 --hari=5
  *   php scripts/set_hitungan_fu.php --doc=469 --item="Mobil" --tarif=1000000 --titik=5 --hari=5 --terapkan
+ *
+ * --pecah  : sekalian memecah baris borongan itu menjadi beberapa baris titik,
+ *            masing-masing berisi HARGA SATUAN dengan satuan "/Titik/Hari" —
+ *            bentuk yang sama dengan item yang titiknya diisi satu per satu
+ *            lewat tombol "+ titik lain". Daftar centang di surat lalu memuat
+ *            "Mobil (5 titik)" beserta tiap titiknya, bukan satu angka gelondongan.
+ *            Jumlah uangnya tetap: 5 x Rp 1.000.000 /titik/hari x 5 hari.
+ *   php scripts/set_hitungan_fu.php --doc=469 --item="Mobil" --tarif=1000000 --titik=5 --hari=5 --pecah --lokasi="PJU 1" --terapkan
  */
 
 declare(strict_types=1);
@@ -37,9 +45,11 @@ $root = dirname(__DIR__);
 require_once $root . '/app/env.php';
 require_once $root . '/app/Database.php';
 
-$opt = array_merge(['doc' => '', 'item' => '', 'tarif' => '', 'titik' => '', 'hari' => ''],
-    getopt('', ['doc:', 'item:', 'tarif:', 'titik:', 'hari:', 'terapkan']));
-$terapkan = array_key_exists('terapkan', getopt('', ['terapkan']));
+$opt = array_merge(['doc' => '', 'item' => '', 'tarif' => '', 'titik' => '', 'hari' => '', 'lokasi' => ''],
+    getopt('', ['doc:', 'item:', 'tarif:', 'titik:', 'hari:', 'lokasi:', 'terapkan', 'pecah']));
+$bendera  = getopt('', ['terapkan', 'pecah']);
+$terapkan = array_key_exists('terapkan', $bendera);
+$pecah    = array_key_exists('pecah', $bendera);
 
 $docId = (int) $opt['doc'];
 if ($docId <= 0) {
@@ -86,8 +96,14 @@ foreach ($grup as $gk => $gl) {
         printf("    [%s] %-22s %-16s satuan \"%s\"%s\n", $gl, $nama, $rp($it['biaya'] ?? 0),
             (string) ($it['satuan'] ?? ''),
             $sudah ? sprintf('  → %s × %d titik × %d hari', $rp($t), $n, $d) : '  → hitungan BELUM diisi');
-        if ($opt['item'] !== '' && strcasecmp($nama, (string) $opt['item']) === 0 && $ketemu === null) {
-            $ketemu = ['grup' => $gk, 'idx' => $i, 'nama' => $nama, 'biaya' => (float) ($it['biaya'] ?? 0)];
+        if ($opt['item'] !== '' && strcasecmp($nama, (string) $opt['item']) === 0) {
+            if ($ketemu === null) {
+                $ketemu = ['grup' => $gk, 'idx' => $i, 'nama' => $nama,
+                           'biaya' => (float) ($it['biaya'] ?? 0),
+                           'lokasi' => (string) ($it['lokasi'] ?? ''), 'baris' => 1];
+            } else {
+                $ketemu['baris']++;
+            }
         }
     }
 }
@@ -124,6 +140,18 @@ if (abs($hasil - $ketemu['biaya']) > 0.5) {
     exit(2);
 }
 
+if ($pecah) {
+    if ((int) $ketemu['baris'] !== 1) {
+        fwrite(STDERR, "BERHENTI: --pecah hanya untuk item yang masih SATU baris borongan;\n"
+                     . "\"{$ketemu['nama']}\" sudah punya {$ketemu['baris']} baris.\n");
+        exit(2);
+    }
+    printf("    --pecah: baris borongan diganti %d baris titik @ %s /Titik/Hari%s\n",
+        $titik, $rp($tarif),
+        trim((string) $opt['lokasi']) !== '' ? ', lokasi "' . trim((string) $opt['lokasi']) . '"' : '');
+    echo "\n";
+}
+
 if (!$terapkan) {
     echo "  SIMULASI — belum ada yang diubah. Tambahkan --terapkan untuk menyimpan.\n\n";
     exit(1);
@@ -133,6 +161,26 @@ $det[$ketemu['grup']][$ketemu['idx']]['tarif'] = $tarif;
 $det[$ketemu['grup']][$ketemu['idx']]['titik'] = $titik;
 $det[$ketemu['grup']][$ketemu['idx']]['hari']  = $hariP;
 
+if ($pecah) {
+    // Baris borongan diganti SEJUMLAH TITIK baris, masing-masing berisi harga
+    // satuannya. Hitungan (tarif/titik/hari) tetap menempel di baris pertama —
+    // cetakan membacanya dari situ, dan tanpa itu jumlah harinya akan jatuh ke
+    // masa sewa dokumen (7 hari) padahal pemakaiannya cuma 5.
+    $asal = $det[$ketemu['grup']][$ketemu['idx']];
+    $lok  = trim((string) $opt['lokasi']) !== '' ? trim((string) $opt['lokasi']) : (string) $ketemu['lokasi'];
+    $baru = [];
+    for ($k = 0; $k < $titik; $k++) {
+        $baris = $asal;
+        $baris['checked'] = 1;
+        $baris['biaya']   = $tarif;          // harga SATUAN, bukan total lagi
+        $baris['satuan']  = '/Titik/Hari';
+        $baris['lokasi']  = $lok;
+        if ($k > 0) { $baris['tarif'] = ''; $baris['titik'] = ''; $baris['hari'] = ''; }
+        $baru[] = $baris;
+    }
+    array_splice($det[$ketemu['grup']], $ketemu['idx'], 1, $baru);
+}
+
 $pdo->prepare('UPDATE skp_documents SET detail_json = ? WHERE id = ?')
     ->execute([json_encode($det, JSON_UNESCAPED_UNICODE), $docId]);
 
@@ -140,6 +188,11 @@ $pdo->prepare('UPDATE skp_documents SET detail_json = ? WHERE id = ?')
 $st->execute([$docId]);
 $ulang = json_decode((string) ($st->fetch()['detail_json'] ?? ''), true);
 $cek   = $ulang[$ketemu['grup']][$ketemu['idx']] ?? [];
-printf("  TERSIMPAN — dibaca ulang: %s × %d titik × %d hari\n",
-    $rp($cek['tarif'] ?? 0), (int) ($cek['titik'] ?? 0), (int) ($cek['hari'] ?? 0));
+$nBaris = 0;
+foreach ((array) ($ulang[$ketemu['grup']] ?? []) as $r) {
+    $nm = trim((string) ($r['ket'] ?? '')) !== '' ? (string) $r['ket'] : (string) ($r['nama'] ?? '');
+    if (strcasecmp($nm, $ketemu['nama']) === 0 && !empty($r['checked'])) $nBaris++;
+}
+printf("  TERSIMPAN — dibaca ulang: %s × %d titik × %d hari  (%d baris titik)\n",
+    $rp($cek['tarif'] ?? 0), (int) ($cek['titik'] ?? 0), (int) ($cek['hari'] ?? 0), $nBaris);
 echo "  Buka pratinjau suratnya untuk memastikan barisnya tercetak.\n\n";
