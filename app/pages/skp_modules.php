@@ -798,6 +798,17 @@ function skp_fu_group(string $key, array $items, bool $withLokasi, bool $editabl
                                style="width:40px;text-align:right;font-size:11.5px;padding:0 4px" <?= $dis ?>>
                         <span>hari</span>
                     </div>
+                    <?php /* Item yang sudah ada biayanya tapi hitungannya kosong tetap
+                             tercetak satu angka saja di surat. Tanpa keterangan ini
+                             orang mengira fiturnya tidak jalan — padahal yang kurang
+                             tiga angka di baris ini. Dokumen lama semuanya begini. */ ?>
+                    <?php
+                    $hitungLengkap = (float) ($it['tarif'] ?? 0) > 0
+                                  && (int) ($it['titik'] ?? 0) > 0
+                                  && (int) ($it['hari'] ?? 0) > 0; ?>
+                    <div class="fu-hint" style="margin-top:3px;font-size:10.5px;color:#92400e;<?= ($on && (float) ($it['biaya'] ?? 0) > 0 && !$hitungLengkap) ? '' : 'display:none' ?>">
+                        Belum diisi &mdash; di surat hanya tercetak satu angka, tanpa rinciannya.
+                    </div>
                 </td>
                 <td><?php skp_input_rp("{$key}[{$i}][biaya]", $it['biaya'] ?? '', $dis, false, true, 'fu-biaya'); ?></td>
                 <td><input name="<?= $key ?>[<?= $i ?>][satuan]" value="<?= h($it['satuan'] ?? '') ?>" placeholder="/Titik/Hari" style="width:100%;font-size:11.5px" <?= $dis ?>></td>
@@ -2290,6 +2301,8 @@ function skp_standalone_form(PDO $pdo, int $pid, string $module, array $src, boo
             if (tr.dataset.biayaManual === '1' && b.value.replace(/\D/g, '') !== (tr.dataset.biayaAuto || '')) return;
             var hasil = t * n * d;
             b.value = fmt(hasil);
+            var hint = tr.querySelector('.fu-hint');
+            if (hint) hint.style.display = 'none';
             tr.dataset.biayaAuto = String(hasil);
             tr.dataset.biayaManual = '';
             var c = tr.querySelector('.fu-cek');
