@@ -529,6 +529,11 @@ function calendar_page(PDO $pdo): void
             table.cal td.rk-pic::before,table.cal th.rk-pic::before{content:'';position:absolute;inset:0;
                 background:var(--wpic);opacity:.20;pointer-events:none}
             table.cal th.rk-pic::before{opacity:.45}
+            /* Nama PIC di kepala kolom dibuat benar-benar terbaca. Sebelumnya
+               ia ikut ukuran kepala kolom lain (9,5px) lalu berdiri di atas
+               warna orangnya — cukup untuk terlewat begitu saja, dan orang
+               bertanya "kolom saya yang mana?" sambil menatap angkanya. */
+            table.cal th.rk-pic>span{font-size:11.5px;font-weight:800;color:#0F172A;letter-spacing:.04em}
             table.cal td.rk-pic>*,table.cal th.rk-pic>*{position:relative}
             table.cal tr.tot td.rk-pic::before{opacity:.42}
             table.cal tr.tot-all td.rk-pic::before{opacity:.30}
