@@ -344,6 +344,11 @@ function skp_detail_defaults(array $tpl, string $docType, array $src, array $amt
             $names
         );
         return [
+            // Nama acara yang digelar penyewa. Satu penyewa bisa mengajukan
+            // beberapa Form Utilities untuk acara yang berbeda di bulan yang
+            // sama, dan tanpa nama acaranya surat-surat itu tidak bisa
+            // dibedakan satu sama lain — bahkan oleh penyewanya sendiri.
+            'nama_event'        => '',
             'lokasi_kegiatan'   => (string) ($src['location_name'] ?? $src['master_code'] ?? ''),
             'tanggal_pemakaian' => trim((string) ($src['start_date'] ?? '')) !== ''
                 ? skp_tgl((string) $src['start_date']) . ' – ' . skp_tgl((string) $src['end_date'])
@@ -423,6 +428,7 @@ function skp_detail_from_post(string $docType): array
         };
         $sembunyi = (array) ($_POST['d_sembunyi'] ?? []);
         return [
+            'nama_event'        => mb_substr(trim((string) post('d_nama_event', '')), 0, 160),
             'lokasi_kegiatan'   => trim((string) post('d_lokasi_kegiatan', '')),
             'tanggal_pemakaian' => trim((string) post('d_tanggal_pemakaian', '')),
             'utilities'         => $grup('util'),
@@ -592,6 +598,7 @@ function skp_detail_form(string $docType, array $d, bool $editable, array $srcHa
                      dan tersimpan rapi begitu dokumennya disimpan lagi. */ ?>
             <div><label>Lokasi Kegiatan</label><input name="d_lokasi_kegiatan" value="<?= h(clara_gabung_lokasi($d['lokasi_kegiatan'] ?? '')) ?>" <?= $dis ?>><div class="help">Otomatis mengikuti Titik Media.</div></div>
             <div><label>Tanggal Pemakaian</label><input name="d_tanggal_pemakaian" value="<?= h($d['tanggal_pemakaian'] ?? '') ?>" <?= $dis ?>><div class="help">Otomatis mengikuti tanggal sewa.</div></div>
+            <div><label>Nama Event <span class="muted" style="font-weight:400">(opsional)</span></label><input name="d_nama_event" value="<?= h($d['nama_event'] ?? '') ?>" placeholder="mis. Event BYD" <?= $dis ?>><div class="help">Tercetak di surat, tepat di bawah Tanggal Pemakaian.</div></div>
         </div>
 
         <?php $harga('media'); ?>
@@ -956,7 +963,10 @@ function skp_detail_print(string $docType, array $d, array $tpl): string
             // karena peleburannya terjadi saat dicetak.
             'Lokasi Kegiatan'          => clara_gabung_lokasi($det['lokasi_kegiatan'] ?? ''),
             'Tanggal Pemakaian'        => $det['tanggal_pemakaian'] ?? '-',
-        ] as $l => $v) {
+            // Baris ini hanya ada bila memang diisi: surat lama tidak boleh
+            // mendadak memuat baris kosong hanya karena kemampuan ini ada.
+        ] + (trim((string) ($det['nama_event'] ?? '')) !== ''
+                ? ['Nama Event' => (string) $det['nama_event']] : []) as $l => $v) {
             $o .= '<tr><td class="l">' . $h($l) . '</td><td class="c">:</td><td class="v">' . $h($v ?: '-') . '</td></tr>';
         }
         $o .= '</table></div>';

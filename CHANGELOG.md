@@ -13,6 +13,21 @@
 
 ## Fitur & Perbaikan — 25 November 2026
 
+### Form Utilities bisa menyebut nama acaranya
+
+- Satu penyewa bisa mengajukan beberapa Form Utilities untuk acara yang berbeda di bulan yang sama &mdash;
+  dan tanpa nama acaranya surat-surat itu tidak bisa dibedakan satu sama lain, bahkan oleh penyewanya.
+- Formulirnya dapat isian **Nama Event** (opsional), tepat di bawah *Tanggal Pemakaian*; begitu pula
+  letaknya di surat. Dokumen yang tidak mengisinya tidak mendapat baris kosong &mdash; surat lama tidak
+  berubah bentuk hanya karena kemampuan ini ada.
+- Untuk dokumen yang **sudah terlanjur disubmit** dan sedang menunggu approval, namanya bisa dilengkapi
+  tanpa menolak dokumennya: `php scripts/set_event_fu.php --doc=469 --event="Event BYD" --terapkan`.
+  Skrip itu juga bisa membetulkan tanggal pemakaian &mdash; **hanya bila jumlah harinya sama persis**,
+  karena harga item bersatuan */Titik/Hari* dikalikan jumlah hari dan menggeser durasinya akan menggeser
+  Rincian Biaya tanpa diperiksa siapa pun. Dokumen yang sudah disetujui ditolak mentah: isinya sudah
+  dibekukan sebagai snapshot, jadi perubahan di situ tidak akan tercetak.
+
+
 ### Kontrak recurring tidak lagi lenyap dari layar penagihan sejak bulan kedua
 
 - **Tagihan & Pembayaran** menyaring bawaannya dengan *&ldquo;tanggal mulai di bulan ini&rdquo;*. Halaman itu menjawab
