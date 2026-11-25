@@ -227,6 +227,8 @@ function calendar_page(PDO $pdo): void
             $picPorsi = $picBulan[(int) $t['id']] ?? [];
             if (!$picPorsi && (string) $t['pic_name'] !== '') $picPorsi = [(string) $t['pic_name'] => $rpBulan];
             // Kotaknya menyebut SEMUA yang kebagian, bukan cuma PIC dokumennya.
+            arsort($picPorsi);   // porsi terbesar dulu — itu yang dicari mata
+            $selot['picPorsi'] = $picPorsi;
             $selot['picSemua'] = $picPorsi ? implode(', ', array_keys($picPorsi)) : (string) $t['pic_name'];
             // Nilai, PIC, invoice, dan status bayar dibaca SEMUA orang yang boleh
             // membuka kalender — begitulah lembar kerja tim selama ini, dan
@@ -823,15 +825,39 @@ function calendar_page(PDO $pdo): void
                                 $data = ['id' => $s['id'], 'b' => $s['brand'], 'pt' => $s['pt'], 'm' => $s['mulai'], 's' => $s['selesai'], 'u' => $kode,
                                          'rec' => $s['rec'], 'own' => $s['milik'] ? 1 : 0, 'pros' => $pros ? 1 : 0,
                                          'picAll' => (string) ($s['picSemua'] ?? $s['pic'] ?? ''), 'yakin' => (string) ($s['yakin'] ?? ''),
+                                         'picRp' => array_map(fn($nm, $rp) => [$nm, (float) $rp],
+                                                    array_keys((array) ($s['picPorsi'] ?? [])), array_values((array) ($s['picPorsi'] ?? []))),
                                          'ket' => (string) ($s['ket'] ?? '')]
                                       + (isset($s['pic']) ? ['pic' => $s['pic'], 'nilai' => $s['nilai'], 'inv' => $s['inv']] : [])
                                       + (isset($s['bulanRp']) ? ['bln' => $s['bulanRp']] : [])
                                       + (isset($s['bayar']) ? ['bayar' => $s['bayar'], 'lewat' => $s['lewat'], 'sisa' => $s['sisa']] : []); ?>
-                                <td class="s <?= $kls ?> <?= $s['potongKiri'] ? 'kiri' : '' ?> <?= $s['potongKanan'] ? 'kanan' : '' ?>" colspan="<?= $span ?>"
-                                    style="background:<?= h((string) ($s['warna'] ?? '#E2E8F0')) ?>"
+                                <?php
+                                /* Kotak yang income-nya DIBAGI dicat warna tiap
+                                   pemiliknya, dipotong miring. Satu warna saja
+                                   membuat kontrak Rp 200 juta terbaca sebagai
+                                   milik satu orang padahal separuhnya bukan —
+                                   dan itu yang dilihat tim tiap hari di layar
+                                   ini, jauh lebih sering daripada laporan. */
+                                $porsiKotak = (array) ($s['picPorsi'] ?? []);
+                                $bgKotak = (string) ($s['warna'] ?? '#E2E8F0');
+                                if (count($porsiKotak) > 1) {
+                                    $n = count($porsiKotak); $pot = []; $i = 0;
+                                    foreach (array_keys($porsiKotak) as $nmP) {
+                                        $w = $warnaPic[$nmP] ?? '#E2E8F0';
+                                        $pot[] = $w . ' ' . round($i * 100 / $n, 2) . '% ' . round(($i + 1) * 100 / $n, 2) . '%';
+                                        $i++;
+                                    }
+                                    $bgKotak = 'linear-gradient(115deg,' . implode(',', $pot) . ')';
+                                } ?>
+                                <td class="s <?= $kls ?> <?= $s['potongKiri'] ? 'kiri' : '' ?> <?= $s['potongKanan'] ? 'kanan' : '' ?> <?= count($porsiKotak) > 1 ? 'dibagi' : '' ?>" colspan="<?= $span ?>"
+                                    style="background:<?= h($bgKotak) ?>"
                                     data-b="<?= h(mb_strtolower($s['brand'] . ' ' . $s['pt'])) ?>" data-j="<?= h(json_encode($data, JSON_UNESCAPED_UNICODE)) ?>"
                                     title="<?= h(($pros ? 'PROSPEK (belum pasti) — ' : '') . $s['brand'] . ' — ' . $s['mulai'] . ' s/d ' . $s['selesai']
-                                                . (($s['picSemua'] ?? '') !== '' ? ' — PIC ' . $s['picSemua'] : '')) ?>">
+                                                . (count($porsiKotak) > 1
+                                                    ? ' — income dibagi: ' . implode(' · ', array_map(
+                                                        fn($nm, $rp) => $nm . ' Rp ' . number_format((float) $rp, 0, ',', '.'),
+                                                        array_keys($porsiKotak), array_values($porsiKotak)))
+                                                    : (($s['picSemua'] ?? '') !== '' ? ' — PIC ' . $s['picSemua'] : ''))) ?>">
                                     <span class="s-isi<?= $luber ? ' luber' : '' ?>"<?= $luber ? ' style="width:' . (int) $lebarIsi . 'px"' : '' ?>><span class="s-nama"><?= h($s['brand']) ?></span><?php
                                         if ($muatAngka): ?><span class="rp"><?= h($angka) ?></span><?php endif; ?></span>
                                     <?php if (isset($s['bayar'])): ?><span class="pay" style="background:<?= h($stBayar[$s['bayar']][1] ?? '#64748B') ?>"></span><?php endif; ?></td>
@@ -932,6 +958,7 @@ function calendar_page(PDO $pdo): void
                 <span><i style="background:<?= h($w) ?>"></i><?= h($nm) ?></span>
             <?php endforeach; ?>
             <span><i style="background:#E2E8F0"></i>tanpa PIC</span>
+            <span style="border-left:1px solid #E4E9F0;padding-left:14px"><i style="background:linear-gradient(115deg,#EA9999 0 50%,#BFDBFE 50% 100%)"></i>dua warna = income dibagi (klik untuk porsinya)</span>
             <span style="border-left:1px solid #E4E9F0;padding-left:14px"><i style="background:#F1F5F9;box-shadow:inset 4px 0 0 #1D4ED8"></i>garis biru = Recurring</span>
             <span><i style="background:#E2E8F0;border:1px dashed #EAB308;position:relative">
                 <b style="position:absolute;right:0;top:0;width:0;height:0;border-style:solid;border-width:0 6px 6px 0;border-color:transparent #EAB308 transparent transparent"></b>
@@ -963,6 +990,8 @@ function calendar_page(PDO $pdo): void
             var BISA_OFFER = <?= $bisaOffer ? 'true' : 'false' ?>, BULAN = <?= json_encode($bulan) ?>, MODUL = <?= json_encode($modul) ?>;
             var SEGMEN = <?= json_encode($segmen) ?>, CSRF = <?= json_encode(csrf_token()) ?>;
             var ST = <?= json_encode(array_map(fn($d) => $d[0], $stBayar), JSON_UNESCAPED_UNICODE) ?>;
+            // Warna tiap PIC — dipakai titik penanda di rincian "Income dibagi".
+            var WPIC = <?= json_encode($warnaPic, JSON_UNESCAPED_UNICODE) ?>;
             var wrap = document.getElementById('cal-wrap'), pop = document.getElementById('cal-pop'), bar = document.getElementById('cal-bar');
             var uang = function(n){ return 'Rp ' + Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
             var esc = function(s){ var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; };
@@ -1000,7 +1029,17 @@ function calendar_page(PDO $pdo): void
                     var h = (j.pros ? '<div style="font-size:11px;font-weight:800;color:#B45309;letter-spacing:.04em">PROSPEK \u2014 BELUM PASTI</div>' : '')
                         + '<h4>' + esc(j.b) + '</h4><div class="k">' + esc(j.pt) + '</div><hr style="border:0;border-top:1px solid #EEF1F5;margin:8px 0">'
                         + '<div><span class="k">Unit</span> ' + esc(j.u) + '</div><div><span class="k">Periode</span> ' + esc(j.m) + ' s/d ' + esc(j.s) + '</div>';
-                    if (j.picAll) h += '<div><span class="k">PIC</span> ' + esc(j.picAll) + '</div>';
+                    if (j.picRp && j.picRp.length > 1) {
+                        // Income dibagi: tiap orang disebut beserta porsinya.
+                        // Daftar nama saja ("Alfa, Shinta") tidak menjawab
+                        // pertanyaan yang sebenarnya — siapa dapat berapa.
+                        h += '<div><span class="k">Income dibagi</span></div>'
+                           + '<div style="margin:3px 0 2px">' + j.picRp.map(function(x){
+                               return '<div style="display:flex;justify-content:space-between;gap:10px;padding:1px 0">'
+                                    + '<span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;background:'
+                                    + (WPIC[x[0]] || '#E2E8F0') + '"></span>' + esc(x[0]) + '</span><b>' + uang(x[1]) + '</b></div>';
+                             }).join('') + '</div>';
+                    } else if (j.picAll) h += '<div><span class="k">PIC</span> ' + esc(j.picAll) + '</div>';
                     if (j.pros) {
                         h += '<div><span class="k">Perkiraan nilai</span> <b>' + uang(j.nilai) + '</b></div>'
                            + (j.yakin ? '<div><span class="k">Keyakinan</span> ' + esc(j.yakin) + '</div>' : '')

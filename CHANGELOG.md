@@ -38,6 +38,18 @@
   menyembunyikan kontrak yang porsinya memang milik si PIC. Sekarang dibaca dari baris alokasinya, jadi
   tidak lagi bertengkar dengan ring achievement di layar yang sama.
 
+### Kalender memperlihatkan pembagian income, bukan menyembunyikannya
+
+- Kotak kontrak di Kalender Pameran dicat satu warna &mdash; warna PIC dokumennya. Kontrak Rp 200.000.000
+  yang separuhnya milik orang lain karena itu terbaca sebagai milik satu orang, di layar yang justru
+  paling sering dibuka tim. Sekarang kotak yang income-nya dibagi dicat **warna tiap pemiliknya**,
+  dipotong miring, dan keterangan di bawah kalender menyebutkannya.
+- Menyorot kotaknya menyebut porsinya: *&ldquo;income dibagi: Shinta Rp 150.000.000 &middot; Alfa Rp 50.000.000&rdquo;*.
+  Mengkliknya membuka rincian **Income dibagi** &mdash; tiap nama, titik warnanya, dan nominalnya. Sebelumnya
+  hanya tertulis daftar nama, yang tidak menjawab pertanyaan sebenarnya: siapa dapat berapa.
+- Nama PIC di kepala kolom kanan dibuat benar-benar terbaca. Sebelumnya 9,5px di balik warna orangnya,
+  cukup untuk terlewat &mdash; lalu orang bertanya kolom miliknya yang mana sambil menatap angkanya.
+
 ### Pembagian income tidak lagi hilang diam-diam saat nilai kontrak berubah
 
 - `transaction_pic_splits` hanya dipakai bila jumlahnya **pas** dengan nilai kontrak &mdash; penjaga yang
