@@ -20,6 +20,13 @@
  *   php scripts/set_event_fu.php --doc=469 --event="Event BYD" --terapkan
  *   php scripts/set_event_fu.php --doc=478 --event="Event Gaikindo" \
  *       --mulai=2026-11-23 --akhir=2026-11-29 --terapkan
+ *
+ * --lokasi= : membetulkan "Lokasi Kegiatan" yang tercetak di surat. Isian itu
+ *             terisi otomatis dari nama titik medianya, jadi dokumen yang
+ *             memakai lebih dari satu jenis media (mis. T-Banner DAN test
+ *             drive) hanya menyebut salah satunya.
+ *   php scripts/set_event_fu.php --doc=469 --event="Event BYD" \
+ *       --lokasi="T-Banner & Test Drive - PJU 1 A (Depan Dunkin Donuts)" --terapkan
  */
 
 declare(strict_types=1);
@@ -42,7 +49,7 @@ function sef_tgl(string $d): string
     return (int) date('j', $t) . ' ' . $bln[(int) date('n', $t)] . ' ' . date('Y', $t);
 }
 
-$arg      = getopt('', ['doc:', 'event:', 'mulai:', 'akhir:', 'terapkan']);
+$arg      = getopt('', ['doc:', 'event:', 'lokasi:', 'mulai:', 'akhir:', 'terapkan']);
 $terapkan = array_key_exists('terapkan', $arg);
 $docId    = (int) ($arg['doc'] ?? 0);
 if ($docId <= 0) { fwrite(STDERR, "Sebutkan dokumennya: --doc=469\n"); exit(2); }
@@ -70,6 +77,7 @@ $hariLama = $hari((string) $doc['start_date'], (string) $doc['end_date']);
 echo "\nFORM UTILITIES #{$doc['id']}  " . ($doc['skp_no'] ?: '(nomor belum terbit)')
    . "  status \"{$doc['status']}\"\n" . str_repeat('=', 74) . "\n";
 printf("  Masa sewa   : %s s/d %s (%d hari)\n", $doc['start_date'], $doc['end_date'], $hariLama);
+printf("  Lokasi      : %s\n", (string) ($det['lokasi_kegiatan'] ?? '-'));
 printf("  Tgl di surat: %s\n", (string) ($det['tanggal_pemakaian'] ?? '-'));
 printf("  Nama Event  : %s\n", trim((string) ($det['nama_event'] ?? '')) ?: '(belum diisi)');
 printf("  Nilai       : Rp %s\n\n", number_format((float) $doc['total_amount'], 0, ',', '.'));
@@ -82,12 +90,13 @@ if (trim((string) ($doc['snapshot_json'] ?? '')) !== '' || (int) ($doc['transact
     exit(2);
 }
 
-$event = array_key_exists('event', $arg) ? trim((string) $arg['event']) : null;
+$event  = array_key_exists('event', $arg) ? trim((string) $arg['event']) : null;
+$lokasi = array_key_exists('lokasi', $arg) ? trim((string) $arg['lokasi']) : null;
 $mulai = isset($arg['mulai']) ? trim((string) $arg['mulai']) : '';
 $akhir = isset($arg['akhir']) ? trim((string) $arg['akhir']) : '';
 $ubahTgl = $mulai !== '' || $akhir !== '';
 
-if ($event === null && !$ubahTgl) {
+if ($event === null && $lokasi === null && !$ubahTgl) {
     echo "  Sebutkan yang mau diisi, mis.:\n";
     echo "    php scripts/set_event_fu.php --doc=$docId --event=\"Event BYD\"\n\n";
     exit(0);
@@ -110,7 +119,9 @@ if ($ubahTgl) {
     printf("  AKAN DIUBAH\n    Masa sewa : %s s/d %s  →  %s s/d %s  (tetap %d hari)\n",
         $doc['start_date'], $doc['end_date'], $mulai, $akhir, $hariBaru);
 }
-if ($event !== null) printf("    Nama Event: %s\n", $event !== '' ? '"' . $event . '"' : '(dikosongkan)');
+if (!$ubahTgl) echo "  AKAN DIUBAH\n";
+if ($lokasi !== null) printf("    Lokasi    : \"%s\"  →  \"%s\"\n", (string) ($det['lokasi_kegiatan'] ?? ''), $lokasi);
+if ($event !== null)  printf("    Nama Event: %s\n", $event !== '' ? '"' . $event . '"' : '(dikosongkan)');
 echo "\n";
 
 if (!$terapkan) {
@@ -118,7 +129,8 @@ if (!$terapkan) {
     exit(1);
 }
 
-if ($event !== null) $det['nama_event'] = mb_substr($event, 0, 160);
+if ($event !== null)  $det['nama_event'] = mb_substr($event, 0, 160);
+if ($lokasi !== null) $det['lokasi_kegiatan'] = mb_substr($lokasi, 0, 190);
 if ($ubahTgl) {
     // Tanggal yang TERCETAK disusun ulang dengan pembentuk yang sama dengan
     // formulirnya, supaya surat dan sistem tidak pernah menyebut dua tanggal.
@@ -132,7 +144,7 @@ $sql .= ' WHERE id = :id';
 $pdo->prepare($sql)->execute($par);
 
 audit($pdo, 'update', 'skp_documents', (string) $docId,
-    array_filter(['nama_event' => $event, 'start_date' => $ubahTgl ? $mulai : null,
+    array_filter(['nama_event' => $event, 'lokasi_kegiatan' => $lokasi, 'start_date' => $ubahTgl ? $mulai : null,
                   'end_date' => $ubahTgl ? $akhir : null], fn($v) => $v !== null),
     ['start_date' => $doc['start_date'], 'end_date' => $doc['end_date'],
      'nama_event' => (string) (json_decode((string) $doc['detail_json'], true)['nama_event'] ?? '')], 'skp');
@@ -141,7 +153,8 @@ audit($pdo, 'update', 'skp_documents', (string) $docId,
 $st->execute([$docId]);
 $u  = $st->fetch();
 $ud = json_decode((string) $u['detail_json'], true);
-printf("  TERSIMPAN — dibaca ulang:\n    Masa sewa   : %s s/d %s\n    Tgl di surat: %s\n    Nama Event  : %s\n",
+printf("  TERSIMPAN — dibaca ulang:\n    Lokasi      : %s\n    Masa sewa   : %s s/d %s\n    Tgl di surat: %s\n    Nama Event  : %s\n",
+    (string) ($ud['lokasi_kegiatan'] ?? '-'),
     $u['start_date'], $u['end_date'],
     (string) ($ud['tanggal_pemakaian'] ?? '-'),
     trim((string) ($ud['nama_event'] ?? '')) ?: '(kosong)');
