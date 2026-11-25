@@ -2437,6 +2437,12 @@ function transaction_update(PDO $pdo): void
     }
     // Lihat catatan di transaction_save(): niatnya disimpan terpisah.
     AllocationService::simpanMonthOverrides($pdo, current_property_id(), $id, $monthOverrides, clara_pelaku(), true);
+    // Nilai kontrak baru saja mungkin bergeser (rate, luas, periode, Override
+    // Aktual). Pembagian income yang masih memakai angka lama akan dianggap
+    // tidak pas lalu DIBUANG oleh picSplits(), dan seluruh income menempel ke
+    // PIC dokumen — Alfa jadi nol, Shinta dapat semuanya. Porsinya diskalakan
+    // dulu supaya pembagiannya selamat melewati perhitungan ini.
+    AllocationService::skalakanPembagian($pdo, $id, (float) ($trx['final_amount'] ?: $trx['total_calculated']));
     AllocationService::saveAllocations($pdo, $id, $trx, $monthOverrides);
 
     // Penjaga terakhir untuk kontrak berdokumen tanda tangan: jumlah seluruh
@@ -2544,6 +2550,10 @@ function price_step_save(PDO $pdo): void
         $pdo->prepare('INSERT INTO price_steps (property_id, transaction_id, effective_from, monthly_amount, label, created_by) VALUES (?,?,?,?,?,?)')
             ->execute([$pid, $id, $mulai, $nilai, $label, $uname]);
         $hasil = AllocationService::terapkanTahapKeDepan($pdo, $id, $mulai);
+        // Alokasinya sudah dibangun ulang dengan porsi tiap PIC yang terjaga,
+        // tetapi nilai kontraknya ikut berubah — pembagian yang masih berangka
+        // lama akan dibuang pada perhitungan berikutnya. Disamakan sekarang.
+        AllocationService::selaraskanPembagian($pdo, $id, $pid);
         $pdo->commit();
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -3351,18 +3361,7 @@ function allocation_amount_override(PDO $pdo): void
         // Pembagian income ke beberapa PIC disamakan dengan alokasi yang baru.
         // Tanpa ini jumlah pembagian tak lagi sama dengan nilai kontrak, dan
         // pembagiannya akan diabaikan (lalu hilang) pada perhitungan berikutnya.
-        $bagiAda = $pdo->prepare('SELECT COUNT(*) FROM transaction_pic_splits WHERE transaction_id = ?');
-        $bagiAda->execute([$trxId]);
-        if ((int) $bagiAda->fetchColumn() > 0) {
-            $perPic = $pdo->prepare("SELECT pic_name, SUM(amount) n FROM transaction_allocations
-                                     WHERE transaction_id = ? AND property_id = ? AND COALESCE(pic_name,'') <> ''
-                                     GROUP BY pic_name");
-            $perPic->execute([$trxId, $pid]);
-            $updBagi = $pdo->prepare('UPDATE transaction_pic_splits SET amount = ? WHERE transaction_id = ? AND pic_name = ?');
-            foreach ($perPic->fetchAll(PDO::FETCH_ASSOC) as $b) {
-                $updBagi->execute([(float) $b['n'], $trxId, $b['pic_name']]);
-            }
-        }
+        AllocationService::selaraskanPembagian($pdo, $trxId, $pid);
 
         audit($pdo, $reset ? 'allocation_override_reset' : 'allocation_override',
               'transaction_allocations', (string) $allocId, [

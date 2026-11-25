@@ -349,6 +349,84 @@ final class AllocationService
     }
 
     /**
+     * Samakan transaction_pic_splits dengan baris alokasi yang sekarang.
+     *
+     * Dipakai sesudah tindakan yang MEMBANGUN ULANG alokasi sambil menjaga
+     * porsi tiap PIC (Special Price per bulan, jadwal harga bertahap). Tanpa
+     * ini jumlah pembagian tidak lagi sama dengan nilai kontrak, lalu
+     * picSplits() membuangnya pada perhitungan berikutnya — dan seluruh income
+     * menempel ke satu nama. Kerusakannya tidak terlihat saat itu juga: ia baru
+     * muncul berhari-hari kemudian sebagai "income saya hilang".
+     */
+    public static function selaraskanPembagian(PDO $pdo, int $transactionId, int $propertyId): void
+    {
+        if ($transactionId <= 0) return;
+        try {
+            $ada = $pdo->prepare('SELECT COUNT(*) FROM transaction_pic_splits WHERE transaction_id = ?');
+            $ada->execute([$transactionId]);
+            if ((int) $ada->fetchColumn() === 0) return;
+
+            $perPic = $pdo->prepare("SELECT pic_name, COALESCE(SUM(amount),0) n FROM transaction_allocations
+                                      WHERE transaction_id = ? AND property_id = ? AND COALESCE(pic_name,'') <> ''
+                                      GROUP BY pic_name");
+            $perPic->execute([$transactionId, $propertyId]);
+            $baris = $perPic->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            if (!$baris) return;   // alokasi tanpa nama — tidak ada yang bisa disamakan
+
+            $upd = $pdo->prepare('UPDATE transaction_pic_splits SET amount = ? WHERE transaction_id = ? AND pic_name = ?');
+            foreach ($baris as $b) $upd->execute([(float) $b['n'], $transactionId, (string) $b['pic_name']]);
+        } catch (Throwable $e) {
+            // Tabel pembagian belum ada (migrasi belum jalan) — perilaku lama.
+        }
+    }
+
+    /**
+     * Skalakan pembagian mengikuti nilai kontrak yang BARU.
+     *
+     * Dipakai sebelum alokasi dibangun ulang pada perubahan yang menggeser
+     * nilai kontrak (rate, luas, periode, Override Aktual). picSplits() hanya
+     * memakai pembagian yang jumlahnya PAS dengan nilai kontrak; begitu
+     * nilainya bergeser — sekalipun hanya karena pembulatan — pembagiannya
+     * diabaikan lalu lenyap, dan seluruh income jatuh ke PIC dokumen.
+     *
+     * Porsi tiap orang dipertahankan apa adanya; sisa pembulatan ditaruh di
+     * porsi terbesar supaya jumlahnya kembali PAS, bukan meleset serupiah dan
+     * dibuang lagi oleh penjaga yang sama.
+     */
+    public static function skalakanPembagian(PDO $pdo, int $transactionId, float $nilaiBaru): void
+    {
+        if ($transactionId <= 0 || $nilaiBaru <= 0) return;
+        try {
+            $st = $pdo->prepare('SELECT id, pic_name, amount FROM transaction_pic_splits WHERE transaction_id = ? ORDER BY id');
+            $st->execute([$transactionId]);
+            $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            if (count($rows) < 2) return;      // satu baris saja: tidak ada yang dibagi
+
+            $lama = 0.0;
+            foreach ($rows as $r) $lama += (float) $r['amount'];
+            if ($lama <= 0) return;
+            if (round($lama) === round($nilaiBaru)) return;   // sudah pas, jangan disentuh
+
+            $baru = []; $jum = 0.0;
+            foreach ($rows as $r) {
+                $n = round((float) $r['amount'] / $lama * $nilaiBaru);
+                $baru[(int) $r['id']] = $n;
+                $jum += $n;
+            }
+            // Sisa pembulatan ke porsi terbesar.
+            $selisih = round($nilaiBaru) - $jum;
+            if ($selisih !== 0.0) {
+                $terbesar = array_keys($baru, max($baru))[0] ?? null;
+                if ($terbesar !== null) $baru[$terbesar] += $selisih;
+            }
+            $upd = $pdo->prepare('UPDATE transaction_pic_splits SET amount = ? WHERE id = ?');
+            foreach ($baru as $rid => $n) $upd->execute([$n, $rid]);
+        } catch (Throwable $e) {
+            // Tabel pembagian belum ada — perilaku lama.
+        }
+    }
+
+    /**
      * Pecah satu baris alokasi menjadi beberapa baris sesuai porsi tiap PIC.
      *
      * HARI hanya ditaruh di baris pertama (allocated_days & capacity_days = 0

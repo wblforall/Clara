@@ -290,18 +290,30 @@ function mon_income_peta(PDO $pdo, int $pid, array $rows, string $periode): arra
     // Saringan bulan ditaruh di WHERE, bukan di ON: penanda '?' dibaca menurut
     // URUTANNYA di teks SQL, dan satu di klausa JOIN akan menggeser SELURUH
     // parameter berikutnya — hasilnya nol tanpa satu pun pesan galat.
-    $st = $pdo->prepare('SELECT tx.id, tx.bundle_id, COALESCE(SUM(a.amount),0) jml
+    // Dipecah SAMPAI NAMA PIC-nya. Income satu kontrak bisa dibagi ke beberapa
+    // sales, dan pembagian itu sudah berwujud beberapa baris alokasi. Kalau di
+    // sini dijumlahkan dulu per transaksi lalu ditempelkan ke PIC dokumen,
+    // jumlah halamannya tetap cocok tetapi PEMILIKNYA salah — dan kolom "Income
+    // diakui" berjanji memakai dasar yang sama dengan Dashboard & Laporan PIC,
+    // yang keduanya memang per PIC.
+    $st = $pdo->prepare('SELECT tx.id, tx.bundle_id, COALESCE(NULLIF(a.pic_name,\'\'), \'\') pic,
+                                COALESCE(SUM(a.amount),0) jml
                            FROM transactions tx
                            JOIN transaction_allocations a ON a.transaction_id = tx.id
                           WHERE tx.property_id = ? AND tx.deleted_at IS NULL
                             AND (' . implode(' OR ', $syarat) . ')' . $bulan . '
-                          GROUP BY tx.id');
+                          GROUP BY tx.id, tx.bundle_id, COALESCE(NULLIF(a.pic_name,\'\'), \'\')');
     $st->execute($par);
-    $peta = ['trx' => [], 'bundle' => []];
+    $peta = ['trx' => [], 'bundle' => [], 'trxPic' => [], 'bundlePic' => []];
     foreach ($st->fetchAll() as $a) {
-        $peta['trx'][(int) $a['id']] = (float) $a['jml'];
+        $pn = (string) $a['pic'];
+        $peta['trx'][(int) $a['id']] = ($peta['trx'][(int) $a['id']] ?? 0.0) + (float) $a['jml'];
+        if ($pn !== '') {
+            $peta['trxPic'][(int) $a['id']][$pn] = ($peta['trxPic'][(int) $a['id']][$pn] ?? 0.0) + (float) $a['jml'];
+        }
         if (!empty($a['bundle_id'])) {
             $b = (int) $a['bundle_id'];
+            if ($pn !== '') $peta['bundlePic'][$b][$pn] = ($peta['bundlePic'][$b][$pn] ?? 0.0) + (float) $a['jml'];
             $peta['bundle'][$b] = ($peta['bundle'][$b] ?? 0.0) + (float) $a['jml'];
         }
     }
@@ -510,6 +522,11 @@ function mon_baris(PDO $pdo, int $pid, array $f): array
             ? ($incomePeta['bundle'][(int) $r['bundle_set']] ?? 0.0)
             : ($incomePeta['trx'][(int) ($r['transaction_id'] ?? 0)] ?? 0.0);
         $r['income'] = $th['kode'] === 'ditolak' ? 0.0 : $inc;
+        // Siapa saja yang kebagian income dokumen ini, beserta porsinya.
+        $incPic = !empty($r['bundle_set'])
+            ? ($incomePeta['bundlePic'][(int) $r['bundle_set']] ?? [])
+            : ($incomePeta['trxPic'][(int) ($r['transaction_id'] ?? 0)] ?? []);
+        $r['income_pic'] = $th['kode'] === 'ditolak' ? [] : $incPic;
 
         $r['sisa']  = max(0.0, (float) $r['tagihan'] - (float) $r['terbayar']);
         $r['lewat'] = !empty($r['inv_tempo']) && $r['inv_tempo'] < date('Y-m-d')
@@ -625,17 +642,26 @@ function _mon_urut(array $rows, array $f): array
 function _mon_papan(array $rows): array
 {
     $pics = [];
+    $kosong = fn(string $nm) => ['nama' => $nm, 'n' => 0, 'tuntas' => 0, 'macet' => 0, 'giliran' => 0,
+                                 'lewat' => 0, 'terlama' => 0, 'nilai' => 0.0, 'nilai_tuntas' => 0.0,
+                                 'nilai_gantung' => 0.0, 'income' => 0.0, 'tagihan' => 0.0, 'terbayar' => 0.0];
     foreach ($rows as $r) {
         $n = trim((string) ($r['pic_name'] ?? '')) ?: '(tanpa PIC)';
-        if (!isset($pics[$n])) {
-            $pics[$n] = ['nama' => $n, 'n' => 0, 'tuntas' => 0, 'macet' => 0, 'giliran' => 0,
-                         'lewat' => 0, 'terlama' => 0, 'nilai' => 0.0, 'nilai_tuntas' => 0.0,
-                         'nilai_gantung' => 0.0, 'income' => 0.0, 'tagihan' => 0.0, 'terbayar' => 0.0];
-        }
+        if (!isset($pics[$n])) $pics[$n] = $kosong($n);
         $p = &$pics[$n];
         $p['n']++;
         $p['nilai']    += (float) $r['nilai'];
-        $p['income']   += (float) ($r['income'] ?? 0);
+        // INCOME tidak ikut ke sini. Jumlah berkas, giliran, dan tunggakan
+        // memang milik PIC yang MENGEJAR dokumennya; uangnya milik siapa pun
+        // yang namanya menempel di baris alokasi — dan keduanya bisa berbeda
+        // orang pada kontrak yang income-nya dibagi.
+        $porsi = (array) ($r['income_pic'] ?? []);
+        if (!$porsi && (float) ($r['income'] ?? 0) != 0.0) $porsi = [$n => (float) $r['income']];
+        foreach ($porsi as $pnInc => $rpInc) {
+            $nmInc = trim((string) $pnInc) ?: '(tanpa PIC)';
+            if (!isset($pics[$nmInc])) $pics[$nmInc] = $kosong($nmInc);
+            $pics[$nmInc]['income'] += (float) $rpInc;
+        }
         $p['tagihan']  += (float) $r['tagihan'];
         $p['terbayar'] += (float) $r['terbayar'];
         if ($r['tahap'] === 'tuntas') { $p['tuntas']++; $p['nilai_tuntas'] += (float) $r['nilai']; }

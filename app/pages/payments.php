@@ -467,6 +467,30 @@ function payments_xlsx(PDO $pdo): void
         }
     }
 
+    // Pembagian income ke beberapa PIC. Kolom PIC berisi SATU nama — PIC
+    // dokumen — padahal income sebuah kontrak bisa dibagi, dan pembagiannya
+    // sudah berwujud beberapa baris alokasi. Berkas ini dipakai Finance sebagai
+    // laporan income marketing, jadi menyebut satu nama saja membuat seluruh
+    // nilainya terbaca sebagai milik orang itu. Barisnya TIDAK dipecah: kolom
+    // uang di sini nilai tagihan (sewa, PPN, listrik, deposit) yang memang
+    // tidak terbagi — yang dibetulkan namanya, beserta porsinya.
+    $picPorsi = [];
+    if ($d['rows']) {
+        $idP = array_map(fn($r) => (int) $r['id'], $d['rows']);
+        $sqlP = "SELECT transaction_id, pic_name, COALESCE(SUM(amount),0) n
+                   FROM transaction_allocations
+                  WHERE COALESCE(pic_name,'') <> '' AND transaction_id IN ("
+               . implode(',', array_fill(0, count($idP), '?')) . ')';
+        $parP = $idP;
+        if ($f['period'] !== '' && $f['period'] !== 'semua') { $sqlP .= ' AND period_key = ?'; $parP[] = $f['period']; }
+        $sqlP .= ' GROUP BY transaction_id, pic_name ORDER BY n DESC';
+        $stP = $pdo->prepare($sqlP);
+        $stP->execute($parP);
+        foreach ($stP->fetchAll() as $b) {
+            $picPorsi[(int) $b['transaction_id']][(string) $b['pic_name']] = (float) $b['n'];
+        }
+    }
+
     $judulBulan = ($f['period'] === '' || $f['period'] === 'semua')
         ? 'SEMUA PERIODE'
         : 'BULAN ' . $bln[(int) substr($f['period'], 5, 2)] . ' ' . substr($f['period'], 0, 4);
@@ -492,7 +516,7 @@ function payments_xlsx(PDO $pdo): void
         ->kolom('TOTAL DITAGIHKAN', 17, 'rupiah')
         ->kolom('PEMBAYARAN', 15, 'rupiah')
         ->kolom('TANGGAL PEMBAYARAN', 20)
-        ->kolom('PIC', 14)
+        ->kolom('PIC', 26)   // memuat beberapa nama bila income-nya dibagi
         ->kolom('PERIODE BULAN', 16)
         ->kolom('NO INV', 26)
         ->kolom('KETERANGAN', 24)
@@ -514,6 +538,16 @@ function payments_xlsx(PDO $pdo): void
             : 'KON ' . $blnPendek[$b1] . '-' . $blnPendek[$b2];
         $ket = array_keys($bayar[(int) $r['id']]['ket'] ?? []);
         if (!$ket) $ket = [pembayaran_status_daftar()[$r['bayar_status']][0] ?? ''];
+        // Satu PIC → namanya saja, seperti dulu. Lebih dari satu → tiap nama
+        // beserta porsinya, supaya tidak ada yang terbaca memegang semuanya.
+        $pp = $picPorsi[(int) $r['id']] ?? [];
+        $picTulis = (string) $r['pic_name'];
+        if (count($pp) === 1)      $picTulis = (string) array_key_first($pp);
+        elseif (count($pp) > 1) {
+            $bagian = [];
+            foreach ($pp as $pn => $rp) $bagian[] = $pn . ' ' . number_format($rp, 0, ',', '.');
+            $picTulis = implode(' + ', $bagian);
+        }
 
         $x->baris([
             $no,
@@ -538,7 +572,7 @@ function payments_xlsx(PDO $pdo): void
             (float) $r['k_perkiraan'],
             (float) $r['terbayar'] ?: '',
             implode(' + ', $bayar[(int) $r['id']]['tgl'] ?? []),
-            (string) $r['pic_name'],
+            $picTulis,
             $periodeBulan,
             (string) $r['invoice_no'],
             implode(' · ', array_filter($ket)),

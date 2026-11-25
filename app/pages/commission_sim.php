@@ -57,15 +57,24 @@ function _csim_build_data(PDO $pdo, string $period, int $pid): array
     $s->execute([$period, $pid, $pid]);
     $pics = $s->fetchAll();
 
-    // Referrer detail: per referrer × per PIC yang dibantu
+    // Referrer detail: per referrer × per PIC yang dibantu.
+    //
+    // PIC-nya diambil dari BARIS ALOKASI, bukan dari transactions.pic_name.
+    // Uangnya memang sudah terbagi per PIC di tabel itu; mengelompokkannya
+    // menurut PIC dokumen membuat seluruh dealing jatuh ke satu nama — "jumlah
+    // benar, pemiliknya salah". Akibatnya dua: tabel ini menyebut referrer
+    // membantu orang yang keliru, dan potongan 1% di bawah memotong komisi
+    // orang yang keliru pula. Baris alokasi tanpa nama (dokumen lama) jatuh
+    // kembali ke PIC dokumennya.
     $s = $pdo->prepare(
-        "SELECT t.referrer_name, t.pic_name, COALESCE(SUM(a.amount),0) referred_amount,
+        "SELECT t.referrer_name, COALESCE(NULLIF(a.pic_name,''), t.pic_name) pic_name,
+                COALESCE(SUM(a.amount),0) referred_amount,
                 mr.jabatan, mr.no_rekening, mr.nama_bank
          FROM transaction_allocations a
          JOIN transactions t ON t.id = a.transaction_id
          LEFT JOIN master_referrer mr ON mr.name = t.referrer_name
          WHERE a.period_key=? AND a.property_id=? AND t.referrer_name IS NOT NULL AND t.referrer_name != ''
-         GROUP BY t.referrer_name, t.pic_name, mr.jabatan, mr.no_rekening, mr.nama_bank
+         GROUP BY t.referrer_name, COALESCE(NULLIF(a.pic_name,''), t.pic_name), mr.jabatan, mr.no_rekening, mr.nama_bank
          ORDER BY t.referrer_name ASC, referred_amount DESC"
     );
     $s->execute([$period, $pid]);

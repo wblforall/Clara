@@ -293,8 +293,21 @@ function mobile_home_page(PDO $pdo): void
         $rank = 0; $rankTotal = count($rankRows);
         foreach ($rankRows as $i => $rr) { if ($rr['pic_name'] === $pic['pic_name']) { $rank = $i + 1; break; } }
 
-        // Transaksi terbaru milik PIC
-        $sr = $pdo->prepare('SELECT t.master_code, t.final_amount, c.company_name FROM transactions t LEFT JOIN master_clients c ON c.id=t.client_id WHERE t.pic_name=? AND t.property_id=? AND t.deleted_at IS NULL ORDER BY t.id DESC LIMIT 6');
+        // Transaksi terbaru milik PIC.
+        //
+        // "Milik" dibaca dari BARIS ALOKASI, bukan dari transactions.pic_name:
+        // income sebuah kontrak bisa dibagi, dan dengan PIC dokumen daftar ini
+        // menyebut nilai UTUH kontrak orang lain sebagai milik si PIC sekaligus
+        // menyembunyikan kontrak yang porsinya memang miliknya. Nilai yang
+        // ditampilkan pun porsinya sendiri — kalau tidak, kartu ini bertengkar
+        // dengan ring achievement tepat di atasnya pada layar yang sama.
+        $sr = $pdo->prepare('SELECT t.master_code, COALESCE(SUM(a.amount),0) final_amount, c.company_name
+                               FROM transaction_allocations a
+                               JOIN transactions t ON t.id = a.transaction_id
+                               LEFT JOIN master_clients c ON c.id = t.client_id
+                              WHERE a.pic_name = ? AND a.property_id = ? AND t.deleted_at IS NULL
+                              GROUP BY t.id, t.master_code, c.company_name
+                              ORDER BY t.id DESC LIMIT 6');
         $sr->execute([$pic['pic_name'], $ppid]);
         $recent = $sr->fetchAll();
 

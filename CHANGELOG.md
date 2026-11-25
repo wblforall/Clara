@@ -11,6 +11,47 @@
 
 ---
 
+## Fitur & Perbaikan — 25 November 2026
+
+### Income yang dibagi ke beberapa sales akhirnya jatuh ke orang yang benar
+
+- Income sebuah kontrak bisa dibagi &mdash; Indomobil di MAIN ATRIUM Pentacity, Rp 200.000.000, terbagi
+  **Shinta Rp 150.000.000 + Alfa Rp 50.000.000**. Pembagian itu tersimpan benar sejak awal, sebagai dua
+  baris di `transaction_allocations`. Yang salah cara membacanya: beberapa layar menjumlahkan alokasi
+  **per transaksi** lebih dulu, lalu menempelkan hasilnya ke `transactions.pic_name`. Jumlah totalnya
+  tetap cocok, tetapi **pemiliknya salah** &mdash; satu nama kebagian semuanya, yang lain nol. Kesalahan
+  jenis ini tidak pernah ketahuan dari angka total; hanya orangnya yang tahu bahwa jatahnya hilang.
+- **Kalender Pameran** &mdash; kolom per PIC kini mengikuti baris alokasi: Alfa Rp 50.000.000, Shinta
+  Rp 150.000.000. Saringan PIC juga dibetulkan: menyaring &ldquo;Alfa&rdquo; dulu membuat kontrak itu lenyap dari
+  layarnya padahal ia kebagian. Rincian kalender menyebut semua yang kebagian, dan bila disaring per PIC
+  nilai yang tampil adalah **porsi orang itu saja**.
+- **Monitoring Transaksi** &mdash; kolom *Income diakui* pada papan &ldquo;Pencapaian per PIC&rdquo; dipecah ke pemilik
+  aslinya. Jumlah berkas, giliran, dan tunggakan tetap milik PIC yang mengejar dokumennya; uangnya milik
+  yang namanya menempel di baris alokasi, dan keduanya memang bisa berbeda orang. Kolom itu menjanjikan
+  dasar yang sama dengan Dashboard dan Laporan PIC &mdash; sekarang benar-benar sama.
+- **Simulasi Komisi** &mdash; tabel komisi referrer mengelompokkan dealing menurut PIC dokumen, sehingga
+  referrer tercatat membantu orang yang keliru dan potongan 1% memotong komisi orang yang keliru pula.
+- **Laporan Income Marketing (Excel)** &mdash; kolom PIC berisi satu nama saja. Kini menyebut tiap nama
+  beserta porsinya: *&ldquo;Shinta 150.000.000 + Alfa 50.000.000&rdquo;*. Baris tidak dipecah, karena kolom uang di
+  berkas itu nilai tagihan yang memang tidak terbagi.
+- **Beranda mobile** &mdash; kartu *Transaksi Terbaru Kamu* memakai nilai utuh kontrak orang lain sekaligus
+  menyembunyikan kontrak yang porsinya memang milik si PIC. Sekarang dibaca dari baris alokasinya, jadi
+  tidak lagi bertengkar dengan ring achievement di layar yang sama.
+
+### Pembagian income tidak lagi hilang diam-diam saat nilai kontrak berubah
+
+- `transaction_pic_splits` hanya dipakai bila jumlahnya **pas** dengan nilai kontrak &mdash; penjaga yang
+  benar, karena nominal yang tidak pas akan bekerja sebagai rasio dan memberi porsi yang tidak diminta.
+  Tetapi tidak ada satu pun tempat yang menyelaraskannya ketika nilai kontraknya bergeser. Akibatnya
+  menekan **Simpan** di Edit Transaksi, atau menerapkan **jadwal harga bertahap**, membuat pembagiannya
+  dianggap tidak pas lalu **dibuang** &mdash; dan seluruh income menempel ke PIC dokumen. Cukup selisih
+  serupiah karena pembulatan.
+- Dua pengaman baru di `AllocationService`: **`skalakanPembagian()`** menskalakan porsi tiap orang
+  mengikuti nilai kontrak yang baru (sisa pembulatan ditaruh di porsi terbesar supaya jumlahnya kembali
+  pas), dipakai sebelum alokasi dibangun ulang di Edit Transaksi; dan **`selaraskanPembagian()`**
+  menyamakan pembagian dengan baris alokasi sesudah jadwal harga bertahap diterapkan. Salinan kode yang
+  sudah ada di Special Price per bulan ikut dialihkan ke pembantu yang sama.
+
 ## Fitur & Perbaikan — 24 November 2026
 
 ### Rincian Biaya Form Utilities menunjukkan hitungannya, bukan hanya hasilnya
