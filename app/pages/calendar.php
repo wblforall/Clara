@@ -67,7 +67,10 @@ function calendar_page(PDO $pdo): void
     [$where, $params] = transaksi_tampil_kondisi($pdo, 't');
     $where[] = 't.property_id = :pid AND t.module = :modul AND t.start_date <= :akhir AND t.end_date >= :awal';
     $params += [':pid' => $pid, ':modul' => $modul, ':akhir' => $akhir->format('Y-m-d'), ':awal' => $awal->format('Y-m-d')];
-    if ($picF !== '') { $where[] = 't.pic_name = :pic'; $params[':pic'] = $picF; }
+    // Saringan PIC SENGAJA tidak dipasang di sini. Income satu kontrak bisa
+    // dibagi, dan menyaring lewat transactions.pic_name membuat kontrak itu
+    // lenyap dari layar PIC yang justru kebagian. Disaring di bawah, setelah
+    // porsi tiap PIC terbaca dari baris alokasinya.
     $st = $pdo->prepare("SELECT t.id, t.master_code, t.start_date, t.end_date, t.final_amount, t.pic_name, t.created_by, t.invoice_no, t.content_note,
                                 c.company_name, c.brand_name, (" . recurring_match_sql('t') . ") AS recurring, " . pembayaran_select_sql('t') . "
                          FROM transactions t LEFT JOIN master_clients c ON c.id = t.client_id
@@ -86,13 +89,41 @@ function calendar_page(PDO $pdo): void
     // Sumbernya transaction_allocations — tabel yang sama dengan Dashboard dan
     // Executive Summary, jadi angka di kalender tidak mungkin berbeda dari
     // angka di laporan.
-    $alok = $pdo->prepare("SELECT transaction_id, COALESCE(SUM(amount),0) nilai
+    //
+    // Dipecah SAMPAI NAMA PIC-nya, bukan hanya sampai transaksinya. Income satu
+    // kontrak bisa dibagi ke beberapa sales (transaction_pic_splits), dan
+    // pembagian itu memang sudah berwujud beberapa baris alokasi — satu per
+    // PIC. Menjumlahkannya lebih dulu per transaksi lalu menempelkan hasilnya
+    // ke transactions.pic_name membuat jumlah totalnya tetap benar tetapi
+    // PEMILIKNYA salah: satu nama kebagian seluruhnya, yang lain nol.
+    $alok = $pdo->prepare("SELECT transaction_id, COALESCE(NULLIF(pic_name,''), '') pic,
+                                  COALESCE(SUM(amount),0) nilai
                              FROM transaction_allocations
                             WHERE property_id = ? AND period_key = ? AND module = ?
-                            GROUP BY transaction_id");
+                            GROUP BY transaction_id, COALESCE(NULLIF(pic_name,''), '')");
     $alok->execute([$pid, $bulan, $modul]);
-    $nilaiBulan = [];
-    foreach ($alok->fetchAll() as $a) $nilaiBulan[(int) $a['transaction_id']] = (float) $a['nilai'];
+    $nilaiBulan = [];     // [trx_id] => total bulan ini (untuk nilai kotaknya)
+    $picBulan   = [];     // [trx_id][nama PIC] => porsinya bulan ini
+    foreach ($alok->fetchAll() as $a) {
+        $tid = (int) $a['transaction_id'];
+        $rp  = (float) $a['nilai'];
+        $nilaiBulan[$tid] = ($nilaiBulan[$tid] ?? 0.0) + $rp;
+        $pn  = (string) $a['pic'];
+        if ($pn !== '') $picBulan[$tid][$pn] = ($picBulan[$tid][$pn] ?? 0.0) + $rp;
+    }
+
+    // Baru sekarang disaring per PIC: yang dipakai adalah siapa yang benar-benar
+    // kebagian bulan ini. Kontrak tanpa nama di baris alokasinya (dokumen lama)
+    // jatuh kembali ke PIC dokumennya.
+    if ($picF !== '') {
+        foreach ($trxPer as $kodeU => $daftarU) {
+            $sisa = array_values(array_filter($daftarU, function ($t) use ($picF, $picBulan) {
+                $pp = $picBulan[(int) $t['id']] ?? [];
+                return $pp ? isset($pp[$picF]) : (string) $t['pic_name'] === $picF;
+            }));
+            if ($sisa) $trxPer[$kodeU] = $sisa; else unset($trxPer[$kodeU]);
+        }
+    }
 
     // ── Hari libur bulan ini ────────────────────────────────────────────────
     // Lembar tim menuliskannya di blok "KET : HARI LIBUR" tiap bulan, karena
@@ -188,9 +219,15 @@ function calendar_page(PDO $pdo): void
             // Warna kotak mengikuti PIC-nya (bukan jenis transaksinya) — jenis
             // tetap terbaca lewat garis tebal di tepi kiri untuk Recurring.
             $selot['warna'] = $warnaPic[(string) $t['pic_name']] ?? '#E2E8F0';
-            $selot['picSemua'] = (string) $t['pic_name'];
             // Nilai yang jatuh di bulan ini (prorata, sumber sama dengan laporan).
             $rpBulan = $nilaiBulan[(int) $t['id']] ?? 0.0;
+            // Porsi tiap PIC bulan ini. Baris alokasi tanpa nama (dokumen lama)
+            // jatuh kembali ke PIC dokumen — kalau tidak, uangnya hilang dari
+            // seluruh kolom PIC padahal totalnya tetap terhitung.
+            $picPorsi = $picBulan[(int) $t['id']] ?? [];
+            if (!$picPorsi && (string) $t['pic_name'] !== '') $picPorsi = [(string) $t['pic_name'] => $rpBulan];
+            // Kotaknya menyebut SEMUA yang kebagian, bukan cuma PIC dokumennya.
+            $selot['picSemua'] = $picPorsi ? implode(', ', array_keys($picPorsi)) : (string) $t['pic_name'];
             // Nilai, PIC, invoice, dan status bayar dibaca SEMUA orang yang boleh
             // membuka kalender — begitulah lembar kerja tim selama ini, dan
             // tanpa itu seorang PIC tidak bisa menakar posisinya terhadap rekan.
@@ -208,7 +245,9 @@ function calendar_page(PDO $pdo): void
             if ($iJalur === null) { $lanes[] = [$selot]; $iJalur = count($lanes) - 1; }
             if (!isset($jalur[$iJalur])) $jalur[$iJalur] = $kosongJalur;
             if ((int) $t['recurring']) $jalur[$iJalur]['rec'] += $rpBulan; else $jalur[$iJalur]['exh'] += $rpBulan;
-            $jalur[$iJalur]['pic'][(string) $t['pic_name']] = ($jalur[$iJalur]['pic'][(string) $t['pic_name']] ?? 0) + $rpBulan;
+            foreach ($picPorsi as $pnPorsi => $rpPorsi) {
+                $jalur[$iJalur]['pic'][$pnPorsi] = ($jalur[$iJalur]['pic'][$pnPorsi] ?? 0) + $rpPorsi;
+            }
         }
         // ── Prospek: jalurnya sendiri supaya tidak pernah tertukar dengan yang
         //    sudah pasti. Tampil samar dan bergaris putus-putus di layar.
@@ -1151,8 +1190,9 @@ function calendar_detail(PDO $pdo): void
     $where[] = 't.property_id = :pid AND t.start_date <= :akhir AND t.end_date >= :awal';
     $params += [':pid' => $pid, ':akhir' => $akhir, ':awal' => $awal];
     if ($modul !== '') { $where[] = 't.module = :modul'; $params[':modul'] = $modul; }
-    if ($picF !== '')  { $where[] = 't.pic_name = :pic';  $params[':pic']  = $picF; }
-
+    // Saringan PIC dikerjakan di PHP, bukan di sini — lihat $porsiPic di bawah:
+    // kontrak yang income-nya dibagi harus tetap muncul bagi SETIAP PIC yang
+    // kebagian, dan nilainya yang ditampilkan adalah PORSI orang itu saja.
     $bisaBayar = can('view_payments') || can('manage_payments');
     $st = $pdo->prepare(
         "SELECT t.id, t.module, t.master_code, t.start_date, t.end_date, t.final_amount, t.area_sqm,
@@ -1166,10 +1206,33 @@ function calendar_detail(PDO $pdo): void
     );
     $st->execute($params + [':bln' => $bulan]);
 
+    // Porsi tiap PIC bulan ini, dari baris alokasinya sendiri.
+    $porsiPic = [];
+    $pq = $pdo->prepare("SELECT transaction_id, COALESCE(NULLIF(pic_name,''),'') pic, COALESCE(SUM(amount),0) nilai
+                           FROM transaction_allocations
+                          WHERE property_id = ? AND period_key = ?
+                          GROUP BY transaction_id, COALESCE(NULLIF(pic_name,''),'')");
+    $pq->execute([$pid, $bulan]);
+    foreach ($pq->fetchAll() as $r) {
+        if ((string) $r['pic'] !== '') $porsiPic[(int) $r['transaction_id']][(string) $r['pic']] = (float) $r['nilai'];
+    }
+
     $baris = []; $jumBulan = 0.0; $jumKontrak = 0.0; $nRec = 0;
     foreach ($st->fetchAll() as $t) {
         $u = $unit[$t['module'] . '|' . $t['master_code']] ?? ['nm' => '', 'lt' => '', 'so' => 9999];
         if ($lantai !== '' && $u['lt'] !== $lantai) continue;
+        $pp = $porsiPic[(int) $t['id']] ?? [];
+        if (!$pp && (string) $t['pic_name'] !== '') $pp = [(string) $t['pic_name'] => (float) $t['nilai_bulan']];
+        if ($picF !== '') {
+            if (!isset($pp[$picF])) continue;
+            // Yang dibaca orang ini adalah ANGKA MILIKNYA, bukan nilai kontrak
+            // utuh yang kebetulan sebagian jatuh ke rekannya.
+            $t['nilai_bulan'] = $pp[$picF];
+            $t['final_amount'] = count($pp) > 1 ? $pp[$picF] : (float) $t['final_amount'];
+        }
+        // Kolom PIC menyebut semua yang kebagian — kalau tidak, satu nama
+        // terbaca seolah memegang seluruh nilainya.
+        if ($pp) $t['pic_name'] = implode(', ', array_keys($pp));
         $t['unit_nama'] = $u['nm'] !== '' ? $u['nm'] : (string) $t['master_code'];
         $t['lantai']    = $u['lt'];
         $t['urut']      = $u['so'];
