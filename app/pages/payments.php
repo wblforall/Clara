@@ -16,7 +16,15 @@ function _pay_query(PDO $pdo, bool $semuaBaris): array
     $pid     = current_property_id();
     $periode = trim((string) getv('period', date('Y-m')));
     if ($periode !== '' && $periode !== 'semua') $periode = periode_bulan('period');
-    $mode    = in_array(getv('mode', 'mulai'), ['mulai', 'jalan'], true) ? getv('mode', 'mulai') : 'mulai';
+    // Bawaannya "kontrak yang BERJALAN di bulan ini", bukan "yang mulai bulan
+    // ini". Halaman ini menjawab satu pertanyaan — apa yang harus ditagih bulan
+    // ini — dan untuk kontrak recurring jawabannya setiap bulan selama ia
+    // berjalan, bukan hanya bulan pertamanya. Dengan bawaan lama, kontrak 12
+    // bulan lenyap dari layar penagihan sejak bulan kedua: incomenya tetap
+    // dihitung di Dashboard, tagihannya tidak pernah terbit, dan tidak ada satu
+    // pun layar yang menyebutkannya. Ekspor "Laporan Income Marketing" memakai
+    // saringan yang sama, jadi berkas yang diserahkan ke Finance pun kurang.
+    $mode    = in_array(getv('mode', 'jalan'), ['mulai', 'jalan'], true) ? getv('mode', 'jalan') : 'jalan';
     $modul   = in_array(getv('module', ''), ['cl', 'media', 'gudang'], true) ? (string) getv('module') : '';
     $pic     = trim((string) getv('pic', ''));
     $status  = (string) getv('status', '');
@@ -160,8 +168,8 @@ function payments_page(PDO $pdo): void
             <div><label class="muted">Periode</label>
                 <input type="month" name="period" value="<?= h($f['period'] === 'semua' ? '' : $f['period']) ?>" style="width:160px"></div>
             <div><label class="muted">Dihitung dari</label>
-                <select name="mode"><option value="mulai" <?= $f['mode'] === 'mulai' ? 'selected' : '' ?>>Tanggal mulai di bulan ini</option>
-                    <option value="jalan" <?= $f['mode'] === 'jalan' ? 'selected' : '' ?>>Kontrak yang berjalan di bulan ini</option></select></div>
+                <select name="mode"><option value="jalan" <?= $f['mode'] === 'jalan' ? 'selected' : '' ?>>Kontrak yang berjalan di bulan ini (semua yang harus ditagih)</option>
+                    <option value="mulai" <?= $f['mode'] === 'mulai' ? 'selected' : '' ?>>Hanya yang tanggal mulainya di bulan ini</option></select></div>
             <div><label class="muted">Modul</label>
                 <select name="module"><option value="">Semua</option>
                     <?php foreach ($modLabel as $k => $v): ?><option value="<?= h($k) ?>" <?= $f['module'] === $k ? 'selected' : '' ?>><?= h($v) ?></option><?php endforeach; ?></select></div>

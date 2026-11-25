@@ -13,6 +13,24 @@
 
 ## Fitur & Perbaikan — 25 November 2026
 
+### Kontrak recurring tidak lagi lenyap dari layar penagihan sejak bulan kedua
+
+- **Tagihan & Pembayaran** menyaring bawaannya dengan *&ldquo;tanggal mulai di bulan ini&rdquo;*. Halaman itu menjawab
+  satu pertanyaan &mdash; apa yang harus ditagih bulan ini &mdash; dan untuk kontrak recurring jawabannya
+  **setiap bulan selama ia berjalan**, bukan hanya bulan pertamanya. Akibatnya kontrak 12 bulan hilang
+  dari layar admin sejak bulan kedua: incomenya tetap dihitung di Dashboard, tagihannya tidak pernah
+  terbit, dan tidak ada satu pun layar yang menyebutkannya.
+- Dilaporkan sebagai *&ldquo;kontrak Arum punya Zulfikar tidak ada, padahal recurring&rdquo;*. Memang tidak ada:
+  sewanya mulai 1 Oktober 2026, jadi di saringan November ia tersaring keluar. Di e-Walk saja ada
+  **55 kontrak** yang berjalan di November tetapi mulai sebelum November, **49 di antaranya belum punya
+  invoice**, senilai Rp 1.705.864.389.
+- Ekspor **Laporan Income Marketing** memakai saringan yang sama persis, jadi berkas yang diserahkan ke
+  Finance pun kurang baris &mdash; income yang diakui di Dashboard tidak pernah muncul di laporannya.
+- Bawaannya diubah jadi **&ldquo;Kontrak yang berjalan di bulan ini (semua yang harus ditagih)&rdquo;**, sejalan
+  dengan Monitoring dan Dashboard yang memang memakai dasar itu. Pilihan lama tetap ada sebagai
+  *&ldquo;Hanya yang tanggal mulainya di bulan ini&rdquo;*.
+
+
 ### Income yang dibagi ke beberapa sales akhirnya jatuh ke orang yang benar
 
 - Income sebuah kontrak bisa dibagi &mdash; Indomobil di MAIN ATRIUM Pentacity, Rp 200.000.000, terbagi
